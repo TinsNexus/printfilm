@@ -1,0 +1,15 @@
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
+__pycache__/
+*.pyc
+backend/.venv/
+backend/ai_movie.db
+backend/.env
+backend/.celery_autoscale/
+backend/static/generated/
+frontend/.env
+frontend/node_modules/
+frontend/dist/

@@ -1,0 +1,43 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  api:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../backend/.env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      PUBLIC_BASE_URL: http://127.0.0.1:8000
+      DATABASE_URL: sqlite+aiosqlite:///./data/ai_movie.db
+      DATABASE_URL_SYNC: sqlite:///./data/ai_movie.db
+    volumes:
+      - ../backend:/app
+      - api-data:/app/data
+    depends_on:
+      - redis
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  worker:
+    build: ./backend
+    env_file:
+      - ../backend/.env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: sqlite+aiosqlite:///./data/ai_movie.db
+      DATABASE_URL_SYNC: sqlite:///./data/ai_movie.db
+      PUBLIC_BASE_URL: http://127.0.0.1:8000
+    volumes:
+      - ../backend:/app
+      - api-data:/app/data
+    depends_on:
+      - redis
+      - api
+    command: celery -A app.workers.celery_app.celery_app worker -Q pipeline -l info --concurrency=2
+
+volumes:
+  api-data:

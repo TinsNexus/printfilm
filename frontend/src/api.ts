@@ -1,0 +1,317 @@
+function defaultApiBase() {
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    const { protocol, hostname } = window.location
+    // Same host as Vite; API listens on 8000 for LAN + local
+    return `${protocol}//${hostname}:8000`
+  }
+  return 'http://127.0.0.1:8000'
+}
+
+const API_BASE = import.meta.env.VITE_API_BASE || defaultApiBase()
+
+function authHeaders(): HeadersInit {
+  const token = localStorage.getItem('token')
+  return token
+    ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+    : { 'Content-Type': 'application/json' }
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers: { ...authHeaders(), ...(init?.headers || {}) },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    const detail = err.detail
+    const message =
+      typeof detail === 'string'
+        ? detail
+        : Array.isArray(detail)
+          ? detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join('; ')
+          : res.statusText
+    throw new Error(message || '请求失败')
+  }
+  return res.json()
+}
+
+export type PipelineMode = 'full' | 'image_text'
+
+export type Template = {
+  id: string
+  name: string
+  description: string
+  category: string[]
+  preview_cover: string
+  default_ratio: string
+  shot_duration_min: number
+  shot_duration_max: number
+  is_premium: boolean
+  sort_order: number
+  style_prefix?: string
+  negative_prompt?: string
+  llm_system_addon?: string
+  seedream_config?: {
+    ref_images?: string[]
+    strength?: number
+    pipeline_mode?: PipelineMode
+    character_prompt?: string
+    extra_prompt?: string
+  }
+  audio_config?: {
+    voice_preset?: string
+    bgm_mood?: string
+  }
+}
+
+/** Template voice_preset alias → openspeech speaker id */
+export const VOICE_PRESET_ALIASES: Record<string, string> = {
+  narrator_calm: 'zh_female_cancan_uranus_bigtts',
+  warm_storyteller: 'zh_female_tianmeixiaoyuan_uranus_bigtts',
+  teacher_clear: 'zh_male_shaonianzixin_uranus_bigtts',
+  urban_editorial: 'zh_female_shuangkuaisisi_uranus_bigtts',
+  retro_host: 'zh_male_shaonianzixin_uranus_bigtts',
+  guqin_narrator: 'zh_female_vv_uranus_bigtts',
+}
+
+export function defaultsFromTemplate(t: Template): {
+  style_prompt: string
+  character_prompt: string
+  extra_prompt: string
+  voice_id: string
+  pipeline_mode: PipelineMode
+} {
+  const cfg = t.seedream_config || {}
+  const preset = t.audio_config?.voice_preset || ''
+  const voice_id =
+    VOICE_PRESET_ALIASES[preset] ||
+    (preset.startsWith('zh_') ? preset : 'zh_female_cancan_uranus_bigtts')
+  const mode = (cfg.pipeline_mode as PipelineMode) || (t.default_ratio === '9:16' ? 'image_text' : 'full')
+  return {
+    style_prompt: (t.style_prefix || '').trim(),
+    character_prompt: (cfg.character_prompt || '').trim(),
+    extra_prompt: (cfg.extra_prompt || '').trim(),
+    voice_id,
+    pipeline_mode: mode === 'image_text' ? 'image_text' : 'full',
+  }
+}
+
+export type Shot = {
+  id: number
+  shot_no: number
+  duration: number
+  narration: string
+  overlay_title?: string
+  overlay_subtitle?: string
+  img_prompt: string
+  video_prompt: string
+  camera: string
+  bgm_mood: string
+  image_url: string | null
+  video_url: string | null
+  audio_url: string | null
+  status: string
+  version: number
+}
+
+export type VoicePreset = {
+  id: string
+  label: string
+  gender: string
+  speaker: string
+}
+
+export type Project = {
+  id: number
+  template_id: string
+  title: string
+  source_type: string
+  source_text: string
+  status: string
+  progress: number
+  error_msg: string | null
+  cover_url: string | null
+  final_video_url: string | null
+  resolution_mode: string
+  pipeline_mode?: PipelineMode
+  voice_id?: string
+  character_bible?: string
+  style_prompt?: string
+  character_prompt?: string
+  extra_prompt?: string
+  ref_image_url: string | null
+  created_at: string
+  updated_at: string
+  shots: Shot[]
+}
+
+export type User = {
+  id: number
+  email: string
+  nickname: string
+  quota_left: number
+}
+
+export type Work = {
+  id: number
+  project_id: number
+  user_id: number
+  title: string
+  cover_url: string | null
+  video_url: string
+  visibility: string
+  published_at: string
+}
+
+export const api = {
+  assetUrl(path: string | null | undefined, cacheBust?: string | number) {
+    if (!path) return ''
+    if (path.startsWith('http')) return path
+    // Only bust when caller passes a stable version (e.g. updated_at) — never Date.now()
+    const q = cacheBust != null && cacheBust !== '' ? `?v=${encodeURIComponent(String(cacheBust))}` : ''
+    return `${API_BASE}${path}${q}`
+  },
+  register(email: string, password: string, nickname: string) {
+    return request<{ access_token: string }>('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ email, password, nickname }),
+    })
+  },
+  login(email: string, password: string) {
+    return request<{ access_token: string }>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    })
+  },
+  me() {
+    return request<User>('/api/auth/me')
+  },
+  templates() {
+    return request<Template[]>('/api/templates')
+  },
+  createProject(body: {
+    template_id: string
+    title: string
+    source_type: 'theme' | 'script'
+    source_text: string
+    resolution_mode?: 'preview' | 'hd'
+    pipeline_mode?: PipelineMode
+    voice_id?: string
+    style_prompt?: string
+    character_prompt?: string
+    extra_prompt?: string
+  }) {
+    return request<Project>('/api/projects', { method: 'POST', body: JSON.stringify(body) })
+  },
+  updateProject(
+    id: number,
+    body: {
+      title?: string
+      source_type?: 'theme' | 'script'
+      source_text?: string
+      template_id?: string
+      pipeline_mode?: PipelineMode
+      resolution_mode?: 'preview' | 'hd'
+      voice_id?: string
+      style_prompt?: string
+      character_prompt?: string
+      extra_prompt?: string
+    },
+  ) {
+    return request<Project>(`/api/projects/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    })
+  },
+  voices() {
+    return request<VoicePreset[]>('/api/voices')
+  },
+  listProjects() {
+    return request<
+      Array<{
+        id: number
+        title: string
+        template_id: string
+        status: string
+        progress: number
+        cover_url: string | null
+        final_video_url?: string | null
+        error_msg?: string | null
+        pipeline_mode?: PipelineMode
+        created_at: string
+        updated_at?: string
+      }>
+    >('/api/projects')
+  },
+  async downloadZip(ids: number[]) {
+    const res = await fetch(`${API_BASE}/api/projects/download-zip`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ ids }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }))
+      const detail = err.detail
+      const message =
+        typeof detail === 'string'
+          ? detail
+          : Array.isArray(detail)
+            ? detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join('; ')
+            : res.statusText
+      throw new Error(message || '打包下载失败')
+    }
+    const blob = await res.blob()
+    const cd = res.headers.get('Content-Disposition') || ''
+    const m = cd.match(/filename="?([^"]+)"?/)
+    const filename = m?.[1] || `framecut_videos_${Date.now()}.zip`
+    return { blob, filename }
+  },
+  getProject(id: number) {
+    return request<Project>(`/api/projects/${id}`)
+  },
+  generate(id: number) {
+    return request<Project>(`/api/projects/${id}/generate`, { method: 'POST' })
+  },
+  cancelProject(id: number) {
+    return request<Project>(`/api/projects/${id}/cancel`, { method: 'POST' })
+  },
+  deleteProject(id: number) {
+    return request<{ ok: boolean; id: number }>(`/api/projects/${id}`, { method: 'DELETE' })
+  },
+  updateShot(projectId: number, shotId: number, body: Partial<Shot>) {
+    return request<Shot>(`/api/projects/${projectId}/shots/${shotId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    })
+  },
+  regenImage(projectId: number, shotId: number) {
+    return request<Shot>(`/api/projects/${projectId}/shots/${shotId}/regen-image`, {
+      method: 'POST',
+    })
+  },
+  regenVideo(projectId: number, shotId: number) {
+    return request<Shot>(`/api/projects/${projectId}/shots/${shotId}/regen-video`, {
+      method: 'POST',
+    })
+  },
+  regenAudio(projectId: number, shotId: number) {
+    return request<Shot>(`/api/projects/${projectId}/shots/${shotId}/regen-audio`, {
+      method: 'POST',
+    })
+  },
+  regenAllAudio(projectId: number) {
+    return request<Project>(`/api/projects/${projectId}/regen-audio`, { method: 'POST' })
+  },
+  compose(projectId: number) {
+    return request<Project>(`/api/projects/${projectId}/compose`, { method: 'POST' })
+  },
+  publish(projectId: number) {
+    return request<Work>(`/api/projects/${projectId}/publish`, { method: 'POST' })
+  },
+  works() {
+    return request<Work[]>('/api/works')
+  },
+  eventsUrl(projectId: number) {
+    return `${API_BASE}/api/projects/${projectId}/events`
+  },
+}
