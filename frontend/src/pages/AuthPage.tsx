@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
+import BrandMark from '../components/BrandMark'
 
 export default function AuthPage() {
   const nav = useNavigate()
@@ -33,11 +34,9 @@ export default function AuthPage() {
   return (
     <div className="auth-shell">
       <div className="auth-panel">
-        <Link to="/" className="brand-mark">
-          纸戏 <span>FrameCut</span>
-        </Link>
+        <BrandMark />
         <h1>{mode === 'login' ? '回到工作台' : '创建创作者账号'}</h1>
-        <p className="lede">多风格模板驱动的 AI 短视频流水线</p>
+        <p className="lede">PRINTFILM 科普视频平台 · 主题进，成片出</p>
         <form onSubmit={onSubmit} className="stack">
           {mode === 'register' && (
             <label>

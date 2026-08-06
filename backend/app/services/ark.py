@@ -12,6 +12,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -343,6 +344,29 @@ class ArkGateway:
             return data["url"]
         return None
 
+    @staticmethod
+    def _seedance_prompt_text(prompt: str) -> str:
+        """Seedance 2.0 may require JSON text with summary_caption (BodyFormat)."""
+        clean = (prompt or "").strip() or "画面轻微动态，保持主体外形稳定"
+        clean = re.sub(r"\s+", " ", clean).strip()
+        if clean.startswith("{"):
+            try:
+                obj = json.loads(clean)
+                if isinstance(obj, dict):
+                    if not str(obj.get("summary_caption") or "").strip():
+                        obj["summary_caption"] = str(
+                            obj.get("prompt") or obj.get("text") or clean
+                        )[:500]
+                    return json.dumps(obj, ensure_ascii=False)
+            except json.JSONDecodeError:
+                pass
+        return json.dumps({"summary_caption": clean[:500]}, ensure_ascii=False)
+
+    @staticmethod
+    def _seedance_duration(duration: int | float) -> int:
+        # Seedance 2.0 common range is 4–12s (some accounts reject <4)
+        return int(max(4, min(int(round(float(duration))), 12)))
+
     async def gen_video_i2v(
         self,
         image_url: str,
@@ -352,29 +376,35 @@ class ArkGateway:
         character_consistency: bool = True,
         resolution: str = "480p",
         ratio: str | None = None,
+        prompt_as_json: bool = True,
     ) -> str:
         if self.mock:
             digest = hashlib.md5(f"{image_url}:{prompt}".encode()).hexdigest()[:10]
             return f"mock-task-{digest}"
 
-        # Seedance needs reachable image: prefer http(s), else data URI from local file
-        image_ref = await self._resolve_image_ref(image_url)
+        # Seedance needs a publicly reachable https image (data URI often rejected / odd errors)
+        image_ref = await self._resolve_image_ref(image_url, prefer_https=True)
+        text = self._seedance_prompt_text(prompt) if prompt_as_json else (
+            (prompt or "").strip() or "画面轻微动态，保持主体外形稳定"
+        )
         content: list[dict[str, Any]] = [
-            {"type": "text", "text": prompt},
-            {"type": "image_url", "image_url": {"url": image_ref}},
+            {"type": "text", "text": text},
+            {
+                "type": "image_url",
+                "image_url": {"url": image_ref},
+                "role": "first_frame",
+            },
         ]
         body: dict[str, Any] = {
             "model": self.settings.model_video,
             "content": content,
-            "duration": int(max(2, min(duration, self.settings.max_shot_duration))),
+            "duration": self._seedance_duration(duration),
             "ratio": ratio or self.settings.ark_video_ratio,
             "resolution": resolution,
             "watermark": False,
             "generate_audio": False,
         }
-        # Optional consistency flag — ignored if API rejects unknown fields
-        if character_consistency:
-            body["character_consistency"] = True
+        # Do not send character_consistency — unknown fields have caused BodyFormat failures
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(
@@ -382,9 +412,17 @@ class ArkGateway:
                 headers=self._headers(),
                 json=body,
             )
+            if resp.status_code >= 400 and prompt_as_json:
+                # Fallback: plain text prompt
+                body["content"][0]["text"] = (prompt or "").strip() or "画面轻微动态"
+                resp = await client.post(
+                    self._url("/contents/generations/tasks"),
+                    headers=self._headers(),
+                    json=body,
+                )
             if resp.status_code >= 400:
-                # Retry without character_consistency if rejected
-                body.pop("character_consistency", None)
+                # Last try: drop role
+                body["content"][1].pop("role", None)
                 resp = await client.post(
                     self._url("/contents/generations/tasks"),
                     headers=self._headers(),
@@ -443,6 +481,58 @@ class ArkGateway:
         dest = storage.project_dir(project_id) / f"shot_{shot_no:03d}.mp4"
         await storage.download_to(result.url, dest)
         return storage.rel_static_url(dest)
+
+    async def gen_and_wait_video(
+        self,
+        image_url: str,
+        prompt: str,
+        duration: int,
+        *,
+        project_id: int,
+        shot_no: int,
+        character_consistency: bool = True,
+        resolution: str = "480p",
+        ratio: str | None = None,
+        max_attempts: int = 3,
+    ) -> str:
+        """Create Seedance i2v task and wait; retry on summary_caption / transient BodyFormat."""
+        last_err: Exception | None = None
+        for attempt in range(max_attempts):
+            use_json = attempt != 1  # attempt0 json, attempt1 plain, attempt2 json again
+            try:
+                task_id = await self.gen_video_i2v(
+                    image_url,
+                    prompt,
+                    duration,
+                    character_consistency=character_consistency,
+                    resolution=resolution,
+                    ratio=ratio,
+                    prompt_as_json=use_json,
+                )
+                return await self.wait_video(task_id, project_id=project_id, shot_no=shot_no)
+            except Exception as exc:  # noqa: BLE001
+                last_err = exc
+                msg = str(exc)
+                retryable = any(
+                    k in msg
+                    for k in (
+                        "summary_caption",
+                        "BodyFormat",
+                        "InvalidParameter",
+                        "poll timeout",
+                    )
+                )
+                logger.warning(
+                    "Seedance attempt %s/%s shot=%s failed: %s",
+                    attempt + 1,
+                    max_attempts,
+                    shot_no,
+                    msg[:300],
+                )
+                if not retryable or attempt >= max_attempts - 1:
+                    break
+                await asyncio.sleep(1.5 * (attempt + 1))
+        raise RuntimeError(str(last_err) if last_err else "video generation failed")
 
     async def tts(
         self,
@@ -635,15 +725,34 @@ class ArkGateway:
             check=False,
         )
 
-    async def _resolve_image_ref(self, image_url: str) -> str:
-        if image_url.startswith("http://") or image_url.startswith("https://") or image_url.startswith("data:"):
-            return image_url
-        local = storage.local_path_from_url(image_url)
+    async def _resolve_image_ref(self, image_url: str, *, prefer_https: bool = False) -> str:
+        raw = (image_url or "").strip()
+        if raw.startswith("https://"):
+            return raw
+        if raw.startswith("http://"):
+            # Ark cloud cannot fetch LAN/localhost; keep only if public host
+            host = (urlparse(raw).hostname or "").lower()
+            if host and host not in {"localhost", "127.0.0.1", "::1"} and not host.startswith(
+                ("192.168.", "10.")
+            ):
+                return raw
+        if prefer_https:
+            # Seedance 2.0: avoid data URI (often Invalid base64 / odd BodyFormat)
+            local = storage.local_path_from_url(raw)
+            if local and local.exists():
+                raise RuntimeError(
+                    "Seedance 需要公网可访问的图片 URL（image_ark_url），本地图无法提交"
+                )
+            if raw.startswith("data:"):
+                raise RuntimeError("Seedance 不支持 data URI 图片，请使用 Ark CDN https 链接")
+        if raw.startswith("http://") or raw.startswith("https://") or raw.startswith("data:"):
+            return raw
+        local = storage.local_path_from_url(raw)
         if local and local.exists():
             # Prefer data URI so Seedance can read without public CDN
             return storage.file_to_data_uri(local)
         # Last resort: absolute local public URL (only works if Ark can reach your machine)
-        return storage.to_public_url(image_url)
+        return storage.to_public_url(raw)
 
     def _write_mock_image(self, prompt: str, size: str | None = None) -> str:
         digest = hashlib.md5(prompt.encode()).hexdigest()[:8]

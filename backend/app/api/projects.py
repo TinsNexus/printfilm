@@ -224,11 +224,12 @@ async def generate_project(
     }:
         raise HTTPException(status_code=409, detail="生成进行中，请稍后")
 
-    # 额度暂时不限制
-    project.status = ProjectStatus.SCRIPTING
-    project.progress = 1
+    # Resume: clear error, keep existing shots/media (pipeline skips finished stages)
     project.error_msg = None
     project.final_video_url = None
+    project.status = ProjectStatus.SCRIPTING
+    if project.progress <= 0:
+        project.progress = 1
     await db.commit()
     task_id = pipeline.start_pipeline(project_id)
     # Persist celery id on a job row when available

@@ -58,16 +58,20 @@ def run_pipeline_task(self, project_id: int) -> dict:
             return {"ok": False, "cancelled": True, "project_id": project_id}
         msg = str(exc)
         # Permanent policy / client errors — do not retry
-        if any(
+        permanent = any(
             x in msg
             for x in (
                 "PolicyViolation",
                 "SensitiveContent",
                 "InputTextSensitive",
-                "400",
+                "InputImageSensitive",
+                "PrivacyInformation",
+                "BodyFormat",
+                "summary_caption",
             )
-        ) and "Seedream" in msg:
-            logger.error("permanent seedream failure project=%s: %s", project_id, msg[:400])
+        )
+        if permanent:
+            logger.error("permanent pipeline failure project=%s: %s", project_id, msg[:400])
             return {"ok": False, "project_id": project_id, "error": msg[:500]}
         logger.exception("celery pipeline failed project=%s", project_id)
         raise self.retry(exc=exc, countdown=10)

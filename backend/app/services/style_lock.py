@@ -5,17 +5,29 @@ from __future__ import annotations
 import re
 from urllib.parse import urlparse
 
-# Terms that cause 真人 / 动漫 / 3D drift across shots
-_STYLE_DRIFT = re.compile(
+# Terms that cause 真人 / 动漫 / 3D drift across shots (for illustration templates)
+_STYLE_DRIFT_ILLUS = re.compile(
     r"(写实照片|照片级真实|真人实拍|真实人脸|真人脸|摄影棚人像|电影真人剧照|"
     r"超写实皮肤|照片质感|live[\s-]?action|photoreal(?:istic)?|"
     r"赛璐璐二次元|日系动漫脸|动漫大眼睛|萌系二次元|3D超写实|CGI写实人像)",
     re.IGNORECASE,
 )
 
-_EXTRA_NEGATIVE = (
+# Terms that break photoreal / live-action templates
+_STYLE_DRIFT_PHOTO = re.compile(
+    r"(卡通简笔画|儿童绘本扁平|赛璐璐二次元|日系动漫脸|萌系二次元|"
+    r"剪纸扁平|像素块|水墨写意|贴纸拼贴|Q版三头身)",
+    re.IGNORECASE,
+)
+
+_EXTRA_NEGATIVE_ILLUS = (
     "写实照片，真人，真实人脸，摄影棚人像，电影真人剧照，照片级皮肤，"
     "风格混杂，镜头间画风跳变，另一套画风，赛璐璐二次元与写实混用"
+)
+
+_EXTRA_NEGATIVE_PHOTO = (
+    "卡通，动漫，赛璐璐，二次元，扁平插画，剪纸，像素风，水墨写意，"
+    "风格混杂，镜头间画风跳变，另一套画风，插画与写实混用"
 )
 
 _SCENE_TAG = re.compile(r"【场景】\s*(.+?)(?=\n【|\Z)", re.S)
@@ -23,8 +35,9 @@ _LOCK_LINE = re.compile(r"【(?:风格锁定|人物锁定|约束)】[^\n]*")
 _PERSON_SETTING = re.compile(r"(?:人物设定|角色设定)[：:][^\n【]{0,400}")
 
 
-def strip_style_drift(prompt: str) -> str:
-    out = _STYLE_DRIFT.sub("", prompt or "")
+def strip_style_drift(prompt: str, *, photoreal: bool = False) -> str:
+    rx = _STYLE_DRIFT_PHOTO if photoreal else _STYLE_DRIFT_ILLUS
+    out = rx.sub("", prompt or "")
     out = re.sub(r"[，,]{2,}", "，", out)
     return out.strip("，,。 \n\t")
 
@@ -66,19 +79,26 @@ def build_locked_image_prompt(
     style_prefix: str,
     img_prompt: str,
     character_bible: str = "",
+    *,
+    photoreal: bool = False,
 ) -> str:
     """Canonical prompt sent to Seedream — style + cast locked every shot."""
-    body = strip_lock_blocks(strip_style_drift(img_prompt))
+    body = strip_lock_blocks(strip_style_drift(img_prompt, photoreal=photoreal))
     if style_prefix and style_prefix in body:
         body = body.replace(style_prefix, "", 1).strip("，, ")
     parts: list[str] = []
     if style_prefix:
-        parts.append(
-            f"【风格锁定】{style_prefix}。全片统一此画风，禁止写实摄影与风格跳变"
-        )
+        if photoreal:
+            parts.append(
+                f"【风格锁定】{style_prefix}。全片统一此画风，禁止卡通动漫与风格跳变"
+            )
+        else:
+            parts.append(
+                f"【风格锁定】{style_prefix}。全片统一此画风，禁止写实摄影与风格跳变"
+            )
     if (character_bible or "").strip():
         parts.append(
-            f"【人物锁定】{(character_bible or '').strip()}。人物外形全片一致，禁止换脸换装"
+            f"【人物锁定】{(character_bible or '').strip()}。凡出现人物必须严格沿用以上外形，禁止换脸换装"
         )
     if body:
         parts.append(f"【场景】{body}")
@@ -86,13 +106,30 @@ def build_locked_image_prompt(
     return "\n".join(parts)
 
 
-def merge_negative(template_negative: str, *, image_text: bool = False) -> str:
+def merge_negative(
+    template_negative: str,
+    *,
+    image_text: bool = False,
+    photoreal: bool = False,
+) -> str:
     base = (template_negative or "").strip("，, ")
-    parts = [p for p in (base, _EXTRA_NEGATIVE) if p]
+    extra = _EXTRA_NEGATIVE_PHOTO if photoreal else _EXTRA_NEGATIVE_ILLUS
+    parts = [p for p in (base, extra) if p]
     merged = "，".join(parts)
     if image_text and "文字" not in merged:
         merged = f"{merged}，画面文字，字幕，水印，标题字"
     return merged
+
+
+def template_is_photoreal(tpl) -> bool:
+    """True when template opts into live-action / photoreal style."""
+    if tpl is None:
+        return False
+    cfg = getattr(tpl, "seedream_config", None) or {}
+    if isinstance(cfg, dict) and cfg.get("photoreal"):
+        return True
+    cats = getattr(tpl, "category", None) or []
+    return any(c in {"真人感", "写实感"} for c in cats)
 
 
 def seedream_ref_urls(*candidates: str | None) -> list[str]:

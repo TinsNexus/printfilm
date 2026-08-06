@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import type { Project } from '../api'
+import BrandMark from '../components/BrandMark'
 
 type HistoryItem = Omit<Project, 'shots'>
 
@@ -188,9 +189,7 @@ export default function HistoryPage() {
   return (
     <div className="page">
       <header className="topbar">
-        <Link to="/" className="brand-mark">
-          纸戏 <span>FrameCut</span>
-        </Link>
+        <BrandMark />
         <nav>
           <Link to="/studio">创作</Link>
           <Link to="/history">历史</Link>

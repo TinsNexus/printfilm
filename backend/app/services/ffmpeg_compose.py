@@ -40,6 +40,37 @@ class ComposeOptions:
     ratio: str = "16:9"
     mode: str = "full"  # full | image_text
     resolution_mode: str = "preview"  # preview | hd
+    # One continuous TTS track for the whole film (preferred over per-shot audio)
+    full_audio_path: Path | None = None
+
+
+def allocate_durations_by_narration(
+    narrations: list[str],
+    total_audio_dur: float,
+    *,
+    min_shot: float = 0.8,
+) -> list[float]:
+    """Split continuous TTS length across shots by narration character weight."""
+    n = len(narrations)
+    if n == 0:
+        return []
+    total = max(float(total_audio_dur), min_shot * n)
+    weights = [max(len((t or "").strip()), 1) for t in narrations]
+    wsum = float(sum(weights))
+    raw = [total * (w / wsum) for w in weights]
+    # Ensure minimums then renormalize
+    capped = [max(d, min_shot) for d in raw]
+    csum = sum(capped)
+    if csum > total + 1e-6:
+        # shrink proportionally above min
+        extra = csum - total
+        flexible = [max(0.0, d - min_shot) for d in capped]
+        fsum = sum(flexible) or 1.0
+        capped = [d - extra * (f / fsum) for d, f in zip(capped, flexible)]
+    # Fix float drift on last shot
+    head = [round(d, 3) for d in capped[:-1]]
+    last = max(min_shot, round(total - sum(head), 3))
+    return [*head, last]
 
 
 def probe_duration(path: Path) -> float | None:
@@ -274,8 +305,8 @@ def _write_ass(
 ) -> None:
     """Write ASS with PlayRes matching canvas; captions refresh by clause over time."""
     portrait = (h / max(w, 1)) > 1.2
-    font_size = 22 if portrait else 18
-    margin_v = 48 if portrait else 32
+    font_size = 30 if portrait else 26
+    margin_v = 56 if portrait else 40
     max_chars = 16 if portrait else 24
     font_name = "Microsoft YaHei"
     if font:
@@ -429,8 +460,8 @@ def _bottom_caption_drawtext(
     """Pixel-sized bottom captions via drawtext (avoids libass PlayRes blow-up)."""
     portrait = (h / max(w, 1)) > 1.2
     max_chars = 16 if portrait else 24
-    font_size = 18 if portrait else 16
-    y = max(0, h - font_size - (48 if portrait else 36))
+    font_size = 26 if portrait else 24
+    y = max(0, h - font_size - (56 if portrait else 44))
     windows = _timed_caption_windows(
         narration,
         start=0.0,
@@ -448,8 +479,8 @@ def _bottom_caption_drawtext(
         # Commas in enable= must be escaped for filtergraph
         parts.append(
             f"drawtext=text='{te}'{font_opt}:fontsize={font_size}:"
-            f"fontcolor=white:borderw=2:bordercolor=black@0.85:"
-            f"box=1:boxcolor=black@0.4:boxborderw=6:"
+            f"fontcolor=white:borderw=3:bordercolor=black@0.85:"
+            f"box=1:boxcolor=black@0.4:boxborderw=8:"
             f"x=(w-text_w)/2:y={y}:"
             f"enable='between(t\\,{a:.2f}\\,{b:.2f})'"
         )
@@ -467,28 +498,28 @@ def _overlay_drawtext(w: int, h: int, title: str, subtitle: str, font: str | Non
         subtitle = subtitle[:17] + "…"
     title_e = _escape_drawtext(title)
     sub_e = _escape_drawtext(subtitle)
-    # Portrait 720 → title ~22 / sub ~15
-    title_size = max(18, min(24, int(w * 0.032)))
-    sub_size = max(14, min(17, int(w * 0.024)))
-    title_y = int(h * 0.05)
-    sub_y = title_y + title_size + int(h * 0.01)
+    # Portrait 720 → title ~30 / sub ~22（相对原字号大约大两号）
+    title_size = max(26, min(32, int(w * 0.042)))
+    sub_size = max(20, min(25, int(w * 0.032)))
+    title_y = int(h * 0.045)
+    sub_y = title_y + title_size + int(h * 0.012)
 
     parts: list[str] = []
     # Soft top vignette so white text stays readable on bright skies
-    parts.append(f"drawbox=x=0:y=0:w={w}:h={int(h * 0.16)}:color=black@0.18:t=fill")
+    parts.append(f"drawbox=x=0:y=0:w={w}:h={int(h * 0.18)}:color=black@0.18:t=fill")
 
     font_opt = f":fontfile='{_escape_fontfile(font)}'" if font else ""
 
     if title_e:
         parts.append(
             f"drawtext=text='{title_e}'{font_opt}:fontsize={title_size}:"
-            f"fontcolor=white:borderw=2:bordercolor=black@0.75:"
+            f"fontcolor=white:borderw=3:bordercolor=black@0.75:"
             f"x=(w-text_w)/2:y={title_y}"
         )
     if sub_e:
         parts.append(
             f"drawtext=text='{sub_e}'{font_opt}:fontsize={sub_size}:"
-            f"fontcolor=white:borderw=2:bordercolor=black@0.7:"
+            f"fontcolor=white:borderw=3:bordercolor=black@0.7:"
             f"x=(w-text_w)/2:y={sub_y}"
         )
     return ",".join(parts)
@@ -645,13 +676,17 @@ def compose_project(
     with tempfile.TemporaryDirectory(prefix="framecut_") as tmp:
         tmp_path = Path(tmp)
         segment_paths: list[Path] = []
+        continuous = bool(opts.full_audio_path and opts.full_audio_path.exists())
 
         for shot in shots:
             seg = tmp_path / f"shot_{shot.shot_no:03d}.mp4"
             audio = tmp_path / f"shot_{shot.shot_no:03d}.m4a"
             video = tmp_path / f"shot_{shot.shot_no:03d}_v.mp4"
 
-            if shot.audio_path and shot.audio_path.exists():
+            if continuous:
+                # Visual-only segments; continuous narration muxed after concat
+                _make_silent_audio(audio, shot.duration)
+            elif shot.audio_path and shot.audio_path.exists():
                 # Keep full narration; do not truncate to planned duration when audio is longer
                 audio_dur = probe_duration(shot.audio_path) or shot.duration
                 use_dur = max(shot.duration, audio_dur)
@@ -773,19 +808,46 @@ def compose_project(
             ]
         )
 
-        # Captions already burned per-shot via drawtext — remux only.
-        _run(
-            [
-                ffmpeg,
-                "-y",
-                "-i",
-                str(merged),
-                "-c",
-                "copy",
-                "-movflags",
-                "+faststart",
-                str(output),
-            ]
-        )
+        if continuous and opts.full_audio_path:
+            # Replace silent concat audio with one continuous narration track
+            voiced = tmp_path / "voiced.mp4"
+            _run(
+                [
+                    ffmpeg,
+                    "-y",
+                    "-i",
+                    str(merged),
+                    "-i",
+                    str(opts.full_audio_path),
+                    "-map",
+                    "0:v:0",
+                    "-map",
+                    "1:a:0",
+                    "-c:v",
+                    "copy",
+                    "-c:a",
+                    "aac",
+                    "-shortest",
+                    "-movflags",
+                    "+faststart",
+                    str(voiced),
+                ]
+            )
+            shutil.copy2(voiced, output)
+        else:
+            # Captions already burned per-shot via drawtext — remux only.
+            _run(
+                [
+                    ffmpeg,
+                    "-y",
+                    "-i",
+                    str(merged),
+                    "-c",
+                    "copy",
+                    "-movflags",
+                    "+faststart",
+                    str(output),
+                ]
+            )
 
     return output

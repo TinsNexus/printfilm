@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api, defaultsFromTemplate } from '../api'
 import type { PipelineMode, Project, Shot, Template, VoicePreset } from '../api'
+import BrandMark from '../components/BrandMark'
 import { scenePromptForDisplay } from '../promptDisplay'
 
 const RUNNING = new Set([
@@ -415,6 +416,25 @@ export default function StudioPage() {
     }
   }
 
+  async function continueGenerate() {
+    if (!project) return
+    setBusy(true)
+    setError('')
+    try {
+      const started = await api.generate(project.id)
+      setProject(started)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '继续生成失败')
+      try {
+        setProject(await api.getProject(project.id))
+      } catch {
+        /* ignore */
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function cancelTask() {
     if (!project) return
     if (!window.confirm('确定取消当前生成任务？')) return
@@ -447,9 +467,7 @@ export default function StudioPage() {
   return (
     <div className="page studio">
       <header className="topbar">
-        <Link to="/" className="brand-mark">
-          纸戏 <span>FrameCut</span>
-        </Link>
+        <BrandMark />
         <nav>
           <span className="quota">额度不限</span>
           <Link to="/history">历史</Link>
@@ -469,11 +487,24 @@ export default function StudioPage() {
                 required
                 disabled={running}
               >
-                {templates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
+                {(() => {
+                  const groups = new Map<string, Template[]>()
+                  for (const t of templates) {
+                    const key = (t.category && t.category[0]) || '其他'
+                    if (!groups.has(key)) groups.set(key, [])
+                    groups.get(key)!.push(t)
+                  }
+                  return [...groups.entries()].map(([cat, list]) => (
+                    <optgroup key={cat} label={cat}>
+                      {list.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                          {t.category?.length > 1 ? ` · ${t.category.slice(1).join('/')}` : ''}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))
+                })()}
               </select>
             </label>
             <label>
@@ -561,13 +592,16 @@ export default function StudioPage() {
             <button className="btn primary" disabled={busy || running}>
               {busy
                 ? '处理中…'
-                : project && RESUME_COMPOSE.has(project.status) && canResumeCompose(project)
-                  ? '继续合成短视频'
-                  : project && !running
-                    ? '按当前设置重新生成'
-                    : pipelineMode === 'image_text'
-                      ? '生成图文短视频'
-                      : '生成分镜成片'}
+                : project &&
+                    (project.status === 'FAILED' || project.status === 'CANCELLED')
+                  ? '继续生成'
+                  : project && RESUME_COMPOSE.has(project.status) && canResumeCompose(project)
+                    ? '继续合成短视频'
+                    : project && !running
+                      ? '按当前设置重新生成'
+                      : pipelineMode === 'image_text'
+                        ? '生成图文短视频'
+                        : '生成分镜成片'}
             </button>
           </form>
         </aside>
@@ -601,6 +635,23 @@ export default function StudioPage() {
                       取消任务
                     </button>
                   )}
+                  {!running &&
+                    project.shots.length > 0 &&
+                    (project.status === 'FAILED' ||
+                      project.status === 'CANCELLED' ||
+                      (project.progress > 0 &&
+                        project.progress < 100 &&
+                        project.status !== 'DONE' &&
+                        project.status !== 'DRAFT')) && (
+                      <button
+                        type="button"
+                        className="btn primary"
+                        onClick={continueGenerate}
+                        disabled={busy}
+                      >
+                        {busy ? '处理中…' : '继续生成'}
+                      </button>
+                    )}
                   {project.shots.some((s) => s.image_url) && !running && (
                     <>
                       <button

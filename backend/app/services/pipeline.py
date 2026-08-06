@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -13,7 +14,14 @@ from app.config import get_settings
 from app.database import AsyncSessionLocal
 from app.models import PipelineJob, Project, ProjectStatus, Shot, ShotStatus
 from app.services.ark import get_ark
-from app.services.ffmpeg_compose import ComposeOptions, ShotMedia, compose_project, is_near_silent_audio, probe_duration
+from app.services.ffmpeg_compose import (
+    ComposeOptions,
+    ShotMedia,
+    allocate_durations_by_narration,
+    compose_project,
+    is_near_silent_audio,
+    probe_duration,
+)
 from app.services.progress import publish_progress
 from app.services import storage
 from app.services.style_lock import (
@@ -21,6 +29,7 @@ from app.services.style_lock import (
     merge_negative,
     seedream_ref_urls,
     strip_lock_blocks,
+    template_is_photoreal,
 )
 from app.services.voices import resolve_speaker
 
@@ -138,6 +147,78 @@ async def _ensure_not_cancelled(project_id: int) -> None:
             raise PipelineCancelled(f"project {project_id} cancelled")
 
 
+def _full_narration_path(project_id: int) -> Path:
+    return storage.project_dir(project_id) / "full_narration.mp3"
+
+
+def join_shot_narrations(narrations: list[str]) -> str:
+    """Merge per-shot旁白 into one continuous TTS script (punctuation = natural breath)."""
+    parts: list[str] = []
+    for raw in narrations:
+        t = (raw or "").strip()
+        if not t:
+            continue
+        if t[-1] not in "。！？；…,.!?;":
+            t += "。"
+        parts.append(t)
+    return "".join(parts)
+
+
+def _continuous_audio_ok(project_id: int) -> bool:
+    path = _full_narration_path(project_id)
+    return path.exists() and path.stat().st_size > 2000 and not is_near_silent_audio(path)
+
+
+async def _synthesize_continuous_audio(
+    project_id: int,
+    *,
+    voice: str,
+    shot_rows: list,
+    force: bool = False,
+) -> Path:
+    """One TTS pass for the whole film; redistribute shot durations by narration weight."""
+    dest = _full_narration_path(project_id)
+    narrations = [(getattr(s, "narration", None) or "") for s in shot_rows]
+    full_text = join_shot_narrations(narrations)
+    if not full_text.strip():
+        raise ValueError("全部镜头旁白为空，无法配音")
+
+    ark = get_ark()
+    if force or not _continuous_audio_ok(project_id):
+        hint = sum(max(float(getattr(s, "duration", 4) or 4), 2.0) for s in shot_rows)
+        audio_url = await ark.tts(
+            full_text,
+            voice,
+            project_id=project_id,
+            shot_no=0,
+            duration_hint=hint,
+        )
+        src = storage.local_path_from_url(audio_url or "")
+        if not src or not src.exists():
+            raise RuntimeError("整片配音生成失败")
+        if src.resolve() != dest.resolve():
+            dest.write_bytes(src.read_bytes())
+
+    dur = await asyncio.to_thread(probe_duration, dest)
+    if not dur or dur < 0.8:
+        raise RuntimeError("整片配音时长异常")
+
+    allocated = allocate_durations_by_narration(narrations, dur)
+    async with _db_write_lock:
+        async with AsyncSessionLocal() as db:
+            for shot, new_dur in zip(shot_rows, allocated):
+                row = await db.get(Shot, shot.id)
+                if not row:
+                    continue
+                row.duration = float(new_dur)
+                # Point every shot at the same continuous file (compose prefers full_narration)
+                row.audio_url = storage.rel_static_url(dest)
+                if row.status == ShotStatus.PENDING:
+                    row.status = ShotStatus.AUDIO_READY
+            await db.commit()
+    return dest
+
+
 async def _resume_plan(project_id: int) -> tuple[bool, bool, bool, bool]:
     """Return (image_text, skip_script, skip_assets, skip_videos).
 
@@ -165,7 +246,7 @@ async def _resume_plan(project_id: int) -> tuple[bool, bool, bool, bool]:
                 return False
             return not is_near_silent_audio(path)
 
-        has_audio = all(_audio_ok(s) for s in shots)
+        has_audio = _continuous_audio_ok(project_id) or all(_audio_ok(s) for s in shots)
         has_videos = all(bool(s.video_url) for s in shots)
         # Keep existing storyboard if any media already exists
         skip_script = any(bool(s.image_url or s.audio_url or s.video_url) for s in shots)
@@ -437,7 +518,11 @@ def _image_size_for(project: Project) -> str | None:
 
 def _project_image_negative(project: Project) -> str:
     tpl = project.template
-    return merge_negative(tpl.negative_prompt if tpl else "", image_text=_is_image_text(project))
+    return merge_negative(
+        tpl.negative_prompt if tpl else "",
+        image_text=_is_image_text(project),
+        photoreal=template_is_photoreal(tpl),
+    )
 
 
 def _project_base_refs(project: Project) -> list[str]:
@@ -453,6 +538,7 @@ def _locked_shot_prompt(project: Project, img_prompt: str) -> str:
         _effective_style(project),
         strip_lock_blocks(img_prompt),
         getattr(project, "character_bible", None) or "",
+        photoreal=template_is_photoreal(project.template),
     )
 
 
@@ -507,6 +593,7 @@ async def _parallel_image_and_audio(project_id: int) -> None:
         ]
         style_prefix = _effective_style(project)
         character_bible = getattr(project, "character_bible", None) or ""
+        photoreal = template_is_photoreal(tpl)
         base_refs = _project_base_refs(project)
         # If some shots already have images (resume), use them as consistency anchors
         existing_anchor = _consistency_ref_from_shots(shot_rows)
@@ -518,23 +605,18 @@ async def _parallel_image_and_audio(project_id: int) -> None:
         return
 
     img_sem = asyncio.Semaphore(max(1, cfg.pipeline_image_concurrency))
-    aud_sem = asyncio.Semaphore(max(1, cfg.pipeline_audio_concurrency))
     done_img = 0
-    done_aud = 0
     progress_lock = asyncio.Lock()
+    need_audio = not _continuous_audio_ok(project_id)
 
-    async def bump(kind: str) -> None:
-        nonlocal done_img, done_aud
+    async def bump_images() -> None:
+        nonlocal done_img
         async with progress_lock:
-            if kind == "img":
-                done_img += 1
-            else:
-                done_aud += 1
-            # 18 → 70 while images+audio complete
-            img_w = 0.55 if image_text else 0.45
-            aud_w = 0.45 if image_text else 0.25
-            frac = (done_img / total) * img_w + (done_aud / total) * aud_w
-            pct = 18 + int(52 * frac)
+            done_img += 1
+            # 18 → ~55 while images; audio fills the rest when done
+            img_w = 0.7 if image_text else 0.55
+            frac = (done_img / max(total, 1)) * img_w
+            pct = 18 + int(40 * frac)
             async with _db_write_lock:
                 async with AsyncSessionLocal() as db:
                     project = await db.get(Project, project_id)
@@ -548,7 +630,8 @@ async def _parallel_image_and_audio(project_id: int) -> None:
                     "event": "progress",
                     "stage": "PARALLEL_ASSETS",
                     "percent": pct,
-                    "message": f"出图 {done_img}/{total} · 配音 {done_aud}/{total}",
+                    "message": f"出图 {done_img}/{total}"
+                    + (" · 整片配音生成中…" if need_audio else " · 配音已就绪"),
                     "shot": None,
                     "total": total,
                 },
@@ -569,15 +652,20 @@ async def _parallel_image_and_audio(project_id: int) -> None:
                 elif not shot.video_url:
                     shot.status = ShotStatus.IMAGE_READY
                 await db.commit()
-        await bump("img")
+        await bump_images()
 
     async def one_image(meta: dict, ref_urls: list[str]) -> str | None:
         """Generate one shot; return remote/local URL for consistency chaining."""
         await _ensure_not_cancelled(project_id)
         if meta.get("has_image"):
-            await bump("img")
+            await bump_images()
             return None
-        prompt = build_locked_image_prompt(style_prefix, strip_lock_blocks(meta["img_prompt"]), character_bible)
+        prompt = build_locked_image_prompt(
+            style_prefix,
+            strip_lock_blocks(meta["img_prompt"]),
+            character_bible,
+            photoreal=photoreal,
+        )
         async with img_sem:
             await _ensure_not_cancelled(project_id)
             img = await ark.gen_image(
@@ -595,8 +683,8 @@ async def _parallel_image_and_audio(project_id: int) -> None:
         """Anchor on first generated shot, then parallelize the rest with that ref."""
         need = [m for m in shot_meta if not m.get("has_image")]
         already = [m for m in shot_meta if m.get("has_image")]
-        for m in already:
-            await bump("img")
+        for _m in already:
+            await bump_images()
 
         if not need:
             return
@@ -620,44 +708,44 @@ async def _parallel_image_and_audio(project_id: int) -> None:
             if isinstance(r, Exception):
                 raise r
 
-    async def one_audio(meta: dict) -> None:
+    async def run_continuous_audio() -> None:
         await _ensure_not_cancelled(project_id)
-        if meta.get("has_audio"):
-            await bump("aud")
+        if not need_audio:
             return
-        async with aud_sem:
-            await _ensure_not_cancelled(project_id)
-            audio_url = await ark.tts(
-                meta["narration"],
-                voice,
-                project_id=project_id,
-                shot_no=meta["shot_no"],
-                duration_hint=meta["duration"],
-            )
-            new_dur = meta["duration"]
-            audio_path = storage.local_path_from_url(audio_url or "")
-            if audio_path and audio_path.exists():
-                dur = await asyncio.to_thread(probe_duration, audio_path)
-                if dur and dur > 0.5:
-                    new_dur = max(float(meta["duration"]), round(dur + 0.35, 2))
+        await publish_progress(
+            project_id,
+            {
+                "event": "progress",
+                "stage": "PARALLEL_ASSETS",
+                "percent": 30,
+                "message": "整片连贯配音中…",
+            },
+        )
+        await _synthesize_continuous_audio(
+            project_id,
+            voice=voice,
+            shot_rows=shot_rows,
+            force=False,
+        )
         async with _db_write_lock:
             async with AsyncSessionLocal() as db:
-                shot = await db.get(Shot, meta["id"])
-                if not shot:
-                    return
-                shot.audio_url = audio_url
-                shot.duration = new_dur
-                if shot.status == ShotStatus.PENDING:
-                    shot.status = ShotStatus.AUDIO_READY
-                elif shot.status == ShotStatus.IMAGE_READY and shot.audio_url:
-                    # keep IMAGE_READY for UI; audio_url marks TTS done
-                    pass
-                await db.commit()
-        await bump("aud")
+                project = await db.get(Project, project_id)
+                if project:
+                    project.progress = max(project.progress or 0, 45)
+                    await db.commit()
+        await publish_progress(
+            project_id,
+            {
+                "event": "progress",
+                "stage": "PARALLEL_ASSETS",
+                "percent": 48,
+                "message": "整片配音完成",
+            },
+        )
 
     results = await asyncio.gather(
         run_images(),
-        *(one_audio(m) for m in shot_meta),
+        run_continuous_audio(),
         return_exceptions=True,
     )
     errors = [r for r in results if isinstance(r, Exception)]
@@ -678,7 +766,7 @@ async def _parallel_image_and_audio(project_id: int) -> None:
             project = result.scalar_one()
             if project.shots:
                 project.cover_url = sorted(project.shots, key=lambda s: s.shot_no)[0].image_url
-            project.status = ProjectStatus.IMAGE_READY if image_text else ProjectStatus.IMAGE_READY
+            project.status = ProjectStatus.IMAGE_READY
             project.progress = 70 if image_text else 50
             await db.commit()
     await publish_progress(
@@ -687,7 +775,7 @@ async def _parallel_image_and_audio(project_id: int) -> None:
             "event": "progress",
             "stage": "ASSETS_READY",
             "percent": 70 if image_text else 50,
-            "message": "分镜图与配音已完成",
+            "message": "分镜图与整片配音已完成",
         },
     )
 
@@ -754,17 +842,50 @@ async def _parallel_videos(project_id: int) -> None:
         async with sem:
             await _ensure_not_cancelled(project_id)
             prompt = f"{meta['video_prompt']}。运镜：{meta['camera']}。{motion}"
-            task_id = await ark.gen_video_i2v(
-                meta["image_ref"],
-                prompt,
-                int(meta["duration"]),
-                character_consistency=consistency,
-                resolution=resolution,
-                ratio=ratio,
-            )
-            local_video = await ark.wait_video(
-                task_id, project_id=project_id, shot_no=meta["shot_no"]
-            )
+            try:
+                local_video = await ark.gen_and_wait_video(
+                    meta["image_ref"],
+                    prompt,
+                    int(meta["duration"]),
+                    project_id=project_id,
+                    shot_no=meta["shot_no"],
+                    character_consistency=consistency,
+                    resolution=resolution,
+                    ratio=ratio,
+                )
+            except Exception as exc:  # noqa: BLE001
+                msg = str(exc)
+                # Real-person privacy blocks — skip AI video; compose will use still image
+                if any(
+                    k in msg
+                    for k in (
+                        "PrivacyInformation",
+                        "InputImageSensitive",
+                        "SensitiveContentDetected",
+                    )
+                ):
+                    logger.warning(
+                        "Seedance privacy skip project=%s shot=%s: %s",
+                        project_id,
+                        meta["shot_no"],
+                        msg[:240],
+                    )
+                    async with progress_lock:
+                        done += 1
+                        pct = 55 + int(30 * done / max(total, 1))
+                    await publish_progress(
+                        project_id,
+                        {
+                            "event": "progress",
+                            "stage": "VIDEOING",
+                            "shot": meta["shot_no"],
+                            "total": total,
+                            "percent": pct,
+                            "message": f"镜头 {meta['shot_no']} 含真人已跳过 AI 视频，将用静图合成",
+                        },
+                    )
+                    return
+                raise
         async with _db_write_lock:
             async with AsyncSessionLocal() as db:
                 shot = await db.get(Shot, meta["id"])
@@ -833,6 +954,7 @@ async def _image_stage(project_id: int) -> None:
         negative = _project_image_negative(project)
         style_prefix = _effective_style(project)
         bible = getattr(project, "character_bible", None) or ""
+        photoreal = template_is_photoreal(tpl)
         anchor: str | None = None
 
         for idx, shot in enumerate(sorted(project.shots, key=lambda s: s.shot_no)):
@@ -842,7 +964,12 @@ async def _image_stage(project_id: int) -> None:
                     anchor = shot.image_ark_url or shot.image_url
                 continue
             refs = seedream_ref_urls(anchor, *ref_urls) if anchor else list(ref_urls)
-            prompt = build_locked_image_prompt(style_prefix, strip_lock_blocks(shot.img_prompt), bible)
+            prompt = build_locked_image_prompt(
+                style_prefix,
+                strip_lock_blocks(shot.img_prompt),
+                bible,
+                photoreal=photoreal,
+            )
             img = await ark.gen_image(
                 prompt,
                 negative,
@@ -900,15 +1027,16 @@ async def _video_stage(project_id: int) -> None:
             await _ensure_not_cancelled(project_id)
             prompt = f"{shot.video_prompt}。运镜：{shot.camera}。{motion}"
             image_ref = shot.image_ark_url or shot.image_url or ""
-            task_id = await ark.gen_video_i2v(
+            local_video = await ark.gen_and_wait_video(
                 image_ref,
                 prompt,
                 int(shot.duration),
+                project_id=project_id,
+                shot_no=shot.shot_no,
                 character_consistency=consistency,
                 resolution=resolution,
                 ratio=ratio,
             )
-            local_video = await ark.wait_video(task_id, project_id=project_id, shot_no=shot.shot_no)
             shot.video_url = local_video
             shot.status = ShotStatus.VIDEO_READY
             pct = 50 + int(25 * (idx + 1) / max(total, 1))
@@ -930,8 +1058,8 @@ async def _video_stage(project_id: int) -> None:
 
 
 async def _audio_stage(project_id: int) -> None:
+    """Fallback audio stage — continuous narration for the whole film."""
     await _set_status(project_id, ProjectStatus.AUDIOING, 80, "AUDIOING")
-    ark = get_ark()
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(Project)
@@ -940,35 +1068,14 @@ async def _audio_stage(project_id: int) -> None:
         )
         project = result.scalar_one()
         voice = _project_voice(project)
-        total = len(project.shots)
-        for idx, shot in enumerate(sorted(project.shots, key=lambda s: s.shot_no)):
-            await _ensure_not_cancelled(project_id)
-            shot.audio_url = await ark.tts(
-                shot.narration,
-                voice,
-                project_id=project_id,
-                shot_no=shot.shot_no,
-                duration_hint=shot.duration,
-            )
-            audio_path = storage.local_path_from_url(shot.audio_url or "")
-            if audio_path and audio_path.exists():
-                dur = await asyncio.to_thread(probe_duration, audio_path)
-                if dur and dur > 0.5:
-                    shot.duration = max(float(shot.duration), round(dur + 0.35, 2))
-            shot.status = ShotStatus.AUDIO_READY
-            pct = 80 + int(10 * (idx + 1) / max(total, 1))
-            project.progress = pct
-            await db.commit()
-            await publish_progress(
-                project_id,
-                {
-                    "event": "progress",
-                    "stage": "AUDIOING",
-                    "shot": shot.shot_no,
-                    "total": total,
-                    "percent": pct,
-                },
-            )
+        shots = sorted(project.shots, key=lambda s: s.shot_no)
+    await _synthesize_continuous_audio(
+        project_id, voice=voice, shot_rows=shots, force=False
+    )
+    await publish_progress(
+        project_id,
+        {"event": "progress", "stage": "AUDIOING", "percent": 88, "message": "整片配音完成"},
+    )
 
 
 async def _compose_stage(project_id: int) -> None:
@@ -1010,6 +1117,10 @@ async def _compose_stage(project_id: int) -> None:
         if mode == "image_text" and ratio == "16:9":
             ratio = "9:16"
 
+        full_audio = _full_narration_path(project_id)
+        if not full_audio.exists():
+            full_audio = None
+
         out = storage.project_dir(project_id) / "final.mp4"
         await asyncio.to_thread(
             compose_project,
@@ -1019,6 +1130,7 @@ async def _compose_stage(project_id: int) -> None:
                 ratio=ratio,
                 mode=mode,
                 resolution_mode=project.resolution_mode or "preview",
+                full_audio_path=full_audio,
             ),
         )
         project.final_video_url = storage.rel_static_url(out)
@@ -1092,15 +1204,16 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
             resolution = "720p"
         prompt = f"{shot.video_prompt}。运镜：{shot.camera}。{motion}"
         image_ref = shot.image_ark_url or shot.image_url or ""
-        task_id = await ark.gen_video_i2v(
+        local_video = await ark.gen_and_wait_video(
             image_ref,
             prompt,
             int(shot.duration),
+            project_id=project_id,
+            shot_no=shot.shot_no,
             character_consistency=consistency,
             resolution=resolution,
             ratio=project.template.default_ratio or cfg.ark_video_ratio,
         )
-        local_video = await ark.wait_video(task_id, project_id=project_id, shot_no=shot.shot_no)
         shot.video_url = local_video
         shot.status = ShotStatus.VIDEO_READY
         shot.version += 1
@@ -1110,7 +1223,7 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
 
 
 async def regen_shot_audio(project_id: int, shot_id: int) -> None:
-    ark = get_ark()
+    """Re-TTS uses continuous full-film narration (editing one shot re-voices the whole track)."""
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(Project)
@@ -1121,32 +1234,27 @@ async def regen_shot_audio(project_id: int, shot_id: int) -> None:
         shot = next((s for s in project.shots if s.id == shot_id), None)
         if not shot:
             raise ValueError("shot not found")
-        if not (shot.narration or "").strip():
+        if not (shot.narration or "").strip() and not any(
+            (s.narration or "").strip() for s in project.shots
+        ):
             raise ValueError("旁白为空，无法配音")
         voice = _project_voice(project)
-        audio_url = await ark.tts(
-            shot.narration,
-            voice,
-            project_id=project_id,
-            shot_no=shot.shot_no,
-            duration_hint=float(shot.duration),
-        )
-        shot.audio_url = audio_url
-        audio_path = storage.local_path_from_url(audio_url or "")
-        if audio_path and audio_path.exists():
-            dur = await asyncio.to_thread(probe_duration, audio_path)
-            if dur and dur > 0.5:
-                shot.duration = max(float(shot.duration), round(dur + 0.35, 2))
-        if shot.status == ShotStatus.PENDING:
-            shot.status = ShotStatus.AUDIO_READY
-        shot.version += 1
-        project.final_video_url = None
-        await db.commit()
+        shots = sorted(project.shots, key=lambda s: s.shot_no)
+    await _synthesize_continuous_audio(
+        project_id, voice=voice, shot_rows=shots, force=True
+    )
+    async with AsyncSessionLocal() as db:
+        project = await db.get(Project, project_id)
+        shot = await db.get(Shot, shot_id)
+        if shot:
+            shot.version += 1
+        if project:
+            project.final_video_url = None
+            await db.commit()
 
 
 async def regen_project_audio_and_compose(project_id: int) -> None:
-    """Force re-TTS every shot with current voice, then compose."""
-    ark = get_ark()
+    """Force continuous re-TTS with current voice, then compose."""
     await _set_status(project_id, ProjectStatus.AUDIOING, 80, "AUDIOING")
     async with AsyncSessionLocal() as db:
         result = await db.execute(
@@ -1157,37 +1265,30 @@ async def regen_project_audio_and_compose(project_id: int) -> None:
         project = result.scalar_one()
         voice = _project_voice(project)
         shots = sorted(project.shots, key=lambda s: s.shot_no)
-        total = max(len(shots), 1)
-        for idx, shot in enumerate(shots):
-            if not (shot.narration or "").strip():
-                continue
-            audio_url = await ark.tts(
-                shot.narration,
-                voice,
-                project_id=project_id,
-                shot_no=shot.shot_no,
-                duration_hint=float(shot.duration),
-            )
-            shot.audio_url = audio_url
-            audio_path = storage.local_path_from_url(audio_url or "")
-            if audio_path and audio_path.exists():
-                dur = await asyncio.to_thread(probe_duration, audio_path)
-                if dur and dur > 0.5:
-                    shot.duration = max(float(shot.duration), round(dur + 0.35, 2))
-            shot.version += 1
-            project.progress = 80 + int(10 * (idx + 1) / total)
-            await db.commit()
-            await publish_progress(
-                project_id,
-                {
-                    "event": "progress",
-                    "stage": "AUDIOING",
-                    "percent": project.progress,
-                    "message": f"配音 {idx + 1}/{total}",
-                },
-            )
         project.final_video_url = None
         await db.commit()
+
+    await publish_progress(
+        project_id,
+        {
+            "event": "progress",
+            "stage": "AUDIOING",
+            "percent": 82,
+            "message": "整片连贯配音中…",
+        },
+    )
+    await _synthesize_continuous_audio(
+        project_id, voice=voice, shot_rows=shots, force=True
+    )
+    await publish_progress(
+        project_id,
+        {
+            "event": "progress",
+            "stage": "AUDIOING",
+            "percent": 90,
+            "message": "整片配音完成，开始合成",
+        },
+    )
 
     await _compose_stage(project_id)
     async with AsyncSessionLocal() as db:
