@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../../api'
 import type { User } from '../../api'
 import BrandMark from '../BrandMark'
+import HelpCenter from '../ui/HelpCenter'
 import { IconBell, IconGift, IconHelp } from '../ui/Icons'
 
 type Props = {
@@ -13,6 +14,7 @@ export default function SiteNav({ active }: Props) {
   const nav = useNavigate()
   const location = useLocation()
   const [user, setUser] = useState<User | null>(null)
+  const [helpOpen, setHelpOpen] = useState(false)
 
   useEffect(() => {
     if (!localStorage.getItem('token')) return
@@ -62,7 +64,13 @@ export default function SiteNav({ active }: Props) {
         <button type="button" className="pf-icon-btn" title="福利（即将推出）" disabled>
           <IconGift size={18} />
         </button>
-        <button type="button" className="pf-icon-btn" title="帮助（即将推出）" disabled>
+        <button
+          type="button"
+          className="pf-icon-btn"
+          title="帮助中心"
+          aria-label="打开帮助中心"
+          onClick={() => setHelpOpen(true)}
+        >
           <IconHelp size={18} />
         </button>
         <button type="button" className="pf-icon-btn" title="通知（即将推出）" disabled>
@@ -89,6 +97,7 @@ export default function SiteNav({ active }: Props) {
           </>
         )}
       </div>
+      <HelpCenter open={helpOpen} onClose={() => setHelpOpen(false)} />
     </header>
   )
 }

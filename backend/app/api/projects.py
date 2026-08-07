@@ -336,9 +336,26 @@ async def generate_project(
     # Resume: clear error, keep existing shots/media (pipeline skips finished stages)
     project.error_msg = None
     project.final_video_url = None
-    project.status = ProjectStatus.SCRIPTING
-    if project.progress <= 0 or restart:
+    shots = list(project.shots or [])
+    if restart or not shots:
+        # First run / restart — actually splitting storyboard
+        project.status = ProjectStatus.SCRIPTING
         project.progress = 1
+    else:
+        # Continue: label the real next stage so UI never shows「拆分镜中」
+        image_text = (project.pipeline_mode or "full") == "image_text"
+        has_images = all(bool(s.image_url or s.image_ark_url) for s in shots)
+        has_audio = all(bool(s.audio_url) for s in shots)
+        has_videos = all(bool(s.video_url) for s in shots)
+        if not has_images or not has_audio:
+            project.status = ProjectStatus.IMAGING
+            project.progress = max(project.progress or 0, 18)
+        elif not image_text and not has_videos:
+            project.status = ProjectStatus.VIDEOING
+            project.progress = max(project.progress or 0, 55)
+        else:
+            project.status = ProjectStatus.COMPOSING
+            project.progress = max(project.progress or 0, 88)
     await db.commit()
     task_id = pipeline.start_pipeline(project_id)
     # Persist celery id on a job row when available

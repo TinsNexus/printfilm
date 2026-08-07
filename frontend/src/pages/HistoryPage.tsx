@@ -22,6 +22,7 @@ import {
   IconSend,
   IconTrash,
 } from '../components/ui/Icons'
+import { dialog } from '../lib/dialog'
 import { isRunning, STATUS_CN, statusTone } from '../lib/status'
 
 type HistoryItem = Omit<Project, 'shots'>
@@ -158,7 +159,14 @@ export default function HistoryPage() {
   }
 
   async function remove(id: number) {
-    if (!window.confirm('确定删除该项目？')) return
+    const ok = await dialog.confirm({
+      title: '删除项目',
+      message: '确定删除该项目？素材与成片将一并清除。',
+      confirmText: '删除',
+      cancelText: '取消',
+      tone: 'danger',
+    })
+    if (!ok) return
     setBusyId(id)
     try {
       await api.deleteProject(id)

@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import DialogHost from './components/ui/DialogHost'
 import AuthPage from './pages/AuthPage'
 import HistoryPage from './pages/HistoryPage'
 import HomePage from './pages/HomePage'
@@ -28,6 +29,7 @@ export default function App() {
         <Route path="/studio" element={<StudioPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <DialogHost />
     </BrowserRouter>
   )
 }

@@ -17,13 +17,15 @@ import {
   IconTrash,
 } from '../../components/ui/Icons'
 import { scenePromptForDisplay } from '../../promptDisplay'
+import { dialog } from '../../lib/dialog'
 import {
   BOARD_STEPS,
+  effectiveStatus,
   formatMmSs,
   isRunning,
   shotIsDone,
   shotStatusLabel,
-  STATUS_CN,
+  statusLabel,
 } from '../../lib/status'
 
 function csvEscape(value: string | number | null | undefined) {
@@ -219,6 +221,7 @@ export default function StoryboardPage() {
     const auds = list.filter((s) => s.audio_url).length
     const vids = list.filter((s) => s.video_url).length
     const full = project.pipeline_mode !== 'image_text'
+    const stage = effectiveStatus(project)
     type ProgressItem = { label: string; done: boolean; run?: boolean; pct?: number }
     const items: ProgressItem[] = [
       { label: '主题解析', done: true },
@@ -238,16 +241,16 @@ export default function StoryboardPage() {
         done:
           list.length > 0 &&
           (vids === list.length ||
-            ['VIDEO_READY', 'COMPOSING', 'AUDITING', 'DONE'].includes(project.status)),
-        run: project.status === 'VIDEOING',
-        pct: project.status === 'VIDEOING' ? project.progress : undefined,
+            ['VIDEO_READY', 'COMPOSING', 'AUDITING', 'DONE'].includes(stage)),
+        run: stage === 'VIDEOING',
+        pct: stage === 'VIDEOING' ? project.progress : undefined,
       })
     }
     items.push({
       label: '成片渲染',
       done: Boolean(project.final_video_url) || project.status === 'DONE',
-      run: project.status === 'COMPOSING',
-      pct: project.status === 'COMPOSING' ? project.progress : undefined,
+      run: stage === 'COMPOSING',
+      pct: stage === 'COMPOSING' ? project.progress : undefined,
     })
     return items
   }, [project])
@@ -277,12 +280,14 @@ export default function StoryboardPage() {
 
   async function restartGenerate() {
     if (!project) return
-    if (
-      !window.confirm(
-        '确定推倒重做？将清空当前分镜与素材，重新拆分镜（生成后仍可先确认再继续）。',
-      )
-    )
-      return
+    const ok = await dialog.confirm({
+      title: '推倒重做',
+      message: '将清空当前分镜与素材，重新拆分镜（生成后仍可先确认再继续）。',
+      confirmText: '确认重做',
+      cancelText: '再想想',
+      tone: 'danger',
+    })
+    if (!ok) return
     setBusy(true)
     setError('')
     try {
@@ -296,7 +301,14 @@ export default function StoryboardPage() {
 
   async function deleteProject() {
     if (!project) return
-    if (!window.confirm('确定删除该项目？素材与成片将一并清除。')) return
+    const ok = await dialog.confirm({
+      title: '删除项目',
+      message: '确定删除该项目？素材与成片将一并清除，此操作不可恢复。',
+      confirmText: '删除',
+      cancelText: '取消',
+      tone: 'danger',
+    })
+    if (!ok) return
     setBusy(true)
     try {
       await api.deleteProject(project.id)
@@ -690,7 +702,7 @@ export default function StoryboardPage() {
             </li>
             <li>
               <span>状态</span>
-              <span>{STATUS_CN[project.status] || project.status}</span>
+              <span>{statusLabel(project)}</span>
             </li>
             <li>
               <span>进度</span>
@@ -1051,7 +1063,7 @@ export default function StoryboardPage() {
             <i style={{ width: `${Math.min(100, project.progress)}%` }} />
           </div>
           <p className="pf-muted" style={{ fontSize: '0.82rem' }}>
-            {STATUS_CN[project.status] || project.status}
+            {statusLabel(project)}
           </p>
         </aside>
       </div>

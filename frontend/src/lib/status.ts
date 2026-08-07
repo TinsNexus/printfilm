@@ -31,6 +31,39 @@ export function isRunning(status: string) {
   return RUNNING.has(status)
 }
 
+/**
+ * Prefer stage inferred from shot assets when status is still SCRIPTING
+ * (e.g. continue-generate briefly labeled wrong, or worker lag).
+ */
+export function effectiveStatus(project: {
+  status: string
+  pipeline_mode?: string | null
+  shots?: Array<{ image_url?: string | null; audio_url?: string | null; video_url?: string | null }>
+}): string {
+  const status = project.status
+  const shots = project.shots || []
+  if (status !== 'SCRIPTING' || shots.length === 0) return status
+
+  const full = project.pipeline_mode !== 'image_text'
+  const imgs = shots.filter((s) => s.image_url).length
+  const auds = shots.filter((s) => s.audio_url).length
+  const vids = shots.filter((s) => s.video_url).length
+  const n = shots.length
+
+  if (imgs === n && auds === n) {
+    if (full && vids < n) return 'VIDEOING'
+    if (full && vids === n) return 'COMPOSING'
+    if (!full) return 'COMPOSING'
+  }
+  if (imgs > 0 || auds > 0) return 'IMAGING'
+  return status
+}
+
+export function statusLabel(projectOrStatus: string | Parameters<typeof effectiveStatus>[0]) {
+  const status = typeof projectOrStatus === 'string' ? projectOrStatus : effectiveStatus(projectOrStatus)
+  return STATUS_CN[status] || status
+}
+
 export function statusTone(status: string): 'ok' | 'bad' | 'run' | 'idle' {
   if (status === 'DONE') return 'ok'
   if (status === 'FAILED' || status === 'REJECTED' || status === 'CANCELLED') return 'bad'
