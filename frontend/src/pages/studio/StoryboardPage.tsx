@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { api } from '../../api'
+import { api, defaultsFromTemplate } from '../../api'
 import type { Project, Shot, Template } from '../../api'
 import AppShell from '../../components/layout/AppShell'
 import Stepper from '../../components/ui/Stepper'
@@ -174,6 +174,22 @@ export default function StoryboardPage() {
   )
 
   const shots = project?.shots || []
+  /** 项目字段为空时回显模板默认（与后端 _effective_* 一致） */
+  const promptDefaults = useMemo(
+    () => (template ? defaultsFromTemplate(template) : null),
+    [template],
+  )
+  const displayPrompts = useMemo(() => {
+    if (!project) {
+      return { style_prompt: '', character_prompt: '', extra_prompt: '' }
+    }
+    return {
+      style_prompt: (project.style_prompt || '').trim() || promptDefaults?.style_prompt || '',
+      character_prompt:
+        (project.character_prompt || '').trim() || promptDefaults?.character_prompt || '',
+      extra_prompt: (project.extra_prompt || '').trim() || promptDefaults?.extra_prompt || '',
+    }
+  }, [project, promptDefaults])
   const isFullPipeline = project?.pipeline_mode !== 'image_text'
   const imgDone = shots.filter((s) => s.image_url).length
   const audDone = shots.filter((s) => s.audio_url).length
@@ -748,9 +764,9 @@ export default function StoryboardPage() {
             </p>
             {(
               [
-                ['风格', project.style_prompt],
-                ['角色', project.character_prompt],
-                ['额外', project.extra_prompt],
+                ['风格', displayPrompts.style_prompt],
+                ['角色', displayPrompts.character_prompt],
+                ['额外', displayPrompts.extra_prompt],
               ] as const
             ).map(([label, value]) => (
               <button
@@ -760,9 +776,9 @@ export default function StoryboardPage() {
                 disabled={busy || running}
                 onClick={() =>
                   setPromptEdit({
-                    style_prompt: project.style_prompt || '',
-                    character_prompt: project.character_prompt || '',
-                    extra_prompt: project.extra_prompt || '',
+                    style_prompt: displayPrompts.style_prompt,
+                    character_prompt: displayPrompts.character_prompt,
+                    extra_prompt: displayPrompts.extra_prompt,
                   })
                 }
               >

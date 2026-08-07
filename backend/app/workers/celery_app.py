@@ -33,5 +33,6 @@ celery_app.conf.update(
         "app.workers.tasks.run_pipeline_task": {"queue": "pipeline"},
         "app.workers.tasks.regen_image_task": {"queue": "pipeline"},
         "app.workers.tasks.regen_video_task": {"queue": "pipeline"},
+        "app.workers.tasks.upload_media_task": {"queue": "oss"},
     },
 )

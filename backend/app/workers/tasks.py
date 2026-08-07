@@ -118,3 +118,48 @@ def regen_video_task(project_id: int, shot_id: int) -> dict:
 
     _run(regen_shot_video(project_id, shot_id))
     return {"ok": True}
+
+
+@celery_app.task(
+    name="app.workers.tasks.upload_media_task",
+    bind=True,
+    max_retries=5,
+    default_retry_delay=20,
+    soft_time_limit=300,
+    time_limit=360,
+)
+def upload_media_task(self, local_url: str) -> dict:
+    """Upload one /static media file to OSS and backfill matching DB URLs."""
+    from app.config import reload_settings
+    from app.services import storage
+    from app.services.oss_queue import backfill_media_url, clear_enqueue_marker
+
+    reload_settings()
+    url = (local_url or "").strip()
+    if not url or not storage.is_local_static_url(url):
+        clear_enqueue_marker(url)
+        return {"ok": False, "skipped": "not_local", "local_url": url}
+
+    path = storage.local_path_from_url(url)
+    if not path or not path.is_file():
+        clear_enqueue_marker(url)
+        logger.warning("oss upload skip missing file %s", url)
+        return {"ok": False, "skipped": "missing", "local_url": url}
+
+    try:
+        oss_url = storage.upload_local_sync(path)
+        if storage.is_local_static_url(oss_url):
+            raise RuntimeError("upload returned local URL")
+        changed = _run(backfill_media_url(url, oss_url))
+        clear_enqueue_marker(url)
+        return {"ok": True, "local_url": url, "oss_url": oss_url, "backfilled": changed}
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("oss upload task failed %s", url)
+        from celery.exceptions import MaxRetriesExceededError
+
+        try:
+            raise self.retry(exc=exc)
+        except MaxRetriesExceededError:
+            clear_enqueue_marker(url)
+            return {"ok": False, "local_url": url, "error": str(exc)[:400]}
+

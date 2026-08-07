@@ -94,14 +94,31 @@ async def _migrate_sqlite() -> None:
 
 
 async def seed_templates() -> None:
+    """Upsert built-in templates; publish cover images to OSS when enabled."""
+    import logging
+
+    from app.services import storage
+
+    log = logging.getLogger("app.seed")
     async with AsyncSessionLocal() as db:
         for item in TEMPLATES:
-            existing = await db.get(Template, item["id"])
+            data = dict(item)
+            cover = (data.get("preview_cover") or "").strip()
+            if cover.startswith("/static/"):
+                local = storage.STATIC_ROOT / cover.removeprefix("/static/")
+                if local.is_file():
+                    try:
+                        data["preview_cover"] = storage.publish_local(local, sync=True)
+                    except Exception:  # noqa: BLE001
+                        log.exception("template cover OSS publish failed: %s", local)
+                else:
+                    log.warning("template cover missing on disk: %s", local)
+            existing = await db.get(Template, data["id"])
             if existing:
-                for k, v in item.items():
+                for k, v in data.items():
                     setattr(existing, k, v)
             else:
-                db.add(Template(**item))
+                db.add(Template(**data))
         await db.commit()
         result = await db.execute(select(Template))
         _ = result.scalars().all()

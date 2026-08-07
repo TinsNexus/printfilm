@@ -490,8 +490,8 @@ async def _script_stage(project_id: int) -> None:
             d_max = min(tpl.shot_duration_max, get_settings().max_shot_duration)
 
         style = _effective_style(project)
-        extra = (getattr(project, "extra_prompt", None) or "").strip()
-        char_hint = (getattr(project, "character_prompt", None) or "").strip()
+        extra = _effective_extra(project)
+        char_hint = _effective_character_prompt(project)
         consist = template_consistency_mode(tpl)
         plans_result = await ark.chat_storyboard(
             source_text=project.source_text,
@@ -560,8 +560,28 @@ def _effective_style(project: Project) -> str:
     return user or base
 
 
-def _effective_character_bible(project: Project, llm_bible: str = "") -> str:
+def _template_seedream_field(project: Project, key: str) -> str:
+    tpl = project.template
+    if not tpl:
+        return ""
+    cfg = getattr(tpl, "seedream_config", None) or {}
+    if not isinstance(cfg, dict):
+        return ""
+    return str(cfg.get(key) or "").strip()
+
+
+def _effective_character_prompt(project: Project) -> str:
     user = (getattr(project, "character_prompt", None) or "").strip()
+    return user or _template_seedream_field(project, "character_prompt")
+
+
+def _effective_extra(project: Project) -> str:
+    user = (getattr(project, "extra_prompt", None) or "").strip()
+    return user or _template_seedream_field(project, "extra_prompt")
+
+
+def _effective_character_bible(project: Project, llm_bible: str = "") -> str:
+    user = _effective_character_prompt(project)
     return user or (llm_bible or "").strip()
 
 

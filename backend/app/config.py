@@ -80,6 +80,9 @@ class Settings(BaseSettings):
     oss_access_key_secret: str = ""
     # 可选自定义域名；空则用 https://{bucket}.{endpoint}
     oss_public_base: str = ""
+    # 生成链路：先落盘返回 /static，再入队异步上传并回填 OSS URL
+    oss_upload_async: bool = True
+    oss_upload_queue: str = "oss"
 
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 

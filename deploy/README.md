@@ -46,7 +46,7 @@ pip install -r requirements.txt
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 # 另开终端 — 固定并发
-celery -A app.workers.celery_app.celery_app worker -Q pipeline -l info --concurrency=2
+celery -A app.workers.celery_app.celery_app worker -Q pipeline,oss -l info --concurrency=2
 
 # 或 Windows 动态加减进程
 python -m app.workers.autoscale

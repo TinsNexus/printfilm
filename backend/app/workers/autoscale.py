@@ -53,6 +53,11 @@ class CeleryAutoscaler:
         self.poll_sec = max(2.0, float(self.settings.celery_autoscale_poll_sec))
         self.scale_down_sec = max(5.0, float(self.settings.celery_autoscale_idle_sec))
         self.queue = (self.settings.celery_autoscale_queue or QUEUE_NAME).strip() or QUEUE_NAME
+        # Always also consume OSS upload queue so async media publish is processed.
+        queues = [q.strip() for q in self.queue.split(",") if q.strip()]
+        if "oss" not in queues:
+            queues.append("oss")
+        self.worker_queues = ",".join(queues)
         self.host = socket.gethostname().split(".")[0]
         self.workers: dict[int, WorkerProc] = {}
         self._idle_since: float | None = None
@@ -81,6 +86,10 @@ class CeleryAutoscaler:
         """Return (pending, unacked, load)."""
         pending = int(self._redis.llen(self.queue) or 0)
         try:
+            pending += int(self._redis.llen("oss") or 0)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
             unacked = int(self._redis.hlen("unacked") or 0)
         except Exception:  # noqa: BLE001
             unacked = 0
@@ -101,7 +110,7 @@ class CeleryAutoscaler:
             "app.workers.celery_app.celery_app",
             "worker",
             "-Q",
-            self.queue,
+            self.worker_queues,
             "-l",
             "info",
             "--concurrency=1",

@@ -163,6 +163,23 @@ def template_is_photoreal(tpl) -> bool:
     return any(c in {"真人感", "写实感"} for c in cats)
 
 
+def template_prompt_defaults(tpl) -> dict[str, str]:
+    """Canonical style / character / extra prompts from a template.
+
+    style ← style_prefix；角色/额外 ← seedream_config。
+    """
+    if tpl is None:
+        return {"style_prompt": "", "character_prompt": "", "extra_prompt": ""}
+    cfg = getattr(tpl, "seedream_config", None) or {}
+    if not isinstance(cfg, dict):
+        cfg = {}
+    return {
+        "style_prompt": (getattr(tpl, "style_prefix", None) or "").strip(),
+        "character_prompt": str(cfg.get("character_prompt") or "").strip(),
+        "extra_prompt": str(cfg.get("extra_prompt") or "").strip(),
+    }
+
+
 def seedream_ref_urls(*candidates: str | None) -> list[str]:
     """Normalize refs for Seedream — **public https only**.
 

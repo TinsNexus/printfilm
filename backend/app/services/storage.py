@@ -1,6 +1,9 @@
 """Download / persist generated assets under backend/static/generated.
 
-When OSS is enabled, public URLs point to OSS while FFmpeg still uses local files.
+When OSS is enabled:
+- Default (async): return /static URL immediately and enqueue upload+DB backfill.
+- sync=True: upload inline (template seed, celery unavailable, etc.).
+FFmpeg always reads local files.
 """
 
 from __future__ import annotations
@@ -105,12 +108,18 @@ def rel_static_url(path: Path) -> str:
     return f"/static/{rel.as_posix()}"
 
 
-def publish_local(path: Path) -> str:
-    """Return frontend URL for a local media file.
+def is_local_static_url(url: str | None) -> bool:
+    if not url:
+        return False
+    if url.startswith("/static/"):
+        return True
+    settings = get_settings()
+    prefix = settings.public_base_url.rstrip("/") + "/static/"
+    return url.startswith(prefix)
 
-    Always keeps the file on disk for FFmpeg. When OSS is enabled, uploads and
-    returns the public OSS URL; otherwise returns /static/... relative path.
-    """
+
+def upload_local_sync(path: Path, *, retries: int = 2) -> str:
+    """Upload file to OSS synchronously; raises if OSS disabled or all retries fail."""
     path = Path(path)
     if not path.is_file():
         raise FileNotFoundError(str(path))
@@ -118,8 +127,71 @@ def publish_local(path: Path) -> str:
 
     if not oss_svc.oss_enabled():
         return rel_static_url(path)
+    last_err: Exception | None = None
+    for attempt in range(max(1, retries)):
+        try:
+            return oss_svc.upload_file(path)
+        except Exception as exc:  # noqa: BLE001
+            last_err = exc
+            logger.warning(
+                "OSS upload attempt %s/%s failed for %s: %s",
+                attempt + 1,
+                retries,
+                path,
+                exc,
+            )
+    raise RuntimeError(f"OSS upload failed for {path}: {last_err}")
+
+
+def publish_local(path: Path, *, sync: bool = False, retries: int = 2) -> str:
+    """Publish media for the frontend.
+
+    Default: return /static URL immediately; when OSS+Celery async is on, enqueue
+    upload and DB backfill. Use sync=True for startup seeds or when immediate OSS
+    URL is required.
+    """
+    path = Path(path)
+    if not path.is_file():
+        raise FileNotFoundError(str(path))
+
+    local_url = rel_static_url(path)
+    from app.services import oss as oss_svc
+
+    if not oss_svc.oss_enabled():
+        return local_url
+
+    settings = get_settings()
+    want_async = (
+        not sync
+        and bool(settings.oss_upload_async)
+        and bool(settings.use_celery)
+    )
+    if want_async:
+        try:
+            from app.services.oss_queue import enqueue_oss_upload
+
+            enqueue_oss_upload(local_url)
+            return local_url
+        except Exception:  # noqa: BLE001
+            logger.exception("OSS enqueue failed for %s, falling back to sync upload", path)
+
     try:
-        return oss_svc.upload_file(path)
-    except Exception:  # noqa: BLE001
-        logger.exception("OSS upload failed for %s, falling back to local URL", path)
-        return rel_static_url(path)
+        return upload_local_sync(path, retries=retries)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("OSS sync upload failed for %s, keeping local URL: %s", path, exc)
+        return local_url
+
+
+def republish_url(url: str | None, *, sync: bool = True) -> str | None:
+    """If url is a local /static path and file exists, upload to OSS and return new URL."""
+    if not url or not is_local_static_url(url):
+        return url
+    from app.services import oss as oss_svc
+
+    if not oss_svc.oss_enabled():
+        return url
+    local = local_path_from_url(url)
+    if not local or not local.is_file():
+        logger.warning("cannot republish missing local media: %s", url)
+        return url
+    return publish_local(local, sync=sync)
