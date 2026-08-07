@@ -94,6 +94,11 @@ class ProjectCreate(BaseModel):
     source_text: str = Field(min_length=2, max_length=20000)
     resolution_mode: str = Field(default="preview", pattern="^(preview|hd)$")
     pipeline_mode: str = Field(default="full", pattern="^(full|image_text)$")
+    output_ratio: str | None = Field(
+        default=None,
+        pattern=r"^(16:9|9:16|1:1|4:3|21:9)?$",
+        max_length=16,
+    )
     voice_id: str | None = Field(default=None, max_length=128)
     style_prompt: str | None = Field(default=None, max_length=2000)
     character_prompt: str | None = Field(default=None, max_length=2000)
@@ -107,12 +112,18 @@ class ProjectUpdate(BaseModel):
     source_text: str | None = Field(default=None, min_length=2, max_length=20000)
     template_id: str | None = None
     pipeline_mode: str | None = Field(default=None, pattern="^(full|image_text)$")
+    output_ratio: str | None = Field(
+        default=None,
+        pattern=r"^(16:9|9:16|1:1|4:3|21:9)$",
+        max_length=16,
+    )
     resolution_mode: str | None = Field(default=None, pattern="^(preview|hd)$")
     voice_id: str | None = Field(default=None, max_length=128)
     style_prompt: str | None = Field(default=None, max_length=2000)
     character_prompt: str | None = Field(default=None, max_length=2000)
     extra_prompt: str | None = Field(default=None, max_length=2000)
     ref_image_url: str | None = None
+    cover_url: str | None = Field(default=None, max_length=1024)
 
 
 class ProjectOut(BaseModel):
@@ -128,6 +139,7 @@ class ProjectOut(BaseModel):
     final_video_url: str | None
     resolution_mode: str
     pipeline_mode: str = "full"
+    output_ratio: str = ""
     voice_id: str = ""
     character_bible: str = ""
     style_prompt: str = ""
@@ -151,6 +163,7 @@ class ProjectListItem(BaseModel):
     final_video_url: str | None = None
     error_msg: str | None = None
     pipeline_mode: str = "full"
+    output_ratio: str = ""
     created_at: datetime
     updated_at: datetime | None = None
 
@@ -159,6 +172,25 @@ class ProjectListItem(BaseModel):
 
 class ProjectDownloadRequest(BaseModel):
     ids: list[int] = Field(default_factory=list, min_length=1, max_length=50)
+
+
+class ContentExpandRequest(BaseModel):
+    topic: str = Field(default="", max_length=2000)
+    mode: str = Field(default="theme", pattern="^(theme|script)$")
+
+
+class ContentExpandOut(BaseModel):
+    title: str
+    content: str
+
+
+class VoicePreviewRequest(BaseModel):
+    voice_id: str = Field(min_length=1, max_length=128)
+
+
+class VoicePreviewOut(BaseModel):
+    url: str
+    voice_id: str
 
 
 class WorkOut(BaseModel):

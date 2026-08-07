@@ -22,6 +22,73 @@ from app.services.ffmpeg_compose import is_near_silent_audio
 
 logger = logging.getLogger(__name__)
 
+
+def _fallback_overlay_title(text: str, shot_no: int) -> str:
+    """Last resort when LLM omits title — never blind-slice mid-word (e.g. ERP→ER)."""
+    raw = re.sub(r"\s+", "", (text or "").strip())
+    if not raw:
+        return f"场景{shot_no}"
+    clause = re.split(r"[，。；！？、,:;]", raw, maxsplit=1)[0].strip()
+    if 2 <= len(clause) <= 10 and not _looks_truncated_token(clause, raw):
+        return clause
+    return f"场景{shot_no}"
+
+
+def _fallback_overlay_subtitle(text: str) -> str:
+    raw = (text or "").strip()
+    if not raw:
+        return ""
+    cleaned = re.sub(r"\s+", "", raw)
+    clause = re.split(r"[，。；！？、,:;]", cleaned, maxsplit=1)[0].strip()
+    if 4 <= len(clause) <= 22:
+        return clause
+    if len(clause) > 22:
+        # Prefer a trailing noun-ish chunk over a head that cuts mid-phrase
+        for n in range(18, 7, -1):
+            tail = clause[-n:].lstrip("的与和及")
+            if 6 <= len(tail) <= 18 and not re.match(r"[A-Za-z0-9]", tail[:1] or ""):
+                if not _looks_truncated_token(tail, clause):
+                    return tail
+        head = clause[:18]
+        if re.search(r"[A-Za-z0-9]$", head) and re.match(r"[A-Za-z0-9]", clause[18:19] or ""):
+            m = re.search(r"[A-Za-z0-9]+$", head)
+            if m and m.start() > 6:
+                head = head[: m.start()]
+        return head
+    return cleaned[:22] if len(cleaned) > 22 else cleaned
+
+
+def _looks_truncated_token(title: str, full_text: str) -> bool:
+    """True if title is a prefix of narration that cuts a Latin/数字专有词 mid-way."""
+    t = re.sub(r"\s+", "", (title or "").strip())
+    full = re.sub(r"\s+", "", (full_text or "").strip())
+    if not t or not full.startswith(t):
+        return False
+    if len(full) <= len(t):
+        return False
+    # Truncated mid-ASCII token: title ends with alnum and next char is alnum
+    if re.search(r"[A-Za-z0-9]$", t) and re.match(r"[A-Za-z0-9]", full[len(t)]):
+        return True
+    # Obvious raw prefix grab of long narration
+    if len(t) <= 12 and len(full) > len(t) + 8 and full.startswith(t):
+        return True
+    return False
+
+
+def _normalize_overlay_title(title: str, text: str, shot_no: int) -> str:
+    t = (title or "").strip()
+    if not t or _looks_truncated_token(t, text):
+        return _fallback_overlay_title(text, shot_no)
+    return t[:32]
+
+
+def _normalize_overlay_subtitle(subtitle: str, text: str) -> str:
+    s = (subtitle or "").strip()
+    if not s or _looks_truncated_token(s, text):
+        return _fallback_overlay_subtitle(text)[:64]
+    return s[:64]
+
+
 # Soften brand / IP names that Seedream often rejects as copyright
 _SEEDREAM_SANITIZE: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"(?i)\bspacex\b"), "民营商业航天公司"),
@@ -117,6 +184,8 @@ class ArkGateway:
         pipeline_mode: str = "full",
         character_hint: str = "",
         extra_requirements: str = "",
+        consistency_mode: str = "character",
+        output_ratio: str = "16:9",
     ) -> StoryboardResult:
         if self.mock:
             return await asyncio.to_thread(
@@ -137,49 +206,102 @@ class ArkGateway:
         if (extra_requirements or "").strip():
             user_constraints += f"用户其他画面要求：{(extra_requirements or '').strip()}。"
 
-        consistency = (
-            "必须输出严格 JSON 对象（不要数组、不要 markdown、不要代码围栏）："
-            '{"character_bible":"...","shots":[...]}。'
-            "character_bible：80-160字，固定描述本片反复出现的人物/主体外形"
-            "（年龄感、发型发色、五官气质、体型、服装配色与辨识物），全片唯一设定，禁止每镜改人设。"
-            f"画风要求（全片强制统一）：{style_prefix}。"
-            f"{user_constraints}"
-            "禁止镜头间混用写实摄影/真人脸与插画或动漫；禁止换脸换装换发型。"
-            "每镜 img_prompt 只写本镜场景与构图（景物、动作、光影），不要重复粘贴大段画风/人物锁定原文；"
-            "出现人物时用短句点出与 character_bible 一致的关键特征即可。"
-        )
+        mode = (consistency_mode or "character").strip().lower()
+        if mode not in {"character", "style", "diverse"}:
+            mode = "character"
+
+        if mode == "diverse":
+            consistency = (
+                "必须输出严格 JSON 对象（不要数组、不要 markdown、不要代码围栏）："
+                '{"character_bible":"...","shots":[...]}。'
+                "character_bible：填「无固定人物，各镜为独立系统/场景界面」。"
+                f"视觉气质仅作底线参考（不要被其颜色绑架）：{style_prefix}。"
+                f"{user_constraints}"
+                "【动态规划】先分析用户内容的领域、产品形态与使用场景，再决定色板与界面类型，"
+                "再拆镜；每镜对应不同操作或能力（总览、接入、工作台、流程、结果、部署、生态等）。"
+                "配色与材质必须贴合内容（浅色SaaS、文档站、深色IDE、终端、架构图、白板均可），"
+                "禁止默认霓虹蓝/赛博大屏/蓝紫渐变HUD，禁止各镜画面雷同，禁止待办任务清单，"
+                "禁止同一仪表盘复制粘贴换字。"
+                "每镜 img_prompt 必须写清该镜独特的界面类型、布局分区、主色与信息层级，不要粘贴人物锁定。"
+            )
+        elif mode == "style":
+            consistency = (
+                "必须输出严格 JSON 对象（不要数组、不要 markdown、不要代码围栏）："
+                '{"character_bible":"...","shots":[...]}。'
+                "character_bible：可简写「无固定主角」或留空说明；不要强行统一人物外形。"
+                f"画风气质统一：{style_prefix}。"
+                f"{user_constraints}"
+                "各镜场景与构图应随内容变化，只需保持同类画风，禁止镜头间画面几乎一样。"
+                "每镜 img_prompt 只写本镜场景与构图。"
+            )
+        else:
+            consistency = (
+                "必须输出严格 JSON 对象（不要数组、不要 markdown、不要代码围栏）："
+                '{"character_bible":"...","shots":[...]}。'
+                "character_bible：80-160字，固定描述本片反复出现的人物/主体外形"
+                "（年龄感、发型发色、五官气质、体型、服装配色与辨识物），全片唯一设定，禁止每镜改人设。"
+                f"画风要求（全片强制统一）：{style_prefix}。"
+                f"{user_constraints}"
+                "禁止镜头间混用写实摄影/真人脸与插画或动漫；禁止换脸换装换发型。"
+                "每镜 img_prompt 只写本镜场景与构图（景物、动作、光影），不要重复粘贴大段画风/人物锁定原文；"
+                "出现人物时用短句点出与 character_bible 一致的关键特征即可。"
+            )
         if pipeline_mode == "image_text":
+            diversity_note = (
+                "拆成 5-10 个分镜，每镜一个独立视觉场景；"
+                + (
+                    "画风气质可统一，但界面/场景构图必须明显不同。"
+                    if mode != "character"
+                    else "但画风与人物必须一致。"
+                )
+            )
+            ratio = (output_ratio or "16:9").strip() or "16:9"
+            orient = "竖屏" if ratio == "9:16" else ("方形" if ratio == "1:1" else "横屏")
             system = (
-                "你是竖屏图文短视频编剧。所有字段必须使用简体中文。"
+                f"你是{orient}图文短视频编剧。所有字段必须使用简体中文。"
                 f"{consistency}{llm_system_addon}"
                 f"每镜 duration 在 {duration_min}-{min(duration_max, max_shot_duration)} 秒。"
                 "这是「静图+叠字+配音」模式：不生成 AI 视频，但需要旁白配音；"
                 "画面禁止出现任何文字/水印/字幕。"
                 "shots 字段说明："
-                "shot(序号)、duration(秒)、title(画面顶部大标题，2-8字，有力)、"
-                "subtitle(画面顶部副标题叠字，8-22字，可诗意)、"
+                "shot(序号)、duration(秒)、"
+                "title(对本镜内容的概括短标题，2-8字，语义完整有力；"
+                "必须是总结提炼，禁止从 text 截取前几个字，禁止截断专有名词如 ERP→ER)、"
+                "subtitle(对本镜卖点/要点的一句概括，8-22字，同样禁止原文截取前缀)、"
                 "text(旁白台词，口语化，约匹配该镜时长，可供 TTS 朗读，一般 20-60 字)、"
-                "img_prompt(竖屏构图画面提示词，留出顶部约1/4给文字叠层，主体偏中下，"
-                "含统一画风与人物锁定，禁止要求画面内写字；"
-                "禁止出现真实商标/公司名/人名，用泛称)、"
+                f"img_prompt({orient} {ratio} 构图画面提示词，留出边缘给文字叠层，主体居中，"
+                "禁止要求画面内写字；禁止出现真实商标/公司名/人名，用泛称)、"
                 "video_prompt(可留空或写轻微推拉)、camera(如：缓慢推近/轻拉远)、bgm(情绪)。"
-                "拆成 5-10 个分镜，每镜一个独立视觉场景，但画风与人物必须一致。"
+                f"{diversity_note}"
             )
         else:
+            diversity_note = (
+                "拆成 4-10 个分镜；各镜场景随内容变化，禁止雷同空镜。"
+                if mode != "character"
+                else "画风与人物必须全片一致。"
+            )
             system = (
                 "你是短视频分镜编剧。所有字段必须使用简体中文"
-                "（包括 text、img_prompt、video_prompt、camera、bgm）。"
+                "（包括 title、text、img_prompt、video_prompt、camera、bgm）。"
                 f"{consistency}{llm_system_addon}"
                 f"每镜 duration 在 {duration_min}-{min(duration_max, max_shot_duration)} 秒。"
                 "shots 字段说明："
-                "shot(序号)、duration(秒)、text(旁白台词)、"
-                "img_prompt(画面生成中文提示词，含统一画风与人物锁定与具体景物；"
+                "shot(序号)、duration(秒)、"
+                "title(对本镜旁白的概括短标题，2-8字，语义完整；"
+                "必须是总结提炼，禁止从 text 截取前缀，禁止截断专有名词如 ERP→ER)、"
+                "subtitle(可选，一句要点概括 8-22字)、"
+                "text(旁白台词)、"
+                "img_prompt(画面生成中文提示词，含具体景物与构图；"
                 "禁止真实商标/公司名/人名，改用泛称)、"
                 "video_prompt(镜头运动与动态的中文提示词)、"
                 "camera(运镜，如：缓慢上摇/轻推/横移)、bgm(情绪，如：紧张平缓)。"
                 "img_prompt 与 video_prompt 禁止英文句子，专有名词可保留原文。"
+                f"{diversity_note}"
             )
-        user = f"输入类型：{source_type}。内容如下，请拆成 4-10 个分镜：\n{source_text}"
+        user = (
+            f"输入类型：{source_type}。请先理解内容与应用场景，再拆成 4-10 个分镜：\n"
+            f"{source_text}"
+        )
         payload = {
             "model": self.settings.model_llm,
             "messages": [
@@ -211,7 +333,10 @@ class ArkGateway:
     ) -> ImageResult:
         if self.mock:
             local = await asyncio.to_thread(self._write_mock_image, prompt, size)
-            return ImageResult(local_url=local, remote_url=None)
+            # _write_mock_image returns /static/...; publish to OSS when enabled
+            path = storage.local_path_from_url(local)
+            url = storage.publish_local(path) if path and path.exists() else local
+            return ImageResult(local_url=url, remote_url=None)
 
         candidates = [
             self._sanitize_seedream_prompt(prompt),
@@ -293,7 +418,7 @@ class ArkGateway:
         name = f"shot_{(shot_no or 0):03d}_{hashlib.md5(prompt_hash_src.encode()).hexdigest()[:8]}.png"
         dest = dest_dir / name
         await storage.download_to(remote, dest)
-        return ImageResult(local_url=storage.rel_static_url(dest), remote_url=remote)
+        return ImageResult(local_url=storage.publish_local(dest), remote_url=remote)
 
     @staticmethod
     def _sanitize_seedream_prompt(prompt: str) -> str:
@@ -480,7 +605,7 @@ class ArkGateway:
             return result.url
         dest = storage.project_dir(project_id) / f"shot_{shot_no:03d}.mp4"
         await storage.download_to(result.url, dest)
-        return storage.rel_static_url(dest)
+        return storage.publish_local(dest)
 
     async def gen_and_wait_video(
         self,
@@ -575,7 +700,7 @@ class ArkGateway:
             if await asyncio.to_thread(is_near_silent_audio, dest):
                 logger.warning("%s produced near-silence shot=%s", label, shot_no)
                 return None
-            return storage.rel_static_url(dest)
+            return storage.publish_local(dest)
 
         # 1) 豆包 openspeech（需 APP ID + Access Key）
         if self.settings.volc_tts_app_id and self.settings.volc_tts_access_key:
@@ -623,7 +748,7 @@ class ArkGateway:
         # 最后才静音（保证合成不中断）
         logger.error("TTS all providers failed; writing silence shot=%s", shot_no)
         await asyncio.to_thread(self._write_silence_mp3, dest, duration_hint)
-        return storage.rel_static_url(dest)
+        return storage.publish_local(dest)
 
     def _tts_resource_id(self, speaker: str) -> str:
         if speaker.startswith("S_"):
@@ -824,18 +949,19 @@ class ArkGateway:
         )
         plans: list[ShotPlan] = []
         for i, text in enumerate(chunks, start=1):
-            title = text[:6].replace("：", "").replace(":", "")
-            subtitle = text[:22]
-            if pipeline_mode == "image_text":
-                title = re.sub(r"^(引入主题|核心概念解释|一个关键例子说明)", "", text)[:8] or f"场景{i}"
-                subtitle = text[:22]
+            # Mock: invent short summary titles, do not slice narration mid-token
+            topic_bit = re.sub(r"^(引入主题|核心概念解释|一个关键例子说明)[：:]?", "", text).strip()
+            title = f"要点{i}" if len(topic_bit) > 10 else (topic_bit[:8] or f"场景{i}")
+            if "：" in text or ":" in text:
+                title = text.split("：", 1)[0].split(":", 1)[0][-6:] or title
+            subtitle = _fallback_overlay_subtitle(text)
             plans.append(
                 ShotPlan(
                     shot=i,
                     duration=float(mid),
                     text=text[:120],
-                    overlay_title=title[:16],
-                    overlay_subtitle=subtitle[:48],
+                    overlay_title=_normalize_overlay_title(title, text, i),
+                    overlay_subtitle=_normalize_overlay_subtitle(subtitle, text),
                     img_prompt=f"{style_prefix}，{bible}，画面表现：{text[:80]}，竖屏构图，顶部留白，画面无文字",
                     video_prompt=f"轻微动态，{style_prefix}，场景：{text[:60]}",
                     camera="缓慢推近" if i % 2 else "轻拉远",
@@ -875,10 +1001,8 @@ class ArkGateway:
             text = str(item.get("text") or item.get("audio_text") or f"镜头{i}")
             title = str(item.get("title") or item.get("overlay_title") or "").strip()
             subtitle = str(item.get("subtitle") or item.get("overlay_subtitle") or "").strip()
-            if not title:
-                title = text[:8]
-            if not subtitle:
-                subtitle = text[:22]
+            title = _normalize_overlay_title(title, text, i)
+            subtitle = _normalize_overlay_subtitle(subtitle, text)
             img = str(item.get("img_prompt") or f"{text}")
             # Keep raw scene text; style/character applied later at image gen
             video = str(item.get("video_prompt") or f"轻微动态，{text}")
@@ -887,8 +1011,8 @@ class ArkGateway:
                     shot=int(item.get("shot", i)),
                     duration=dur,
                     text=text,
-                    overlay_title=title[:32],
-                    overlay_subtitle=subtitle[:64],
+                    overlay_title=title,
+                    overlay_subtitle=subtitle,
                     img_prompt=img,
                     video_prompt=video,
                     camera=str(item.get("camera", "缓慢横移")),
@@ -896,6 +1020,91 @@ class ArkGateway:
                 )
             )
         return StoryboardResult(shots=plans, character_bible=character_bible)
+
+    async def expand_content(self, topic: str, mode: str = "theme") -> dict[str, str]:
+        """Expand a short topic into title + theme brief or full narration script."""
+        topic = (topic or "").strip() or "人工智能如何改变日常生活"
+        mode = "script" if mode == "script" else "theme"
+        if self.mock:
+            return self._mock_expand_content(topic, mode)
+
+        if mode == "script":
+            system = (
+                "你是科普短视频文案作者。根据用户主题写一篇可直接用于旁白的完整口播文案。"
+                "只输出严格 JSON：{\"title\":\"作品名\",\"content\":\"完整文案\"}。"
+                "title：8-18 字，吸引人、无标点堆砌。"
+                "content：300-700 字，口语化，分 4-8 个自然段，有开场钩子、知识点、收尾；"
+                "不要 markdown、不要分镜编号、不要标题行。"
+            )
+        else:
+            system = (
+                "你是科普短视频选题策划。把用户输入扩写成一句清晰具体的创作主题。"
+                "只输出严格 JSON：{\"title\":\"作品名\",\"content\":\"主题句\"}。"
+                "title：8-18 字。"
+                "content：一句话主题，40-90 字，写清受众与要讲清的核心知识点；不要换行。"
+            )
+        payload = {
+            "model": self.settings.model_llm,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": f"主题/素材：{topic}"},
+            ],
+        }
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            resp = await client.post(
+                self._url("/chat/completions"),
+                headers=self._headers(),
+                json=payload,
+            )
+            if resp.status_code >= 400:
+                raise RuntimeError(f"LLM error {resp.status_code}: {resp.text[:800]}")
+            data = resp.json()
+        raw = data["choices"][0]["message"]["content"] or "{}"
+        return self._parse_expand_content(raw, topic, mode)
+
+    def _mock_expand_content(self, topic: str, mode: str) -> dict[str, str]:
+        short = topic[:18].rstrip("？?。.!！") or "科普短片"
+        title = short if len(short) >= 4 else f"{short}的科普"
+        if mode == "script":
+            content = (
+                f"你有没有想过：{topic.rstrip('？?')}？\n\n"
+                f"今天我们用三分钟，把这件事讲清楚。"
+                f"先从生活里最常见的现象说起，再拆开背后的原理，最后给你一个好记的结论。\n\n"
+                f"很多人第一反应会想当然，但真正关键在于因果链条，而不是表象。"
+                f"弄懂这一点，你就能解释身边更多类似的问题。\n\n"
+                f"记住：观察现象、追问机制、再用例子验证。"
+                f"下一次再遇到{short}相关话题，你也能自信地讲给别人听。"
+            )
+        else:
+            content = (
+                f"{topic.rstrip('？?')}：面向普通观众，用生活例子讲清核心原理与常见误区。"
+            )[:100]
+        return {"title": title[:24], "content": content}
+
+    def _parse_expand_content(self, raw: str, topic: str, mode: str) -> dict[str, str]:
+        text = (raw or "").strip()
+        if text.startswith("```"):
+            text = re.sub(r"^```(?:json)?\s*", "", text)
+            text = re.sub(r"\s*```$", "", text)
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            m = re.search(r"\{[\s\S]*\}", text)
+            if not m:
+                return self._mock_expand_content(topic, mode)
+            try:
+                data = json.loads(m.group(0))
+            except json.JSONDecodeError:
+                return self._mock_expand_content(topic, mode)
+        title = str(data.get("title") or "").strip() or topic[:18]
+        content = str(data.get("content") or "").strip()
+        if not content:
+            return self._mock_expand_content(topic, mode)
+        if mode == "theme":
+            content = content.replace("\n", " ").strip()[:100]
+        else:
+            content = content[:8000]
+        return {"title": title[:24], "content": content}
 
 
 _gateway: ArkGateway | None = None

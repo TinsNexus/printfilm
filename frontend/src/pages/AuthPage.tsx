@@ -23,7 +23,7 @@ export default function AuthPage() {
           ? await api.login(email, password)
           : await api.register(email, password, nickname)
       localStorage.setItem('token', res.access_token)
-      nav('/')
+      nav('/studio/new')
     } catch (err) {
       setError(err instanceof Error ? err.message : '失败')
     } finally {

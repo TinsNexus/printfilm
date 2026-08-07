@@ -1,43 +1,42 @@
+# 独立中间件：仅 Postgres + Redis（与 /opt/kepu 无关）
+# 默认端口避开 kepu 的 5432/6379
+# 启动: docker compose -f deploy/docker-compose.yml --env-file deploy/.env.prod up -d
+name: ai-movie-infra
+
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ai-movie-pg
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-15432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-printfilm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env.prod}
+      POSTGRES_DB: ${POSTGRES_DB:-printfilm}
+    volumes:
+      - ai_movie_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-printfilm} -d ${POSTGRES_DB:-printfilm}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   redis:
     image: redis:7-alpine
+    container_name: ai-movie-redis
+    restart: unless-stopped
     ports:
-      - "6379:6379"
-
-  api:
-    build: ./backend
-    ports:
-      - "8000:8000"
-    env_file:
-      - ../backend/.env
-    environment:
-      REDIS_URL: redis://redis:6379/0
-      PUBLIC_BASE_URL: http://127.0.0.1:8000
-      DATABASE_URL: sqlite+aiosqlite:///./data/ai_movie.db
-      DATABASE_URL_SYNC: sqlite:///./data/ai_movie.db
+      - "127.0.0.1:${REDIS_PORT:-16379}:6379"
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
     volumes:
-      - ../backend:/app
-      - api-data:/app/data
-    depends_on:
-      - redis
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-
-  worker:
-    build: ./backend
-    env_file:
-      - ../backend/.env
-    environment:
-      REDIS_URL: redis://redis:6379/0
-      DATABASE_URL: sqlite+aiosqlite:///./data/ai_movie.db
-      DATABASE_URL_SYNC: sqlite:///./data/ai_movie.db
-      PUBLIC_BASE_URL: http://127.0.0.1:8000
-    volumes:
-      - ../backend:/app
-      - api-data:/app/data
-    depends_on:
-      - redis
-      - api
-    command: celery -A app.workers.celery_app.celery_app worker -Q pipeline -l info --concurrency=2
+      - ai_movie_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
 volumes:
-  api-data:
+  ai_movie_pgdata:
+  ai_movie_redisdata:

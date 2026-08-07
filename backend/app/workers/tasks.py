@@ -11,7 +11,22 @@ logger = logging.getLogger(__name__)
 
 
 def _run(coro):
-    return asyncio.run(coro)
+    """Drive an async coroutine in a fresh event loop, disposing DB pool after.
+
+    Prevents 'Future attached to a different loop' when Celery reuses the
+    process across multiple asyncio.run() invocations.
+    """
+
+    async def _wrapped():
+        from app.database import dispose_engine
+
+        await dispose_engine()
+        try:
+            return await coro
+        finally:
+            await dispose_engine()
+
+    return asyncio.run(_wrapped())
 
 
 @celery_app.task(

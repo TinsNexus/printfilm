@@ -5,7 +5,9 @@ import re
 import zipfile
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +18,8 @@ from app.database import get_db
 from app.deps import get_current_user
 from app.models import Project, ProjectStatus, Shot, User, Work
 from app.schemas import (
+    ContentExpandOut,
+    ContentExpandRequest,
     ProjectCreate,
     ProjectDownloadRequest,
     ProjectListItem,
@@ -23,11 +27,14 @@ from app.schemas import (
     ProjectUpdate,
     ShotOut,
     ShotUpdate,
+    VoicePreviewOut,
+    VoicePreviewRequest,
     WorkOut,
 )
 from app.services import pipeline, storage
+from app.services.ark import get_ark
 from app.services.progress import redis_bridge, subscribe, unsubscribe
-from app.services.voices import list_voices
+from app.services.voices import ensure_voice_preview, list_voices
 
 router = APIRouter(tags=["projects"])
 
@@ -35,6 +42,34 @@ router = APIRouter(tags=["projects"])
 @router.get("/voices")
 async def get_voices() -> list[dict]:
     return list_voices()
+
+
+@router.post("/voices/preview", response_model=VoicePreviewOut)
+async def preview_voice(
+    body: VoicePreviewRequest,
+    user: User = Depends(get_current_user),
+) -> VoicePreviewOut:
+    """Generate a short cached TTS sample for audition."""
+    _ = user
+    try:
+        url = await ensure_voice_preview(body.voice_id)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"试听生成失败：{exc}") from exc
+    return VoicePreviewOut(url=url, voice_id=body.voice_id)
+
+
+@router.post("/content/expand", response_model=ContentExpandOut)
+async def expand_content(
+    body: ContentExpandRequest,
+    user: User = Depends(get_current_user),
+) -> ContentExpandOut:
+    """AI-expand a short topic into a project title + theme brief or full script."""
+    _ = user
+    try:
+        result = await get_ark().expand_content(body.topic, body.mode)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"AI 生成失败：{exc}") from exc
+    return ContentExpandOut(title=result["title"], content=result["content"])
 
 
 async def _get_owned_project(db: AsyncSession, project_id: int, user: User) -> Project:
@@ -68,6 +103,7 @@ async def create_project(
         source_text=body.source_text,
         resolution_mode=body.resolution_mode,
         pipeline_mode=body.pipeline_mode,
+        output_ratio=(body.output_ratio or "").strip(),
         voice_id=(body.voice_id or "").strip(),
         style_prompt=(body.style_prompt or "").strip(),
         character_prompt=(body.character_prompt or "").strip(),
@@ -132,6 +168,12 @@ async def download_projects_zip(
             skipped.append(f"#{pid}")
             continue
         path = storage.local_path_from_url(p.final_video_url)
+        try:
+            if (not path or not path.exists()) and str(p.final_video_url).startswith("http"):
+                dest = storage.project_dir(p.id) / "final.mp4"
+                path = await storage.ensure_local_media(p.final_video_url, dest)
+        except Exception:  # noqa: BLE001
+            path = None
         if not path or not path.exists():
             skipped.append(f"#{pid}")
             continue
@@ -201,8 +243,61 @@ async def update_project(
         tpl = await db.get(Template, data["template_id"])
         if not tpl or not tpl.is_active:
             raise HTTPException(status_code=400, detail="无效模板")
+    if "cover_url" in data and data["cover_url"]:
+        url = str(data["cover_url"]).strip()
+        if not (url.startswith("/static/") or url.startswith("http://") or url.startswith("https://")):
+            raise HTTPException(status_code=400, detail="无效封面地址")
     for k, v in data.items():
         setattr(project, k, v)
+    await db.commit()
+    return await _get_owned_project(db, project_id, user)
+
+
+@router.post("/projects/{project_id}/cover", response_model=ProjectOut)
+async def upload_project_cover(
+    project_id: int,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Project:
+    """Upload a custom cover image for the project."""
+    project = await _get_owned_project(db, project_id, user)
+    if project.status in {
+        ProjectStatus.SCRIPTING,
+        ProjectStatus.IMAGING,
+        ProjectStatus.VIDEOING,
+        ProjectStatus.AUDIOING,
+        ProjectStatus.COMPOSING,
+        ProjectStatus.AUDITING,
+    }:
+        raise HTTPException(status_code=409, detail="生成进行中，无法更换封面")
+
+    content_type = (file.content_type or "").lower()
+    allowed = {
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+        "image/gif": ".gif",
+    }
+    ext = allowed.get(content_type)
+    if not ext:
+        # Fallback from filename
+        suffix = Path(file.filename or "").suffix.lower()
+        if suffix in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+            ext = ".jpg" if suffix == ".jpeg" else suffix
+        else:
+            raise HTTPException(status_code=400, detail="仅支持 JPG / PNG / WebP / GIF")
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="空文件")
+    if len(raw) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="封面不能超过 8MB")
+
+    dest = storage.project_dir(project_id) / f"cover{ext}"
+    dest.write_bytes(raw)
+    project.cover_url = storage.publish_local(dest)
     await db.commit()
     return await _get_owned_project(db, project_id, user)
 
@@ -210,9 +305,16 @@ async def update_project(
 @router.post("/projects/{project_id}/generate", response_model=ProjectOut)
 async def generate_project(
     project_id: int,
+    restart: bool = False,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Project:
+    """Start or resume the pipeline.
+
+    - First run / restart: script stage only, then pauses at SCRIPT_READY for review.
+    - Continue from SCRIPT_READY+: skip script, run assets → videos → compose.
+    - restart=true: wipe shots/media and regenerate storyboard from scratch.
+    """
     project = await _get_owned_project(db, project_id, user)
     if project.status in {
         ProjectStatus.SCRIPTING,
@@ -224,11 +326,18 @@ async def generate_project(
     }:
         raise HTTPException(status_code=409, detail="生成进行中，请稍后")
 
+    if restart:
+        for shot in list(project.shots):
+            await db.delete(shot)
+        await db.flush()
+        await pipeline.delete_project_assets(project_id)
+        project.cover_url = None
+
     # Resume: clear error, keep existing shots/media (pipeline skips finished stages)
     project.error_msg = None
     project.final_video_url = None
     project.status = ProjectStatus.SCRIPTING
-    if project.progress <= 0:
+    if project.progress <= 0 or restart:
         project.progress = 1
     await db.commit()
     task_id = pipeline.start_pipeline(project_id)
@@ -251,9 +360,7 @@ async def cancel_project(
     running = {
         ProjectStatus.SCRIPTING,
         ProjectStatus.IMAGING,
-        ProjectStatus.IMAGE_READY,
         ProjectStatus.VIDEOING,
-        ProjectStatus.VIDEO_READY,
         ProjectStatus.AUDIOING,
         ProjectStatus.COMPOSING,
         ProjectStatus.AUDITING,
@@ -278,9 +385,7 @@ async def delete_project(
     running = {
         ProjectStatus.SCRIPTING,
         ProjectStatus.IMAGING,
-        ProjectStatus.IMAGE_READY,
         ProjectStatus.VIDEOING,
-        ProjectStatus.VIDEO_READY,
         ProjectStatus.AUDIOING,
         ProjectStatus.COMPOSING,
         ProjectStatus.AUDITING,

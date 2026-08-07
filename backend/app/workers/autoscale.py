@@ -232,7 +232,16 @@ class CeleryAutoscaler:
             reclaim_unacked(self.settings.redis_url)
             import asyncio
 
-            asyncio.run(redispatch_stale_projects(older_than_sec=120))
+            from app.database import dispose_engine
+
+            async def _boot_recover() -> None:
+                await dispose_engine()
+                try:
+                    await redispatch_stale_projects(older_than_sec=120)
+                finally:
+                    await dispose_engine()
+
+            asyncio.run(_boot_recover())
         except Exception:  # noqa: BLE001
             logger.exception("startup recover failed")
 
@@ -253,7 +262,16 @@ class CeleryAutoscaler:
                     from app.workers.recover import redispatch_stale_projects
                     import asyncio
 
-                    asyncio.run(redispatch_stale_projects())
+                    from app.database import dispose_engine
+
+                    async def _periodic_recover() -> None:
+                        await dispose_engine()
+                        try:
+                            await redispatch_stale_projects()
+                        finally:
+                            await dispose_engine()
+
+                    asyncio.run(_periodic_recover())
             except redis.RedisError as exc:
                 logger.error("redis error: %s", exc)
             except Exception:  # noqa: BLE001

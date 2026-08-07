@@ -7,7 +7,10 @@ function defaultApiBase() {
   return 'http://127.0.0.1:8000'
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE || defaultApiBase()
+// Empty string = same-origin (nginx proxies /api). Undefined = LAN default :8000.
+const _viteApiBase = import.meta.env.VITE_API_BASE
+const API_BASE =
+  _viteApiBase === undefined || _viteApiBase === null ? defaultApiBase() : String(_viteApiBase)
 
 function authHeaders(): HeadersInit {
   const token = localStorage.getItem('token')
@@ -54,9 +57,9 @@ export type Template = {
   seedream_config?: {
     ref_images?: string[]
     strength?: number
-    pipeline_mode?: PipelineMode
     character_prompt?: string
     extra_prompt?: string
+    consistency_mode?: 'character' | 'style' | 'diverse'
   }
   audio_config?: {
     voice_preset?: string
@@ -79,20 +82,19 @@ export function defaultsFromTemplate(t: Template): {
   character_prompt: string
   extra_prompt: string
   voice_id: string
-  pipeline_mode: PipelineMode
+  output_ratio: string
 } {
   const cfg = t.seedream_config || {}
   const preset = t.audio_config?.voice_preset || ''
   const voice_id =
     VOICE_PRESET_ALIASES[preset] ||
     (preset.startsWith('zh_') ? preset : 'zh_female_cancan_uranus_bigtts')
-  const mode = (cfg.pipeline_mode as PipelineMode) || (t.default_ratio === '9:16' ? 'image_text' : 'full')
   return {
     style_prompt: (t.style_prefix || '').trim(),
     character_prompt: (cfg.character_prompt || '').trim(),
     extra_prompt: (cfg.extra_prompt || '').trim(),
     voice_id,
-    pipeline_mode: mode === 'image_text' ? 'image_text' : 'full',
+    output_ratio: t.default_ratio || '16:9',
   }
 }
 
@@ -134,6 +136,7 @@ export type Project = {
   final_video_url: string | null
   resolution_mode: string
   pipeline_mode?: PipelineMode
+  output_ratio?: string
   voice_id?: string
   character_bible?: string
   style_prompt?: string
@@ -196,6 +199,7 @@ export const api = {
     source_text: string
     resolution_mode?: 'preview' | 'hd'
     pipeline_mode?: PipelineMode
+    output_ratio?: string
     voice_id?: string
     style_prompt?: string
     character_prompt?: string
@@ -211,11 +215,13 @@ export const api = {
       source_text?: string
       template_id?: string
       pipeline_mode?: PipelineMode
+      output_ratio?: string
       resolution_mode?: 'preview' | 'hd'
       voice_id?: string
       style_prompt?: string
       character_prompt?: string
       extra_prompt?: string
+      cover_url?: string | null
     },
   ) {
     return request<Project>(`/api/projects/${id}`, {
@@ -223,8 +229,36 @@ export const api = {
       body: JSON.stringify(body),
     })
   },
+  async uploadCover(id: number, file: File) {
+    const token = localStorage.getItem('token')
+    const form = new FormData()
+    form.append('file', file)
+    const res = await fetch(`${API_BASE}/api/projects/${id}/cover`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }))
+      const detail = err.detail
+      const message =
+        typeof detail === 'string'
+          ? detail
+          : Array.isArray(detail)
+            ? detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join('; ')
+            : res.statusText
+      throw new Error(message || '封面上传失败')
+    }
+    return res.json() as Promise<Project>
+  },
   voices() {
     return request<VoicePreset[]>('/api/voices')
+  },
+  previewVoice(voiceId: string) {
+    return request<{ url: string; voice_id: string }>('/api/voices/preview', {
+      method: 'POST',
+      body: JSON.stringify({ voice_id: voiceId }),
+    })
   },
   listProjects() {
     return request<
@@ -238,6 +272,7 @@ export const api = {
         final_video_url?: string | null
         error_msg?: string | null
         pipeline_mode?: PipelineMode
+        output_ratio?: string
         created_at: string
         updated_at?: string
       }>
@@ -269,8 +304,9 @@ export const api = {
   getProject(id: number) {
     return request<Project>(`/api/projects/${id}`)
   },
-  generate(id: number) {
-    return request<Project>(`/api/projects/${id}/generate`, { method: 'POST' })
+  generate(id: number, opts?: { restart?: boolean }) {
+    const q = opts?.restart ? '?restart=true' : ''
+    return request<Project>(`/api/projects/${id}/generate${q}`, { method: 'POST' })
   },
   cancelProject(id: number) {
     return request<Project>(`/api/projects/${id}/cancel`, { method: 'POST' })
@@ -304,6 +340,12 @@ export const api = {
   },
   compose(projectId: number) {
     return request<Project>(`/api/projects/${projectId}/compose`, { method: 'POST' })
+  },
+  expandContent(topic: string, mode: 'theme' | 'script' = 'theme') {
+    return request<{ title: string; content: string }>('/api/content/expand', {
+      method: 'POST',
+      body: JSON.stringify({ topic, mode }),
+    })
   },
   publish(projectId: number) {
     return request<Work>(`/api/projects/${projectId}/publish`, { method: 'POST' })

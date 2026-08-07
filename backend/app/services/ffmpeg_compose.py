@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -14,12 +15,19 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+# Punctuation removed from on-screen captions (TTS narration keeps original)
+_CAPTION_PUNCT_RE = re.compile(
+    r"[，。！？；：、,.!?;:…··〜～「」『』【】（）\(\)\[\]\"'“”‘’《》〈〉"
+    r"—_\-/\\|@#$%^&*+=<>{}]+"
+)
+
 # Output sizes keyed by aspect ratio
 _RATIO_SIZE = {
     "16:9": (854, 480),
     "9:16": (720, 1280),
     "1:1": (720, 720),
     "4:3": (640, 480),
+    "21:9": (1280, 540),
 }
 
 
@@ -42,6 +50,11 @@ class ComposeOptions:
     resolution_mode: str = "preview"  # preview | hd
     # One continuous TTS track for the whole film (preferred over per-shot audio)
     full_audio_path: Path | None = None
+    # Overlay / caption sizing & layout (from template.subtitle_config)
+    subtitle_layout: str = "top"  # top | split (title top, subtitle bottom)
+    title_scale: float = 1.35
+    sub_scale: float = 1.3
+    caption_scale: float = 1.25
 
 
 def allocate_durations_by_narration(
@@ -184,6 +197,12 @@ def _escape_drawtext(text: str) -> str:
     return t
 
 
+def _strip_caption_punct(text: str) -> str:
+    """Remove punctuation/symbols from on-screen subtitle text."""
+    t = _CAPTION_PUNCT_RE.sub("", text or "")
+    return re.sub(r"\s+", " ", t).strip()
+
+
 def _escape_fontfile(path: str) -> str:
     # Windows paths need escaping for filtergraph: C\:/Windows/Fonts/msyh.ttc
     p = Path(path).resolve().as_posix()
@@ -191,13 +210,13 @@ def _escape_fontfile(path: str) -> str:
 
 
 def _one_line_caption(text: str, *, max_chars: int = 22) -> str:
-    """Single-line bottom caption; truncate with ellipsis if too long."""
-    raw = (text or "").replace("\n", " ").replace("\r", " ").strip()
+    """Single-line bottom caption; truncate if too long (no ellipsis punctuation)."""
+    raw = _strip_caption_punct((text or "").replace("\n", " ").replace("\r", " "))
     if not raw:
         return ""
     if len(raw) <= max_chars:
         return raw
-    return raw[: max_chars - 1] + "…"
+    return raw[:max_chars]
 
 
 def _split_caption_chunks(text: str, *, max_chars: int = 18) -> list[str]:
@@ -212,20 +231,23 @@ def _split_caption_chunks(text: str, *, max_chars: int = 18) -> list[str]:
     for ch in raw:
         buf += ch
         if ch in "，。！？；、,.!?;:":
-            piece = buf.strip()
+            piece = _strip_caption_punct(buf)
             if piece:
                 pieces.append(piece)
             buf = ""
     if buf.strip():
-        pieces.append(buf.strip())
+        piece = _strip_caption_punct(buf)
+        if piece:
+            pieces.append(piece)
     if not pieces:
-        pieces = [raw]
+        pieces = [_strip_caption_punct(raw)]
+        if not pieces[0]:
+            return []
 
     # Further split long pieces so each cue stays one readable line
     chunks: list[str] = []
     for piece in pieces:
-        # Drop trailing punctuation-only crumbs
-        body = piece.strip()
+        body = _strip_caption_punct(piece)
         if not body:
             continue
         if len(body) <= max_chars:
@@ -247,7 +269,8 @@ def _split_caption_chunks(text: str, *, max_chars: int = 18) -> list[str]:
             merged[-1] = merged[-1] + c
         else:
             merged.append(c)
-    return merged or [raw[:max_chars]]
+    clean = [_strip_caption_punct(c) for c in merged if _strip_caption_punct(c)]
+    return clean or [_strip_caption_punct(raw)[:max_chars]]
 
 
 def _timed_caption_windows(
@@ -305,7 +328,7 @@ def _write_ass(
 ) -> None:
     """Write ASS with PlayRes matching canvas; captions refresh by clause over time."""
     portrait = (h / max(w, 1)) > 1.2
-    font_size = 30 if portrait else 26
+    font_size = 36 if portrait else 30
     margin_v = 56 if portrait else 40
     max_chars = 16 if portrait else 24
     font_name = "Microsoft YaHei"
@@ -456,12 +479,14 @@ def _bottom_caption_drawtext(
     w: int,
     h: int,
     font: str | None,
+    scale: float = 1.25,
 ) -> str:
     """Pixel-sized bottom captions via drawtext (avoids libass PlayRes blow-up)."""
     portrait = (h / max(w, 1)) > 1.2
-    max_chars = 16 if portrait else 24
-    font_size = 26 if portrait else 24
-    y = max(0, h - font_size - (56 if portrait else 44))
+    max_chars = 14 if portrait else 22
+    base = 32 if portrait else 28
+    font_size = max(24, min(44, int(base * max(0.8, scale))))
+    y = max(0, h - font_size - (64 if portrait else 48))
     windows = _timed_caption_windows(
         narration,
         start=0.0,
@@ -487,39 +512,59 @@ def _bottom_caption_drawtext(
     return ",".join(parts)
 
 
-def _overlay_drawtext(w: int, h: int, title: str, subtitle: str, font: str | None) -> str:
-    """Top-centered short title + subtitle (kept small so it doesn't dominate)."""
-    # Hard-cap length — LLM sometimes dumps the whole theme into overlay fields
-    title = (title or "").strip()
-    subtitle = (subtitle or "").strip()
-    if len(title) > 12:
-        title = title[:11] + "…"
-    if len(subtitle) > 18:
-        subtitle = subtitle[:17] + "…"
+def _overlay_drawtext(
+    w: int,
+    h: int,
+    title: str,
+    subtitle: str,
+    font: str | None,
+    *,
+    layout: str = "top",
+    title_scale: float = 1.35,
+    sub_scale: float = 1.3,
+) -> str:
+    """Title + subtitle overlays. layout=split → title top / subtitle bottom (开源展示风)."""
+    title = _strip_caption_punct(title)
+    subtitle = _strip_caption_punct(subtitle)
+    title_cap = 14 if layout == "split" else 12
+    sub_cap = 24 if layout == "split" else 18
+    if len(title) > title_cap:
+        title = title[:title_cap]
+    if len(subtitle) > sub_cap:
+        subtitle = subtitle[:sub_cap]
     title_e = _escape_drawtext(title)
     sub_e = _escape_drawtext(subtitle)
-    # Portrait 720 → title ~30 / sub ~22（相对原字号大约大两号）
-    title_size = max(26, min(32, int(w * 0.042)))
-    sub_size = max(20, min(25, int(w * 0.032)))
-    title_y = int(h * 0.045)
-    sub_y = title_y + title_size + int(h * 0.012)
+    # Portrait 720 base ~ larger than before so 叠字更醒目
+    title_size = max(34, min(52, int(w * 0.058 * max(0.8, title_scale))))
+    sub_size = max(24, min(36, int(w * 0.042 * max(0.8, sub_scale))))
+    title_y = int(h * 0.055)
+    if layout == "split":
+        sub_y = max(0, h - sub_size - int(h * 0.07))
+    else:
+        sub_y = title_y + title_size + int(h * 0.014)
 
     parts: list[str] = []
-    # Soft top vignette so white text stays readable on bright skies
-    parts.append(f"drawbox=x=0:y=0:w={w}:h={int(h * 0.18)}:color=black@0.18:t=fill")
+    # Soft vignette behind text
+    if layout == "split":
+        parts.append(f"drawbox=x=0:y=0:w={w}:h={int(h * 0.16)}:color=black@0.28:t=fill")
+        parts.append(
+            f"drawbox=x=0:y={h - int(h * 0.16)}:w={w}:h={int(h * 0.16)}:color=black@0.32:t=fill"
+        )
+    else:
+        parts.append(f"drawbox=x=0:y=0:w={w}:h={int(h * 0.2)}:color=black@0.22:t=fill")
 
     font_opt = f":fontfile='{_escape_fontfile(font)}'" if font else ""
 
     if title_e:
         parts.append(
             f"drawtext=text='{title_e}'{font_opt}:fontsize={title_size}:"
-            f"fontcolor=white:borderw=3:bordercolor=black@0.75:"
+            f"fontcolor=white:borderw=4:bordercolor=black@0.8:"
             f"x=(w-text_w)/2:y={title_y}"
         )
     if sub_e:
         parts.append(
             f"drawtext=text='{sub_e}'{font_opt}:fontsize={sub_size}:"
-            f"fontcolor=white:borderw=3:bordercolor=black@0.7:"
+            f"fontcolor=white:borderw=3:bordercolor=black@0.75:"
             f"x=(w-text_w)/2:y={sub_y}"
         )
     return ",".join(parts)
@@ -537,17 +582,32 @@ def _image_to_video_kenburns(
     subtitle: str,
     narration: str,
     font: str | None,
+    subtitle_layout: str = "top",
+    title_scale: float = 1.35,
+    sub_scale: float = 1.3,
+    caption_scale: float = 1.25,
 ) -> None:
     ffmpeg = _which("ffmpeg")
     vf = _ken_burns_filter(w, h, duration, shot_no)
-    overlay = _overlay_drawtext(w, h, title, subtitle, font)
+    overlay = _overlay_drawtext(
+        w,
+        h,
+        title,
+        subtitle,
+        font,
+        layout=subtitle_layout,
+        title_scale=title_scale,
+        sub_scale=sub_scale,
+    )
     if overlay:
         vf = f"{vf},{overlay}"
-    captions = _bottom_caption_drawtext(
-        narration, duration=duration, w=w, h=h, font=font
-    )
-    if captions:
-        vf = f"{vf},{captions}"
+    # split 布局底部已是副标题，不再叠旁白滚动字幕以免抢戏
+    if subtitle_layout != "split":
+        captions = _bottom_caption_drawtext(
+            narration, duration=duration, w=w, h=h, font=font, scale=caption_scale
+        )
+        if captions:
+            vf = f"{vf},{captions}"
     _run(
         [
             ffmpeg,
@@ -580,10 +640,11 @@ def _burn_captions_on_video(
     w: int,
     h: int,
     font: str | None,
+    caption_scale: float = 1.25,
 ) -> None:
     """Burn timed bottom captions onto an existing video clip (full mode)."""
     captions = _bottom_caption_drawtext(
-        narration, duration=duration, w=w, h=h, font=font
+        narration, duration=duration, w=w, h=h, font=font, scale=caption_scale
     )
     ffmpeg = _which("ffmpeg")
     if not captions:
@@ -633,8 +694,51 @@ def _image_to_video(image: Path, duration: float, out: Path, *, w: int, h: int) 
     )
 
 
+def _pad_or_trim_video(
+    src: Path,
+    dest: Path,
+    duration: float,
+    *,
+    w: int,
+    h: int,
+) -> None:
+    """Scale video to canvas and force exact duration: trim if longer, freeze-pad if shorter.
+
+    AI clips (Seedance) are often shorter than TTS-allocated shot length; without
+    padding, continuous mux -shortest truncates narration.
+    """
+    ffmpeg = _which("ffmpeg")
+    target = max(float(duration), 0.5)
+    src_dur = probe_duration(src) or 0.0
+    base_vf = f"{_scale_pad(w, h).replace(',format=yuv420p', '')},fps=24"
+    if src_dur > 0.05 and src_dur + 0.08 < target:
+        pad = target - src_dur
+        vf = f"{base_vf},tpad=stop_mode=clone:stop_duration={pad:.3f},format=yuv420p"
+    else:
+        vf = f"{base_vf},format=yuv420p"
+    _run(
+        [
+            ffmpeg,
+            "-y",
+            "-i",
+            str(src),
+            "-t",
+            f"{target:.3f}",
+            "-vf",
+            vf,
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-an",
+            str(dest),
+        ]
+    )
+
+
 def _mux_shot(video: Path, audio: Path, duration: float, out: Path) -> None:
     ffmpeg = _which("ffmpeg")
+    target = max(float(duration), 0.5)
     _run(
         [
             ffmpeg,
@@ -644,15 +748,68 @@ def _mux_shot(video: Path, audio: Path, duration: float, out: Path) -> None:
             "-i",
             str(audio),
             "-t",
-            f"{max(duration, 0.5):.3f}",
+            f"{target:.3f}",
             "-c:v",
             "libx264",
             "-pix_fmt",
             "yuv420p",
             "-c:a",
             "aac",
-            "-shortest",
+            # Video was already fitted to target; avoid -shortest cutting early
             str(out),
+        ]
+    )
+
+
+def _mux_continuous_narration(merged: Path, narration: Path, output: Path) -> None:
+    """Attach full-film TTS; pad video with freeze if shorter so旁白不被裁切."""
+    ffmpeg = _which("ffmpeg")
+    vid_d = probe_duration(merged) or 0.0
+    aud_d = probe_duration(narration) or 0.0
+    video_in = merged
+    tmp_pad: Path | None = None
+    if aud_d > 0.5 and vid_d > 0.05 and aud_d > vid_d + 0.12:
+        tmp_pad = merged.with_name(merged.stem + "_pad.mp4")
+        pad = aud_d - vid_d
+        _run(
+            [
+                ffmpeg,
+                "-y",
+                "-i",
+                str(merged),
+                "-vf",
+                f"tpad=stop_mode=clone:stop_duration={pad:.3f}",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-an",
+                str(tmp_pad),
+            ]
+        )
+        video_in = tmp_pad
+    out_t = max(aud_d, vid_d, 0.5)
+    _run(
+        [
+            ffmpeg,
+            "-y",
+            "-i",
+            str(video_in),
+            "-i",
+            str(narration),
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-c:v",
+            "copy",
+            "-c:a",
+            "aac",
+            "-t",
+            f"{out_t:.3f}",
+            "-movflags",
+            "+faststart",
+            str(output),
         ]
     )
 
@@ -708,7 +865,6 @@ def compose_project(
             if opts.mode == "image_text" and shot.image_path and shot.image_path.exists():
                 title = (shot.overlay_title or "").strip()
                 subtitle = (shot.overlay_subtitle or "").strip()
-                # Top: short titles. Bottom: timed narration via drawtext (not ASS).
                 _image_to_video_kenburns(
                     shot.image_path,
                     shot.duration,
@@ -720,6 +876,10 @@ def compose_project(
                     subtitle=subtitle,
                     narration=shot.narration or "",
                     font=font,
+                    subtitle_layout=opts.subtitle_layout or "top",
+                    title_scale=opts.title_scale,
+                    sub_scale=opts.sub_scale,
+                    caption_scale=opts.caption_scale,
                 )
             elif shot.video_path and shot.video_path.exists() and shot.video_path.suffix.lower() in {
                 ".mp4",
@@ -728,21 +888,12 @@ def compose_project(
                 ".mkv",
             }:
                 raw_v = tmp_path / f"shot_{shot.shot_no:03d}_raw.mp4"
-                _run(
-                    [
-                        ffmpeg,
-                        "-y",
-                        "-i",
-                        str(shot.video_path),
-                        "-t",
-                        f"{max(shot.duration, 0.5):.3f}",
-                        "-vf",
-                        f"{_scale_pad(w, h).replace(',format=yuv420p', '')},fps=24,format=yuv420p",
-                        "-c:v",
-                        "libx264",
-                        "-an",
-                        str(raw_v),
-                    ]
+                _pad_or_trim_video(
+                    shot.video_path,
+                    raw_v,
+                    shot.duration,
+                    w=w,
+                    h=h,
                 )
                 _burn_captions_on_video(
                     raw_v,
@@ -752,6 +903,7 @@ def compose_project(
                     w=w,
                     h=h,
                     font=font,
+                    caption_scale=opts.caption_scale,
                 )
             elif shot.image_path and shot.image_path.exists():
                 _image_to_video(shot.image_path, shot.duration, video, w=w, h=h)
@@ -764,6 +916,7 @@ def compose_project(
                     w=w,
                     h=h,
                     font=font,
+                    caption_scale=opts.caption_scale,
                 )
                 video = capped
             else:
@@ -811,28 +964,7 @@ def compose_project(
         if continuous and opts.full_audio_path:
             # Replace silent concat audio with one continuous narration track
             voiced = tmp_path / "voiced.mp4"
-            _run(
-                [
-                    ffmpeg,
-                    "-y",
-                    "-i",
-                    str(merged),
-                    "-i",
-                    str(opts.full_audio_path),
-                    "-map",
-                    "0:v:0",
-                    "-map",
-                    "1:a:0",
-                    "-c:v",
-                    "copy",
-                    "-c:a",
-                    "aac",
-                    "-shortest",
-                    "-movflags",
-                    "+faststart",
-                    str(voiced),
-                ]
-            )
+            _mux_continuous_narration(merged, opts.full_audio_path, voiced)
             shutil.copy2(voiced, output)
         else:
             # Captions already burned per-shot via drawtext — remux only.

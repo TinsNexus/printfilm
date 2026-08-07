@@ -1,48 +1,39 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import type { Project } from '../api'
-import BrandMark from '../components/BrandMark'
+import AppShell from '../components/layout/AppShell'
+import PillTabs from '../components/ui/PillTabs'
+import StatCard from '../components/ui/StatCard'
+import ComingSoon from '../components/ui/ComingSoon'
+import {
+  IconClapper,
+  IconClock,
+  IconCode,
+  IconCopy,
+  IconDownload,
+  IconEdit,
+  IconEye,
+  IconLink,
+  IconPlus,
+  IconQr,
+  IconRefresh,
+  IconSearch,
+  IconSend,
+  IconTrash,
+} from '../components/ui/Icons'
+import { isRunning, STATUS_CN, statusTone } from '../lib/status'
 
 type HistoryItem = Omit<Project, 'shots'>
 
-const STATUS_LABEL: Record<string, string> = {
-  PARALLEL_ASSETS: '出图+配音并行',
-  ASSETS_READY: '素材就绪',
-  DRAFT: '草稿',
-  SCRIPTING: '拆分镜中',
-  SCRIPT_READY: '分镜完成',
-  IMAGING: '出图+配音并行中',
-  IMAGE_READY: '分镜图完成',
-  VIDEOING: '生成 AI 视频',
-  VIDEO_READY: '视频完成',
-  AUDIOING: '生成配音',
-  COMPOSING: '合成成片',
-  AUDITING: '审核中',
-  DONE: '已完成',
-  FAILED: '失败',
-  REJECTED: '未通过',
-  CANCELLED: '已取消',
-}
-
-function isRunning(status: string) {
-  return [
-    'SCRIPTING',
-    'IMAGING',
-    'VIDEOING',
-    'AUDIOING',
-    'COMPOSING',
-    'AUDITING',
-    'PARALLEL_ASSETS',
-  ].includes(status)
-}
-
-function statusTone(status: string) {
-  if (status === 'DONE') return 'ok'
-  if (status === 'FAILED' || status === 'REJECTED' || status === 'CANCELLED') return 'bad'
-  if (isRunning(status)) return 'run'
-  return 'idle'
-}
+const PAGE_SIZE = 8
+const PLATFORMS = [
+  { name: 'YouTube', mark: 'YT' },
+  { name: '抖音', mark: '抖' },
+  { name: 'Bilibili', mark: 'B' },
+  { name: '小红书', mark: '红' },
+  { name: '视频号', mark: '视' },
+]
 
 function canDownload(p: HistoryItem) {
   return p.status === 'DONE' && Boolean(p.final_video_url)
@@ -59,28 +50,33 @@ function triggerBlobDownload(blob: Blob, filename: string) {
   URL.revokeObjectURL(url)
 }
 
+function statusBadgeClass(status: string) {
+  const tone = statusTone(status)
+  if (tone === 'ok') return 'ok'
+  if (tone === 'run') return 'run'
+  if (tone === 'bad') return 'bad'
+  if (status === 'DRAFT') return 'draft'
+  return ''
+}
+
 export default function HistoryPage() {
   const nav = useNavigate()
   const [items, setItems] = useState<HistoryItem[]>([])
+  const [templates, setTemplates] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<number | null>(null)
   const [packing, setPacking] = useState(false)
   const [selected, setSelected] = useState<Set<number>>(new Set())
-  const [preview, setPreview] = useState<{ url: string; title: string; bust?: string } | null>(null)
+  const [tab, setTab] = useState('全部')
+  const [q, setQ] = useState('')
+  const [page, setPage] = useState(1)
+  const [preview, setPreview] = useState<{ url: string; title: string } | null>(null)
 
   const hasRunning = useMemo(
     () => items.some((p) => isRunning(p.status) && p.progress < 100),
     [items],
   )
-
-  const downloadable = useMemo(() => items.filter(canDownload), [items])
-  const selectedDownloadable = useMemo(
-    () => downloadable.filter((p) => selected.has(p.id)),
-    [downloadable, selected],
-  )
-  const allDownloadableSelected =
-    downloadable.length > 0 && downloadable.every((p) => selected.has(p.id))
 
   async function load() {
     try {
@@ -104,81 +100,69 @@ export default function HistoryPage() {
       return
     }
     load()
+    api.templates().then((list) => {
+      const map: Record<string, string> = {}
+      for (const t of list) map[t.id] = t.name
+      setTemplates(map)
+    })
   }, [nav])
 
   useEffect(() => {
     if (!hasRunning) return
-    const timer = setInterval(load, 2000)
+    const timer = setInterval(() => {
+      load().catch(() => undefined)
+    }, 2000)
     return () => clearInterval(timer)
   }, [hasRunning])
 
-  function toggleOne(id: number, checked: boolean) {
+  useEffect(() => {
+    setPage(1)
+  }, [tab, q])
+
+  const stats = useMemo(() => {
+    const total = items.length
+    const generating = items.filter((p) => isRunning(p.status)).length
+    const done = items.filter((p) => p.status === 'DONE').length
+    return { total, generating, done }
+  }, [items])
+
+  const filtered = useMemo(() => {
+    let list = items
+    if (tab === '草稿') list = list.filter((p) => p.status === 'DRAFT')
+    else if (tab === '生成中') list = list.filter((p) => isRunning(p.status))
+    else if (tab === '已完成') list = list.filter((p) => p.status === 'DONE')
+    else if (tab === '已发布') list = list.filter((p) => p.status === 'DONE')
+    if (q.trim()) {
+      const s = q.trim().toLowerCase()
+      list = list.filter((p) => p.title.toLowerCase().includes(s))
+    }
+    return list
+  }, [items, tab, q])
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  const downloadable = useMemo(() => items.filter(canDownload), [items])
+  const selectedDownloadable = useMemo(
+    () => downloadable.filter((p) => selected.has(p.id)),
+    [downloadable, selected],
+  )
+
+  function toggle(id: number) {
     setSelected((prev) => {
       const next = new Set(prev)
-      if (checked) next.add(id)
-      else next.delete(id)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
       return next
     })
   }
 
-  function toggleAllDownloadable() {
-    if (allDownloadableSelected) {
-      setSelected((prev) => {
-        const next = new Set(prev)
-        downloadable.forEach((p) => next.delete(p.id))
-        return next
-      })
-      return
-    }
-    setSelected((prev) => {
-      const next = new Set(prev)
-      downloadable.forEach((p) => next.add(p.id))
-      return next
-    })
-  }
-
-  async function onBatchDownload() {
-    const ids = selectedDownloadable.map((p) => p.id)
-    if (!ids.length) {
-      setError('请先勾选已完成的作品')
-      return
-    }
-    setPacking(true)
-    setError('')
+  async function remove(id: number) {
+    if (!window.confirm('确定删除该项目？')) return
+    setBusyId(id)
     try {
-      const { blob, filename } = await api.downloadZip(ids)
-      triggerBlobDownload(blob, filename)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '打包下载失败')
-    } finally {
-      setPacking(false)
-    }
-  }
-
-  async function onCancel(p: HistoryItem) {
-    if (!window.confirm(`取消「${p.title || '未命名作品'}」的生成任务？`)) return
-    setBusyId(p.id)
-    try {
-      await api.cancelProject(p.id)
+      await api.deleteProject(id)
       await load()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '取消失败')
-    } finally {
-      setBusyId(null)
-    }
-  }
-
-  async function onDelete(p: HistoryItem) {
-    if (!window.confirm(`删除「${p.title || '未命名作品'}」？此操作不可恢复。`)) return
-    setBusyId(p.id)
-    try {
-      await api.deleteProject(p.id)
-      setItems((prev) => prev.filter((x) => x.id !== p.id))
-      setSelected((prev) => {
-        const next = new Set(prev)
-        next.delete(p.id)
-        return next
-      })
     } catch (err) {
       setError(err instanceof Error ? err.message : '删除失败')
     } finally {
@@ -186,196 +170,327 @@ export default function HistoryPage() {
     }
   }
 
+  async function packSelected() {
+    if (!selectedDownloadable.length) return
+    setPacking(true)
+    try {
+      const { blob, filename } = await api.downloadZip(selectedDownloadable.map((p) => p.id))
+      triggerBlobDownload(blob, filename)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '打包失败')
+    } finally {
+      setPacking(false)
+    }
+  }
+
+  function continueEdit(p: HistoryItem) {
+    if (p.status === 'DRAFT') nav(`/studio/${p.id}/style`)
+    else nav(`/studio/${p.id}`)
+  }
+
+  function pageButtons() {
+    const buttons: (number | '…')[] = []
+    if (pageCount <= 7) {
+      for (let i = 1; i <= pageCount; i++) buttons.push(i)
+      return buttons
+    }
+    buttons.push(1)
+    if (page > 3) buttons.push('…')
+    for (let i = Math.max(2, page - 1); i <= Math.min(pageCount - 1, page + 1); i++) buttons.push(i)
+    if (page < pageCount - 2) buttons.push('…')
+    buttons.push(pageCount)
+    return buttons
+  }
+
   return (
-    <div className="page">
-      <header className="topbar">
-        <BrandMark />
-        <nav>
-          <Link to="/studio">创作</Link>
-          <Link to="/history">历史</Link>
-          <Link to="/">首页</Link>
-        </nav>
-      </header>
-
-      <section className="section history-section">
-        <div className="history-head">
-          <div>
-            <h2>创作历史</h2>
-            <p className="lede">查看草稿、进行中任务与已完成作品，点击可继续编辑。</p>
-          </div>
-          <div className="history-head-actions">
-            {downloadable.length > 0 && (
-              <>
-                <label className="history-select-all">
-                  <input
-                    type="checkbox"
-                    checked={allDownloadableSelected}
-                    onChange={toggleAllDownloadable}
-                  />
-                  全选可下载（{downloadable.length}）
-                </label>
-                <button
-                  type="button"
-                  className="btn primary"
-                  disabled={packing || selectedDownloadable.length === 0}
-                  onClick={onBatchDownload}
-                >
-                  {packing
-                    ? '打包中…'
-                    : `打包下载${selectedDownloadable.length ? `（${selectedDownloadable.length}）` : ''}`}
-                </button>
-              </>
-            )}
-            <button type="button" className="btn ghost" onClick={() => load()} disabled={packing}>
-              刷新
-            </button>
-          </div>
+    <AppShell active="history" wide>
+      <div className="pf-history-head">
+        <div>
+          <h1>我的项目</h1>
+          <p>管理你的 AI 视频创作项目，继续编辑或发布你的作品。</p>
         </div>
+        <button type="button" className="pf-btn pf-btn-lime pf-btn-icon" onClick={() => nav('/studio/new')}>
+          <IconPlus size={16} />
+          新建项目
+        </button>
+      </div>
 
-        {loading && <p className="muted">加载中…</p>}
-        {error && <p className="error">{error}</p>}
+      <div className="pf-stats">
+        <StatCard
+          label="总作品数"
+          value={stats.total}
+          trend="—"
+          icon={<IconClapper size={18} />}
+        />
+        <StatCard
+          label="生成中"
+          value={stats.generating}
+          trend={stats.generating ? '正在生成中' : '暂无任务'}
+          icon={<IconRefresh size={18} />}
+        />
+        <StatCard
+          label="已完成"
+          value={stats.done}
+          trend="—"
+          icon={<IconSend size={18} />}
+        />
+        <StatCard
+          label="本月时长"
+          value="—"
+          trend="额度统计即将推出"
+          icon={<IconClock size={18} />}
+        />
+      </div>
 
-        {!loading && items.length === 0 && (
-          <div className="empty-state">
-            <p>还没有创作记录。</p>
-            <button type="button" className="btn primary" onClick={() => nav('/studio')}>
-              去创作
-            </button>
+      <div className="pf-history-layout">
+        <section className="pf-history-main">
+          <div className="pf-history-filters">
+            <PillTabs
+              items={['全部', '草稿', '生成中', '已完成', '已发布']}
+              value={tab}
+              onChange={setTab}
+              ariaLabel="项目状态"
+            />
+            <div className="pf-history-filter-right">
+              <button type="button" className="pf-type-select" disabled title="即将推出">
+                全部类型
+              </button>
+              <label className="pf-search-field">
+                <IconSearch size={15} />
+                <input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="搜索项目名称"
+                />
+              </label>
+            </div>
           </div>
-        )}
 
-        <div className="history-list">
-          {items.map((p) => {
-            const tone = statusTone(p.status)
-            const label = STATUS_LABEL[p.status] || p.status
-            const busy = busyId === p.id
-            const downloadableItem = canDownload(p)
-            const checked = selected.has(p.id)
-            return (
-              <article
-                key={p.id}
-                className={`history-card tone-${tone}${checked ? ' selected' : ''}`}
+          <div className="pf-history-batch">
+            <button
+              type="button"
+              className="pf-btn-text"
+              disabled={!selectedDownloadable.length || packing}
+              onClick={packSelected}
+            >
+              <IconDownload size={15} />
+              {packing ? '打包中…' : `打包下载 (${selectedDownloadable.length})`}
+            </button>
+            <span>可选中已完成项目批量下载</span>
+          </div>
+
+          {error ? <p className="pf-error">{error}</p> : null}
+          {loading ? <p className="pf-muted">加载中…</p> : null}
+          {!loading && filtered.length === 0 ? (
+            <div className="pf-history-empty">暂无项目，点击「新建项目」开始创作</div>
+          ) : null}
+
+          <div className="pf-project-list">
+            {pageItems.map((p) => {
+              const badge = statusBadgeClass(p.status)
+              const ratio =
+                p.output_ratio || (p.pipeline_mode === 'image_text' ? '9:16' : '16:9')
+              const tplName = templates[p.template_id] || p.template_id
+              const when = new Date(p.updated_at || p.created_at).toLocaleString()
+              return (
+                <article key={p.id} className="pf-project-card">
+                  <label className="pf-project-check">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(p.id)}
+                      disabled={!canDownload(p)}
+                      onChange={() => toggle(p.id)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="pf-project-thumb"
+                    onClick={() => continueEdit(p)}
+                  >
+                    {p.cover_url ? (
+                      <img src={api.assetUrl(p.cover_url, p.updated_at)} alt="" />
+                    ) : (
+                      <div className="ph">无封面</div>
+                    )}
+                    {isRunning(p.status) ? (
+                      <span className="pf-thumb-progress">{p.progress}%</span>
+                    ) : null}
+                  </button>
+                  <div className="pf-project-info">
+                    <h3>{p.title}</h3>
+                    <div className="pf-project-meta">
+                      <span className={`pf-badge ${badge}`}>
+                        {STATUS_CN[p.status] || p.status}
+                      </span>
+                      <span className="pf-muted">
+                        模板 {tplName} · {when}
+                      </span>
+                    </div>
+                    {isRunning(p.status) ? (
+                      <div className="pf-inline-meter">
+                        <i style={{ width: `${Math.min(100, p.progress)}%` }} />
+                      </div>
+                    ) : null}
+                    {p.error_msg ? <p className="pf-error pf-project-err">{p.error_msg}</p> : null}
+                  </div>
+                  <div className="pf-project-ratio">{ratio}</div>
+                  <div className="pf-project-actions">
+                    <button type="button" className="pf-btn-text" onClick={() => continueEdit(p)}>
+                      <IconEdit size={14} />
+                      继续编辑
+                    </button>
+                    <button
+                      type="button"
+                      className="pf-btn-text"
+                      disabled={!p.final_video_url}
+                      onClick={() =>
+                        p.final_video_url &&
+                        setPreview({
+                          url: api.assetUrl(p.final_video_url, p.updated_at),
+                          title: p.title,
+                        })
+                      }
+                    >
+                      <IconEye size={14} />
+                      预览
+                    </button>
+                    <button type="button" className="pf-btn-text" disabled title="即将推出">
+                      <IconCopy size={14} />
+                      复制
+                    </button>
+                    <button
+                      type="button"
+                      className="pf-icon-btn danger"
+                      disabled={busyId === p.id}
+                      title="删除"
+                      onClick={() => remove(p.id)}
+                    >
+                      <IconTrash size={16} />
+                    </button>
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+
+          {filtered.length > 0 ? (
+            <div className="pf-pagination">
+              <button
+                type="button"
+                className="pf-page-btn"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
               >
-                <div className="history-select">
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    disabled={!downloadableItem || packing}
-                    title={downloadableItem ? '勾选以打包下载' : '未完成，无法下载'}
-                    onChange={(e) => toggleOne(p.id, e.target.checked)}
-                    aria-label={`选择 ${p.title || p.id}`}
-                  />
-                </div>
-                <button
-                  type="button"
-                  className="history-cover clickable"
-                  onClick={() => nav(`/studio?project=${p.id}`)}
-                >
-                  {p.cover_url ? (
-                    <img src={api.assetUrl(p.cover_url)} alt="" />
-                  ) : (
-                    <div className="placeholder">#{p.id}</div>
-                  )}
-                </button>
-                <div className="history-body">
-                  <header>
-                    <h3>
-                      <button
-                        type="button"
-                        className="linkish title-btn"
-                        onClick={() => nav(`/studio?project=${p.id}`)}
-                      >
-                        {p.title || '未命名作品'}
-                      </button>
-                    </h3>
-                    <span className={`status-pill tone-${tone}`}>{label}</span>
-                  </header>
-                  <p className="muted small">
-                    模板 {p.template_id}
-                    {p.pipeline_mode === 'image_text' ? ' · 图文模式' : ' · 完整成片'}
-                    {' · '}
-                    {new Date(p.created_at).toLocaleString()}
-                  </p>
-                  <div className="progress-bar" aria-label={`进度 ${p.progress}%`}>
-                    <i style={{ width: `${Math.max(0, Math.min(100, p.progress))}%` }} />
-                  </div>
-                  <div className="history-meta">
-                    <span>进度 {p.progress}%</span>
-                    {p.error_msg && <span className="error small truncate">{p.error_msg}</span>}
-                  </div>
-                  <div className="history-actions">
-                    <button
-                      type="button"
-                      className="btn ghost"
-                      onClick={() => nav(`/studio?project=${p.id}`)}
-                    >
-                      打开
-                    </button>
-                    {p.status === 'DONE' && p.final_video_url && (
-                      <button
-                        type="button"
-                        className="btn primary"
-                        onClick={() =>
-                          setPreview({
-                            url: p.final_video_url!,
-                            title: p.title || '成片',
-                            bust: p.updated_at,
-                          })
-                        }
-                      >
-                        播放
-                      </button>
-                    )}
-                    {isRunning(p.status) && (
-                      <button
-                        type="button"
-                        className="btn ghost"
-                        disabled={busy}
-                        onClick={() => onCancel(p)}
-                      >
-                        取消任务
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className="btn danger"
-                      disabled={busy}
-                      onClick={() => onDelete(p)}
-                    >
-                      删除
-                    </button>
-                  </div>
-                </div>
-              </article>
-            )
-          })}
-        </div>
-      </section>
+                ‹
+              </button>
+              {pageButtons().map((b, i) =>
+                b === '…' ? (
+                  <span key={`e-${i}`} className="pf-page-ellipsis">
+                    …
+                  </span>
+                ) : (
+                  <button
+                    key={b}
+                    type="button"
+                    className={page === b ? 'pf-page-btn active' : 'pf-page-btn'}
+                    onClick={() => setPage(b)}
+                  >
+                    {b}
+                  </button>
+                ),
+              )}
+              <button
+                type="button"
+                className="pf-page-btn"
+                disabled={page >= pageCount}
+                onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+              >
+                ›
+              </button>
+            </div>
+          ) : null}
+        </section>
 
-      {preview && (
-        <div className="modal-backdrop" role="presentation" onClick={() => setPreview(null)}>
-          <div
-            className={`modal preview-modal${preview.url.includes('/generated/') ? ' portrait' : ''}`}
-            role="dialog"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <header className="preview-head">
-              <h3>{preview.title}</h3>
-              <button type="button" className="btn ghost" onClick={() => setPreview(null)}>
+        <aside className="pf-history-side">
+          <div className="pf-side-box">
+            <h3>快速发布</h3>
+            <p className="pf-side-desc">将作品发布到平台或分享给更多人</p>
+            <div className="pf-quick-grid">
+              <button type="button" className="pf-quick-tile" disabled>
+                <IconLink size={20} />
+                <span>复制链接</span>
+                <ComingSoon />
+              </button>
+              <button type="button" className="pf-quick-tile" disabled>
+                <IconQr size={20} />
+                <span>二维码</span>
+                <ComingSoon />
+              </button>
+              <button type="button" className="pf-quick-tile" disabled>
+                <IconCode size={20} />
+                <span>嵌入网页</span>
+                <ComingSoon />
+              </button>
+            </div>
+          </div>
+
+          <div className="pf-side-box">
+            <h3>平台导出</h3>
+            <p className="pf-side-desc">一键导出到各大平台</p>
+            <ul className="pf-platform-list">
+              {PLATFORMS.map((p) => (
+                <li key={p.name}>
+                  <span className="pf-platform-mark">{p.mark}</span>
+                  <span className="pf-platform-name">{p.name}</span>
+                  <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" disabled>
+                    导出
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <button type="button" className="pf-link pf-side-foot" disabled>
+              查看发布记录 → <ComingSoon />
+            </button>
+          </div>
+
+          <div className="pf-side-box">
+            <h3>本月使用情况</h3>
+            <div className="pf-usage-row">
+              <span>时长额度</span>
+              <span className="pf-muted">— / 30h</span>
+            </div>
+            <div className="pf-meter">
+              <i style={{ width: '0%' }} />
+            </div>
+            <div className="pf-usage-row">
+              <span>生成次数</span>
+              <span className="pf-muted">
+                {stats.total} / 200
+              </span>
+            </div>
+            <div className="pf-meter">
+              <i style={{ width: `${Math.min(100, stats.total * 2)}%` }} />
+            </div>
+            <p className="pf-muted" style={{ fontSize: '0.75rem', margin: '0.5rem 0 0' }}>
+              额度统计即将推出
+            </p>
+          </div>
+        </aside>
+      </div>
+
+      {preview ? (
+        <div className="modal-backdrop" onClick={() => setPreview(null)}>
+          <div className="modal preview-modal" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <h3 style={{ margin: 0 }}>{preview.title}</h3>
+              <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" onClick={() => setPreview(null)}>
                 关闭
               </button>
-            </header>
-            <video
-              key={`${preview.url}:${preview.bust || ''}`}
-              className="preview-media"
-              src={api.assetUrl(preview.url, preview.bust)}
-              controls
-              autoPlay
-              playsInline
-            />
+            </div>
+            <video className="preview-media" src={preview.url} controls autoPlay />
           </div>
         </div>
-      )}
-    </div>
+      ) : null}
+    </AppShell>
   )
 }

@@ -1,14 +1,20 @@
-"""Download / persist generated assets under backend/static/generated."""
+"""Download / persist generated assets under backend/static/generated.
+
+When OSS is enabled, public URLs point to OSS while FFmpeg still uses local files.
+"""
 
 from __future__ import annotations
 
 import base64
+import logging
 import mimetypes
 from pathlib import Path
 
 import httpx
 
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 STATIC_ROOT = Path(__file__).resolve().parents[2] / "static"
 GENERATED_ROOT = STATIC_ROOT / "generated"
@@ -31,12 +37,33 @@ def to_public_url(rel_or_abs: str) -> str:
 
 
 def local_path_from_url(url: str) -> Path | None:
+    """Resolve DB/media URL to a local filesystem path when possible."""
+    if not url:
+        return None
     if url.startswith("/static/"):
         return STATIC_ROOT / url.removeprefix("/static/")
     settings = get_settings()
     prefix = settings.public_base_url.rstrip("/") + "/static/"
     if url.startswith(prefix):
         return STATIC_ROOT / url.removeprefix(prefix)
+
+    # OSS public URL → kepu/generated/... → static/generated/...
+    if url.startswith("http://") or url.startswith("https://"):
+        from app.services import oss as oss_svc
+
+        if oss_svc.oss_enabled():
+            folder = oss_svc.folder_prefix()
+            marker = f"/{folder}/"
+            idx = url.find(marker)
+            if idx >= 0:
+                rest = url[idx + len(marker) :].split("?", 1)[0]
+                return STATIC_ROOT / rest
+        # Generic: .../generated/pN/...
+        marker2 = "/generated/"
+        idx2 = url.find(marker2)
+        if idx2 >= 0:
+            rest = url[idx2 + 1 :].split("?", 1)[0]  # generated/pN/...
+            return STATIC_ROOT / rest
     return None
 
 
@@ -76,3 +103,23 @@ async def ensure_local_media(url: str, dest: Path) -> Path:
 def rel_static_url(path: Path) -> str:
     rel = path.resolve().relative_to(STATIC_ROOT.resolve())
     return f"/static/{rel.as_posix()}"
+
+
+def publish_local(path: Path) -> str:
+    """Return frontend URL for a local media file.
+
+    Always keeps the file on disk for FFmpeg. When OSS is enabled, uploads and
+    returns the public OSS URL; otherwise returns /static/... relative path.
+    """
+    path = Path(path)
+    if not path.is_file():
+        raise FileNotFoundError(str(path))
+    from app.services import oss as oss_svc
+
+    if not oss_svc.oss_enabled():
+        return rel_static_url(path)
+    try:
+        return oss_svc.upload_file(path)
+    except Exception:  # noqa: BLE001
+        logger.exception("OSS upload failed for %s, falling back to local URL", path)
+        return rel_static_url(path)

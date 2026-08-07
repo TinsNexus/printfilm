@@ -80,11 +80,14 @@ class Project(Base):
     status: Mapped[str] = mapped_column(String(32), default=ProjectStatus.DRAFT)
     progress: Mapped[int] = mapped_column(Integer, default=0)
     error_msg: Mapped[str | None] = mapped_column(Text, nullable=True)
-    cover_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    final_video_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    cover_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    final_video_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     resolution_mode: Mapped[str] = mapped_column(String(16), default="preview")  # preview | hd
     # full = 图→视频→配音→合成；image_text = 静图+叠字+配音+Ken Burns（跳过 AI 视频）
+    # 由用户选择，不由模板锁定
     pipeline_mode: Mapped[str] = mapped_column(String(32), default="full")
+    # 输出画幅，如 16:9 / 9:16；空则回退模板 default_ratio
+    output_ratio: Mapped[str] = mapped_column(String(16), default="")
     # TTS voice id (openspeech speaker or preset alias); empty → template default
     voice_id: Mapped[str] = mapped_column(String(128), default="")
     # Canonical cast/look description for Seedream consistency across shots
@@ -93,7 +96,7 @@ class Project(Base):
     style_prompt: Mapped[str] = mapped_column(Text, default="")
     character_prompt: Mapped[str] = mapped_column(Text, default="")
     extra_prompt: Mapped[str] = mapped_column(Text, default="")
-    ref_image_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    ref_image_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -119,10 +122,10 @@ class Shot(Base):
     video_prompt: Mapped[str] = mapped_column(Text, default="")
     camera: Mapped[str] = mapped_column(String(64), default="slow pan")
     bgm_mood: Mapped[str] = mapped_column(String(64), default="neutral")
-    image_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    image_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     image_ark_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    video_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    audio_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    video_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    audio_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default=ShotStatus.PENDING)
     version: Mapped[int] = mapped_column(Integer, default=1)
 
@@ -152,8 +155,8 @@ class Work(Base):
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), unique=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     title: Mapped[str] = mapped_column(String(200))
-    cover_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    video_url: Mapped[str] = mapped_column(String(512))
+    cover_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    video_url: Mapped[str] = mapped_column(String(1024))
     visibility: Mapped[str] = mapped_column(String(16), default="public")
     audit_status: Mapped[str] = mapped_column(String(16), default="passed")
     published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

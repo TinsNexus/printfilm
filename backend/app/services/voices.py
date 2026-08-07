@@ -65,3 +65,34 @@ def resolve_speaker(voice_id: str | None, *, template_preset: str | None = None)
             return str(preset["speaker"])
     # Pass-through custom speaker ids
     return raw
+
+
+PREVIEW_TEXT = "大家好，这是当前音色的试听效果，适合科普短视频旁白讲解。"
+
+
+async def ensure_voice_preview(voice_id: str) -> str:
+    """Generate (or reuse cached) short TTS sample; return public URL."""
+    import hashlib
+    from pathlib import Path
+
+    from app.services import storage
+    from app.services.ark import get_ark
+
+    speaker = resolve_speaker(voice_id)
+    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in speaker)[:80]
+    cache_dir = Path(__file__).resolve().parents[2] / "static" / "voice_previews"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    dest = cache_dir / f"{safe}.mp3"
+    if dest.exists() and dest.stat().st_size > 2000:
+        return storage.publish_local(dest)
+
+    ark = get_ark()
+    shot_no = int(hashlib.md5(speaker.encode()).hexdigest()[:4], 16) % 800 + 100
+    url = await ark.tts(PREVIEW_TEXT, speaker, project_id=0, shot_no=shot_no)
+    src = storage.local_path_from_url(url)
+    if src and src.exists():
+        dest.write_bytes(src.read_bytes())
+        return storage.publish_local(dest)
+    if dest.exists() and dest.stat().st_size > 2000:
+        return storage.publish_local(dest)
+    return url

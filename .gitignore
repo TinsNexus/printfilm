@@ -8,8 +8,13 @@ __pycache__/
 backend/.venv/
 backend/ai_movie.db
 backend/.env
+deploy/.env.prod
+deploy/scripts/deploy_kepu.py
 backend/.celery_autoscale/
 backend/static/generated/
+backend/static/voice_previews/
+backend/frontend/
+.claude/
 frontend/.env
 frontend/node_modules/
 frontend/dist/

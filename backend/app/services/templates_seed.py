@@ -1,11 +1,82 @@
 """内置风格模板 — 提示词与风格描述统一中文。
 
 分类约定（category[0] 为主分类，用于首页筛选）：
-电影感 / 真人感 / 写实感 / 科普 / 儿童 / 国风 / 科幻 / 动漫 / 商业 / 复古 / 纪录片 / 奇幻 / 图文 / 悬疑
+电影感 / 真人感 / 写实感 / 科普 / 儿童 / 国风 / 科幻 / 动漫 / 商业 / 复古 / 纪录片 / 奇幻 / 图文 / 悬疑 / 开源
 真人感、写实感模板须在 seedream_config 设 photoreal: true。
+
+一致性（seedream_config.consistency_mode）：
+- character：人物+画风锁定，镜间图生图链式参考（叙事默认）
+- style：仅画风气质，不锁人物、不链式参考
+- diverse：按内容动态规划独立场景（开源/产品演示），禁止镜间雷同
+未设置时回退 seedance/seedream 的 character_consistency。
+
+成片方式（是否生成 AI 视频）由用户在风格配置页选择，不再由模板锁定。
+模板 default_ratio 仅作画幅默认建议。
 """
 
 TEMPLATES: list[dict] = [
+    {
+        "id": "opensource_showcase",
+        "name": "开源项目展示",
+        "description": "按项目内容动态规划：人物操作系统界面与真实使用场景，适合开源工具与平台介绍。",
+        "category": ["开源", "图文", "商业"],
+        "preview_cover": "/static/templates/covers/opensource_showcase.png",
+        "style_prefix": (
+            "高品质产品演示静帧：人物在真实工位前操作软件/文档站/工作台，"
+            "手部点击与屏幕界面清晰，排版克制、信息层级清楚，"
+            "材质与配色由内容决定（浅色SaaS、纸感文档、深色IDE、终端均可），"
+            "电影级产品演示质感，干净留白便于叠字，非任务清单界面"
+        ),
+        "negative_prompt": (
+            "任务列表，todolist，勾选框，看板卡片堆叠，"
+            "霓虹蓝，赛博朋克蓝光，全屏蓝紫渐变，发光网格地板，科幻HUD堆叠，"
+            "卡通夸张，动漫美少女，手绘潦草，画面乱码文字，字幕水印，logo乱码，模糊，"
+            "空界面无操作者，纯抽象色块"
+        ),
+        "default_ratio": "9:16",
+        "shot_duration_min": 4,
+        "shot_duration_max": 10,
+        "llm_system_addon": (
+            "这是开源/产品展示片。先【分析】用户文案：项目类型、核心能力、典型用户与使用路径，"
+            "再规划分镜与视觉，不要套固定蓝光大屏。"
+            "【画面硬性要求】每镜必须出现「人在操作系统」："
+            "操作员坐在工位前使用电脑/笔记本/平板，点击界面、填写配置、查看看板、"
+            "演示核心流程、部署发布或阅读文档；可辅以屏幕特写，但禁止整片只有空 UI 无人。"
+            "【视觉】色板与界面气质跟内容走（浅色后台、IDE、文档站、终端等），禁止默认霓虹蓝。"
+            "【分镜】每镜对应不同能力或操作场景，构图必须明显不同，禁止待办清单/人物剧情戏。"
+            "title=模块短名（2-8字），subtitle=能力卖点（10-22字），text=口播；"
+            "img_prompt 写清人物姿态、面前界面类型、操作动作与主色。"
+        ),
+        "seedream_config": {
+            "ref_images": [],
+            "strength": 0.72,
+            "consistency_mode": "diverse",
+            "character_prompt": (
+                "产品演示操作员：侧脸或过肩视角，坐在工位前操作笔记本电脑或双屏，"
+                "商务休闲着装，手部与屏幕为视觉重点，五官不必抢戏，全片气质统一"
+            ),
+            "extra_prompt": (
+                "主体为人操作系统界面，手部点击可读，禁止霓虹蓝赛博大屏；"
+                "顶部与底部留白便于叠大字，画面内不要出现任何文字；"
+                "本镜布局与操作动作须与其他镜头明显不同"
+            ),
+        },
+        "seedance_config": {
+            "motion_bias": "手部轻微点击与屏幕内容切换，缓慢推近工位",
+            "character_consistency": False,
+        },
+        "audio_config": {"voice_preset": "urban_editorial", "bgm_mood": "轻快专业"},
+        "subtitle_config": {
+            "font": "SourceHanSans",
+            "position": "split",
+            "title_scale": 1.7,
+            "sub_scale": 1.55,
+            "caption_scale": 1.3,
+        },
+        "sort_order": 1,
+        "is_active": True,
+        "is_premium": False,
+    },
     {
         "id": "portrait_story",
         "name": "竖屏图文故事",
@@ -21,7 +92,6 @@ TEMPLATES: list[dict] = [
         "seedream_config": {
             "ref_images": [],
             "strength": 0.7,
-            "pipeline_mode": "image_text",
             "character_prompt": "故事主角外形固定：年龄感、发型发色、服装配色与辨识物全片一致，细腻插画五官，非真人照片",
             "extra_prompt": "竖屏构图，主体偏中下，顶部约1/4留白，电影感光影，画面内无文字",
         },
@@ -30,7 +100,13 @@ TEMPLATES: list[dict] = [
             "character_consistency": True,
         },
         "audio_config": {"voice_preset": "narrator_calm", "bgm_mood": "叙事氛围"},
-        "subtitle_config": {"font": "SourceHanSans", "position": "top"},
+        "subtitle_config": {
+            "font": "SourceHanSans",
+            "position": "top",
+            "title_scale": 1.4,
+            "sub_scale": 1.35,
+            "caption_scale": 1.3,
+        },
         "sort_order": 5,
         "is_active": True,
         "is_premium": False,
@@ -50,7 +126,6 @@ TEMPLATES: list[dict] = [
         "seedream_config": {
             "ref_images": [],
             "strength": 0.75,
-            "pipeline_mode": "full",
             "photoreal": True,
             "character_prompt": "真人演员外形固定：年龄、发型发色、面部特征、服装全片一致，写实皮肤质感",
             "extra_prompt": "电影打光、浅景深、胶片颗粒，真实场景材质",
@@ -60,7 +135,7 @@ TEMPLATES: list[dict] = [
             "character_consistency": True,
         },
         "audio_config": {"voice_preset": "narrator_calm", "bgm_mood": "电影氛围"},
-        "subtitle_config": {"font": "SourceHanSans", "position": "bottom"},
+        "subtitle_config": {"font": "SourceHanSans", "position": "bottom", "caption_scale": 1.3},
         "sort_order": 6,
         "is_active": True,
         "is_premium": False,
@@ -80,7 +155,6 @@ TEMPLATES: list[dict] = [
         "seedream_config": {
             "ref_images": [],
             "strength": 0.72,
-            "pipeline_mode": "image_text",
             "photoreal": True,
             "character_prompt": "真人出镜主角：年龄气质、发型发色、服装日常感固定，自然表情，全片同一人",
             "extra_prompt": "自然光、生活场景、竖屏主体清晰，顶部可留白叠字",
@@ -110,7 +184,6 @@ TEMPLATES: list[dict] = [
         "seedream_config": {
             "ref_images": [],
             "strength": 0.7,
-            "pipeline_mode": "full",
             "photoreal": True,
             "character_prompt": "若出现人物：写实五官与发型服装固定；若无人物则专注真实场景与材质",
             "extra_prompt": "照片级细节、真实材质、自然色彩，清晰主体",
@@ -140,7 +213,6 @@ TEMPLATES: list[dict] = [
         "seedream_config": {
             "ref_images": [],
             "strength": 0.72,
-            "pipeline_mode": "full",
             "character_prompt": "电影感插画主角，明确年龄与发型发色，服装轮廓与辨识物固定，面部细节适中非照片，全片同一人设",
             "extra_prompt": "胶片颗粒、暗角、戏剧光影，青橙氛围，宽银幕主体明确",
         },
@@ -169,7 +241,6 @@ TEMPLATES: list[dict] = [
         "seedream_config": {
             "ref_images": [],
             "strength": 0.72,
-            "pipeline_mode": "full",
             "character_prompt": "Noir 风插画角色，轮廓清晰，大衣或标志性剪影，面部少光，外形全片一致",
             "extra_prompt": "高对比阴影、冷调、雨夜或台灯，强构图张力",
         },
@@ -186,24 +257,44 @@ TEMPLATES: list[dict] = [
     {
         "id": "vox_papercut",
         "name": "Vox剪纸科普",
-        "description": "低饱和扁平剪纸，适合硬核科普与纪录片节奏。",
+        "description": "低饱和扁平剪纸，以人物操作电脑/系统界面为主画面，适合硬核科普与产品讲解。",
         "category": ["科普", "剪纸"],
         "preview_cover": "/static/templates/covers/vox_papercut.png",
-        "style_prefix": "Vox剪纸扁平插画，层叠剪纸边缘，低饱和，干净剪影，科普解说片气质",
-        "negative_prompt": "写实照片，真人，真实人脸，三维渲染，日系动漫，模糊，噪点，水印，画面文字",
+        "style_prefix": (
+            "Vox剪纸扁平插画，层叠剪纸边缘，低饱和，干净剪影，科普解说片气质；"
+            "画面以人物操作电脑或业务系统为主：工位前操作、手指点击界面、多屏监控、"
+            "配置参数、流程演示，屏幕与手部动作清晰，信息图表为辅"
+        ),
+        "negative_prompt": (
+            "写实照片，真人照片级皮肤，三维写实渲染，日系动漫，模糊，噪点，水印，"
+            "画面乱码文字，空镜风景无人物无界面，纯抽象色块无操作场景"
+        ),
         "default_ratio": "16:9",
         "shot_duration_min": 4,
         "shot_duration_max": 15,
-        "llm_system_addon": "按科普讲解节奏拆镜，台词口语化、信息密度适中，每镜一个清晰视觉焦点。全片保持同一剪纸画风与角色外形。",
+        "llm_system_addon": (
+            "按科普讲解节奏拆镜，台词口语化、信息密度适中。"
+            "【画面硬性要求】每镜必须出现「人在操作系统」："
+            "剪纸人物坐在工位/控制台前操作电脑或平板，点击鼠标键盘、切换菜单、"
+            "查看仪表盘、填写表单、对比前后状态、演示关键流程等；"
+            "可辅以屏幕特写或架构示意图，但禁止整片只有空概念图、无操作者。"
+            "title/subtitle 概括本镜知识点；img_prompt 写清人物姿态、面前屏幕内容类型与操作动作。"
+            "全片同一剪纸画风与同一操作员外形。"
+        ),
         "seedream_config": {
             "ref_images": [],
             "strength": 0.7,
-            "pipeline_mode": "full",
-            "character_prompt": "符号化科普角色或简洁人形剪影，低细节面部，服装色块固定，全片外形一致",
-            "extra_prompt": "层叠纸片边缘清晰，低饱和，单镜一个视觉焦点，避免写实皮肤与复杂纹理",
+            "character_prompt": (
+                "固定剪纸操作员：简洁人形剪影、低细节面部、工装或休闲色块服装固定，"
+                "常坐工位前操作笔记本电脑或双屏控制台，发型与配色全片一致"
+            ),
+            "extra_prompt": (
+                "主体为人操作电脑/系统界面，屏幕区块与点击手势可读，"
+                "层叠纸片边缘清晰，低饱和，单镜一个视觉焦点，避免写实皮肤"
+            ),
         },
         "seedance_config": {
-            "motion_bias": "缓慢横移，轻推镜头，纸层轻微错动",
+            "motion_bias": "手部轻微点击与光标移动感，屏幕内容轻切换，缓慢推近工位",
             "character_consistency": True,
         },
         "audio_config": {"voice_preset": "narrator_calm", "bgm_mood": "好奇纪录片"},
@@ -227,7 +318,6 @@ TEMPLATES: list[dict] = [
         "seedream_config": {
             "ref_images": [],
             "strength": 0.68,
-            "pipeline_mode": "full",
             "character_prompt": "纪实插画人物，生活化发型服装，亲切五官，年龄感明确，全片同一人设",
             "extra_prompt": "暖色自然光，生活场景，纪录片式构图，柔和颗粒",
         },
@@ -256,7 +346,6 @@ TEMPLATES: list[dict] = [
         "seedream_config": {
             "ref_images": [],
             "strength": 0.65,
-            "pipeline_mode": "full",
             "character_prompt": "圆润可爱卡通角色，大眼睛简化五官，柔和配色服装，友好表情，全片同一角色外形",
             "extra_prompt": "粉彩柔光，背景简洁，造型圆润，适合儿童观看",
         },
@@ -285,7 +374,6 @@ TEMPLATES: list[dict] = [
         "seedream_config": {
             "ref_images": [],
             "strength": 0.7,
-            "pipeline_mode": "full",
             "character_prompt": "日系动漫主角，发型发色瞳色固定，校服或常服配色固定，赛璐璐五官，全片同一人设",
             "extra_prompt": "柔光、干净线稿、柔和天空，统一赛璐璐上色",
         },
@@ -302,24 +390,33 @@ TEMPLATES: list[dict] = [
     {
         "id": "chalk_whiteboard",
         "name": "粉笔白板手绘",
-        "description": "黑板粉笔与白板简笔画，适合课堂讲解风。",
+        "description": "黑板粉笔讲解风，突出人物操作系统/画流程图的课堂演示。",
         "category": ["科普", "手绘"],
         "preview_cover": "/static/templates/covers/chalk_whiteboard.png",
-        "style_prefix": "黑板粉笔与白板手绘讲解风，粉笔笔触，示意图箭头，素描线条",
-        "negative_prompt": "写实照片，光滑三维，杂乱界面",
+        "style_prefix": (
+            "黑板粉笔与白板手绘讲解风，粉笔笔触，示意图箭头；"
+            "画面常含简笔人物在白板或电脑前操作系统、画流程、指点界面"
+        ),
+        "negative_prompt": "写实照片，光滑三维，杂乱界面，空教室无人物",
         "default_ratio": "16:9",
         "shot_duration_min": 4,
         "shot_duration_max": 15,
-        "llm_system_addon": "偏讲解结构：定义→例子→对比，画面多用示意图与箭头。",
+        "llm_system_addon": (
+            "偏讲解结构：定义→例子→对比。"
+            "每镜尽量出现简笔人物操作系统或在白板上演示系统流程"
+            "（指点屏幕、画模块箭头、对比操作前后），避免只有抽象符号没有操作者。"
+        ),
         "seedream_config": {
             "ref_images": [],
             "strength": 0.6,
-            "pipeline_mode": "full",
-            "character_prompt": "粉笔简笔人物或火柴人讲解者，线条简洁，特征固定，可重复识别",
-            "extra_prompt": "黑板/白板底，箭头与示意图清晰，教学感构图",
+            "character_prompt": (
+                "粉笔简笔讲解者/操作员，线条简洁特征固定，"
+                "常站在白板前或坐在电脑前指点界面"
+            ),
+            "extra_prompt": "黑板/白板底，人物操作系统或画流程图，箭头清晰，教学感构图",
         },
         "seedance_config": {
-            "motion_bias": "线条逐步显现，镜头基本固定",
+            "motion_bias": "手部指点与线条逐步显现，镜头基本固定或轻推",
             "character_consistency": True,
         },
         "audio_config": {"voice_preset": "teacher_clear", "bgm_mood": "专注氛围"},
@@ -343,7 +440,6 @@ TEMPLATES: list[dict] = [
         "seedream_config": {
             "ref_images": [],
             "strength": 0.72,
-            "pipeline_mode": "full",
             "character_prompt": "赛博风插画角色，外套剪裁与发色固定，霓虹边缘光，面部非照片，全片同一人设",
             "extra_prompt": "霓虹粉青、雨夜反光、未来都市，强对比夜景",
         },
@@ -372,7 +468,6 @@ TEMPLATES: list[dict] = [
         "seedream_config": {
             "ref_images": [],
             "strength": 0.72,
-            "pipeline_mode": "full",
             "character_prompt": "奇幻主角外形固定：盔甲或斗篷轮廓、发色、武器辨识物全片一致，插画五官非照片",
             "extra_prompt": "宏大场景、暮光神性光束、戏剧构图，史诗氛围",
         },
@@ -401,7 +496,6 @@ TEMPLATES: list[dict] = [
         "seedream_config": {
             "ref_images": [],
             "strength": 0.75,
-            "pipeline_mode": "image_text",
             "character_prompt": "杂志剪贴人像剪影或印刷半调人物，外形与配色全片统一",
             "extra_prompt": "撕边纸质、网纹印刷、大胆色块，竖屏强构图",
         },
@@ -430,7 +524,6 @@ TEMPLATES: list[dict] = [
         "seedream_config": {
             "ref_images": [],
             "strength": 0.68,
-            "pipeline_mode": "image_text",
             "character_prompt": "极简几何化人物或手部剪影，配色固定，低细节面部，全片外形一致",
             "extra_prompt": "大留白、有限色板、几何构图，竖屏品牌感",
         },
@@ -455,16 +548,18 @@ TEMPLATES: list[dict] = [
         "default_ratio": "16:9",
         "shot_duration_min": 3,
         "shot_duration_max": 12,
-        "llm_system_addon": "节奏偏游戏关卡感，信息点做成可辨识像素图标。",
+        "llm_system_addon": (
+            "节奏偏游戏关卡感，信息点做成可辨识像素图标。"
+            "涉及软件/系统/工具时，优先像素小人坐在电脑前操作系统、点击菜单、通关式演示流程。"
+        ),
         "seedream_config": {
             "ref_images": [],
             "strength": 0.7,
-            "pipeline_mode": "full",
-            "character_prompt": "16位像素小人角色，有限色板，外形与调色全片不变",
-            "extra_prompt": "清晰像素块，无抗锯齿，游戏关卡式场景",
+            "character_prompt": "16位像素小人操作员，坐在电脑前，有限色板，外形与调色全片不变",
+            "extra_prompt": "像素小人操作系统界面，清晰像素块，无抗锯齿，游戏关卡式场景",
         },
         "seedance_config": {
-            "motion_bias": "逐帧步进运动，轻微视差滚动",
+            "motion_bias": "逐帧点击与屏幕切换，轻微视差滚动",
             "character_consistency": True,
         },
         "audio_config": {"voice_preset": "retro_host", "bgm_mood": "8位好奇"},
@@ -488,7 +583,6 @@ TEMPLATES: list[dict] = [
         "seedream_config": {
             "ref_images": [],
             "strength": 0.7,
-            "pipeline_mode": "full",
             "character_prompt": "怀旧风插画人物，年代感发型服装固定，轻微色差边缘，非照片，全片同一人设",
             "extra_prompt": "扫描线暗示、轻微色差、80/90年代色调，怀旧构图",
         },
@@ -517,7 +611,6 @@ TEMPLATES: list[dict] = [
         "seedream_config": {
             "ref_images": [],
             "strength": 0.7,
-            "pipeline_mode": "image_text",
             "character_prompt": "水墨写意人物，简笔眉眼，宽袍或古装轮廓固定，墨色淡雅，全片同一人设",
             "extra_prompt": "大量留白，淡墨渲染，诗意意境，竖屏顶部可叠字",
         },

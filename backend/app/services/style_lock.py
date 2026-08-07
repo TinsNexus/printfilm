@@ -81,28 +81,38 @@ def build_locked_image_prompt(
     character_bible: str = "",
     *,
     photoreal: bool = False,
+    lock_character: bool = True,
+    lock_style: bool = True,
 ) -> str:
-    """Canonical prompt sent to Seedream — style + cast locked every shot."""
+    """Prompt for Seedream. lock_* can be relaxed for diverse / showcase templates."""
     body = strip_lock_blocks(strip_style_drift(img_prompt, photoreal=photoreal))
     if style_prefix and style_prefix in body:
         body = body.replace(style_prefix, "", 1).strip("，, ")
     parts: list[str] = []
-    if style_prefix:
+    if lock_style and style_prefix:
         if photoreal:
             parts.append(
                 f"【风格锁定】{style_prefix}。全片统一此画风，禁止卡通动漫与风格跳变"
             )
-        else:
+        elif lock_character:
             parts.append(
                 f"【风格锁定】{style_prefix}。全片统一此画风，禁止写实摄影与风格跳变"
             )
-    if (character_bible or "").strip():
+        else:
+            parts.append(
+                f"【风格提示】{style_prefix}。"
+                "配色与界面类型优先服从【场景】描述；禁止无脑套用霓虹蓝赛博大屏"
+            )
+    if lock_character and (character_bible or "").strip():
         parts.append(
             f"【人物锁定】{(character_bible or '').strip()}。凡出现人物必须严格沿用以上外形，禁止换脸换装"
         )
     if body:
         parts.append(f"【场景】{body}")
-    parts.append("【约束】同一画风同一人物，画面干净无文字")
+    if lock_character:
+        parts.append("【约束】同一画风同一人物，画面干净无文字")
+    else:
+        parts.append("【约束】本镜场景必须独特、与其他镜头构图明显不同，画面干净无文字")
     return "\n".join(parts)
 
 
@@ -119,6 +129,27 @@ def merge_negative(
     if image_text and "文字" not in merged:
         merged = f"{merged}，画面文字，字幕，水印，标题字"
     return merged
+
+
+def template_consistency_mode(tpl) -> str:
+    """Return character | style | diverse.
+
+    - character: cast lock + shot-to-shot image ref chaining (叙事默认)
+    - style: keep style only, no cast lock, no ref chaining
+    - diverse: content-driven independent scenes (开源/产品演示)
+    """
+    if tpl is None:
+        return "character"
+    cfg = getattr(tpl, "seedream_config", None) or {}
+    if not isinstance(cfg, dict):
+        cfg = {}
+    mode = str(cfg.get("consistency_mode") or "").strip().lower()
+    if mode in {"character", "style", "diverse", "none"}:
+        return "diverse" if mode == "none" else mode
+    for conf in (cfg, getattr(tpl, "seedance_config", None) or {}):
+        if isinstance(conf, dict) and "character_consistency" in conf:
+            return "character" if conf.get("character_consistency") else "diverse"
+    return "character"
 
 
 def template_is_photoreal(tpl) -> bool:

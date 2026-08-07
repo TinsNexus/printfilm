@@ -53,21 +53,34 @@ async def on_startup() -> None:
 
 
 async def _migrate_sqlite() -> None:
-    """Lightweight additive migrations for SQLite MVP."""
+    """Lightweight additive migrations (SQLite + Postgres)."""
+    is_sqlite = settings.database_url.startswith("sqlite")
     async with engine.begin() as conn:
-        result = await conn.execute(text("PRAGMA table_info(shots)"))
-        cols = {row[1] for row in result.fetchall()}
-        if "image_ark_url" not in cols:
-            await conn.execute(text("ALTER TABLE shots ADD COLUMN image_ark_url VARCHAR(1024)"))
-        if "overlay_title" not in cols:
-            await conn.execute(text("ALTER TABLE shots ADD COLUMN overlay_title VARCHAR(128) DEFAULT ''"))
-        if "overlay_subtitle" not in cols:
-            await conn.execute(text("ALTER TABLE shots ADD COLUMN overlay_subtitle VARCHAR(256) DEFAULT ''"))
+        if is_sqlite:
+            result = await conn.execute(text("PRAGMA table_info(shots)"))
+            cols = {row[1] for row in result.fetchall()}
+            if "image_ark_url" not in cols:
+                await conn.execute(text("ALTER TABLE shots ADD COLUMN image_ark_url VARCHAR(1024)"))
+            if "overlay_title" not in cols:
+                await conn.execute(text("ALTER TABLE shots ADD COLUMN overlay_title VARCHAR(128) DEFAULT ''"))
+            if "overlay_subtitle" not in cols:
+                await conn.execute(text("ALTER TABLE shots ADD COLUMN overlay_subtitle VARCHAR(256) DEFAULT ''"))
 
-        result = await conn.execute(text("PRAGMA table_info(projects)"))
-        pcols = {row[1] for row in result.fetchall()}
+            result = await conn.execute(text("PRAGMA table_info(projects)"))
+            pcols = {row[1] for row in result.fetchall()}
+        else:
+            result = await conn.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'projects'"
+                )
+            )
+            pcols = {row[0] for row in result.fetchall()}
+
         if "pipeline_mode" not in pcols:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN pipeline_mode VARCHAR(32) DEFAULT 'full'"))
+        if "output_ratio" not in pcols:
+            await conn.execute(text("ALTER TABLE projects ADD COLUMN output_ratio VARCHAR(16) DEFAULT ''"))
         if "voice_id" not in pcols:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN voice_id VARCHAR(128) DEFAULT ''"))
         if "character_bible" not in pcols:

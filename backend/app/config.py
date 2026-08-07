@@ -70,6 +70,17 @@ class Settings(BaseSettings):
     tos_secret_key: str = ""
     cdn_base: str = "http://localhost:8000/static"
 
+    # Aliyun OSS — 成片/分镜上传；FFmpeg 仍读本地文件
+    oss_enabled: bool = False
+    oss_endpoint: str = "oss-cn-beijing.aliyuncs.com"
+    oss_region: str = "cn-hangzhou"
+    oss_bucket: str = ""
+    oss_folder: str = "kepu"
+    oss_access_key_id: str = ""
+    oss_access_key_secret: str = ""
+    # 可选自定义域名；空则用 https://{bucket}.{endpoint}
+    oss_public_base: str = ""
+
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
 

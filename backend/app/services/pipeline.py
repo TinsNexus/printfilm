@@ -29,6 +29,7 @@ from app.services.style_lock import (
     merge_negative,
     seedream_ref_urls,
     strip_lock_blocks,
+    template_consistency_mode,
     template_is_photoreal,
 )
 from app.services.voices import resolve_speaker
@@ -44,6 +45,8 @@ _IMAGE_SIZE_BY_RATIO = {
     "9:16": "1440x2560",
     "16:9": "2560x1440",
     "1:1": "1920x1920",
+    "4:3": "1920x1440",
+    "21:9": "2560x1080",
 }
 
 IMAGE_TEXT_DURATION_MIN = 4
@@ -116,6 +119,18 @@ def _redis_ok() -> bool:
 
 def _is_image_text(project: Project) -> bool:
     return (project.pipeline_mode or "full") == "image_text"
+
+
+def _project_output_ratio(project: Project) -> str:
+    """User-selected output ratio, else template default, else 16:9."""
+    allowed = {"16:9", "9:16", "1:1", "4:3", "21:9"}
+    user = (getattr(project, "output_ratio", None) or "").strip()
+    if user in allowed:
+        return user
+    tpl_ratio = (project.template.default_ratio if project.template else None) or ""
+    if tpl_ratio in allowed:
+        return tpl_ratio
+    return "16:9"
 
 
 def _project_voice(project: Project) -> str:
@@ -204,7 +219,7 @@ async def _synthesize_continuous_audio(
         raise RuntimeError("整片配音时长异常")
 
     allocated = allocate_durations_by_narration(narrations, dur)
-    async with _db_write_lock:
+    async with _db_write_lock():
         async with AsyncSessionLocal() as db:
             for shot, new_dur in zip(shot_rows, allocated):
                 row = await db.get(Shot, shot.id)
@@ -212,7 +227,7 @@ async def _synthesize_continuous_audio(
                     continue
                 row.duration = float(new_dur)
                 # Point every shot at the same continuous file (compose prefers full_narration)
-                row.audio_url = storage.rel_static_url(dest)
+                row.audio_url = storage.publish_local(dest)
                 if row.status == ShotStatus.PENDING:
                     row.status = ShotStatus.AUDIO_READY
             await db.commit()
@@ -248,8 +263,8 @@ async def _resume_plan(project_id: int) -> tuple[bool, bool, bool, bool]:
 
         has_audio = _continuous_audio_ok(project_id) or all(_audio_ok(s) for s in shots)
         has_videos = all(bool(s.video_url) for s in shots)
-        # Keep existing storyboard if any media already exists
-        skip_script = any(bool(s.image_url or s.audio_url or s.video_url) for s in shots)
+        # Keep existing storyboard whenever shots already exist (user may edit before continue)
+        skip_script = len(shots) > 0
         skip_assets = has_images and has_audio
         skip_videos = image_text or has_videos
         return image_text, skip_script, skip_assets, skip_videos
@@ -263,24 +278,35 @@ async def run_pipeline(project_id: int) -> None:
         if not skip_script:
             await _script_stage(project_id)
             await _ensure_not_cancelled(project_id)
-            image_text, skip_script, skip_assets, skip_videos = await _resume_plan(project_id)
-        else:
-            logger.info(
-                "pipeline resume project=%s skip_script=%s skip_assets=%s skip_videos=%s",
-                project_id,
-                skip_script,
-                skip_assets,
-                skip_videos,
-            )
+            # Checkpoint: stop after storyboard so user can review/edit before assets
             await publish_progress(
                 project_id,
                 {
-                    "event": "progress",
-                    "stage": "RESUME",
-                    "percent": 70 if skip_assets else 18,
-                    "message": "沿用已有分镜，继续后续阶段",
+                    "event": "paused",
+                    "stage": "SCRIPT_READY",
+                    "percent": 15,
+                    "message": "分镜已生成，请确认修改后手动继续",
                 },
             )
+            logger.info("pipeline paused after script project=%s", project_id)
+            return
+
+        logger.info(
+            "pipeline resume project=%s skip_script=%s skip_assets=%s skip_videos=%s",
+            project_id,
+            skip_script,
+            skip_assets,
+            skip_videos,
+        )
+        await publish_progress(
+            project_id,
+            {
+                "event": "progress",
+                "stage": "RESUME",
+                "percent": 70 if skip_assets else 18,
+                "message": "沿用已有分镜，继续后续阶段",
+            },
+        )
 
         # 分镜图 + 配音并行；完整模式再并行图生视频
         if not skip_assets:
@@ -305,7 +331,11 @@ async def run_pipeline(project_id: int) -> None:
                     "event": "progress",
                     "stage": "ASSETS_READY",
                     "percent": 70 if image_text else 50,
-                    "message": "沿用已有分镜图与配音，开始合成",
+                    "message": (
+                        "沿用已有分镜图与配音，开始合成"
+                        if image_text
+                        else "沿用已有分镜图与配音，继续生成 AI 视频"
+                    ),
                 },
             )
 
@@ -440,6 +470,7 @@ async def _script_stage(project_id: int) -> None:
         style = _effective_style(project)
         extra = (getattr(project, "extra_prompt", None) or "").strip()
         char_hint = (getattr(project, "character_prompt", None) or "").strip()
+        consist = template_consistency_mode(tpl)
         plans_result = await ark.chat_storyboard(
             source_text=project.source_text,
             source_type=project.source_type,
@@ -449,11 +480,16 @@ async def _script_stage(project_id: int) -> None:
             duration_max=d_max,
             max_shot_duration=d_max if image_text else get_settings().max_shot_duration,
             pipeline_mode=mode,
-            character_hint=char_hint,
+            character_hint=char_hint if consist == "character" else "",
             extra_requirements=extra,
+            consistency_mode=consist,
+            output_ratio=_project_output_ratio(project),
         )
         plans = plans_result.shots
-        project.character_bible = _effective_character_bible(project, plans_result.character_bible)
+        if consist == "character":
+            project.character_bible = _effective_character_bible(project, plans_result.character_bible)
+        else:
+            project.character_bible = "无固定人物，各镜独立场景"
         for shot in list(project.shots):
             await db.delete(shot)
         await db.flush()
@@ -508,11 +544,7 @@ def _effective_character_bible(project: Project, llm_bible: str = "") -> str:
 
 
 def _image_size_for(project: Project) -> str | None:
-    if not _is_image_text(project):
-        return None
-    ratio = (project.template.default_ratio if project.template else None) or "9:16"
-    if _is_image_text(project) and ratio == "16:9":
-        ratio = "9:16"
+    ratio = _project_output_ratio(project)
     return _IMAGE_SIZE_BY_RATIO.get(ratio)
 
 
@@ -534,11 +566,14 @@ def _project_base_refs(project: Project) -> list[str]:
 
 
 def _locked_shot_prompt(project: Project, img_prompt: str) -> str:
+    consist = template_consistency_mode(project.template)
     return build_locked_image_prompt(
         _effective_style(project),
         strip_lock_blocks(img_prompt),
         getattr(project, "character_bible", None) or "",
         photoreal=template_is_photoreal(project.template),
+        lock_character=consist == "character",
+        lock_style=True,
     )
 
 
@@ -554,7 +589,18 @@ def _consistency_ref_from_shots(shots: list) -> str | None:
     return None
 
 
-_db_write_lock = asyncio.Lock()
+_db_write_locks: dict[int, asyncio.Lock] = {}
+
+
+def _db_write_lock() -> asyncio.Lock:
+    """Per-event-loop lock (module-level Lock breaks across Celery asyncio.run)."""
+    loop = asyncio.get_running_loop()
+    key = id(loop)
+    lock = _db_write_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _db_write_locks[key] = lock
+    return lock
 
 
 async def _parallel_image_and_audio(project_id: int) -> None:
@@ -594,9 +640,11 @@ async def _parallel_image_and_audio(project_id: int) -> None:
         style_prefix = _effective_style(project)
         character_bible = getattr(project, "character_bible", None) or ""
         photoreal = template_is_photoreal(tpl)
+        consist = template_consistency_mode(tpl)
+        lock_character = consist == "character"
         base_refs = _project_base_refs(project)
-        # If some shots already have images (resume), use them as consistency anchors
-        existing_anchor = _consistency_ref_from_shots(shot_rows)
+        # Only character mode chains shot-to-shot refs; diverse/style keep scenes independent
+        existing_anchor = _consistency_ref_from_shots(shot_rows) if lock_character else None
         image_size = _image_size_for(project)
         negative = _project_image_negative(project)
         voice = _project_voice(project)
@@ -617,7 +665,7 @@ async def _parallel_image_and_audio(project_id: int) -> None:
             img_w = 0.7 if image_text else 0.55
             frac = (done_img / max(total, 1)) * img_w
             pct = 18 + int(40 * frac)
-            async with _db_write_lock:
+            async with _db_write_lock():
                 async with AsyncSessionLocal() as db:
                     project = await db.get(Project, project_id)
                     if project:
@@ -638,7 +686,7 @@ async def _parallel_image_and_audio(project_id: int) -> None:
             )
 
     async def persist_image(meta: dict, img) -> None:
-        async with _db_write_lock:
+        async with _db_write_lock():
             async with AsyncSessionLocal() as db:
                 shot = await db.get(Shot, meta["id"])
                 if not shot:
@@ -663,8 +711,10 @@ async def _parallel_image_and_audio(project_id: int) -> None:
         prompt = build_locked_image_prompt(
             style_prefix,
             strip_lock_blocks(meta["img_prompt"]),
-            character_bible,
+            character_bible if lock_character else "",
             photoreal=photoreal,
+            lock_character=lock_character,
+            lock_style=True,
         )
         async with img_sem:
             await _ensure_not_cancelled(project_id)
@@ -680,13 +730,24 @@ async def _parallel_image_and_audio(project_id: int) -> None:
         return img.remote_url or img.local_url
 
     async def run_images() -> None:
-        """Anchor on first generated shot, then parallelize the rest with that ref."""
+        """Character mode: anchor first shot then parallelize. Diverse/style: all independent."""
         need = [m for m in shot_meta if not m.get("has_image")]
         already = [m for m in shot_meta if m.get("has_image")]
         for _m in already:
             await bump_images()
 
         if not need:
+            return
+
+        if not lock_character:
+            # Content-driven: each shot uses only template base refs (if any)
+            results = await asyncio.gather(
+                *(one_image(m, list(base_refs)) for m in need),
+                return_exceptions=True,
+            )
+            for r in results:
+                if isinstance(r, Exception):
+                    raise r
             return
 
         anchor = existing_anchor
@@ -727,7 +788,7 @@ async def _parallel_image_and_audio(project_id: int) -> None:
             shot_rows=shot_rows,
             force=False,
         )
-        async with _db_write_lock:
+        async with _db_write_lock():
             async with AsyncSessionLocal() as db:
                 project = await db.get(Project, project_id)
                 if project:
@@ -756,7 +817,7 @@ async def _parallel_image_and_audio(project_id: int) -> None:
                 raise err
         raise RuntimeError(str(errors[0]))
 
-    async with _db_write_lock:
+    async with _db_write_lock():
         async with AsyncSessionLocal() as db:
             result = await db.execute(
                 select(Project)
@@ -794,12 +855,14 @@ async def _parallel_videos(project_id: int) -> None:
         )
         project = result.scalar_one()
         tpl = project.template
-        consistency = bool(tpl.seedance_config.get("character_consistency", True))
+        consistency = template_consistency_mode(tpl) == "character" and bool(
+            tpl.seedance_config.get("character_consistency", True)
+        )
         motion = str(tpl.seedance_config.get("motion_bias", ""))
         resolution = cfg.ark_video_resolution
         if project.resolution_mode == "hd" and resolution == "480p":
             resolution = "720p"
-        ratio = tpl.default_ratio or cfg.ark_video_ratio
+        ratio = _project_output_ratio(project) or cfg.ark_video_ratio
         shot_meta = [
             {
                 "id": s.id,
@@ -886,7 +949,7 @@ async def _parallel_videos(project_id: int) -> None:
                     )
                     return
                 raise
-        async with _db_write_lock:
+        async with _db_write_lock():
             async with AsyncSessionLocal() as db:
                 shot = await db.get(Shot, meta["id"])
                 if not shot:
@@ -897,7 +960,7 @@ async def _parallel_videos(project_id: int) -> None:
         async with progress_lock:
             done += 1
             pct = 55 + int(30 * done / max(total, 1))
-            async with _db_write_lock:
+            async with _db_write_lock():
                 async with AsyncSessionLocal() as db:
                     project = await db.get(Project, project_id)
                     if project:
@@ -924,7 +987,7 @@ async def _parallel_videos(project_id: int) -> None:
                 raise err
         raise RuntimeError(str(errors[0]))
 
-    async with _db_write_lock:
+    async with _db_write_lock():
         async with AsyncSessionLocal() as db:
             project = await db.get(Project, project_id)
             if project:
@@ -955,20 +1018,27 @@ async def _image_stage(project_id: int) -> None:
         style_prefix = _effective_style(project)
         bible = getattr(project, "character_bible", None) or ""
         photoreal = template_is_photoreal(tpl)
+        consist = template_consistency_mode(tpl)
+        lock_character = consist == "character"
         anchor: str | None = None
 
         for idx, shot in enumerate(sorted(project.shots, key=lambda s: s.shot_no)):
             await _ensure_not_cancelled(project_id)
             if shot.image_url or shot.image_ark_url:
-                if not anchor:
+                if lock_character and not anchor:
                     anchor = shot.image_ark_url or shot.image_url
                 continue
-            refs = seedream_ref_urls(anchor, *ref_urls) if anchor else list(ref_urls)
+            if lock_character:
+                refs = seedream_ref_urls(anchor, *ref_urls) if anchor else list(ref_urls)
+            else:
+                refs = list(ref_urls)
             prompt = build_locked_image_prompt(
                 style_prefix,
                 strip_lock_blocks(shot.img_prompt),
-                bible,
+                bible if lock_character else "",
                 photoreal=photoreal,
+                lock_character=lock_character,
+                lock_style=True,
             )
             img = await ark.gen_image(
                 prompt,
@@ -981,7 +1051,7 @@ async def _image_stage(project_id: int) -> None:
             shot.image_url = img.local_url
             shot.image_ark_url = img.remote_url
             shot.status = ShotStatus.IMAGE_READY
-            if not anchor:
+            if lock_character and not anchor:
                 anchor = img.remote_url or img.local_url
             span = 55 if _is_image_text(project) else 25
             pct = 20 + int(span * (idx + 1) / max(total, 1))
@@ -1015,14 +1085,16 @@ async def _video_stage(project_id: int) -> None:
         )
         project = result.scalar_one()
         tpl = project.template
-        consistency = bool(tpl.seedance_config.get("character_consistency", True))
+        consistency = template_consistency_mode(tpl) == "character" and bool(
+            tpl.seedance_config.get("character_consistency", True)
+        )
         motion = str(tpl.seedance_config.get("motion_bias", ""))
         total = len(project.shots)
         cfg = get_settings()
         resolution = cfg.ark_video_resolution
         if project.resolution_mode == "hd" and resolution == "480p":
             resolution = "720p"
-        ratio = tpl.default_ratio or cfg.ark_video_ratio
+        ratio = _project_output_ratio(project) or cfg.ark_video_ratio
         for idx, shot in enumerate(sorted(project.shots, key=lambda s: s.shot_no)):
             await _ensure_not_cancelled(project_id)
             prompt = f"{shot.video_prompt}。运镜：{shot.camera}。{motion}"
@@ -1089,16 +1161,26 @@ async def _compose_stage(project_id: int) -> None:
         project = result.scalar_one()
         media: list[ShotMedia] = []
         for shot in sorted(project.shots, key=lambda s: s.shot_no):
+            pdir = storage.project_dir(project_id)
+            # Resolve/download to local for FFmpeg; keep OSS URLs in DB for frontend preview
             video_path = storage.local_path_from_url(shot.video_url or "")
             audio_path = storage.local_path_from_url(shot.audio_url or "")
             image_path = storage.local_path_from_url(shot.image_url or "")
-            pdir = storage.project_dir(project_id)
-            if shot.video_url and shot.video_url.startswith("http"):
-                video_path = await storage.download_to(shot.video_url, pdir / f"shot_{shot.shot_no:03d}.mp4")
-                shot.video_url = storage.rel_static_url(video_path)
-            if shot.audio_url and shot.audio_url.startswith("http"):
-                audio_path = await storage.download_to(shot.audio_url, pdir / f"shot_{shot.shot_no:03d}_tts.mp3")
-                shot.audio_url = storage.rel_static_url(audio_path)
+            if shot.video_url and (not video_path or not video_path.exists()):
+                if shot.video_url.startswith("http"):
+                    video_path = await storage.ensure_local_media(
+                        shot.video_url, pdir / f"shot_{shot.shot_no:03d}.mp4"
+                    )
+            if shot.audio_url and (not audio_path or not audio_path.exists()):
+                if shot.audio_url.startswith("http"):
+                    audio_path = await storage.ensure_local_media(
+                        shot.audio_url, pdir / f"shot_{shot.shot_no:03d}_tts.mp3"
+                    )
+            if shot.image_url and (not image_path or not image_path.exists()):
+                if shot.image_url.startswith("http"):
+                    image_path = await storage.ensure_local_media(
+                        shot.image_url, pdir / f"shot_{shot.shot_no:03d}.png"
+                    )
             media.append(
                 ShotMedia(
                     shot_no=shot.shot_no,
@@ -1112,14 +1194,25 @@ async def _compose_stage(project_id: int) -> None:
                 )
             )
 
-        ratio = (project.template.default_ratio if project.template else None) or "16:9"
+        ratio = _project_output_ratio(project)
         mode = project.pipeline_mode or "full"
-        if mode == "image_text" and ratio == "16:9":
-            ratio = "9:16"
 
         full_audio = _full_narration_path(project_id)
         if not full_audio.exists():
             full_audio = None
+
+        sub_cfg = (project.template.subtitle_config if project.template else None) or {}
+        layout = str(sub_cfg.get("position") or "top")
+        if layout not in {"top", "split", "bottom", "center"}:
+            layout = "top"
+        # bottom/center still use top dual-line unless explicitly split
+        subtitle_layout = "split" if layout == "split" else "top"
+
+        def _f(key: str, default: float) -> float:
+            try:
+                return float(sub_cfg.get(key, default))
+            except (TypeError, ValueError):
+                return default
 
         out = storage.project_dir(project_id) / "final.mp4"
         await asyncio.to_thread(
@@ -1131,9 +1224,13 @@ async def _compose_stage(project_id: int) -> None:
                 mode=mode,
                 resolution_mode=project.resolution_mode or "preview",
                 full_audio_path=full_audio,
+                subtitle_layout=subtitle_layout,
+                title_scale=_f("title_scale", 1.35),
+                sub_scale=_f("sub_scale", 1.3),
+                caption_scale=_f("caption_scale", 1.25),
             ),
         )
-        project.final_video_url = storage.rel_static_url(out)
+        project.final_video_url = storage.publish_local(out)
         if project.status != ProjectStatus.CANCELLED:
             project.status = ProjectStatus.AUDITING
             project.progress = 96
@@ -1160,8 +1257,12 @@ async def regen_shot_image(project_id: int, shot_id: int) -> None:
         if not shot:
             raise ValueError("shot not found")
         base_refs = _project_base_refs(project)
-        anchor = _consistency_ref_from_shots([s for s in project.shots if s.id != shot.id])
-        ref_urls = seedream_ref_urls(anchor, *base_refs) if anchor else list(base_refs)
+        lock_character = template_consistency_mode(project.template) == "character"
+        if lock_character:
+            anchor = _consistency_ref_from_shots([s for s in project.shots if s.id != shot.id])
+            ref_urls = seedream_ref_urls(anchor, *base_refs) if anchor else list(base_refs)
+        else:
+            ref_urls = list(base_refs)
         negative = _project_image_negative(project)
         prompt = _locked_shot_prompt(project, shot.img_prompt)
         img = await ark.gen_image(
@@ -1197,7 +1298,9 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
         if not shot or not (shot.image_url or shot.image_ark_url):
             raise ValueError("shot image required")
         motion = str(project.template.seedance_config.get("motion_bias", ""))
-        consistency = bool(project.template.seedance_config.get("character_consistency", True))
+        consistency = template_consistency_mode(project.template) == "character" and bool(
+            project.template.seedance_config.get("character_consistency", True)
+        )
         cfg = get_settings()
         resolution = cfg.ark_video_resolution
         if project.resolution_mode == "hd" and resolution == "480p":
@@ -1212,7 +1315,7 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
             shot_no=shot.shot_no,
             character_consistency=consistency,
             resolution=resolution,
-            ratio=project.template.default_ratio or cfg.ark_video_ratio,
+            ratio=_project_output_ratio(project) or cfg.ark_video_ratio,
         )
         shot.video_url = local_video
         shot.status = ShotStatus.VIDEO_READY
