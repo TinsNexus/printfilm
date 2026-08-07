@@ -62,7 +62,20 @@ def start_pipeline(project_id: int) -> str:
     _cancelled.discard(project_id)
     settings = get_settings()
     if settings.use_celery and _redis_ok():
+        from app.workers.queue_dedupe import clear_pipeline_run_lock, purge_pipeline_queue_for_project
         from app.workers.tasks import run_pipeline_task
+
+        # Drop stale queued copies + revoke last known task so continue never double-runs
+        old_id = _celery_task_ids.pop(project_id, None)
+        if old_id and old_id != "in-process":
+            try:
+                from app.workers.celery_app import celery_app
+
+                celery_app.control.revoke(old_id, terminate=True, signal="SIGTERM")
+            except Exception:  # noqa: BLE001
+                logger.warning("revoke previous task failed project=%s task=%s", project_id, old_id)
+        purge_pipeline_queue_for_project(project_id)
+        clear_pipeline_run_lock(project_id)
 
         async_result = run_pipeline_task.apply_async(args=[project_id], queue="pipeline")
         task_id = str(async_result.id)
@@ -94,6 +107,15 @@ def cancel_pipeline(project_id: int) -> bool:
             stopped = True
         except Exception:  # noqa: BLE001
             logger.warning("celery revoke failed project=%s task=%s", project_id, celery_id)
+
+    try:
+        from app.workers.queue_dedupe import clear_pipeline_run_lock, purge_pipeline_queue_for_project
+
+        if purge_pipeline_queue_for_project(project_id):
+            stopped = True
+        clear_pipeline_run_lock(project_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("queue purge on cancel failed project=%s", project_id)
 
     return stopped
 

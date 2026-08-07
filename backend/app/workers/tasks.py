@@ -42,9 +42,19 @@ def run_pipeline_task(self, project_id: int) -> dict:
     from app.config import reload_settings
     from app.services.ark import reset_ark
     from app.services.pipeline import PipelineCancelled, is_cancelled, run_pipeline
+    from app.workers.queue_dedupe import (
+        acquire_pipeline_run_lock,
+        release_pipeline_run_lock,
+    )
 
     reload_settings()
     reset_ark()
+
+    owner = str(getattr(getattr(self, "request", None), "id", "") or f"worker-{project_id}")
+    if not acquire_pipeline_run_lock(project_id, owner):
+        logger.warning("skip duplicate pipeline project=%s task=%s", project_id, owner)
+        return {"ok": False, "skipped": "duplicate", "project_id": project_id}
+
     try:
         _run(run_pipeline(project_id))
         return {"ok": True, "project_id": project_id}
@@ -90,6 +100,8 @@ def run_pipeline_task(self, project_id: int) -> dict:
             return {"ok": False, "project_id": project_id, "error": msg[:500]}
         logger.exception("celery pipeline failed project=%s", project_id)
         raise self.retry(exc=exc, countdown=10)
+    finally:
+        release_pipeline_run_lock(project_id, owner)
 
 
 @celery_app.task(name="app.workers.tasks.regen_image_task")

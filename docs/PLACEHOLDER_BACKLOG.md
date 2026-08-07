@@ -133,7 +133,7 @@
 | ID | 项 | 现状 | 优先级 | 备注 |
 |----|----|------|--------|------|
 | X-01 | `generate` 续跑勿标 SCRIPTING | 部分完成 | P0 | API 已热更；需确认 worker 与前端一并部署 |
-| X-02 | Celery `pipeline` 队列去重 / 项目级互斥 | 待开发 | P0 | 同项目多次 continue 会堆积任务 |
+| X-02 | Celery `pipeline` 队列去重 / 项目级互斥 | 已完成待部署 | P0 | `queue_dedupe.py`：入队前 purge + Redis run lock |
 | X-03 | 取消中途视频失败错误信息为空 | 待开发 | P1 | `RuntimeError('')` 日志难排查 |
 | X-04 | 帮助中心 / 状态文案前端上线 | 已完成待部署 | P0 | `npm run build` + 静态发布 |
 | X-05 | 视频阶段卡住时允许「仅补缺镜」 | 待开发 | P1 | 可走 `regen-video` + `compose`，避免整管线重入队 |
