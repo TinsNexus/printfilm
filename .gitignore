@@ -1,20 +1,61 @@
+# OS / editor
 .DS_Store
 Thumbs.db
-*.log
 .idea/
 .vscode/
+*.swp
+*~
+
+# Logs & local scratch (batch ops, polls, tokens)
+*.log
+.tmp/
+.tmp/**
+agent-tools/
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 backend/.venv/
-backend/ai_movie.db
-backend/.env
+.venv/
+venv/
+
+# Secrets & local env (keep *.example and frontend/.env.production committed)
+.env
+**/.env
+!**/.env.example
+!**/.env.*.example
+!frontend/.env.production
 deploy/.env.prod
 deploy/scripts/deploy_kepu.py
+frontend/.env.local
+frontend/.env.*.local
+
+# Never commit tokens / credentials dumps
+**/token.txt
+**/*credentials*.json
+**/*.pem
+**/*.key
+!**/example*.pem
+
+# Backend runtime data
+backend/ai_movie.db
+backend/*.db
 backend/.celery_autoscale/
 backend/static/generated/
 backend/static/voice_previews/
 backend/frontend/
-.claude/
-frontend/.env
+
+# Frontend build
 frontend/node_modules/
 frontend/dist/
+
+# Claude / local agent notes (project skills live under .cursor/skills — keep those)
+.claude/
+.work/

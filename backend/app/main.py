@@ -50,6 +50,12 @@ async def on_startup() -> None:
     await init_db()
     await _migrate_sqlite()
     await seed_templates()
+    try:
+        from app.services import oss as oss_svc
+
+        oss_svc.ensure_browser_cors()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 async def _migrate_sqlite() -> None:

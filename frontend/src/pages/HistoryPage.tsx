@@ -23,6 +23,11 @@ import {
   IconTrash,
 } from '../components/ui/Icons'
 import { dialog } from '../lib/dialog'
+import {
+  downloadSingleVideo,
+  triggerBlobDownload,
+  zipVideosClient,
+} from '../lib/clientDownload'
 import { isRunning, STATUS_CN, statusTone } from '../lib/status'
 
 type HistoryItem = Omit<Project, 'shots'>
@@ -38,17 +43,6 @@ const PLATFORMS = [
 
 function canDownload(p: HistoryItem) {
   return p.status === 'DONE' && Boolean(p.final_video_url)
-}
-
-function triggerBlobDownload(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  URL.revokeObjectURL(url)
 }
 
 function statusBadgeClass(status: string) {
@@ -68,11 +62,16 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<number | null>(null)
   const [packing, setPacking] = useState(false)
+  const [packProgress, setPackProgress] = useState('')
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [tab, setTab] = useState('全部')
   const [q, setQ] = useState('')
   const [page, setPage] = useState(1)
-  const [preview, setPreview] = useState<{ url: string; title: string } | null>(null)
+  const [preview, setPreview] = useState<{
+    url: string
+    title: string
+    projectId: number
+  } | null>(null)
 
   const hasRunning = useMemo(
     () => items.some((p) => isRunning(p.status) && p.progress < 100),
@@ -178,16 +177,60 @@ export default function HistoryPage() {
     }
   }
 
+  async function downloadOne(p: HistoryItem) {
+    if (!canDownload(p) || !p.final_video_url) return
+    setBusyId(p.id)
+    setError('')
+    try {
+      await downloadSingleVideo({
+        url: api.assetUrl(p.final_video_url, p.updated_at),
+        title: p.title,
+        projectId: p.id,
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '下载失败')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function downloadPreview() {
+    if (!preview) return
+    setBusyId(preview.projectId)
+    setError('')
+    try {
+      await downloadSingleVideo({
+        url: preview.url,
+        title: preview.title,
+        projectId: preview.projectId,
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '下载失败')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   async function packSelected() {
     if (!selectedDownloadable.length) return
     setPacking(true)
+    setPackProgress(`0/${selectedDownloadable.length}`)
+    setError('')
     try {
-      const { blob, filename } = await api.downloadZip(selectedDownloadable.map((p) => p.id))
+      const { blob, filename } = await zipVideosClient(
+        selectedDownloadable.map((p) => ({
+          id: p.id,
+          title: p.title,
+          url: api.assetUrl(p.final_video_url!, p.updated_at),
+        })),
+        (done, total) => setPackProgress(`${done}/${total}`),
+      )
       triggerBlobDownload(blob, filename)
     } catch (err) {
       setError(err instanceof Error ? err.message : '打包失败')
     } finally {
       setPacking(false)
+      setPackProgress('')
     }
   }
 
@@ -282,9 +325,11 @@ export default function HistoryPage() {
               onClick={packSelected}
             >
               <IconDownload size={15} />
-              {packing ? '打包中…' : `打包下载 (${selectedDownloadable.length})`}
+              {packing
+                ? `打包中 ${packProgress}…`
+                : `打包下载 (${selectedDownloadable.length})`}
             </button>
-            <span>可选中已完成项目批量下载</span>
+            <span>勾选已完成项目后，浏览器依次下载并打成 ZIP（不经服务器）</span>
           </div>
 
           {error ? <p className="pf-error">{error}</p> : null}
@@ -356,11 +401,21 @@ export default function HistoryPage() {
                         setPreview({
                           url: api.assetUrl(p.final_video_url, p.updated_at),
                           title: p.title,
+                          projectId: p.id,
                         })
                       }
                     >
                       <IconEye size={14} />
                       预览
+                    </button>
+                    <button
+                      type="button"
+                      className="pf-btn-text"
+                      disabled={!canDownload(p) || busyId === p.id || packing}
+                      onClick={() => downloadOne(p)}
+                    >
+                      <IconDownload size={14} />
+                      {busyId === p.id ? '下载中…' : '下载'}
                     </button>
                     <button type="button" className="pf-btn-text" disabled title="即将推出">
                       <IconCopy size={14} />
@@ -489,11 +544,33 @@ export default function HistoryPage() {
       {preview ? (
         <div className="modal-backdrop" onClick={() => setPreview(null)}>
           <div className="modal preview-modal" onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: '0.75rem',
+                alignItems: 'center',
+              }}
+            >
               <h3 style={{ margin: 0 }}>{preview.title}</h3>
-              <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" onClick={() => setPreview(null)}>
-                关闭
-              </button>
+              <div style={{ display: 'flex', gap: '0.4rem' }}>
+                <button
+                  type="button"
+                  className="pf-btn pf-btn-ghost pf-btn-sm"
+                  disabled={busyId === preview.projectId}
+                  onClick={downloadPreview}
+                >
+                  <IconDownload size={14} />
+                  {busyId === preview.projectId ? '下载中…' : '下载'}
+                </button>
+                <button
+                  type="button"
+                  className="pf-btn pf-btn-ghost pf-btn-sm"
+                  onClick={() => setPreview(null)}
+                >
+                  关闭
+                </button>
+              </div>
             </div>
             <video className="preview-media" src={preview.url} controls autoPlay />
           </div>

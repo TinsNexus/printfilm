@@ -59,6 +59,47 @@ def public_url(object_key: str) -> str:
     return f"{public_base()}/{key}"
 
 
+def ensure_browser_cors() -> None:
+    """Allow SPA origins to fetch OSS media (needed for client-side zip)."""
+    if not oss_enabled():
+        return
+    s = get_settings()
+    origins = [
+        o.strip()
+        for o in (s.cors_origins or "").split(",")
+        if o.strip()
+    ]
+    # Production site + common local/dev
+    for extra in (
+        "https://kepu.printfilm.com",
+        "http://kepu.printfilm.com",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
+    ):
+        if extra not in origins:
+            origins.append(extra)
+    pub = (s.public_base_url or "").rstrip("/")
+    if pub and pub not in origins:
+        origins.append(pub)
+    try:
+        import oss2
+        from oss2.models import BucketCors, CorsRule
+
+        rule = CorsRule(
+            allowed_origins=origins,
+            allowed_methods=["GET", "HEAD"],
+            allowed_headers=["*"],
+            expose_headers=["ETag", "Content-Length", "Content-Type"],
+            max_age_seconds=3600,
+        )
+        _bucket().put_bucket_cors(BucketCors([rule]))
+        logger.info("oss CORS updated for %s origin(s)", len(origins))
+    except Exception:  # noqa: BLE001
+        logger.exception("oss CORS update failed")
+
+
 def key_for_local(path: Path, *, static_root: Path) -> str:
     """Map backend/static/... → {folder}/..."""
     rel = path.resolve().relative_to(static_root.resolve()).as_posix()
