@@ -19,6 +19,7 @@ import httpx
 from app.config import Settings, get_settings
 from app.services import storage
 from app.services.ffmpeg_compose import is_near_silent_audio
+from app.services import seedance_segments as segplan
 
 logger = logging.getLogger(__name__)
 
@@ -126,12 +127,14 @@ class ShotPlan:
     bgm: str
     overlay_title: str = ""
     overlay_subtitle: str = ""
+    segment_script: str = ""
 
 
 @dataclass
 class StoryboardResult:
     shots: list[ShotPlan]
     character_bible: str = ""
+    bgm_lock: str = ""
 
 
 @dataclass
@@ -269,20 +272,23 @@ class ArkGateway:
                 "必须是总结提炼，禁止从 text 截取前几个字，禁止截断专有名词如 ERP→ER)、"
                 "subtitle(对本镜卖点/要点的一句概括，8-22字，同样禁止原文截取前缀)、"
                 "text(旁白台词，口语化，约匹配该镜时长，可供 TTS 朗读，一般 20-60 字)、"
+                "segments(数组，精确到每一段：每项含 duration 秒、kind=visual|narration、text；"
+                "visual 写景别与画面动作，narration 写口播；单段 3-12 秒，合计约等于本镜 duration)、"
                 f"img_prompt({orient} {ratio} 构图画面提示词，留出边缘给文字叠层，主体居中，"
                 "禁止要求画面内写字；禁止出现真实商标/公司名/人名，用泛称)、"
-                "video_prompt(可留空或写轻微推拉)、camera(如：缓慢推近/轻拉远)、bgm(情绪)。"
+                "video_prompt(可留空或写轻微推拉)、camera(如：缓慢推近/轻拉远)、bgm(情绪，全片尽量同一氛围)。"
+                "另输出顶层 bgm_lock(全片统一 BGM 氛围一句)。"
                 f"{diversity_note}"
             )
         else:
             diversity_note = (
-                "拆成 4-10 个分镜；各镜场景随内容变化，禁止雷同空镜。"
+                "拆成 4-6 个分镜；各镜场景随内容变化，禁止雷同空镜。"
                 if mode != "character"
-                else "画风与人物必须全片一致。"
+                else "画风与人物必须全片一致；倾向 4-6 镜。"
             )
             system = (
                 "你是短视频分镜编剧。所有字段必须使用简体中文"
-                "（包括 title、text、img_prompt、video_prompt、camera、bgm）。"
+                "（包括 title、text、img_prompt、video_prompt、camera、bgm、segments）。"
                 f"{consistency}{llm_system_addon}"
                 f"每镜 duration 在 {duration_min}-{min(duration_max, max_shot_duration)} 秒。"
                 "shots 字段说明："
@@ -291,16 +297,22 @@ class ArkGateway:
                 "必须是总结提炼，禁止从 text 截取前缀，禁止截断专有名词如 ERP→ER)、"
                 "subtitle(可选，一句要点概括 8-22字)、"
                 "text(旁白台词)、"
-                "img_prompt(画面生成中文提示词，含具体景物与构图；"
+                "segments(必填数组，精确到每一段：每项 duration、kind=visual|narration|action、text；"
+                "先画面后旁白或交替；visual/action 写清景别、主体动作、场景/界面类型；"
+                "narration 为可朗读口播；单段 3-12 秒，按约 3 字/秒估旁白时长；"
+                "镜内各段 duration 之和应约等于本镜 duration，且不超过 "
+                f"{min(duration_max, max_shot_duration)} 秒)、"
+                "img_prompt(首段画面中文提示词，含具体景物与构图；"
                 "禁止真实商标/公司名/人名，改用泛称)、"
-                "video_prompt(镜头运动与动态的中文提示词)、"
-                "camera(运镜，如：缓慢上摇/轻推/横移)、bgm(情绪，如：紧张平缓)。"
+                "video_prompt(可与 segments 画面摘要一致)、"
+                "camera(运镜，如：缓慢上摇/轻推/横移)、bgm(情绪，全片同一氛围)。"
+                "顶层另输出 bgm_lock(全片统一 BGM 氛围一句，与各镜 bgm 一致)。"
                 "img_prompt 与 video_prompt 禁止英文句子，专有名词可保留原文。"
                 f"{diversity_note}"
             )
         user = (
-            f"输入类型：{source_type}。请先理解内容与应用场景，再拆成 4-10 个分镜：\n"
-            f"{source_text}"
+            f"输入类型：{source_type}。请先理解内容与应用场景，再拆成精确到每一段的分镜"
+            f"（4-6 镜为佳，完整模式）：\n{source_text}"
         )
         payload = {
             "model": self.settings.model_llm,
@@ -489,8 +501,10 @@ class ArkGateway:
 
     @staticmethod
     def _seedance_duration(duration: int | float) -> int:
-        # Seedance 2.0 common range is 4–12s (some accounts reject <4)
-        return int(max(4, min(int(round(float(duration))), 12)))
+        s = get_settings()
+        lo = int(getattr(s, "seedance_duration_min", 4) or 4)
+        hi = int(getattr(s, "seedance_duration_max", 30) or 30)
+        return int(max(lo, min(int(round(float(duration))), hi)))
 
     async def gen_video_i2v(
         self,
@@ -502,6 +516,7 @@ class ArkGateway:
         resolution: str = "480p",
         ratio: str | None = None,
         prompt_as_json: bool = True,
+        return_last_frame: bool = True,
     ) -> str:
         if self.mock:
             digest = hashlib.md5(f"{image_url}:{prompt}".encode()).hexdigest()[:10]
@@ -509,9 +524,13 @@ class ArkGateway:
 
         # Seedance needs a publicly reachable https image (data URI often rejected / odd errors)
         image_ref = await self._resolve_image_ref(image_url, prefer_https=True)
-        text = self._seedance_prompt_text(prompt) if prompt_as_json else (
-            (prompt or "").strip() or "画面轻微动态，保持主体外形稳定"
-        )
+        # Prefer plain timed script for Seedance 2.5; JSON caption kept as fallback
+        plain = (prompt or "").strip() or "画面轻微动态，保持主体外形稳定"
+        text = plain if not prompt_as_json else self._seedance_prompt_text(prompt)
+        # If prompt looks like manju-style script, always send plain text
+        if "@duration:" in plain or "00:" in plain or plain.startswith("【"):
+            text = plain
+            prompt_as_json = False
         content: list[dict[str, Any]] = [
             {"type": "text", "text": text},
             {
@@ -528,6 +547,7 @@ class ArkGateway:
             "resolution": resolution,
             "watermark": False,
             "generate_audio": False,
+            "return_last_frame": bool(return_last_frame),
         }
         # Do not send character_consistency — unknown fields have caused BodyFormat failures
 
@@ -539,7 +559,7 @@ class ArkGateway:
             )
             if resp.status_code >= 400 and prompt_as_json:
                 # Fallback: plain text prompt
-                body["content"][0]["text"] = (prompt or "").strip() or "画面轻微动态"
+                body["content"][0]["text"] = plain
                 resp = await client.post(
                     self._url("/contents/generations/tasks"),
                     headers=self._headers(),
@@ -947,6 +967,7 @@ class ArkGateway:
             f"统一角色：与「{source_text.strip()[:24]}」相关的核心人物，"
             "中等身材，简洁服饰配色固定，五官清晰可辨，全片外形不变"
         )
+        bgm_lock = segplan.infer_bgm_mood(source_text, style_prefix)
         plans: list[ShotPlan] = []
         for i, text in enumerate(chunks, start=1):
             # Mock: invent short summary titles, do not slice narration mid-token
@@ -955,20 +976,32 @@ class ArkGateway:
             if "：" in text or ":" in text:
                 title = text.split("：", 1)[0].split(":", 1)[0][-6:] or title
             subtitle = _fallback_overlay_subtitle(text)
+            img = f"{style_prefix}，{bible}，画面表现：{text[:80]}，竖屏构图，顶部留白，画面无文字"
+            beats = [
+                segplan.SegmentBeat(duration=segplan.estimate_visual_duration(img), kind="visual", text=img),
+                segplan.SegmentBeat(
+                    duration=segplan.estimate_narration_duration(text),
+                    kind="narration",
+                    text=text[:120],
+                ),
+            ]
+            script = segplan.build_segment_script(beats, bgm_mood=bgm_lock, max_total=min(duration_max, 30))
+            dur = float(segplan.resolve_api_duration(script, fallback=mid, lo=duration_min, hi=duration_max))
             plans.append(
                 ShotPlan(
                     shot=i,
-                    duration=float(mid),
+                    duration=dur,
                     text=text[:120],
                     overlay_title=_normalize_overlay_title(title, text, i),
                     overlay_subtitle=_normalize_overlay_subtitle(subtitle, text),
-                    img_prompt=f"{style_prefix}，{bible}，画面表现：{text[:80]}，竖屏构图，顶部留白，画面无文字",
-                    video_prompt=f"轻微动态，{style_prefix}，场景：{text[:60]}",
+                    img_prompt=img,
+                    video_prompt=script,
+                    segment_script=script,
                     camera="缓慢推近" if i % 2 else "轻拉远",
-                    bgm="好奇引入" if i == 1 else "平稳推进",
+                    bgm=bgm_lock,
                 )
             )
-        return StoryboardResult(shots=plans, character_bible=bible)
+        return StoryboardResult(shots=plans, character_bible=bible, bgm_lock=bgm_lock)
 
     def _parse_storyboard(
         self,
@@ -984,42 +1017,64 @@ class ArkGateway:
             raw = re.sub(r"\s*```$", "", raw)
         data = json.loads(raw)
         character_bible = ""
+        bgm_lock = ""
         items = data
         if isinstance(data, dict):
             character_bible = str(
                 data.get("character_bible") or data.get("characters") or data.get("cast") or ""
             ).strip()
+            bgm_lock = str(data.get("bgm_lock") or data.get("bgm") or "").strip()
             items = data.get("shots") or data.get("storyboard") or data.get("scenes") or []
         if not isinstance(items, list):
             raise RuntimeError("LLM storyboard JSON 格式无效：需要 shots 数组")
+        hi = min(duration_max, max_shot_duration)
         plans: list[ShotPlan] = []
         for i, item in enumerate(items, start=1):
             if not isinstance(item, dict):
                 continue
-            dur = float(item.get("duration", (duration_min + duration_max) / 2))
-            dur = max(duration_min, min(dur, duration_max, max_shot_duration))
             text = str(item.get("text") or item.get("audio_text") or f"镜头{i}")
             title = str(item.get("title") or item.get("overlay_title") or "").strip()
             subtitle = str(item.get("subtitle") or item.get("overlay_subtitle") or "").strip()
             title = _normalize_overlay_title(title, text, i)
             subtitle = _normalize_overlay_subtitle(subtitle, text)
             img = str(item.get("img_prompt") or f"{text}")
-            # Keep raw scene text; style/character applied later at image gen
-            video = str(item.get("video_prompt") or f"轻微动态，{text}")
+            camera = str(item.get("camera", "缓慢横移"))
+            bgm = str(item.get("bgm") or item.get("bgm_mood") or bgm_lock or "平稳")
+            if not bgm_lock:
+                bgm_lock = bgm
+            beats = segplan.parse_beats_from_llm_shot(item, narration_fallback=text)
+            script = segplan.build_segment_script(beats, bgm_mood=bgm_lock or bgm, max_total=hi)
+            narr = segplan.narration_from_script(script) or text
+            visual = segplan.first_visual_prompt(script) or img
+            dur = float(
+                segplan.resolve_api_duration(
+                    script,
+                    fallback=float(item.get("duration", (duration_min + duration_max) / 2)),
+                    lo=duration_min,
+                    hi=hi,
+                )
+            )
             plans.append(
                 ShotPlan(
                     shot=int(item.get("shot", i)),
                     duration=dur,
-                    text=text,
+                    text=narr,
                     overlay_title=title,
                     overlay_subtitle=subtitle,
-                    img_prompt=img,
-                    video_prompt=video,
-                    camera=str(item.get("camera", "缓慢横移")),
-                    bgm=str(item.get("bgm") or item.get("bgm_mood") or "平稳"),
+                    img_prompt=visual,
+                    video_prompt=script,
+                    segment_script=script,
+                    camera=camera,
+                    bgm=bgm_lock or bgm,
                 )
             )
-        return StoryboardResult(shots=plans, character_bible=character_bible)
+        if not bgm_lock and plans:
+            bgm_lock = plans[0].bgm
+        return StoryboardResult(
+            shots=plans,
+            character_bible=character_bible,
+            bgm_lock=bgm_lock or segplan.infer_bgm_mood(style_prefix),
+        )
 
     async def expand_content(self, topic: str, mode: str = "theme") -> dict[str, str]:
         """Expand a short topic into title + theme brief or full narration script."""

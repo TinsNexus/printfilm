@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.database import get_db
 from app.deps import get_current_user
-from app.models import User
+from app.models import User, WalletLedger
 from app.schemas import LoginRequest, RegisterRequest, TokenResponse, UserOut
 from app.services.auth import (
     create_access_token,
@@ -22,13 +22,29 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)) ->
     existing = await get_user_by_email(db, body.email)
     if existing:
         raise HTTPException(status_code=400, detail="邮箱已注册")
+    grant = int(settings.billing_signup_grant_fen or 0)
     user = User(
         email=body.email.lower(),
         nickname=body.nickname,
         hashed_password=hash_password(body.password),
         quota_left=settings.new_user_quota,
+        balance_fen=grant,
+        plan="free",
     )
     db.add(user)
+    await db.flush()
+    if grant > 0:
+        db.add(
+            WalletLedger(
+                user_id=user.id,
+                delta_fen=grant,
+                balance_after=grant,
+                kind="grant",
+                ref_type="signup",
+                ref_id=str(user.id),
+                note="signup_grant",
+            )
+        )
     await db.commit()
     await db.refresh(user)
     return TokenResponse(access_token=create_access_token(str(user.id)))

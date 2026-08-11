@@ -21,9 +21,9 @@ Create body 关键字段：`template_id`, `title`, `source_type`, `source_text`,
 
 ## Templates（`backend/app/services/templates_seed.py`）
 
-多样打散优先非重复；开源向可用 `opensource_showcase`，也可混用风格模板：
+多样打散优先非重复；开源向优先 `opensource_live_work`（真人工作场景），也可混用：
 
-`opensource_showcase`, `portrait_story`, `live_cinematic`, `live_person`, `photo_realism`, `film_cinematic`, `noir_thriller`, `vox_papercut`, `docu_warm`, `kids_flat`, `soft_anime`, `chalk_whiteboard`, `cyber_neon`, `epic_fantasy`, `magazine_collage`, `brand_clean`, `pixel_retro`, `retro_vhs`, `ink_guofeng`
+`opensource_live_work`, `opensource_showcase`, `live_product_desk`, `live_street_interview`, `live_cinematic`, `live_person`, `photo_realism`, `portrait_story`, `film_cinematic`, `noir_thriller`, `vox_papercut`, `docu_warm`, `kids_flat`, `soft_anime`, `chalk_whiteboard`, `cyber_neon`, `epic_fantasy`, `magazine_collage`, `brand_clean`, `pixel_retro`, `retro_vhs`, `ink_guofeng`
 
 ## Voices（`backend/app/services/voices.py`）
 

@@ -25,6 +25,11 @@ class UserOut(BaseModel):
     email: EmailStr
     nickname: str
     quota_left: int
+    balance_fen: int = 0
+    frozen_fen: int = 0
+    plan: str = "free"
+    billing_unlimited: bool = False
+    role: str = "user"
 
     model_config = {"from_attributes": True}
 
@@ -65,6 +70,7 @@ class ShotOut(BaseModel):
     overlay_subtitle: str = ""
     img_prompt: str
     video_prompt: str
+    segment_script: str = ""
     camera: str
     bgm_mood: str
     image_url: str | None
@@ -82,6 +88,7 @@ class ShotUpdate(BaseModel):
     overlay_subtitle: str | None = None
     img_prompt: str | None = None
     video_prompt: str | None = None
+    segment_script: str | None = None
     duration: float | None = Field(default=None, ge=1, le=30)
     camera: str | None = None
     bgm_mood: str | None = None
@@ -142,6 +149,7 @@ class ProjectOut(BaseModel):
     output_ratio: str = ""
     voice_id: str = ""
     character_bible: str = ""
+    bgm_lock: str = ""
     style_prompt: str = ""
     character_prompt: str = ""
     extra_prompt: str = ""
@@ -216,3 +224,214 @@ class ProgressEvent(BaseModel):
     video_url: str | None = None
     retryable: bool | None = None
     code: str | None = None
+
+
+# ---- Admin ----
+class PageMeta(BaseModel):
+    page: int
+    page_size: int
+    total: int
+
+
+class AdminStatsOut(BaseModel):
+    user_count: int
+    order_paid_total_fen: int
+    order_paid_today_fen: int
+    project_status_counts: dict[str, int]
+
+
+class AdminUserOut(BaseModel):
+    id: int
+    email: EmailStr
+    nickname: str
+    quota_left: int
+    balance_fen: int
+    frozen_fen: int
+    plan: str
+    billing_unlimited: bool
+    role: str
+    created_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class AdminUserListOut(BaseModel):
+    items: list[AdminUserOut]
+    meta: PageMeta
+
+
+class AdminUserPatch(BaseModel):
+    plan: str | None = None
+    billing_unlimited: bool | None = None
+    role: str | None = None
+    # Absolute target balance in fen; when set, write ledger delta
+    balance_fen: int | None = None
+    balance_note: str | None = None
+
+
+class AdminOrderOut(BaseModel):
+    id: int
+    out_trade_no: str
+    user_id: int
+    user_email: str | None = None
+    sku_id: str
+    amount_fen: int
+    credit_fen: int
+    pay_type: str
+    status: str
+    trade_no: str | None
+    paid_at: datetime | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AdminOrderListOut(BaseModel):
+    items: list[AdminOrderOut]
+    meta: PageMeta
+
+
+class AdminLedgerOut(BaseModel):
+    id: int
+    user_id: int
+    user_email: str | None = None
+    delta_fen: int
+    balance_after: int
+    kind: str
+    ref_type: str
+    ref_id: str
+    note: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AdminLedgerListOut(BaseModel):
+    items: list[AdminLedgerOut]
+    meta: PageMeta
+
+
+class AdminProjectOut(BaseModel):
+    id: int
+    user_id: int
+    user_email: str | None = None
+    template_id: str
+    title: str
+    status: str
+    progress: int
+    error_msg: str | None
+    cover_url: str | None
+    final_video_url: str | None
+    pipeline_mode: str
+    created_at: datetime
+    updated_at: datetime
+    shot_count: int = 0
+
+    model_config = {"from_attributes": True}
+
+
+class AdminProjectListOut(BaseModel):
+    items: list[AdminProjectOut]
+    meta: PageMeta
+
+
+class AdminProjectDetailOut(AdminProjectOut):
+    source_type: str
+    source_text: str
+    resolution_mode: str
+    output_ratio: str
+    voice_id: str
+
+
+class AdminWorkOut(BaseModel):
+    id: int
+    project_id: int
+    user_id: int
+    user_email: str | None = None
+    title: str
+    cover_url: str | None
+    video_url: str
+    visibility: str
+    audit_status: str
+    published_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AdminWorkListOut(BaseModel):
+    items: list[AdminWorkOut]
+    meta: PageMeta
+
+
+class AdminWorkPatch(BaseModel):
+    visibility: str | None = None
+    audit_status: str | None = None
+
+
+class AdminTemplateOut(BaseModel):
+    id: str
+    name: str
+    description: str
+    category: list
+    preview_cover: str
+    style_prefix: str
+    negative_prompt: str
+    default_ratio: str
+    shot_duration_min: int
+    shot_duration_max: int
+    llm_system_addon: str
+    seedream_config: dict
+    seedance_config: dict
+    audio_config: dict
+    subtitle_config: dict
+    sort_order: int
+    is_active: bool
+    is_premium: bool
+
+    model_config = {"from_attributes": True}
+
+
+class AdminTemplateListOut(BaseModel):
+    items: list[AdminTemplateOut]
+    meta: PageMeta
+
+
+class AdminTemplateCreate(BaseModel):
+    id: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=128)
+    description: str = ""
+    category: list[str] = Field(default_factory=list)
+    preview_cover: str = ""
+    style_prefix: str = ""
+    negative_prompt: str = ""
+    default_ratio: str = "16:9"
+    shot_duration_min: int = 3
+    shot_duration_max: int = 8
+    llm_system_addon: str = ""
+    seedream_config: dict = Field(default_factory=dict)
+    seedance_config: dict = Field(default_factory=dict)
+    audio_config: dict = Field(default_factory=dict)
+    subtitle_config: dict = Field(default_factory=dict)
+    sort_order: int = 0
+    is_active: bool = True
+    is_premium: bool = False
+
+
+class AdminTemplatePatch(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    category: list[str] | None = None
+    preview_cover: str | None = None
+    style_prefix: str | None = None
+    negative_prompt: str | None = None
+    default_ratio: str | None = None
+    shot_duration_min: int | None = None
+    shot_duration_max: int | None = None
+    llm_system_addon: str | None = None
+    seedream_config: dict | None = None
+    seedance_config: dict | None = None
+    audio_config: dict | None = None
+    subtitle_config: dict | None = None
+    sort_order: int | None = None
+    is_active: bool | None = None
+    is_premium: bool | None = None

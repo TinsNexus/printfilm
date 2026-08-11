@@ -19,7 +19,9 @@ class Settings(BaseSettings):
     ark_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
     model_llm: str = "doubao-seed-2-0-pro-260215"
     model_image: str = "doubao-seedream-5-0-260128"
-    model_video: str = "doubao-seedance-2-0-260128"
+    model_video: str = "doubao-seedance-2-5-260628"
+    seedance_duration_min: int = 4
+    seedance_duration_max: int = 30
     model_audio: str = "seed-tts-2.0"
     # 豆包语音（openspeech）— 与方舟 ARK_API_KEY 不同产品线
     volc_tts_app_id: str = ""
@@ -57,8 +59,33 @@ class Settings(BaseSettings):
     max_shot_duration: int = 30
     default_preview_resolution: str = "480p"
     new_user_quota: int = 5
-    # MVP: set false to skip quota check/deduction
+    # Legacy flag; prefer billing_enabled
     quota_enabled: bool = False
+
+    # Token billing (charge = provider_cost * markup)
+    billing_enabled: bool = False
+    billing_markup: float = 1.5
+    billing_estimate_buffer: float = 1.2
+    # Yuan per million tokens (provider cost)
+    billing_seedance_video0: float = 46.0
+    billing_seedance_video1: float = 28.0
+    billing_llm_per_m: float = 5.0
+    billing_seedream_per_m: float = 8.0
+    billing_tts_per_m: float = 2.0
+    # Fallback tokens when API omits usage
+    billing_est_llm_tokens: int = 80_000
+    billing_est_seedream_tokens: int = 20_000
+    billing_est_tts_tokens: int = 5_000
+    billing_est_seedance_tokens_per_sec: int = 20_000
+    # Signup grant (fen)
+    billing_signup_grant_fen: int = 500
+
+    # Epay (pay.gitcc.com)
+    epay_api_url: str = "https://pay.gitcc.com"
+    epay_pid: str = ""
+    epay_key: str = ""
+    epay_notify_url: str = ""
+    epay_return_url: str = ""
 
     public_base_url: str = "http://127.0.0.1:8000"
     ffmpeg_path: str = "ffmpeg"
@@ -84,7 +111,12 @@ class Settings(BaseSettings):
     oss_upload_async: bool = True
     oss_upload_queue: str = "oss"
 
-    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    cors_origins: str = (
+        "http://localhost:5173,http://127.0.0.1:5173,"
+        "http://localhost:5174,http://127.0.0.1:5174"
+    )
+    # Comma-separated emails promoted to admin on startup (existing users only)
+    admin_bootstrap_emails: str = ""
 
 
 @lru_cache

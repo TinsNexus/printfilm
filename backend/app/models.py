@@ -39,7 +39,14 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     nickname: Mapped[str] = mapped_column(String(64), default="创作者")
     hashed_password: Mapped[str] = mapped_column(String(255))
+    # Legacy field; prefer balance_fen for billing
     quota_left: Mapped[int] = mapped_column(Integer, default=5)
+    balance_fen: Mapped[int] = mapped_column(Integer, default=0)
+    frozen_fen: Mapped[int] = mapped_column(Integer, default=0)
+    plan: Mapped[str] = mapped_column(String(32), default="free")
+    billing_unlimited: Mapped[bool] = mapped_column(Boolean, default=False)
+    # user | admin
+    role: Mapped[str] = mapped_column(String(16), default="user")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     projects: Mapped[list["Project"]] = relationship(back_populates="owner")
@@ -92,6 +99,8 @@ class Project(Base):
     voice_id: Mapped[str] = mapped_column(String(128), default="")
     # Canonical cast/look description for Seedream consistency across shots
     character_bible: Mapped[str] = mapped_column(Text, default="")
+    # Project-level BGM mood lock (same across shots)
+    bgm_lock: Mapped[str] = mapped_column(Text, default="")
     # User overrides from studio (optional)
     style_prompt: Mapped[str] = mapped_column(Text, default="")
     character_prompt: Mapped[str] = mapped_column(Text, default="")
@@ -120,6 +129,8 @@ class Shot(Base):
     overlay_subtitle: Mapped[str] = mapped_column(String(256), default="")  # 图文顶部副标题（叠字）
     img_prompt: Mapped[str] = mapped_column(Text, default="")
     video_prompt: Mapped[str] = mapped_column(Text, default="")
+    # Manju-style timed segment script (@duration + production cues)
+    segment_script: Mapped[str] = mapped_column(Text, default="")
     camera: Mapped[str] = mapped_column(String(64), default="slow pan")
     bgm_mood: Mapped[str] = mapped_column(String(64), default="neutral")
     image_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
@@ -160,3 +171,56 @@ class Work(Base):
     visibility: Mapped[str] = mapped_column(String(16), default="public")
     audit_status: Mapped[str] = mapped_column(String(16), default="passed")
     published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class UsageEvent(Base):
+    """One upstream model/TTS call for token billing."""
+
+    __tablename__ = "usage_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True, index=True)
+    shot_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    provider: Mapped[str] = mapped_column(String(32), default="ark")
+    billing_key: Mapped[str] = mapped_column(String(64), index=True)
+    model: Mapped[str] = mapped_column(String(128), default="")
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost_fen: Mapped[int] = mapped_column(Integer, default=0)
+    charge_fen: Mapped[int] = mapped_column(Integer, default=0)
+    estimated: Mapped[bool] = mapped_column(Boolean, default=False)
+    settled: Mapped[bool] = mapped_column(Boolean, default=False)
+    raw_usage_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class WalletLedger(Base):
+    __tablename__ = "wallet_ledger"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    delta_fen: Mapped[int] = mapped_column(Integer)
+    balance_after: Mapped[int] = mapped_column(Integer, default=0)
+    kind: Mapped[str] = mapped_column(String(32))  # topup|grant|freeze|unfreeze|settle|refund
+    ref_type: Mapped[str] = mapped_column(String(32), default="")
+    ref_id: Mapped[str] = mapped_column(String(64), default="")
+    note: Mapped[str] = mapped_column(String(255), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Order(Base):
+    __tablename__ = "orders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    out_trade_no: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    sku_id: Mapped[str] = mapped_column(String(64))
+    amount_fen: Mapped[int] = mapped_column(Integer)
+    credit_fen: Mapped[int] = mapped_column(Integer)
+    pay_type: Mapped[str] = mapped_column(String(16))  # alipay | wxpay
+    status: Mapped[str] = mapped_column(String(16), default="pending")  # pending|paid|closed
+    trade_no: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

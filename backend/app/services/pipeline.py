@@ -33,11 +33,53 @@ from app.services.style_lock import (
     template_is_photoreal,
 )
 from app.services.voices import resolve_speaker
+from app.services import seedance_segments as segplan
+from app.services.bgm import resolve_bgm_path
 
 logger = logging.getLogger(__name__)
 
 _running: dict[int, asyncio.Task] = {}
 _cancelled: set[int] = set()
+
+
+async def _settle_billing(project_id: int) -> None:
+    try:
+        from app.services import billing as billing_svc
+
+        async with AsyncSessionLocal() as db:
+            await billing_svc.settle_project(db, project_id)
+            await db.commit()
+    except Exception:  # noqa: BLE001
+        logger.exception("billing settle failed project=%s", project_id)
+
+
+async def _record_usage_est(
+    project_id: int,
+    billing_key: str,
+    *,
+    tokens: int = 0,
+    model: str = "",
+    estimated: bool = True,
+) -> None:
+    try:
+        from app.services import billing as billing_svc
+
+        async with AsyncSessionLocal() as db:
+            project = await db.get(Project, project_id)
+            if not project:
+                return
+            await billing_svc.record_usage(
+                db,
+                user_id=project.user_id,
+                project_id=project_id,
+                billing_key=billing_key,
+                model=model,
+                tokens=tokens,
+                estimated=estimated,
+            )
+            await db.commit()
+    except Exception:  # noqa: BLE001
+        logger.exception("billing record failed project=%s key=%s", project_id, billing_key)
 _celery_task_ids: dict[int, str] = {}
 
 # Seedream min pixels ~3686400; portrait 9:16 ≈ 1440x2560
@@ -230,6 +272,13 @@ async def _synthesize_continuous_audio(
             shot_no=0,
             duration_hint=hint,
         )
+        s = get_settings()
+        await _record_usage_est(
+            project_id,
+            "tts",
+            tokens=s.billing_est_tts_tokens * max(len(shot_rows), 1),
+            model=s.model_audio,
+        )
         src = storage.local_path_from_url(audio_url or "")
         if not src or not src.exists():
             raise RuntimeError("整片配音生成失败")
@@ -310,6 +359,7 @@ async def run_pipeline(project_id: int) -> None:
                     "message": "分镜已生成，请确认修改后手动继续",
                 },
             )
+            await _settle_billing(project_id)
             logger.info("pipeline paused after script project=%s", project_id)
             return
 
@@ -391,6 +441,7 @@ async def run_pipeline(project_id: int) -> None:
                 project.status = ProjectStatus.CANCELLED
                 project.error_msg = "用户取消"
                 await db.commit()
+        await _settle_billing(project_id)
         await publish_progress(
             project_id,
             {
@@ -410,6 +461,7 @@ async def run_pipeline(project_id: int) -> None:
                     project.status = ProjectStatus.CANCELLED
                     project.error_msg = "用户取消"
                     await db.commit()
+            await _settle_billing(project_id)
             await publish_progress(
                 project_id,
                 {
@@ -428,6 +480,7 @@ async def run_pipeline(project_id: int) -> None:
                 project.status = ProjectStatus.FAILED
                 project.error_msg = str(exc)[:2000]
                 await db.commit()
+        await _settle_billing(project_id)
         await publish_progress(
             project_id,
             {
@@ -512,6 +565,15 @@ async def _script_stage(project_id: int) -> None:
             project.character_bible = _effective_character_bible(project, plans_result.character_bible)
         else:
             project.character_bible = "无固定人物，各镜独立场景"
+        tpl_bgm = ""
+        if tpl and isinstance(tpl.audio_config, dict):
+            tpl_bgm = str(tpl.audio_config.get("bgm_mood") or "").strip()
+        project.bgm_lock = (
+            (plans_result.bgm_lock or "").strip()
+            or tpl_bgm
+            or (plans[0].bgm if plans else "")
+            or "轻快专业"
+        )
         for shot in list(project.shots):
             await db.delete(shot)
         await db.flush()
@@ -532,6 +594,7 @@ async def _script_stage(project_id: int) -> None:
                 scene = scene.replace(bible, "", 1)
             scene = strip_lock_blocks(scene)
             img_prompt = ark._sanitize_seedream_prompt(scene)
+            segment_script = (plan.segment_script or plan.video_prompt or "").strip()
             db.add(
                 Shot(
                     project_id=project.id,
@@ -541,15 +604,23 @@ async def _script_stage(project_id: int) -> None:
                     overlay_title=plan.overlay_title or "",
                     overlay_subtitle=plan.overlay_subtitle or "",
                     img_prompt=img_prompt,
-                    video_prompt=plan.video_prompt,
+                    video_prompt=segment_script or plan.video_prompt,
+                    segment_script=segment_script,
                     camera=plan.camera,
-                    bgm_mood=plan.bgm,
+                    bgm_mood=project.bgm_lock or plan.bgm,
                     status=ShotStatus.PENDING,
                 )
             )
         project.status = ProjectStatus.SCRIPT_READY
         project.progress = 15
         await db.commit()
+    s = get_settings()
+    await _record_usage_est(
+        project_id,
+        "llm_chat",
+        tokens=s.billing_est_llm_tokens,
+        model=s.model_llm,
+    )
     await publish_progress(project_id, {"event": "progress", "stage": "SCRIPT_READY", "percent": 15})
 
 
@@ -768,6 +839,13 @@ async def _parallel_image_and_audio(project_id: int) -> None:
                 shot_no=meta["shot_no"],
                 size=image_size,
             )
+        s = get_settings()
+        await _record_usage_est(
+            project_id,
+            "seedream",
+            tokens=s.billing_est_seedream_tokens,
+            model=s.model_image,
+        )
         await persist_image(meta, img)
         return img.remote_url or img.local_url
 
@@ -911,12 +989,14 @@ async def _parallel_videos(project_id: int) -> None:
                 "shot_no": s.shot_no,
                 "duration": float(s.duration),
                 "video_prompt": s.video_prompt,
+                "segment_script": getattr(s, "segment_script", "") or s.video_prompt or "",
                 "camera": s.camera,
                 "image_ref": s.image_ark_url or s.image_url or "",
                 "has_video": bool(s.video_url),
             }
             for s in sorted(project.shots, key=lambda s: s.shot_no)
         ]
+        style_prefix = _effective_style(project)
         total = len(shot_meta)
 
     if not shot_meta:
@@ -946,12 +1026,24 @@ async def _parallel_videos(project_id: int) -> None:
             return
         async with sem:
             await _ensure_not_cancelled(project_id)
-            prompt = f"{meta['video_prompt']}。运镜：{meta['camera']}。{motion}"
+            script = (meta.get("segment_script") or meta.get("video_prompt") or "").strip()
+            prompt = segplan.build_seedance_prompt(
+                script,
+                style_prefix=style_prefix,
+                motion_bias=motion,
+                camera=str(meta.get("camera") or ""),
+            )
+            dur = segplan.resolve_api_duration(
+                script,
+                fallback=meta["duration"],
+                lo=cfg.seedance_duration_min,
+                hi=cfg.seedance_duration_max,
+            )
             try:
                 local_video = await ark.gen_and_wait_video(
                     meta["image_ref"],
                     prompt,
-                    int(meta["duration"]),
+                    int(dur),
                     project_id=project_id,
                     shot_no=meta["shot_no"],
                     character_consistency=consistency,
@@ -991,6 +1083,14 @@ async def _parallel_videos(project_id: int) -> None:
                     )
                     return
                 raise
+        s = get_settings()
+        dur = max(float(dur), 2.0)
+        await _record_usage_est(
+            project_id,
+            "seedance2:video0",
+            tokens=int(dur * s.billing_est_seedance_tokens_per_sec),
+            model=s.model_video,
+        )
         async with _db_write_lock():
             async with AsyncSessionLocal() as db:
                 shot = await db.get(Shot, meta["id"])
@@ -1137,14 +1237,27 @@ async def _video_stage(project_id: int) -> None:
         if project.resolution_mode == "hd" and resolution == "480p":
             resolution = "720p"
         ratio = _project_output_ratio(project) or cfg.ark_video_ratio
+        style_prefix = _effective_style(project)
         for idx, shot in enumerate(sorted(project.shots, key=lambda s: s.shot_no)):
             await _ensure_not_cancelled(project_id)
-            prompt = f"{shot.video_prompt}。运镜：{shot.camera}。{motion}"
+            script = (getattr(shot, "segment_script", "") or shot.video_prompt or "").strip()
+            prompt = segplan.build_seedance_prompt(
+                script,
+                style_prefix=style_prefix,
+                motion_bias=motion,
+                camera=shot.camera or "",
+            )
+            dur = segplan.resolve_api_duration(
+                script,
+                fallback=shot.duration,
+                lo=cfg.seedance_duration_min,
+                hi=cfg.seedance_duration_max,
+            )
             image_ref = shot.image_ark_url or shot.image_url or ""
             local_video = await ark.gen_and_wait_video(
                 image_ref,
                 prompt,
-                int(shot.duration),
+                int(dur),
                 project_id=project_id,
                 shot_no=shot.shot_no,
                 character_consistency=consistency,
@@ -1256,6 +1369,13 @@ async def _compose_stage(project_id: int) -> None:
             except (TypeError, ValueError):
                 return default
 
+        bgm_mood = (getattr(project, "bgm_lock", None) or "").strip()
+        if not bgm_mood and project.shots:
+            bgm_mood = (project.shots[0].bgm_mood or "").strip()
+        if not bgm_mood and project.template and isinstance(project.template.audio_config, dict):
+            bgm_mood = str(project.template.audio_config.get("bgm_mood") or "").strip()
+        bgm_path = resolve_bgm_path(bgm_mood)
+
         out = storage.project_dir(project_id) / "final.mp4"
         await asyncio.to_thread(
             compose_project,
@@ -1270,6 +1390,8 @@ async def _compose_stage(project_id: int) -> None:
                 title_scale=_f("title_scale", 1.35),
                 sub_scale=_f("sub_scale", 1.3),
                 caption_scale=_f("caption_scale", 1.25),
+                bgm_path=bgm_path,
+                bgm_volume=0.22,
             ),
         )
         project.final_video_url = storage.publish_local(out)
@@ -1284,9 +1406,7 @@ async def _compose_stage(project_id: int) -> None:
             project.status = ProjectStatus.DONE
             project.progress = 100
             await db.commit()
-
-
-async def regen_shot_image(project_id: int, shot_id: int) -> None:
+    await _settle_billing(project_id)
     ark = get_ark()
     async with AsyncSessionLocal() as db:
         result = await db.execute(
@@ -1347,12 +1467,24 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
         resolution = cfg.ark_video_resolution
         if project.resolution_mode == "hd" and resolution == "480p":
             resolution = "720p"
-        prompt = f"{shot.video_prompt}。运镜：{shot.camera}。{motion}"
+        script = (getattr(shot, "segment_script", "") or shot.video_prompt or "").strip()
+        prompt = segplan.build_seedance_prompt(
+            script,
+            style_prefix=_effective_style(project),
+            motion_bias=motion,
+            camera=shot.camera or "",
+        )
+        dur = segplan.resolve_api_duration(
+            script,
+            fallback=shot.duration,
+            lo=cfg.seedance_duration_min,
+            hi=cfg.seedance_duration_max,
+        )
         image_ref = shot.image_ark_url or shot.image_url or ""
         local_video = await ark.gen_and_wait_video(
             image_ref,
             prompt,
-            int(shot.duration),
+            int(dur),
             project_id=project_id,
             shot_no=shot.shot_no,
             character_consistency=consistency,

@@ -1,22 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { api } from '../api'
+import { Link, useNavigate } from 'react-router-dom'
+import { api, type UsageSummary } from '../api'
 import type { Project } from '../api'
 import AppShell from '../components/layout/AppShell'
 import PillTabs from '../components/ui/PillTabs'
 import StatCard from '../components/ui/StatCard'
-import ComingSoon from '../components/ui/ComingSoon'
 import {
   IconClapper,
   IconClock,
-  IconCode,
   IconCopy,
   IconDownload,
   IconEdit,
   IconEye,
-  IconLink,
   IconPlus,
-  IconQr,
   IconRefresh,
   IconSearch,
   IconSend,
@@ -33,13 +29,13 @@ import { isRunning, STATUS_CN, statusTone } from '../lib/status'
 type HistoryItem = Omit<Project, 'shots'>
 
 const PAGE_SIZE = 8
-const PLATFORMS = [
-  { name: 'YouTube', mark: 'YT' },
-  { name: '抖音', mark: '抖' },
-  { name: 'Bilibili', mark: 'B' },
-  { name: '小红书', mark: '红' },
-  { name: '视频号', mark: '视' },
-]
+
+/** 格式化 token 数量，过大时用 k/M 缩写 */
+function formatTokens(n: number) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`
+  if (n >= 10_000) return `${(n / 1000).toFixed(n >= 100_000 ? 0 : 1)}k`
+  return n.toLocaleString('zh-CN')
+}
 
 function canDownload(p: HistoryItem) {
   return p.status === 'DONE' && Boolean(p.final_video_url)
@@ -67,6 +63,7 @@ export default function HistoryPage() {
   const [tab, setTab] = useState('全部')
   const [q, setQ] = useState('')
   const [page, setPage] = useState(1)
+  const [usage, setUsage] = useState<UsageSummary | null>(null)
   const [preview, setPreview] = useState<{
     url: string
     title: string
@@ -105,6 +102,10 @@ export default function HistoryPage() {
       for (const t of list) map[t.id] = t.name
       setTemplates(map)
     })
+    api
+      .usageSummary()
+      .then(setUsage)
+      .catch(() => setUsage(null))
   }, [nav])
 
   useEffect(() => {
@@ -329,7 +330,6 @@ export default function HistoryPage() {
                 ? `打包中 ${packProgress}…`
                 : `打包下载 (${selectedDownloadable.length})`}
             </button>
-            <span>勾选已完成项目后，浏览器依次下载并打成 ZIP（不经服务器）</span>
           </div>
 
           {error ? <p className="pf-error">{error}</p> : null}
@@ -476,67 +476,50 @@ export default function HistoryPage() {
 
         <aside className="pf-history-side">
           <div className="pf-side-box">
-            <h3>快速发布</h3>
-            <p className="pf-side-desc">将作品发布到平台或分享给更多人</p>
-            <div className="pf-quick-grid">
-              <button type="button" className="pf-quick-tile" disabled>
-                <IconLink size={20} />
-                <span>复制链接</span>
-                <ComingSoon />
-              </button>
-              <button type="button" className="pf-quick-tile" disabled>
-                <IconQr size={20} />
-                <span>二维码</span>
-                <ComingSoon />
-              </button>
-              <button type="button" className="pf-quick-tile" disabled>
-                <IconCode size={20} />
-                <span>嵌入网页</span>
-                <ComingSoon />
-              </button>
-            </div>
-          </div>
-
-          <div className="pf-side-box">
-            <h3>平台导出</h3>
-            <p className="pf-side-desc">一键导出到各大平台</p>
-            <ul className="pf-platform-list">
-              {PLATFORMS.map((p) => (
-                <li key={p.name}>
-                  <span className="pf-platform-mark">{p.mark}</span>
-                  <span className="pf-platform-name">{p.name}</span>
-                  <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" disabled>
-                    导出
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <button type="button" className="pf-link pf-side-foot" disabled>
-              查看发布记录 → <ComingSoon />
-            </button>
-          </div>
-
-          <div className="pf-side-box">
             <h3>本月使用情况</h3>
+            <p className="pf-side-desc">按上游 token 实际用量计费</p>
+
             <div className="pf-usage-row">
-              <span>时长额度</span>
-              <span className="pf-muted">— / 30h</span>
+              <span>Token 用量</span>
+              <span className="pf-usage-val">{formatTokens(usage?.tokens ?? 0)}</span>
             </div>
             <div className="pf-meter">
-              <i style={{ width: '0%' }} />
+              <i
+                style={{
+                  width: `${Math.min(100, Math.log10((usage?.tokens || 0) + 1) * 18)}%`,
+                }}
+              />
             </div>
+
             <div className="pf-usage-row">
-              <span>生成次数</span>
-              <span className="pf-muted">
-                {stats.total} / 200
-              </span>
+              <span>本月费用</span>
+              <span className="pf-usage-val">¥{(usage?.charge_yuan ?? 0).toFixed(2)}</span>
             </div>
             <div className="pf-meter">
-              <i style={{ width: `${Math.min(100, stats.total * 2)}%` }} />
+              <i
+                style={{
+                  width: `${Math.min(100, (usage?.charge_fen || 0) / 20)}%`,
+                }}
+              />
             </div>
-            <p className="pf-muted" style={{ fontSize: '0.75rem', margin: '0.5rem 0 0' }}>
-              额度统计即将推出
-            </p>
+
+            <div className="pf-usage-row">
+              <span>可用余额</span>
+              <span className="pf-usage-val">¥{(usage?.balance_yuan ?? 0).toFixed(2)}</span>
+            </div>
+            {(usage?.frozen_fen ?? 0) > 0 ? (
+              <div className="pf-usage-row">
+                <span>冻结中</span>
+                <span className="pf-muted">¥{(usage?.frozen_yuan ?? 0).toFixed(2)}</span>
+              </div>
+            ) : null}
+
+            <div className="pf-usage-foot">
+              <span className="pf-muted">调用 {usage?.calls ?? 0} 次</span>
+              <Link to="/pricing" className="pf-link">
+                去充值 →
+              </Link>
+            </div>
           </div>
         </aside>
       </div>

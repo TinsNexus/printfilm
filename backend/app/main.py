@@ -5,10 +5,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, text
 
-from app.api import auth, projects, templates
+from app.api import auth, billing, projects, templates
+from app.api.admin import router as admin_router
 from app.config import get_settings
 from app.database import AsyncSessionLocal, engine, init_db
-from app.models import Template
+from app.models import Template, User
 from app.services.templates_seed import TEMPLATES
 
 settings = get_settings()
@@ -43,6 +44,8 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 app.include_router(auth.router, prefix="/api")
 app.include_router(templates.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
+app.include_router(billing.router, prefix="/api")
+app.include_router(admin_router, prefix="/api")
 
 
 @app.on_event("startup")
@@ -50,6 +53,7 @@ async def on_startup() -> None:
     await init_db()
     await _migrate_sqlite()
     await seed_templates()
+    await bootstrap_admins()
     try:
         from app.services import oss as oss_svc
 
@@ -71,10 +75,22 @@ async def _migrate_sqlite() -> None:
                 await conn.execute(text("ALTER TABLE shots ADD COLUMN overlay_title VARCHAR(128) DEFAULT ''"))
             if "overlay_subtitle" not in cols:
                 await conn.execute(text("ALTER TABLE shots ADD COLUMN overlay_subtitle VARCHAR(256) DEFAULT ''"))
+            if "segment_script" not in cols:
+                await conn.execute(text("ALTER TABLE shots ADD COLUMN segment_script TEXT DEFAULT ''"))
 
             result = await conn.execute(text("PRAGMA table_info(projects)"))
             pcols = {row[1] for row in result.fetchall()}
         else:
+            result = await conn.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'shots'"
+                )
+            )
+            scols = {row[0] for row in result.fetchall()}
+            if "segment_script" not in scols:
+                await conn.execute(text("ALTER TABLE shots ADD COLUMN segment_script TEXT DEFAULT ''"))
+
             result = await conn.execute(
                 text(
                     "SELECT column_name FROM information_schema.columns "
@@ -91,12 +107,59 @@ async def _migrate_sqlite() -> None:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN voice_id VARCHAR(128) DEFAULT ''"))
         if "character_bible" not in pcols:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN character_bible TEXT DEFAULT ''"))
+        if "bgm_lock" not in pcols:
+            await conn.execute(text("ALTER TABLE projects ADD COLUMN bgm_lock TEXT DEFAULT ''"))
         if "style_prompt" not in pcols:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN style_prompt TEXT DEFAULT ''"))
         if "character_prompt" not in pcols:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN character_prompt TEXT DEFAULT ''"))
         if "extra_prompt" not in pcols:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN extra_prompt TEXT DEFAULT ''"))
+
+        # User billing columns
+        if is_sqlite:
+            result = await conn.execute(text("PRAGMA table_info(users)"))
+            ucols = {row[1] for row in result.fetchall()}
+        else:
+            result = await conn.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'users'"
+                )
+            )
+            ucols = {row[0] for row in result.fetchall()}
+        if "balance_fen" not in ucols:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN balance_fen INTEGER DEFAULT 0"))
+        if "frozen_fen" not in ucols:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN frozen_fen INTEGER DEFAULT 0"))
+        if "plan" not in ucols:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN plan VARCHAR(32) DEFAULT 'free'"))
+        if "billing_unlimited" not in ucols:
+            await conn.execute(
+                text("ALTER TABLE users ADD COLUMN billing_unlimited BOOLEAN DEFAULT FALSE")
+            )
+        if "role" not in ucols:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR(16) DEFAULT 'user'"))
+
+
+async def bootstrap_admins() -> None:
+    # Promote matching emails to admin (does not create users)
+    raw = (settings.admin_bootstrap_emails or "").strip()
+    if not raw:
+        return
+    emails = [e.strip().lower() for e in raw.split(",") if e.strip()]
+    if not emails:
+        return
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(User).where(User.email.in_(emails)))
+        users = list(result.scalars().all())
+        changed = False
+        for user in users:
+            if (user.role or "user") != "admin":
+                user.role = "admin"
+                changed = True
+        if changed:
+            await db.commit()
 
 
 async def seed_templates() -> None:

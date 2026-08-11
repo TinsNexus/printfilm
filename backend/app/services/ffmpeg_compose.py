@@ -55,6 +55,9 @@ class ComposeOptions:
     title_scale: float = 1.35
     sub_scale: float = 1.3
     caption_scale: float = 1.25
+    # Optional continuous BGM under narration
+    bgm_path: Path | None = None
+    bgm_volume: float = 0.22
 
 
 def allocate_durations_by_narration(
@@ -641,13 +644,35 @@ def _burn_captions_on_video(
     h: int,
     font: str | None,
     caption_scale: float = 1.25,
+    title: str = "",
+    subtitle: str = "",
+    subtitle_layout: str = "top",
+    title_scale: float = 1.35,
+    sub_scale: float = 1.3,
 ) -> None:
-    """Burn timed bottom captions onto an existing video clip (full mode)."""
-    captions = _bottom_caption_drawtext(
-        narration, duration=duration, w=w, h=h, font=font, scale=caption_scale
+    """Burn title/subtitle + timed bottom captions onto an existing video clip (full mode)."""
+    parts: list[str] = []
+    overlay = _overlay_drawtext(
+        w,
+        h,
+        title,
+        subtitle,
+        font,
+        layout=subtitle_layout,
+        title_scale=title_scale,
+        sub_scale=sub_scale,
     )
+    if overlay:
+        parts.append(overlay)
+    # split 布局底部已是副标题，不再叠旁白滚动字幕以免抢戏
+    if subtitle_layout != "split":
+        captions = _bottom_caption_drawtext(
+            narration, duration=duration, w=w, h=h, font=font, scale=caption_scale
+        )
+        if captions:
+            parts.append(captions)
     ffmpeg = _which("ffmpeg")
-    if not captions:
+    if not parts:
         _run([ffmpeg, "-y", "-i", str(video_in), "-c", "copy", str(video_out)])
         return
     _run(
@@ -657,7 +682,7 @@ def _burn_captions_on_video(
             "-i",
             str(video_in),
             "-vf",
-            captions,
+            ",".join(parts),
             "-c:v",
             "libx264",
             "-pix_fmt",
@@ -904,6 +929,11 @@ def compose_project(
                     h=h,
                     font=font,
                     caption_scale=opts.caption_scale,
+                    title=shot.overlay_title or "",
+                    subtitle=shot.overlay_subtitle or "",
+                    subtitle_layout=opts.subtitle_layout or "top",
+                    title_scale=opts.title_scale,
+                    sub_scale=opts.sub_scale,
                 )
             elif shot.image_path and shot.image_path.exists():
                 _image_to_video(shot.image_path, shot.duration, video, w=w, h=h)
@@ -917,6 +947,11 @@ def compose_project(
                     h=h,
                     font=font,
                     caption_scale=opts.caption_scale,
+                    title=shot.overlay_title or "",
+                    subtitle=shot.overlay_subtitle or "",
+                    subtitle_layout=opts.subtitle_layout or "top",
+                    title_scale=opts.title_scale,
+                    sub_scale=opts.sub_scale,
                 )
                 video = capped
             else:
@@ -965,7 +1000,35 @@ def compose_project(
             # Replace silent concat audio with one continuous narration track
             voiced = tmp_path / "voiced.mp4"
             _mux_continuous_narration(merged, opts.full_audio_path, voiced)
-            shutil.copy2(voiced, output)
+            staged = voiced
+        else:
+            staged = merged
+
+        if opts.bgm_path and Path(opts.bgm_path).is_file():
+            mixed = tmp_path / "with_bgm.mp4"
+            try:
+                _mix_bgm(staged, Path(opts.bgm_path), mixed, volume=float(opts.bgm_volume or 0.22))
+                shutil.copy2(mixed, output)
+            except Exception:  # noqa: BLE001
+                logger.exception("BGM mix failed; exporting without BGM")
+                if staged == merged and not continuous:
+                    _run(
+                        [
+                            ffmpeg,
+                            "-y",
+                            "-i",
+                            str(merged),
+                            "-c",
+                            "copy",
+                            "-movflags",
+                            "+faststart",
+                            str(output),
+                        ]
+                    )
+                else:
+                    shutil.copy2(staged, output)
+        elif continuous and opts.full_audio_path:
+            shutil.copy2(staged, output)
         else:
             # Captions already burned per-shot via drawtext — remux only.
             _run(
@@ -983,3 +1046,36 @@ def compose_project(
             )
 
     return output
+
+
+def _mix_bgm(video: Path, bgm: Path, output: Path, *, volume: float = 0.22) -> None:
+    """Loop/trim BGM under existing audio; duck volume below narration."""
+    ffmpeg = _which("ffmpeg")
+    vol = max(0.05, min(float(volume), 0.5))
+    # amix: original audio + quieter looped BGM, duration = first (video)
+    _run(
+        [
+            ffmpeg,
+            "-y",
+            "-i",
+            str(video),
+            "-stream_loop",
+            "-1",
+            "-i",
+            str(bgm),
+            "-filter_complex",
+            f"[1:a]volume={vol:.3f}[bg];[0:a][bg]amix=inputs=2:duration=first:dropout_transition=2[a]",
+            "-map",
+            "0:v:0",
+            "-map",
+            "[a]",
+            "-c:v",
+            "copy",
+            "-c:a",
+            "aac",
+            "-shortest",
+            "-movflags",
+            "+faststart",
+            str(output),
+        ]
+    )

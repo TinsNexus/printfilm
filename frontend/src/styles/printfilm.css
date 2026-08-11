@@ -2116,9 +2116,26 @@ button.pf-shot-editable:disabled {
 .pf-usage-row {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  font-size: 0.85rem;
+  align-items: baseline;
+  gap: 0.75rem;
+  font-size: 0.88rem;
   margin-bottom: 0.25rem;
+}
+
+.pf-usage-val {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.pf-usage-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.35rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--pf-line);
+  font-size: 0.82rem;
 }
 
 .pf-meter {
@@ -2135,15 +2152,769 @@ button.pf-shot-editable:disabled {
   background: var(--pf-lime);
 }
 
-.pf-pricing {
-  max-width: 720px;
-  margin: 3rem auto;
+.pf-topup-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  max-height: min(60vh, 480px);
+  overflow: auto;
+}
+
+.pf-topup-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--pf-line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.pf-topup-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  text-align: left;
+}
+
+.pf-topup-main strong {
+  font-size: 0.95rem;
+}
+
+.pf-topup-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.15rem;
+  font-size: 0.82rem;
+}
+
+.pf-topup-meta em {
+  font-style: normal;
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.pf-topup-status {
+  font-weight: 600;
+}
+
+.pf-topup-status.is-paid {
+  color: #3d4a12;
+}
+
+.pf-topup-status.is-pending {
+  color: #8a6d1d;
+}
+
+.pf-topup-status.is-closed {
+  color: var(--pf-muted);
+}
+
+/* —— Pricing / top-up page —— */
+.pf-pricing-page {
+  width: min(1080px, 100%);
+  margin: 0 auto;
+  padding: 1.75rem 0 3rem;
+}
+
+.pf-pricing-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.95fr);
+  gap: 1.5rem;
+  align-items: stretch;
+  margin-bottom: 2rem;
+}
+
+.pf-pricing-hero-copy {
+  text-align: left;
+  padding-top: 0.35rem;
+}
+
+.pf-pricing-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.28rem 0.7rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--pf-lime) 28%, #fff);
+  color: #3d4a12;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.pf-pricing-hero-copy h1 {
+  margin: 0.85rem 0 0.55rem;
+  font-size: clamp(1.85rem, 3.2vw, 2.35rem);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  font-weight: 800;
+}
+
+.pf-pricing-hero-copy p {
+  margin: 0;
+  max-width: 34rem;
+  color: var(--pf-muted);
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+.pf-pricing-balance-card {
+  display: grid;
+  grid-template-columns: 1.35fr 0.85fr 0.85fr auto;
+  gap: 1rem;
+  align-items: center;
+  background: var(--pf-card);
+  border: 1px solid var(--pf-line);
+  border-radius: 16px;
+  box-shadow: var(--pf-shadow);
+  padding: 1.15rem 1.2rem;
+}
+
+.pf-pricing-balance-main {
+  position: relative;
+  padding-left: 0.85rem;
+}
+
+.pf-pricing-balance-main::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.15rem;
+  bottom: 0.15rem;
+  width: 4px;
+  border-radius: 999px;
+  background: var(--pf-lime);
+}
+
+.pf-pricing-balance-label {
+  display: block;
+  color: var(--pf-muted);
+  font-size: 0.78rem;
+  margin-bottom: 0.25rem;
+}
+
+.pf-pricing-balance-main strong {
+  font-size: 1.85rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.pf-pricing-balance-side em {
+  font-style: normal;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.pf-pricing-history-btn {
+  appearance: none;
+  border: 1px solid var(--pf-line);
+  background: #fff;
+  color: var(--pf-ink);
+  border-radius: 999px;
+  padding: 0.45rem 0.9rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pf-pricing-history-btn:hover:not(:disabled) {
+  background: #f4f5f7;
+}
+
+.pf-pricing-history-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.pf-pricing-hint,
+.pf-pricing-error {
+  text-align: left;
+  margin: -0.5rem 0 1.25rem;
+}
+
+.pf-pricing-section-head {
+  text-align: left;
+  margin-bottom: 1rem;
+}
+
+.pf-pricing-section-head h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.pf-pricing-section-head p {
+  margin: 0;
+  color: var(--pf-muted);
+  font-size: 0.9rem;
+}
+
+.pf-pricing-sku-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.pf-pricing-sku-card {
+  position: relative;
+  text-align: left;
+  background: var(--pf-card);
+  border: 1px solid var(--pf-line);
+  border-radius: 16px;
+  padding: 1.25rem 1.1rem 1.15rem;
+  box-shadow: 0 6px 20px rgba(17, 19, 24, 0.04);
+  display: flex;
+  flex-direction: column;
+  min-height: 250px;
+}
+
+.pf-pricing-sku-card.is-recommended {
+  border-color: var(--pf-lime);
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--pf-lime) 28%, transparent);
+}
+
+.pf-pricing-rec-badge {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  background: var(--pf-lime);
+  color: var(--pf-ink);
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 0.18rem 0.45rem;
+  border-radius: 999px;
+}
+
+.pf-pricing-sku-card h3 {
+  margin: 0 0 0.85rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.pf-pricing-sku-price {
+  display: flex;
+  align-items: baseline;
+  gap: 0.1rem;
+  margin-bottom: 0.35rem;
+}
+
+.pf-pricing-sku-price .yen {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.pf-pricing-sku-price strong {
+  font-size: 2.35rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.pf-pricing-sku-credit {
+  margin: 0;
+  color: var(--pf-muted);
+  font-size: 0.88rem;
+}
+
+.pf-pricing-sku-bonus {
+  margin: 0.35rem 0 0;
+  color: #5f7a12;
+  font-size: 0.82rem;
+  font-weight: 600;
+  min-height: 1.2em;
+}
+
+.pf-pricing-sku-bonus.is-empty {
+  visibility: hidden;
+}
+
+.pf-pricing-sku-cta {
+  margin-top: auto;
+  width: 100%;
+  appearance: none;
+  border: 1.5px solid var(--pf-ink);
+  background: #fff;
+  color: var(--pf-ink);
+  border-radius: 999px;
+  padding: 0.65rem 1rem;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.pf-pricing-sku-cta:hover:not(:disabled) {
+  background: #f4f5f7;
+}
+
+.pf-pricing-sku-cta.is-primary {
+  background: var(--pf-lime);
+  border-color: var(--pf-lime);
+}
+
+.pf-pricing-sku-cta.is-primary:hover:not(:disabled) {
+  filter: brightness(0.97);
+}
+
+.pf-pricing-sku-cta:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.pf-pricing-paybar {
+  margin-top: 1.35rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  background: #eef0f3;
+  border: none;
+  border-radius: 14px;
+  padding: 0.85rem 1.1rem;
+}
+
+.pf-pricing-pay-left {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.pf-pricing-pay-label {
+  color: var(--pf-muted);
+  font-size: 0.88rem;
+  font-weight: 600;
+  margin-right: 0.25rem;
+}
+
+.pf-pricing-pay-opt {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid var(--pf-line);
+  background: #fff;
+  color: var(--pf-ink);
+  border-radius: 999px;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pf-pricing-pay-opt.is-active {
+  background: var(--pf-ink);
+  border-color: var(--pf-ink);
+  color: #fff;
+}
+
+.pf-pay-logo {
+  width: 1.05rem;
+  height: 1.05rem;
+  border-radius: 0.25rem;
+  display: inline-block;
+  background: center / contain no-repeat;
+}
+
+.pf-pay-logo.alipay {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='4' fill='%231677FF'/%3E%3Cpath fill='%23fff' d='M5.2 14.2c1.7 1.1 3.8 2 6.2 2.4.4-1 .8-2.2 1.1-3.4H8.2V11h5.1c.1-.5.2-1 .2-1.4H8.2V8h6.8v1.1c0 .6-.1 1.4-.3 2.2H18v1.5h-2.7c-.3 1.2-.7 2.4-1.2 3.5 2.1-.1 4-.7 5.5-1.5v1.8c-1.9 1.1-4.3 1.8-7 1.8-3.4 0-6.4-1.1-8.4-2.6l1-.6z'/%3E%3C/svg%3E");
+}
+
+.pf-pay-logo.wxpay {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='4' fill='%2307C160'/%3E%3Cpath fill='%23fff' d='M9.4 7.2c-2.9 0-5.2 1.9-5.2 4.2 0 1.3.7 2.5 1.9 3.3l-.5 1.5 1.7-.9c.6.2 1.2.3 1.9.3.2 0 .4 0 .6-.1-.3-.5-.4-1.1-.4-1.7 0-2.3 2.2-4.2 4.9-4.2.2 0 .5 0 .7.1C14.3 8.4 12 7.2 9.4 7.2zm-2 2.5a.7.7 0 1 1 0 1.4.7.7 0 0 1 0-1.4zm3.4 0a.7.7 0 1 1 0 1.4.7.7 0 0 1 0-1.4zm4.1.8c-2.4 0-4.3 1.6-4.3 3.6 0 .7.3 1.4.7 1.9l-.4 1.2 1.4-.7c.5.2 1 .3 1.5.3 2.4 0 4.3-1.6 4.3-3.6s-1.9-2.7-4.3-2.7zm-1.5 2a.55.55 0 1 1 0 1.1.55.55 0 0 1 0-1.1zm2.9 0a.55.55 0 1 1 0 1.1.55.55 0 0 1 0-1.1z'/%3E%3C/svg%3E");
+}
+
+.pf-pay-check {
+  display: inline-grid;
+  place-items: center;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--pf-ink);
+  font-size: 0.65rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.pf-pricing-pay-secure {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--pf-muted);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.pf-pay-shield {
+  width: 0.95rem;
+  height: 0.95rem;
+  background: center / contain no-repeat
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23111318' stroke-width='2'%3E%3Cpath d='M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6l7-3z'/%3E%3Cpath d='M9.5 12.2l1.8 1.8 3.4-3.6'/%3E%3C/svg%3E");
+}
+
+.pf-pricing-info {
+  margin-top: 1.35rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  background: #eef0f3;
+  border-radius: 16px;
+  padding: 1.35rem 1.5rem;
+  text-align: left;
+}
+
+.pf-pricing-info h3 {
+  margin: 0 0 0.7rem;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.pf-pricing-info ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--pf-muted);
+  line-height: 1.85;
+  font-size: 0.9rem;
+}
+
+.pf-pricing-checks {
+  list-style: none;
+  padding-left: 0 !important;
+}
+
+.pf-pricing-checks li {
+  position: relative;
+  padding-left: 1.35rem;
+}
+
+.pf-pricing-checks li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.45rem;
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 50%;
+  background: var(--pf-lime)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23111318' d='M6.4 11.2 3.2 8l1.1-1.1 2.1 2.1 5-5L12.5 5z'/%3E%3C/svg%3E")
+    center / 0.7rem no-repeat;
+}
+
+.pf-pricing-foot {
+  margin: 2rem 0 0;
+  text-align: center;
+  color: var(--pf-muted);
+  font-size: 0.85rem;
+}
+
+.pf-pricing-foot a {
+  color: inherit;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+@media (max-width: 960px) {
+  .pf-pricing-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .pf-pricing-balance-card {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .pf-pricing-history-btn {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .pf-pricing-sku-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .pf-pricing-sku-grid,
+  .pf-pricing-info {
+    grid-template-columns: 1fr;
+  }
+
+  .pf-pricing-balance-card {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* —— Payment QR modal —— */
+.pf-modal-panel.pf-pay-modal {
+  width: min(400px, 94vw);
+  background: #fff;
+  border-radius: 16px;
+  padding: 0;
+}
+
+.pf-pay-modal .pf-modal-body {
+  padding: 0;
+  overflow: visible;
+}
+
+.pf-pay-sheet {
+  padding: 1.15rem 1.25rem 1.1rem;
   text-align: center;
 }
 
-.pf-pricing .pf-card {
-  padding: 2rem;
-  margin-top: 1.5rem;
+.pf-pay-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.pf-pay-sheet-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.98rem;
+}
+
+.pf-pay-sheet-title strong {
+  font-weight: 700;
+}
+
+.pf-pay-sheet-close {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: #8b9099;
+  font-size: 1.45rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.1rem 0.35rem;
+}
+
+.pf-pay-sheet-close:hover {
+  color: var(--pf-ink);
+}
+
+.pf-pay-sku-box {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: #f3f4f6;
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  text-align: left;
+  margin-bottom: 1.1rem;
+}
+
+.pf-pay-sku-box strong {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.pf-pay-sku-box span {
+  color: var(--pf-muted);
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
+
+.pf-pay-amount {
+  margin-bottom: 1rem;
+}
+
+.pf-pay-amount span {
+  display: block;
+  color: var(--pf-muted);
+  font-size: 0.82rem;
+  margin-bottom: 0.25rem;
+}
+
+.pf-pay-amount em {
+  font-style: normal;
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.pf-pay-qr-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 1.1rem;
+}
+
+.pf-pay-qr {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  display: grid;
+  place-items: center;
+  background: #fff;
+  border: 1px solid var(--pf-line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.pf-pay-qr img {
+  display: block;
+  width: 220px;
+  height: 220px;
+}
+
+.pf-pay-qr.is-empty {
+  color: var(--pf-muted);
+  font-size: 0.88rem;
+}
+
+.pf-pay-qr-badge {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2rem;
+  height: 2rem;
+  transform: translate(-50%, -50%);
+  border-radius: 0.4rem;
+  box-shadow: 0 0 0 3px #fff;
+  background: center / contain no-repeat;
+}
+
+.pf-pay-qr-badge.alipay {
+  background-color: #1677ff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23fff' d='M5.2 14.2c1.7 1.1 3.8 2 6.2 2.4.4-1 .8-2.2 1.1-3.4H8.2V11h5.1c.1-.5.2-1 .2-1.4H8.2V8h6.8v1.1c0 .6-.1 1.4-.3 2.2H18v1.5h-2.7c-.3 1.2-.7 2.4-1.2 3.5 2.1-.1 4-.7 5.5-1.5v1.8c-1.9 1.1-4.3 1.8-7 1.8-3.4 0-6.4-1.1-8.4-2.6l1-.6z'/%3E%3C/svg%3E");
+}
+
+.pf-pay-qr-badge.wxpay {
+  background-color: #07c160;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23fff' d='M9.4 7.2c-2.9 0-5.2 1.9-5.2 4.2 0 1.3.7 2.5 1.9 3.3l-.5 1.5 1.7-.9c.6.2 1.2.3 1.9.3.2 0 .4 0 .6-.1-.3-.5-.4-1.1-.4-1.7 0-2.3 2.2-4.2 4.9-4.2.2 0 .5 0 .7.1C14.3 8.4 12 7.2 9.4 7.2zm-2 2.5a.7.7 0 1 1 0 1.4.7.7 0 0 1 0-1.4zm3.4 0a.7.7 0 1 1 0 1.4.7.7 0 0 1 0-1.4zm4.1.8c-2.4 0-4.3 1.6-4.3 3.6 0 .7.3 1.4.7 1.9l-.4 1.2 1.4-.7c.5.2 1 .3 1.5.3 2.4 0 4.3-1.6 4.3-3.6s-1.9-2.7-4.3-2.7zm-1.5 2a.55.55 0 1 1 0 1.1.55.55 0 0 1 0-1.1zm2.9 0a.55.55 0 1 1 0 1.1.55.55 0 0 1 0-1.1z'/%3E%3C/svg%3E");
+}
+
+.pf-pay-tip {
+  margin: 0.15rem 0 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.pf-pay-expire {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--pf-muted);
+  font-size: 0.82rem;
+}
+
+.pf-pay-expire.is-expired {
+  color: #c43c2e;
+}
+
+.pf-pay-clock {
+  width: 0.9rem;
+  height: 0.9rem;
+  background: center / contain no-repeat
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b9099' stroke-width='2'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 7v5l3 2'/%3E%3C/svg%3E");
+}
+
+.pf-pay-wait {
+  margin: 0.15rem 0 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--pf-muted);
+  font-size: 0.84rem;
+}
+
+.pf-pay-wait.is-paid {
+  color: #3d4a12;
+}
+
+.pf-pay-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--pf-lime);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--pf-lime) 55%, transparent);
+  animation: pf-pay-pulse 1.4s ease-out infinite;
+}
+
+.pf-pay-wait.is-paid .pf-pay-dot {
+  animation: none;
+}
+
+@keyframes pf-pay-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--pf-lime) 55%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 8px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.pf-pay-error {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+}
+
+.pf-pay-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem;
+  margin-bottom: 0.85rem;
+}
+
+.pf-pay-btn {
+  appearance: none;
+  border-radius: 999px;
+  padding: 0.7rem 1rem;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pf-pay-btn.ghost {
+  border: 1px solid var(--pf-line);
+  background: #fff;
+  color: var(--pf-ink);
+}
+
+.pf-pay-btn.ghost:hover {
+  background: #f4f5f7;
+}
+
+.pf-pay-btn.primary {
+  border: 1px solid var(--pf-lime);
+  background: var(--pf-lime);
+  color: var(--pf-ink);
+}
+
+.pf-pay-btn.primary:hover:not(:disabled) {
+  filter: brightness(0.97);
+}
+
+.pf-pay-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.pf-pay-secure-line {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  color: var(--pf-muted);
+  font-size: 0.76rem;
 }
 
 /* —— Global dialog / modal system —— */

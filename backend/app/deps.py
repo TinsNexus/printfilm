@@ -22,3 +22,10 @@ async def get_current_user(
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户不存在")
     return user
+
+
+async def get_current_admin(user: User = Depends(get_current_user)) -> User:
+    # Require role=admin for /api/admin routes
+    if (user.role or "user") != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="需要管理员权限")
+    return user

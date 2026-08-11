@@ -6,6 +6,7 @@ import AppShell from '../../components/layout/AppShell'
 import Stepper from '../../components/ui/Stepper'
 import ComingSoon from '../../components/ui/ComingSoon'
 import { IconChevronLeft, IconPlay } from '../../components/ui/Icons'
+import { handleBillingError } from '../../lib/billingError'
 import { CREATE_STEPS } from '../../lib/status'
 
 const CHAR_PRESETS = [
@@ -226,7 +227,9 @@ export default function StyleConfigPage() {
       const started = await api.generate(project.id)
       nav(`/studio/${started.id}`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '生成失败')
+      const msg = err instanceof Error ? err.message : '生成失败'
+      setError(msg)
+      await handleBillingError(err, nav)
     } finally {
       setBusy(false)
     }
@@ -485,7 +488,6 @@ export default function StyleConfigPage() {
               ))}
             </div>
           </div>
-          {error ? <p className="pf-error">{error}</p> : null}
         </section>
 
         <aside className="pf-create-col">
@@ -537,6 +539,7 @@ export default function StyleConfigPage() {
                 : `试听「${selectedVoice.label}」`}
             </button>
           ) : null}
+          {error ? <p className="pf-error" style={{ marginTop: '0.75rem' }}>{error}</p> : null}
           <button
             type="button"
             className="pf-btn pf-btn-lime pf-btn-block pf-btn-lg pf-btn-icon"

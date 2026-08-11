@@ -18,6 +18,7 @@ import {
 } from '../../components/ui/Icons'
 import { scenePromptForDisplay } from '../../promptDisplay'
 import { dialog } from '../../lib/dialog'
+import { handleBillingError } from '../../lib/billingError'
 import {
   BOARD_STEPS,
   effectiveStatus,
@@ -27,6 +28,40 @@ import {
   shotStatusLabel,
   statusLabel,
 } from '../../lib/status'
+
+type SegmentBeatView = { duration: number; text: string; isCue?: boolean }
+
+function parseSegmentScript(script: string | undefined | null): {
+  cues: string[]
+  beats: SegmentBeatView[]
+} {
+  const cues: string[] = []
+  const beats: SegmentBeatView[] = []
+  const lines = String(script || '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+  let pendingDur = 0
+  for (const line of lines) {
+    if (line.startsWith('【字幕') || line.startsWith('【BGM')) {
+      cues.push(line)
+      continue
+    }
+    const m = line.match(/^@duration:(\d+)/)
+    if (m) {
+      pendingDur = Number(m[1]) || 0
+      continue
+    }
+    if (pendingDur > 0 || beats.length === 0) {
+      beats.push({ duration: pendingDur || 0, text: line })
+      pendingDur = 0
+    } else {
+      beats.push({ duration: 0, text: line })
+    }
+  }
+  return { cues, beats }
+}
 
 function csvEscape(value: string | number | null | undefined) {
   const s = String(value ?? '')
@@ -288,7 +323,9 @@ export default function StoryboardPage() {
     try {
       setProject(await api.generate(project.id))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '继续生成失败')
+      const msg = err instanceof Error ? err.message : '继续生成失败'
+      setError(msg)
+      await handleBillingError(err, nav)
     } finally {
       setBusy(false)
     }
@@ -309,7 +346,9 @@ export default function StoryboardPage() {
     try {
       setProject(await api.generate(project.id, { restart: true }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '重做失败')
+      const msg = err instanceof Error ? err.message : '重做失败'
+      setError(msg)
+      await handleBillingError(err, nav)
     } finally {
       setBusy(false)
     }
@@ -494,6 +533,7 @@ export default function StoryboardPage() {
         overlay_subtitle: editing.overlay_subtitle,
         img_prompt: editing.img_prompt,
         video_prompt: editing.video_prompt,
+        segment_script: editing.segment_script,
         duration: Number(editing.duration) || 4,
         camera: editing.camera,
       })
@@ -870,7 +910,7 @@ export default function StoryboardPage() {
                       <th>场景</th>
                       <th>画面</th>
                       <th>旁白/台词</th>
-                      <th>画面描述</th>
+                      <th>逐段分镜</th>
                       <th>时长</th>
                       <th>状态</th>
                       <th>操作</th>
@@ -886,6 +926,8 @@ export default function StoryboardPage() {
                       const sceneTitle =
                         shot.overlay_title?.trim() || `场景 ${String(shot.shot_no).padStart(2, '0')}`
                       const narration = (shot.narration || '').trim()
+                      const script = shot.segment_script || shot.video_prompt || ''
+                      const { cues, beats } = parseSegmentScript(script)
                       const desc = scenePromptForDisplay(shot.img_prompt).trim()
                       return (
                         <tr key={shot.id}>
@@ -935,10 +977,50 @@ export default function StoryboardPage() {
                               type="button"
                               className="pf-shot-desc pf-shot-editable"
                               disabled={busy || running}
-                              title="点击查看/修改画面提示词"
-                              onClick={() => openShotEdit(shot, 'img_prompt')}
+                              title="点击编辑逐段分镜脚本"
+                              onClick={() => openShotEdit(shot, 'segment_script')}
+                              style={{ textAlign: 'left', width: '100%' }}
                             >
-                              {desc || '（点击填写画面提示词）'}
+                              {cues.length > 0 ? (
+                                <span className="pf-muted" style={{ display: 'block', fontSize: '0.75rem' }}>
+                                  {cues[0]?.replace(/^【|】$/g, '').slice(0, 28)}
+                                  {cues[1]
+                                    ? ` · ${cues[1].replace(/^【BGM：|】$/g, '').slice(0, 16)}`
+                                    : ''}
+                                </span>
+                              ) : null}
+                              {beats.length > 0 ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+                                  {beats.slice(0, 4).map((b, i) => (
+                                    <span key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                                      {b.duration > 0 ? (
+                                        <span
+                                          style={{
+                                            flex: '0 0 auto',
+                                            fontSize: '0.72rem',
+                                            background: '#111',
+                                            color: '#fff',
+                                            borderRadius: 4,
+                                            padding: '1px 5px',
+                                          }}
+                                        >
+                                          {b.duration}s
+                                        </span>
+                                      ) : null}
+                                      <span style={{ fontSize: '0.82rem' }}>
+                                        {b.text.length > 42 ? `${b.text.slice(0, 42)}…` : b.text}
+                                      </span>
+                                    </span>
+                                  ))}
+                                  {beats.length > 4 ? (
+                                    <span className="pf-muted" style={{ fontSize: '0.75rem' }}>
+                                      另有 {beats.length - 4} 段…
+                                    </span>
+                                  ) : null}
+                                </div>
+                              ) : (
+                                desc || '（点击填写逐段分镜）'
+                              )}
                             </button>
                           </td>
                           <td className="col-dur">{formatMmSs(shot.duration)}</td>
@@ -1208,36 +1290,46 @@ export default function StoryboardPage() {
               />
             </label>
             <label>
-              画面提示词
+              画面提示词（首帧）
               <textarea
-                autoFocus={editFocus === 'img_prompt' || editFocus === ''}
+                autoFocus={editFocus === 'img_prompt'}
                 value={editing.img_prompt}
                 onChange={(e) => setEditing({ ...editing, img_prompt: e.target.value })}
-                rows={4}
+                rows={3}
               />
             </label>
             <label>
-              视频提示词
+              逐段分镜脚本（@duration + 字幕/BGM）
               <textarea
-                value={editing.video_prompt || ''}
-                onChange={(e) => setEditing({ ...editing, video_prompt: e.target.value })}
-                rows={2}
+                autoFocus={editFocus === 'segment_script' || editFocus === ''}
+                value={editing.segment_script || editing.video_prompt || ''}
+                onChange={(e) =>
+                  setEditing({
+                    ...editing,
+                    segment_script: e.target.value,
+                    video_prompt: e.target.value,
+                  })
+                }
+                rows={10}
+                placeholder={
+                  '【字幕：全程简体中文字幕，旁白逐句同步烧录】\n【BGM：轻快专业，音量低于人声】\n@duration:4\n过肩工位操作画面…\n@duration:8\n【旁白·慢速清晰·同步字幕】口播内容…'
+                }
+              />
+            </label>
+            <label>
+              运镜备注
+              <input
+                value={editing.camera || ''}
+                onChange={(e) => setEditing({ ...editing, camera: e.target.value })}
               />
             </label>
             <div className="pf-prompt-modal-row">
               <label>
-                时长（秒）
+                时长（秒，保存脚本后会按 @duration 重算）
                 <input
                   type="number"
                   value={editing.duration}
                   onChange={(e) => setEditing({ ...editing, duration: Number(e.target.value) })}
-                />
-              </label>
-              <label>
-                运镜
-                <input
-                  value={editing.camera || ''}
-                  onChange={(e) => setEditing({ ...editing, camera: e.target.value })}
                 />
               </label>
             </div>

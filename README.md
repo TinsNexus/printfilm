@@ -47,6 +47,21 @@ npm install
 npm run dev
 ```
 
+### 管理后台
+
+独立前端（shadcn/ui），开发端口 **5174**。管理员复用同一套登录，需 `User.role=admin`。
+
+```bash
+# backend/.env 增加（将已有邮箱提权，重启后端生效）
+# ADMIN_BOOTSTRAP_EMAILS=you@example.com
+
+cd admin
+npm install
+npm run dev
+```
+
+浏览器打开 `http://localhost:5174`，用管理员账号登录。
+
 ### 真模型配置
 
 `backend/.env`：
@@ -65,7 +80,8 @@ npm run dev
 - FastAPI + PostgreSQL（Docker）/ 本地可 SQLite
 - Redis（Docker）：Celery broker + 进度
 - Celery worker / `autoscale`：宿主机进程
-- 前端：React + TS + Vite
+- 前端：React + TS + Vite（用户端）
+- 管理后台：`admin/` React + shadcn/ui（端口 5174）
 
 ## 目录
 
@@ -73,5 +89,6 @@ npm run dev
 backend/app/          API、模型、流水线、方舟适配
 backend/static/       模板封面与 mock 素材
 frontend/src/         首页模板墙 + 创作工作台
+admin/src/            运营管理后台（用户/订单/项目/作品/模板）
 deploy/               仅 Postgres + Redis 的 compose
 ```

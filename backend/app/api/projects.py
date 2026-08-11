@@ -351,6 +351,14 @@ async def generate_project(
     project.error_msg = None
     project.final_video_url = None
     shots = list(project.shots or [])
+    phase = "script" if (restart or not shots) else "produce"
+    try:
+        from app.services import billing as billing_svc
+
+        await billing_svc.freeze_for_project(db, user, project, phase)
+    except ValueError as exc:
+        raise HTTPException(status_code=402, detail=str(exc)) from exc
+
     if restart or not shots:
         # First run / restart — actually splitting storyboard
         project.status = ProjectStatus.SCRIPTING
@@ -479,6 +487,18 @@ async def update_shot(
     if not shot:
         raise HTTPException(status_code=404, detail="分镜不存在")
     data = body.model_dump(exclude_unset=True)
+    if "segment_script" in data and data["segment_script"] is not None:
+        from app.services.seedance_segments import apply_segment_script_edit
+
+        bgm = (getattr(project, "bgm_lock", None) or shot.bgm_mood or "").strip()
+        normalized = apply_segment_script_edit(str(data["segment_script"]), bgm_mood=bgm)
+        data["segment_script"] = normalized["segment_script"]
+        data["duration"] = normalized["duration"]
+        data["video_prompt"] = normalized["video_prompt"]
+        if normalized.get("narration"):
+            data["narration"] = normalized["narration"]
+        if normalized.get("img_prompt") and "img_prompt" not in data:
+            data["img_prompt"] = normalized["img_prompt"]
     if "duration" in data and data["duration"] is not None:
         tpl = await db.get(Template, project.template_id)
         data["duration"] = clamp_shot_duration(
@@ -495,7 +515,12 @@ async def update_shot(
         shot.video_url = None
         shot.status = "PENDING"
         project.final_video_url = None
-    elif "video_prompt" in data or "duration" in data or "camera" in data:
+    elif (
+        "video_prompt" in data
+        or "segment_script" in data
+        or "duration" in data
+        or "camera" in data
+    ):
         shot.video_url = None
         project.final_video_url = None
     shot.version += 1
@@ -677,5 +702,10 @@ async def quota(user: User = Depends(get_current_user)) -> dict:
     return {
         "quota_left": user.quota_left,
         "quota_enabled": settings.quota_enabled,
-        "unlimited": not settings.quota_enabled,
+        "unlimited": (not settings.billing_enabled) or bool(user.billing_unlimited),
+        "billing_enabled": settings.billing_enabled,
+        "balance_fen": int(getattr(user, "balance_fen", 0) or 0),
+        "frozen_fen": int(getattr(user, "frozen_fen", 0) or 0),
+        "balance_yuan": round(int(getattr(user, "balance_fen", 0) or 0) / 100, 2),
+        "markup": settings.billing_markup,
     }

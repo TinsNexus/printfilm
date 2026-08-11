@@ -34,14 +34,15 @@ TEMPLATES: list[dict] = [
             "空界面无操作者，纯抽象色块"
         ),
         "default_ratio": "9:16",
-        "shot_duration_min": 4,
-        "shot_duration_max": 10,
+        "shot_duration_min": 5,
+        "shot_duration_max": 16,
         "llm_system_addon": (
             "这是开源/产品展示片。先【分析】用户文案：项目类型、核心能力、典型用户与使用路径，"
             "再规划分镜与视觉，不要套固定蓝光大屏。"
             "【画面硬性要求】每镜必须出现「人在操作系统」："
             "操作员坐在工位前使用电脑/笔记本/平板，点击界面、填写配置、查看看板、"
             "演示核心流程、部署发布或阅读文档；可辅以屏幕特写，但禁止整片只有空 UI 无人。"
+            "【逐段】每镜输出 segments：visual 与 narration 交替；单段 3-12 秒，镜合计适配口播。"
             "【视觉】色板与界面气质跟内容走（浅色后台、IDE、文档站、终端等），禁止默认霓虹蓝。"
             "【分镜】每镜对应不同能力或操作场景，构图必须明显不同，禁止待办清单/人物剧情戏。"
             "title=模块短名（2-8字），subtitle=能力卖点（10-22字），text=口播；"
@@ -64,6 +65,7 @@ TEMPLATES: list[dict] = [
         "seedance_config": {
             "motion_bias": "手部轻微点击与屏幕内容切换，缓慢推近工位",
             "character_consistency": False,
+            "generate_audio": False,
         },
         "audio_config": {"voice_preset": "urban_editorial", "bgm_mood": "轻快专业"},
         "subtitle_config": {
@@ -74,6 +76,142 @@ TEMPLATES: list[dict] = [
             "caption_scale": 1.3,
         },
         "sort_order": 1,
+        "is_active": True,
+        "is_premium": False,
+    },
+    {
+        "id": "opensource_live_work",
+        "name": "真人工作场景",
+        "description": "真人写实工位操作：侧脸/过肩操作系统，适合开源工具与产品工作流科普。",
+        "category": ["开源", "真人感", "写实感"],
+        "preview_cover": "/static/templates/covers/opensource_live_work.png",
+        "style_prefix": (
+            "真人写实摄影，真实办公室工位，侧脸或过肩视角操作笔记本电脑/双屏，"
+            "手部点击与屏幕界面清晰，自然窗光与显示器补光，商务休闲着装，"
+            "皮肤与材质真实，非卡通非动漫，干净留白便于叠字"
+        ),
+        "negative_prompt": (
+            "卡通，动漫，赛璐璐，二次元，美颜过度磨皮，CGI假人，"
+            "霓虹蓝赛博大屏，任务清单堆叠，空界面无操作者，画面文字水印，模糊"
+        ),
+        "default_ratio": "16:9",
+        "shot_duration_min": 6,
+        "shot_duration_max": 20,
+        "llm_system_addon": (
+            "这是开源「真人工作场景」片。先分析项目能力与使用路径，再拆 4-6 镜。"
+            "【硬性】每镜必须出现真人在工位操作系统（侧脸/过肩/手部焦点，少正脸特写）。"
+            "【逐段】每镜必须输出 segments 数组：交替 visual（景别+动作+界面类型）与 narration（口播）；"
+            "单段 duration 3-12 秒，镜内合计不超过 20 秒；旁白按约 3 字/秒估时长。"
+            "【节拍】痛点工位→接入配置→核心工作台→流程结果→协作/部署；构图与操作动作禁止雷同。"
+            "title=模块短名，subtitle=卖点句，bgm 全片统一为轻快专业。"
+        ),
+        "seedream_config": {
+            "ref_images": [],
+            "strength": 0.72,
+            "photoreal": True,
+            "consistency_mode": "diverse",
+            "character_prompt": (
+                "写实产品演示操作员：侧脸或过肩，坐在工位前操作笔记本或双屏，"
+                "商务休闲着装，手部与屏幕为视觉重点，五官不抢戏，气质全片统一"
+            ),
+            "extra_prompt": (
+                "真人写实工位，手部点击可读，界面类型随内容变化；"
+                "禁止正脸大特写与霓虹赛博大屏；画面内不要出现文字"
+            ),
+        },
+        "seedance_config": {
+            "motion_bias": "手部轻微点击与屏幕内容切换，缓慢推近工位",
+            "character_consistency": False,
+            "generate_audio": False,
+        },
+        "audio_config": {"voice_preset": "urban_editorial", "bgm_mood": "轻快专业"},
+        "subtitle_config": {
+            "font": "SourceHanSans",
+            "position": "split",
+            "title_scale": 1.6,
+            "sub_scale": 1.45,
+            "caption_scale": 1.25,
+        },
+        "sort_order": 2,
+        "is_active": True,
+        "is_premium": False,
+    },
+    {
+        "id": "live_street_interview",
+        "name": "真人街访口播",
+        "description": "街头/通勤场景的真人出镜口播感，适合观点、体验与轻访谈科普。",
+        "category": ["真人感", "纪录片"],
+        "preview_cover": "/static/templates/covers/live_street_interview.png",
+        "style_prefix": (
+            "真人纪实街访摄影，自然光与轻微手持感，城市街道或通勤场景，"
+            "真实皮肤与环境噪音感克制，非棚拍浓妆，非卡通非动漫"
+        ),
+        "negative_prompt": "卡通，动漫，赛璐璐，二次元，棚拍浓妆，CGI假人，霓虹赛博，画面文字水印",
+        "default_ratio": "9:16",
+        "shot_duration_min": 5,
+        "shot_duration_max": 18,
+        "llm_system_addon": (
+            "真人街访/口播节奏。每镜输出 segments：建立环境 visual → narration 口播 → 反应/细节 visual。"
+            "人物外形全片一致；少正脸极端特写。title 短、subtitle 观点句。"
+        ),
+        "seedream_config": {
+            "ref_images": [],
+            "strength": 0.72,
+            "photoreal": True,
+            "character_prompt": "真人街访主角：年龄气质、发型服装日常感固定，自然表情，全片同一人",
+            "extra_prompt": "自然光街景或通勤场景，竖屏主体清晰，顶部可留白叠字",
+        },
+        "seedance_config": {
+            "motion_bias": "轻微手持感，缓慢推近",
+            "character_consistency": True,
+            "generate_audio": False,
+        },
+        "audio_config": {"voice_preset": "warm_storyteller", "bgm_mood": "温暖人文"},
+        "subtitle_config": {"font": "SourceHanSans", "position": "top", "caption_scale": 1.3},
+        "sort_order": 3,
+        "is_active": True,
+        "is_premium": False,
+    },
+    {
+        "id": "live_product_desk",
+        "name": "真人桌面演示",
+        "description": "桌面俯拍/斜俯写实：真人双手演示产品或笔记本流程，适合工具评测与教程。",
+        "category": ["真人感", "写实感", "商业"],
+        "preview_cover": "/static/templates/covers/live_product_desk.png",
+        "style_prefix": (
+            "真人桌面产品演示摄影，斜俯或过肩，木质/浅色桌面，笔记本与手部清晰，"
+            "柔和棚灯或窗光，材质真实，非卡通非插画"
+        ),
+        "negative_prompt": "卡通，动漫，赛璐璐，二次元，空桌无手，霓虹赛博，画面乱码文字水印",
+        "default_ratio": "16:9",
+        "shot_duration_min": 5,
+        "shot_duration_max": 18,
+        "llm_system_addon": (
+            "桌面演示片。每镜 segments 必须含手部操作 visual + narration；"
+            "景别在全桌建立、手部特写、屏幕内容之间切换，禁止各镜雷同。"
+        ),
+        "seedream_config": {
+            "ref_images": [],
+            "strength": 0.7,
+            "photoreal": True,
+            "consistency_mode": "diverse",
+            "character_prompt": "写实双手与小臂为主，可露侧脸；着装简洁，全片气质统一",
+            "extra_prompt": "桌面斜俯，手部与产品/屏幕清晰，画面内无文字",
+        },
+        "seedance_config": {
+            "motion_bias": "手部点击滑动，轻微推近屏幕",
+            "character_consistency": False,
+            "generate_audio": False,
+        },
+        "audio_config": {"voice_preset": "narrator_calm", "bgm_mood": "冷静纪实"},
+        "subtitle_config": {
+            "font": "SourceHanSans",
+            "position": "split",
+            "title_scale": 1.5,
+            "sub_scale": 1.4,
+            "caption_scale": 1.25,
+        },
+        "sort_order": 4,
         "is_active": True,
         "is_premium": False,
     },

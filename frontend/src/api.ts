@@ -107,6 +107,7 @@ export type Shot = {
   overlay_subtitle?: string
   img_prompt: string
   video_prompt: string
+  segment_script?: string
   camera: string
   bgm_mood: string
   image_url: string | null
@@ -139,6 +140,7 @@ export type Project = {
   output_ratio?: string
   voice_id?: string
   character_bible?: string
+  bgm_lock?: string
   style_prompt?: string
   character_prompt?: string
   extra_prompt?: string
@@ -153,6 +155,55 @@ export type User = {
   email: string
   nickname: string
   quota_left: number
+  balance_fen?: number
+  frozen_fen?: number
+  plan?: string
+  billing_unlimited?: boolean
+}
+
+export type BillingSku = {
+  id: string
+  name: string
+  amount_fen: number
+  credit_fen: number
+  recommended?: boolean
+}
+
+export type BillingOrder = {
+  out_trade_no: string
+  sku_id: string
+  sku_name: string
+  amount_fen: number
+  credit_fen: number
+  pay_type: string
+  status: string
+  trade_no?: string | null
+  paid_at?: string | null
+  created_at?: string | null
+}
+
+export type UsageSummary = {
+  period: string
+  tokens: number
+  charge_fen: number
+  charge_yuan: number
+  cost_fen: number
+  calls: number
+  balance_fen: number
+  balance_yuan: number
+  frozen_fen: number
+  frozen_yuan: number
+}
+
+export type Wallet = {
+  balance_fen: number
+  frozen_fen: number
+  balance_yuan: number
+  frozen_yuan: number
+  plan: string
+  billing_enabled: boolean
+  billing_unlimited: boolean
+  markup: number
 }
 
 export type Work = {
@@ -352,6 +403,46 @@ export const api = {
   },
   works() {
     return request<Work[]>('/api/works')
+  },
+  wallet() {
+    return request<Wallet>('/api/billing/wallet')
+  },
+  billingSkus() {
+    return request<{ skus: BillingSku[]; pay_types: string[]; markup: number }>('/api/billing/skus')
+  },
+  createBillingOrder(sku_id: string, pay_type: 'alipay' | 'wxpay') {
+    return request<{
+      out_trade_no: string
+      sku_id: string
+      sku_name: string
+      submit_url: string
+      amount_fen: number
+      credit_fen: number
+      pay_type: string
+      trade_no?: string
+      qrcode?: string
+      payurl?: string
+      img?: string
+      qr_payload?: string
+      expire_seconds?: number
+    }>('/api/billing/orders', {
+      method: 'POST',
+      body: JSON.stringify({ sku_id, pay_type }),
+    })
+  },
+  getBillingOrder(outTradeNo: string) {
+    return request<{
+      out_trade_no: string
+      status: string
+      amount_fen: number
+      credit_fen: number
+    }>(`/api/billing/orders/${encodeURIComponent(outTradeNo)}`)
+  },
+  listBillingOrders(limit = 50) {
+    return request<{ orders: BillingOrder[] }>(`/api/billing/orders?limit=${limit}`)
+  },
+  usageSummary() {
+    return request<UsageSummary>('/api/billing/usage/summary')
   },
   eventsUrl(projectId: number) {
     return `${API_BASE}/api/projects/${projectId}/events`
