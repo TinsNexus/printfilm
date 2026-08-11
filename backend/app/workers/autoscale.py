@@ -24,13 +24,13 @@ from pathlib import Path
 import redis
 
 from app.config import get_settings, reload_settings
+from app.logging_setup import configure_logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] autoscale: %(message)s",
-    datefmt="%H:%M:%S",
-)
+_settings = get_settings()
+configure_logging(level="INFO", sql_echo=_settings.sql_echo)
+# autoscale 自己的格式已由 configure_logging 覆盖；保留 logger 名
 logger = logging.getLogger("autoscale")
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 STATE_DIR = BACKEND_ROOT / ".celery_autoscale"

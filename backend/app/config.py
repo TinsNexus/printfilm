@@ -8,6 +8,8 @@ class Settings(BaseSettings):
 
     app_name: str = "PRINTFILM"
     debug: bool = True
+    # 是否打印 SQLAlchemy 原始 SQL（默认关，避免刷屏；需要排查 SQL 时设 SQL_ECHO=true）
+    sql_echo: bool = False
     secret_key: str = "dev-secret-change-me"
     access_token_expire_minutes: int = 60 * 24 * 7
 
@@ -19,9 +21,12 @@ class Settings(BaseSettings):
     ark_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
     model_llm: str = "doubao-seed-2-0-pro-260215"
     model_image: str = "doubao-seedream-5-0-260128"
+    # Seedream 4.5 接入点（可选；未配则回退 model_image）
+    model_image_45: str = ""
     model_video: str = "doubao-seedance-2-5-260628"
+    # Seedance 2.0/2.5 i2v 官方范围约 4–15 秒；勿超过模型上限
     seedance_duration_min: int = 4
-    seedance_duration_max: int = 30
+    seedance_duration_max: int = 15
     model_audio: str = "seed-tts-2.0"
     # 豆包语音（openspeech）— 与方舟 ARK_API_KEY 不同产品线
     volc_tts_app_id: str = ""

@@ -173,6 +173,7 @@ async def record_usage(
     raw: dict | None = None,
     shot_id: int | None = None,
     provider: str = "ark",
+    drama_project_id: int | None = None,
 ) -> UsageEvent:
     s = get_settings()
     total = int(tokens) or (int(prompt_tokens) + int(completion_tokens))
@@ -194,6 +195,7 @@ async def record_usage(
     ev = UsageEvent(
         user_id=user_id,
         project_id=project_id,
+        drama_project_id=drama_project_id,
         shot_id=shot_id,
         provider=provider,
         billing_key=billing_key,

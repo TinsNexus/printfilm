@@ -3,7 +3,7 @@ import SiteNav from './SiteNav'
 
 type Props = {
   children: ReactNode
-  active?: 'home' | 'templates' | 'studio' | 'history' | 'pricing'
+  active?: 'home' | 'templates' | 'studio' | 'history' | 'pricing' | 'drama'
   wide?: boolean
   flush?: boolean
 }

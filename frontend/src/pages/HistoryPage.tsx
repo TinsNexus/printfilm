@@ -265,6 +265,9 @@ export default function HistoryPage() {
           <IconPlus size={16} />
           新建项目
         </button>
+        <Link to="/studio/new" className="pf-btn pf-btn-sm" style={{ marginLeft: 8 }}>
+          新建科普
+        </Link>
       </div>
 
       <div className="pf-stats">

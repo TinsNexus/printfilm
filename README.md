@@ -10,6 +10,14 @@
 - 分镜编辑、单张重绘、单镜头重生视频
 - 作品发布与简单浏览
 
+## 漫剧模块（Drama）
+
+短剧/漫剧创作工作流：大纲 → 资产 → 分集分镜 → 画布。
+
+- 前端路由：`/drama`、`/drama/dramas`、`/drama/assets`、`/drama/projects/:projectId`、`/drama/projects/:projectId/episodes/:episodeId`、`/drama/projects/:projectId/canvas`
+- 后端 API：`/api/drama/*`（项目、剧本、资产、分集、生成、画布）
+- 管理后台：`/drama-projects`（列表分页，含用户邮箱）
+
 ## 本地启动
 
 ### 依赖

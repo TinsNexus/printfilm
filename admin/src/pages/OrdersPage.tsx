@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api, type AdminLedger, type AdminOrder, type PageMeta } from "@/api/client";
 import { PaginationBar } from "@/components/PaginationBar";
+import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +10,7 @@ import { Select } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fenToYuan } from "@/lib/utils";
+import { ledgerKindLabel, orderStatusLabel, payTypeLabel } from "@/lib/statusLabels";
 
 type OrderRes = { items: AdminOrder[]; meta: PageMeta };
 type LedgerRes = { items: AdminLedger[]; meta: PageMeta };
@@ -39,7 +41,7 @@ export function OrdersPage() {
   // Load recharge orders
   async function loadOrders(page = orderPage) {
     try {
-      const params = new URLSearchParams({ page: String(page), page_size: "20" });
+      const params = new URLSearchParams({ page: String(page), page_size: String(DEFAULT_PAGE_SIZE) });
       if (orderStatus) params.set("status", orderStatus);
       if (orderUserId.trim()) params.set("user_id", orderUserId.trim());
       setOrders(await api<OrderRes>(`/api/admin/orders?${params}`));
@@ -51,7 +53,7 @@ export function OrdersPage() {
   // Load wallet ledger
   async function loadLedger(page = ledgerPage) {
     try {
-      const params = new URLSearchParams({ page: String(page), page_size: "20" });
+      const params = new URLSearchParams({ page: String(page), page_size: String(DEFAULT_PAGE_SIZE) });
       if (ledgerKind) params.set("kind", ledgerKind);
       if (ledgerUserId.trim()) params.set("user_id", ledgerUserId.trim());
       setLedger(await api<LedgerRes>(`/api/admin/ledger?${params}`));
@@ -73,8 +75,8 @@ export function OrdersPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-semibold">订单与流水</h1>
-        <p className="text-sm text-muted-foreground">查看充值单与钱包流水</p>
+        <h2 className="text-xl font-semibold text-[#303133]">订单与流水</h2>
+        <p className="mt-1 text-sm text-[#909399]">查看充值单与钱包流水</p>
       </div>
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
@@ -89,9 +91,9 @@ export function OrdersPage() {
               onChange={(e) => setOrderStatus(e.target.value)}
             >
               <option value="">全部状态</option>
-              <option value="pending">pending</option>
-              <option value="paid">paid</option>
-              <option value="closed">closed</option>
+              <option value="pending">待支付</option>
+              <option value="paid">已支付</option>
+              <option value="closed">已关闭</option>
             </Select>
             <Input
               className="w-40"
@@ -133,9 +135,11 @@ export function OrdersPage() {
                     <TableCell>{o.sku_id}</TableCell>
                     <TableCell>¥{fenToYuan(o.amount_fen)}</TableCell>
                     <TableCell>¥{fenToYuan(o.credit_fen)}</TableCell>
-                    <TableCell>{o.pay_type}</TableCell>
+                    <TableCell>{payTypeLabel(o.pay_type)}</TableCell>
                     <TableCell>
-                      <Badge variant={o.status === "paid" ? "default" : "secondary"}>{o.status}</Badge>
+                      <Badge variant={o.status === "paid" ? "success" : "secondary"}>
+                        {orderStatusLabel(o.status)}
+                      </Badge>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {new Date(o.created_at).toLocaleString()}
@@ -158,13 +162,13 @@ export function OrdersPage() {
           <div className="flex flex-wrap gap-2">
             <Select className="w-40" value={ledgerKind} onChange={(e) => setLedgerKind(e.target.value)}>
               <option value="">全部类型</option>
-              <option value="topup">topup</option>
-              <option value="grant">grant</option>
-              <option value="adjust">adjust</option>
-              <option value="freeze">freeze</option>
-              <option value="unfreeze">unfreeze</option>
-              <option value="settle">settle</option>
-              <option value="refund">refund</option>
+              <option value="topup">充值</option>
+              <option value="grant">赠送</option>
+              <option value="adjust">调账</option>
+              <option value="freeze">冻结</option>
+              <option value="unfreeze">解冻</option>
+              <option value="settle">结算</option>
+              <option value="refund">退款</option>
             </Select>
             <Input
               className="w-40"
@@ -206,7 +210,7 @@ export function OrdersPage() {
                     </TableCell>
                     <TableCell>¥{fenToYuan(e.balance_after)}</TableCell>
                     <TableCell>
-                      <Badge variant="secondary">{e.kind}</Badge>
+                      <Badge variant="secondary">{ledgerKindLabel(e.kind)}</Badge>
                     </TableCell>
                     <TableCell className="max-w-[200px] truncate">{e.note}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">

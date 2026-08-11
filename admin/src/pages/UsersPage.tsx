@@ -4,12 +4,14 @@ import { api, type AdminUserRow, type PageMeta } from "@/api/client";
 import { PaginationBar } from "@/components/PaginationBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { EmptyState, PageHeader, Toolbar } from "@/components/ui/page";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { fenToYuan } from "@/lib/utils";
 
 type ListRes = { items: AdminUserRow[]; meta: PageMeta };
@@ -19,6 +21,7 @@ export function UsersPage() {
   /*
    * q search query
    * page current page
+   * pageSize rows per page
    * data list response
    * loading fetch state
    * editing user being edited
@@ -27,6 +30,7 @@ export function UsersPage() {
    */
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [data, setData] = useState<ListRes | null>(null);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState<AdminUserRow | null>(null);
@@ -40,12 +44,12 @@ export function UsersPage() {
   const [saving, setSaving] = useState(false);
 
   // Load paginated users
-  async function load(nextPage = page, nextQ = q) {
+  async function load(nextPage = page, nextQ = q, nextSize = pageSize) {
     setLoading(true);
     try {
       const params = new URLSearchParams({
         page: String(nextPage),
-        page_size: "20",
+        page_size: String(nextSize),
       });
       if (nextQ.trim()) params.set("q", nextQ.trim());
       const res = await api<ListRes>(`/api/admin/users?${params}`);
@@ -60,7 +64,7 @@ export function UsersPage() {
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+  }, [page, pageSize]);
 
   // Open edit dialog for a user
   function openEdit(user: AdminUserRow) {
@@ -103,11 +107,9 @@ export function UsersPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold">用户管理</h1>
-        <p className="text-sm text-muted-foreground">搜索用户，调整套餐、余额与无限额度</p>
-      </div>
-      <div className="flex flex-wrap gap-2">
+      <PageHeader title="用户管理" description="搜索用户，调整套餐、余额与无限额度" />
+
+      <Toolbar>
         <Input
           className="max-w-xs"
           placeholder="搜索邮箱 / 昵称"
@@ -121,7 +123,7 @@ export function UsersPage() {
           }}
         />
         <Button
-          variant="secondary"
+          variant="soft"
           onClick={() => {
             setPage(1);
             void load(1, q);
@@ -129,8 +131,9 @@ export function UsersPage() {
         >
           搜索
         </Button>
-      </div>
-      <div className="rounded-lg border bg-background">
+      </Toolbar>
+
+      <div className="space-y-3">
         <Table>
           <TableHeader>
             <TableRow>
@@ -141,21 +144,27 @@ export function UsersPage() {
               <TableHead>余额</TableHead>
               <TableHead>角色</TableHead>
               <TableHead>无限</TableHead>
-              <TableHead></TableHead>
+              <TableHead className="w-[100px]">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {(data?.items ?? []).map((u) => (
               <TableRow key={u.id}>
-                <TableCell>{u.id}</TableCell>
-                <TableCell>{u.email}</TableCell>
+                <TableCell className="text-[#909399]">{u.id}</TableCell>
+                <TableCell className="font-medium">{u.email}</TableCell>
                 <TableCell>{u.nickname}</TableCell>
-                <TableCell>{u.plan}</TableCell>
-                <TableCell>¥{fenToYuan(u.balance_fen)}</TableCell>
                 <TableCell>
-                  <Badge variant={u.role === "admin" ? "default" : "secondary"}>{u.role}</Badge>
+                  <Badge variant="info">{u.plan}</Badge>
                 </TableCell>
-                <TableCell>{u.billing_unlimited ? "是" : "否"}</TableCell>
+                <TableCell className="tabular-nums">¥{fenToYuan(u.balance_fen)}</TableCell>
+                <TableCell>
+                  <Badge variant={u.role === "admin" ? "success" : "secondary"}>{u.role}</Badge>
+                </TableCell>
+                <TableCell>
+                  <Badge variant={u.billing_unlimited ? "warning" : "secondary"}>
+                    {u.billing_unlimited ? "是" : "否"}
+                  </Badge>
+                </TableCell>
                 <TableCell>
                   <Button size="sm" variant="outline" onClick={() => openEdit(u)}>
                     编辑
@@ -165,27 +174,33 @@ export function UsersPage() {
             ))}
             {!loading && (data?.items.length ?? 0) === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground">
-                  暂无用户
+                <TableCell colSpan={8} className="p-0">
+                  <EmptyState title="暂无用户" description="试试换个关键词搜索" />
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
+
+        {data && (
+          <PaginationBar
+            page={data.meta.page}
+            pageSize={pageSize}
+            total={data.meta.total}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setPage(1);
+            }}
+          />
+        )}
       </div>
-      {data && (
-        <PaginationBar
-          page={data.meta.page}
-          pageSize={data.meta.page_size}
-          total={data.meta.total}
-          onPageChange={setPage}
-        />
-      )}
 
       <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>编辑用户 · {editing?.email}</DialogTitle>
+            <DialogTitle>编辑用户</DialogTitle>
+            <DialogDescription>{editing?.email}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
@@ -218,15 +233,18 @@ export function UsersPage() {
                 placeholder="可选"
               />
             </div>
-            <div className="flex items-center justify-between">
-              <Label>billing_unlimited</Label>
+            <div className="flex items-center justify-between rounded-xl bg-[#fafbfc] px-3 py-3">
+              <div>
+                <Label>无限额度</Label>
+                <p className="mt-1 text-xs text-[#909399]">billing_unlimited</p>
+              </div>
               <Switch
                 checked={form.billing_unlimited}
                 onCheckedChange={(v) => setForm((f) => ({ ...f, billing_unlimited: v }))}
               />
             </div>
             <Button className="w-full" disabled={saving} onClick={() => void saveEdit()}>
-              {saving ? "保存中…" : "保存"}
+              {saving ? "保存中…" : "保存修改"}
             </Button>
           </div>
         </DialogContent>

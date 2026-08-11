@@ -8,7 +8,7 @@ celery_app = Celery(
     "framecut",
     broker=settings.redis_url,
     backend=settings.redis_url,
-    include=["app.workers.tasks"],
+    include=["app.workers.tasks", "app.workers.drama_tasks"],
 )
 
 celery_app.conf.update(
@@ -34,5 +34,9 @@ celery_app.conf.update(
         "app.workers.tasks.regen_image_task": {"queue": "pipeline"},
         "app.workers.tasks.regen_video_task": {"queue": "pipeline"},
         "app.workers.tasks.upload_media_task": {"queue": "oss"},
+        "drama.script_summary": {"queue": "pipeline"},
+        "drama.episode_scripts": {"queue": "pipeline"},
+        "drama.episode_generate": {"queue": "pipeline"},
+        "drama.asset_image": {"queue": "pipeline"},
     },
 )

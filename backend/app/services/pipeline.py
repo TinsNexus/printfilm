@@ -1407,6 +1407,10 @@ async def _compose_stage(project_id: int) -> None:
             project.progress = 100
             await db.commit()
     await _settle_billing(project_id)
+
+
+async def regen_shot_image(project_id: int, shot_id: int) -> None:
+    """重绘单镜首帧图，并清掉该镜视频以便后续重生。"""
     ark = get_ark()
     async with AsyncSessionLocal() as db:
         result = await db.execute(

@@ -1,0 +1,187 @@
+"""Pydantic schemas for the drama module."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+
+class DramaProjectCreate(BaseModel):
+    title: str = Field(default="未命名漫剧", max_length=200)
+    description: str | None = None
+    source: str = Field(default="", description="原始创意文案")
+    episode_count: int = Field(default=12, ge=1, le=120)
+    image_style_id: str = Field(default="")
+    params: dict[str, Any] | None = None
+
+
+class DramaProjectUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    content: dict | list | None = None
+    params: dict[str, Any] | None = None
+
+
+class DramaScriptOut(BaseModel):
+    id: int
+    name: str
+    source: str | None = None
+    summary: dict | None = None
+    episode_content: dict | list | None = None
+    params: dict | None = None
+    project_id: int
+
+    model_config = {"from_attributes": True}
+
+
+class DramaAssetOut(BaseModel):
+    id: int
+    type: str
+    asset_type: str
+    name: str | None = None
+    cover: str | None = None
+    url: str | None = None
+    params: dict | None = None
+    derive_id: str | None = None
+    project_id: int
+
+    model_config = {"from_attributes": True}
+
+
+class DramaFragmentOut(BaseModel):
+    id: int
+    episode_id: int
+    sort_order: int
+    content: str
+    cover: str = ""
+    video: str = ""
+    duration_sec: int | None = None
+    params: dict | None = None
+    asset_ids: list[int] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
+
+class DramaEpisodeOut(BaseModel):
+    id: int
+    name: str
+    params: dict | None = None
+    project_id: int
+    fragments: list[DramaFragmentOut] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
+
+class DramaProjectOut(BaseModel):
+    id: int
+    user_id: int
+    title: str
+    description: str | None = None
+    content: dict | list | None = None
+    params: dict | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    script: DramaScriptOut | None = None
+    asset_count: int = 0
+    episode_count: int = 0
+
+    model_config = {"from_attributes": True}
+
+
+class DramaProjectListItem(BaseModel):
+    id: int
+    title: str
+    description: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    episode_count: int = 0
+    asset_count: int = 0
+    has_script: bool = False
+
+    model_config = {"from_attributes": True}
+
+
+class DramaScriptSummaryRequest(BaseModel):
+    project_id: int
+    creative: str | None = None
+    episode_count: int | None = None
+    image_style_id: str | None = None
+
+
+class DramaEpisodeScriptRequest(BaseModel):
+    project_id: int
+    # 与原项目一致：默认逐集生成，降低超时/截断导致「只出一半」的风险
+    batch_size: int = Field(default=1, ge=1, le=12)
+    # 强制重写：清空已有正文（保留集名），再按新提示词生成
+    force: bool = False
+
+
+class DramaAssetCreate(BaseModel):
+    project_id: int
+    type: str = "none"
+    asset_type: str = "image"
+    name: str | None = None
+    cover: str | None = None
+    url: str | None = None
+    params: dict | None = None
+
+
+class DramaAssetUpdate(BaseModel):
+    type: str | None = None
+    asset_type: str | None = None
+    name: str | None = None
+    cover: str | None = None
+    url: str | None = None
+    params: dict | None = None
+
+
+class DramaImageGenerateRequest(BaseModel):
+    project_id: int
+    asset_id: int | None = None
+    prompt: str
+    name: str | None = None
+    asset_type_kind: str = "character"
+    # 内置风格 ID（可缺省，回退项目/剧本 params.image_style_id）
+    image_style_id: str | None = None
+    # 前端模型 ID：seedream-5.0 / seedream-4.5
+    model_id: str | None = None
+    # 输出比例，角色默认 3:4
+    aspect_ratio: str | None = None
+    # 清晰度 3K / 4K
+    resolution: str | None = None
+
+
+class DramaFragmentSaveItem(BaseModel):
+    id: int | None = None
+    sort_order: int = 0
+    content: str = ""
+    cover: str = ""
+    video: str = ""
+    duration_sec: int | None = None
+    params: dict | None = None
+    asset_ids: list[int] = Field(default_factory=list)
+
+
+class DramaSaveFragmentsRequest(BaseModel):
+    fragments: list[DramaFragmentSaveItem]
+
+
+class DramaGenerateRequest(BaseModel):
+    fragment_ids: list[int] | None = None
+
+
+class DramaCanvasSaveRequest(BaseModel):
+    project_id: int
+    nodes: list[dict[str, Any]] = Field(default_factory=list)
+    edges: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class DramaChatRequest(BaseModel):
+    message: str
+    project_id: int | None = None
+
+
+class DramaRouteRequest(BaseModel):
+    message: str

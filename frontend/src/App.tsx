@@ -10,6 +10,11 @@ import CreateProjectPage from './pages/studio/CreateProjectPage'
 import StyleConfigPage from './pages/studio/StyleConfigPage'
 import StoryboardPage from './pages/studio/StoryboardPage'
 import EditorPage from './pages/studio/EditorPage'
+import DramaListPage from './pages/drama/DramaListPage'
+import AssetLibraryPage from './pages/drama/AssetLibraryPage'
+import ProjectWorkspacePage from './pages/drama/ProjectWorkspacePage'
+import EpisodeEditPage from './pages/drama/EpisodeEditPage'
+import CanvasPage from './pages/drama/canvas/CanvasPage'
 import './styles/printfilm.css'
 import './App.css'
 
@@ -27,6 +32,13 @@ export default function App() {
         <Route path="/studio/:id/editor" element={<EditorPage />} />
         <Route path="/studio/:id" element={<StoryboardPage />} />
         <Route path="/studio" element={<StudioPage />} />
+        {/* Agent home (mirrors novel agent entry) */}
+        <Route path="/drama" element={<DramaListPage />} />
+        <Route path="/drama/dramas" element={<DramaListPage />} />
+        <Route path="/drama/assets" element={<AssetLibraryPage />} />
+        <Route path="/drama/projects/:projectId" element={<ProjectWorkspacePage />} />
+        <Route path="/drama/projects/:projectId/episodes/:episodeId" element={<EpisodeEditPage />} />
+        <Route path="/drama/projects/:projectId/canvas" element={<CanvasPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <DialogHost />

@@ -1,0 +1,306 @@
+/** Drama module API client (/api/drama/*). */
+
+function defaultApiBase() {
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    const { protocol, hostname } = window.location
+    return `${protocol}//${hostname}:8000`
+  }
+  return 'http://127.0.0.1:8000'
+}
+
+const _viteApiBase = import.meta.env.VITE_API_BASE
+const API_BASE =
+  _viteApiBase === undefined || _viteApiBase === null ? defaultApiBase() : String(_viteApiBase)
+
+/** 导出 API 根地址，供静态资源 URL 拼接 */
+export function getDramaApiBase() {
+  return API_BASE
+}
+
+/** 将 /static 相对路径补全为可访问的绝对 URL */
+export function resolveDramaMediaUrl(url?: string | null): string {
+  if (!url) return ''
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
+    return url
+  }
+  if (url.startsWith('/')) return `${API_BASE}${url}`
+  return url
+}
+
+function authHeaders(): HeadersInit {
+  const token = localStorage.getItem('token')
+  return token
+    ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+    : { 'Content-Type': 'application/json' }
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers: { ...authHeaders(), ...(init?.headers || {}) },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    const detail = err.detail
+    const message =
+      typeof detail === 'string'
+        ? detail
+        : Array.isArray(detail)
+          ? detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join('; ')
+          : res.statusText
+    throw new Error(message || '请求失败')
+  }
+  return res.json()
+}
+
+export type DramaScript = {
+  id: number
+  name: string
+  source?: string | null
+  summary?: Record<string, unknown> | null
+  episode_content?: { episodes?: DramaEpisodeBody[] } | DramaEpisodeBody[] | null
+  params?: Record<string, unknown> | null
+  project_id: number
+}
+
+export type DramaEpisodeBody = {
+  episodeNumber?: number
+  title?: string
+  body?: string
+}
+
+export type DramaProject = {
+  id: number
+  user_id: number
+  title: string
+  description?: string | null
+  content?: Record<string, unknown> | null
+  params?: Record<string, unknown> | null
+  created_at?: string
+  updated_at?: string
+  script?: DramaScript | null
+  asset_count: number
+  episode_count: number
+}
+
+export type DramaProjectListItem = {
+  id: number
+  title: string
+  description?: string | null
+  created_at?: string
+  updated_at?: string
+  episode_count: number
+  asset_count: number
+  has_script: boolean
+}
+
+export type DramaAsset = {
+  id: number
+  type: string
+  asset_type: string
+  name?: string | null
+  cover?: string | null
+  url?: string | null
+  params?: Record<string, unknown> | null
+  project_id: number
+}
+
+export type DramaFragment = {
+  id: number
+  episode_id: number
+  sort_order: number
+  content: string
+  cover: string
+  video: string
+  duration_sec?: number | null
+  params?: Record<string, unknown> | null
+  asset_ids: number[]
+}
+
+export type DramaEpisode = {
+  id: number
+  name: string
+  params?: Record<string, unknown> | null
+  project_id: number
+  fragments: DramaFragment[]
+}
+
+export type DramaScriptSummaryResult = {
+  ok?: boolean
+  queued?: boolean
+  status?: string
+  task_id?: string | null
+  summary?: Record<string, unknown>
+  text?: string
+  script: DramaScript
+  projectTitle?: string
+}
+
+export type DramaEpisodeScriptResult = {
+  ok?: boolean
+  queued?: boolean
+  status?: string
+  task_id?: string | null
+  episodes: DramaEpisodeBody[]
+  total_generated: number
+  total_target: number
+  done: boolean
+  script: DramaScript
+}
+
+export type DramaImageGenerateResult = {
+  ok: boolean
+  queued: boolean
+  status: string
+  task_id?: string | null
+  asset_id?: number | null
+  asset?: DramaAsset | null
+}
+
+export const dramaApi = {
+  listProjects: () => request<DramaProjectListItem[]>('/api/drama/projects'),
+  createProject: (body: {
+    title?: string
+    description?: string
+    source?: string
+    episode_count?: number
+    image_style_id?: string
+  }) =>
+    request<DramaProject>('/api/drama/projects', { method: 'POST', body: JSON.stringify(body) }),
+  getProject: (id: number) => request<DramaProject>(`/api/drama/projects/${id}`),
+  updateProject: (id: number, body: { title?: string; description?: string }) =>
+    request<DramaProject>(`/api/drama/projects/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteProject: (id: number) =>
+    request<{ ok: boolean }>(`/api/drama/projects/${id}`, { method: 'DELETE' }),
+
+  getScript: (projectId: number) => request<DramaScript>(`/api/drama/scripts/${projectId}`),
+  updateScript: (projectId: number, body: { image_style_id?: string; [key: string]: unknown }) =>
+    request<DramaScript>(`/api/drama/scripts/${projectId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
+  scriptSummary: (body: {
+    project_id: number
+    creative?: string
+    episode_count?: number
+    image_style_id?: string
+  }) =>
+    request<DramaScriptSummaryResult>('/api/drama/agents/script_summary', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  episodeScript: (body: { project_id: number; batch_size?: number; force?: boolean }) =>
+    request<DramaEpisodeScriptResult>('/api/drama/agents/episode_script', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  route: (message: string) =>
+    request<{ agent: string; action: string }>('/api/drama/agents/route', {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    }),
+  chat: (message: string, project_id?: number) =>
+    request<{ reply: string }>('/api/drama/ai/chat', {
+      method: 'POST',
+      body: JSON.stringify({ message, project_id }),
+    }),
+
+  listAssets: (projectId?: number) =>
+    request<DramaAsset[]>(
+      projectId != null ? `/api/drama/assets?project_id=${projectId}` : '/api/drama/assets',
+    ),
+  createAsset: (body: Partial<DramaAsset> & { project_id: number }) =>
+    request<DramaAsset>('/api/drama/assets', { method: 'POST', body: JSON.stringify(body) }),
+  updateAsset: (id: number, body: Partial<DramaAsset>) =>
+    request<DramaAsset>(`/api/drama/assets/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  uploadAssetMedia: async (assetId: number, file: File) => {
+    const token = localStorage.getItem('token')
+    const form = new FormData()
+    form.append('file', file)
+    const res = await fetch(`${API_BASE}/api/drama/assets/${assetId}/upload`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }))
+      const detail = err.detail
+      const message =
+        typeof detail === 'string'
+          ? detail
+          : Array.isArray(detail)
+            ? detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join('; ')
+            : res.statusText
+      throw new Error(message || '上传失败')
+    }
+    return res.json() as Promise<DramaAsset>
+  },
+  deleteAsset: (id: number) =>
+    request<{ ok: boolean }>(`/api/drama/assets/${id}`, { method: 'DELETE' }),
+  seedAssets: (projectId: number) =>
+    request<DramaAsset[]>(`/api/drama/assets/seed_from_script?project_id=${projectId}`, {
+      method: 'POST',
+    }),
+
+  listEpisodes: (projectId: number) =>
+    request<DramaEpisode[]>(`/api/drama/episodes?project_id=${projectId}`),
+  getEpisode: (id: number) => request<DramaEpisode>(`/api/drama/episodes/${id}`),
+  seedEpisodes: (projectId: number, force = false) =>
+    request<DramaEpisode[]>(
+      `/api/drama/episodes/seed_from_script?project_id=${projectId}${force ? '&force=true' : ''}`,
+      { method: 'POST' },
+    ),
+  saveFragments: (
+    episodeId: number,
+    fragments: Array<{
+      sort_order: number
+      content: string
+      cover?: string
+      video?: string
+      duration_sec?: number | null
+      asset_ids?: number[]
+    }>,
+  ) =>
+    request<DramaEpisode>(`/api/drama/episodes/${episodeId}/fragments`, {
+      method: 'POST',
+      body: JSON.stringify({ fragments }),
+    }),
+  generateEpisode: (episodeId: number, fragment_ids?: number[]) =>
+    request<{ ok: boolean; fragment_ids: number[]; status: string }>(
+      `/api/drama/episodes/${episodeId}/generate`,
+      { method: 'POST', body: JSON.stringify({ fragment_ids }) },
+    ),
+  generateStatus: (episodeId: number) =>
+    request<{
+      episode_id: number
+      done: number
+      failed: number
+      running: number
+      total: number
+      fragments: Array<{ fragment_id: number; status: string; video?: string }>
+    }>(`/api/drama/episodes/${episodeId}/generate_status`),
+
+  generateImage: (body: {
+    project_id: number
+    asset_id?: number
+    prompt: string
+    name?: string
+    asset_type_kind?: string
+    image_style_id?: string
+    model_id?: string
+    aspect_ratio?: string
+    resolution?: string
+  }) =>
+    request<DramaImageGenerateResult>('/api/drama/generation/image', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  getCanvas: (projectId: number) =>
+    request<{ project_id: number; nodes: unknown[]; edges: unknown[] }>(
+      `/api/drama/canvas/${projectId}`,
+    ),
+  saveCanvas: (body: { project_id: number; nodes: unknown[]; edges: unknown[] }) =>
+    request<{ ok: boolean }>('/api/drama/canvas', { method: 'POST', body: JSON.stringify(body) }),
+}

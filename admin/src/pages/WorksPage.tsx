@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api, type AdminWork, type PageMeta } from "@/api/client";
 import { PaginationBar } from "@/components/PaginationBar";
+import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { auditStatusLabel, visibilityLabel } from "@/lib/statusLabels";
 
 type ListRes = { items: AdminWork[]; meta: PageMeta };
 
@@ -25,7 +27,7 @@ export function WorksPage() {
   // Load works
   async function load(nextPage = page) {
     try {
-      const params = new URLSearchParams({ page: String(nextPage), page_size: "20" });
+      const params = new URLSearchParams({ page: String(nextPage), page_size: String(DEFAULT_PAGE_SIZE) });
       if (auditStatus) params.set("audit_status", auditStatus);
       if (visibility) params.set("visibility", visibility);
       setData(await api<ListRes>(`/api/admin/works?${params}`));
@@ -53,21 +55,21 @@ export function WorksPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-semibold">作品审核</h1>
-        <p className="text-sm text-muted-foreground">调整可见性与审核状态</p>
+        <h2 className="text-xl font-semibold text-[#303133]">作品审核</h2>
+        <p className="mt-1 text-sm text-[#909399]">调整可见性与审核状态</p>
       </div>
       <div className="flex flex-wrap gap-2">
         <Select className="w-40" value={auditStatus} onChange={(e) => setAuditStatus(e.target.value)}>
           <option value="">全部审核</option>
-          <option value="pending">pending</option>
-          <option value="passed">passed</option>
-          <option value="rejected">rejected</option>
+          <option value="pending">待审核</option>
+          <option value="passed">已通过</option>
+          <option value="rejected">已拒绝</option>
         </Select>
         <Select className="w-40" value={visibility} onChange={(e) => setVisibility(e.target.value)}>
           <option value="">全部可见性</option>
-          <option value="public">public</option>
-          <option value="private">private</option>
-          <option value="unlisted">unlisted</option>
+          <option value="public">公开</option>
+          <option value="private">私密</option>
+          <option value="unlisted">不公开列出</option>
         </Select>
         <Button
           variant="secondary"
@@ -99,11 +101,11 @@ export function WorksPage() {
                 <TableCell className="max-w-[200px] truncate">{w.title}</TableCell>
                 <TableCell>{w.user_email ?? w.user_id}</TableCell>
                 <TableCell>
-                  <Badge variant="secondary">{w.visibility}</Badge>
+                  <Badge variant="secondary">{visibilityLabel(w.visibility)}</Badge>
                 </TableCell>
                 <TableCell>
-                  <Badge variant={w.audit_status === "rejected" ? "destructive" : "secondary"}>
-                    {w.audit_status}
+                  <Badge variant={w.audit_status === "rejected" ? "destructive" : w.audit_status === "passed" ? "success" : "warning"}>
+                    {auditStatusLabel(w.audit_status)}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">

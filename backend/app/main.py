@@ -1,18 +1,26 @@
 from pathlib import Path
+import logging
+import time
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, text
 
 from app.api import auth, billing, projects, templates
 from app.api.admin import router as admin_router
+from app.api.drama import router as drama_router
 from app.config import get_settings
 from app.database import AsyncSessionLocal, engine, init_db
+from app.logging_setup import configure_logging
 from app.models import Template, User
 from app.services.templates_seed import TEMPLATES
 
 settings = get_settings()
+# 业务日志 INFO；DEBUG=true 不再把根日志打成 DEBUG（避免 aiosqlite 刷屏）
+configure_logging(level="INFO", sql_echo=settings.sql_echo)
+logger = logging.getLogger("app.http")
+
 app = FastAPI(title=settings.app_name, version="0.2.0")
 
 origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
@@ -34,6 +42,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    # 业务可读请求日志（跳过静态资源；高频轮询默认不打）
+    path = request.url.path
+    started = time.perf_counter()
+    response = await call_next(request)
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    if path.startswith("/static"):
+        return response
+    # 高频轮询：成功且较快时静默，避免淹没业务日志
+    is_poll = (
+        path.endswith("/generate_status")
+        or (request.method == "GET" and path.startswith("/api/drama/scripts/"))
+        or (request.method == "GET" and path.startswith("/api/drama/assets"))
+        or (request.method == "GET" and path.startswith("/api/projects/") and path.count("/") == 3)
+    )
+    msg = f"{request.method} {path} → {response.status_code} ({elapsed_ms:.0f}ms)"
+    if response.status_code >= 400:
+        logger.warning(msg)
+    elif is_poll and elapsed_ms < 800:
+        return response
+    else:
+        logger.info(msg)
+    return response
+
 static_dir = Path(__file__).resolve().parent.parent / "static"
 static_dir.mkdir(parents=True, exist_ok=True)
 (static_dir / "templates").mkdir(exist_ok=True)
@@ -45,6 +79,7 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(templates.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
 app.include_router(billing.router, prefix="/api")
+app.include_router(drama_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
 
 
@@ -140,6 +175,21 @@ async def _migrate_sqlite() -> None:
             )
         if "role" not in ucols:
             await conn.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR(16) DEFAULT 'user'"))
+
+        # UsageEvent.drama_project_id for drama module billing
+        if is_sqlite:
+            result = await conn.execute(text("PRAGMA table_info(usage_events)"))
+            uecols = {row[1] for row in result.fetchall()}
+        else:
+            result = await conn.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'usage_events'"
+                )
+            )
+            uecols = {row[0] for row in result.fetchall()}
+        if "drama_project_id" not in uecols:
+            await conn.execute(text("ALTER TABLE usage_events ADD COLUMN drama_project_id INTEGER"))
 
 
 async def bootstrap_admins() -> None:

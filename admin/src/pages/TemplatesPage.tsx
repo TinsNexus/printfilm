@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api, type AdminTemplate, type PageMeta } from "@/api/client";
 import { PaginationBar } from "@/components/PaginationBar";
+import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -66,7 +67,7 @@ export function TemplatesPage() {
   // Load templates
   async function load(nextPage = page) {
     try {
-      const params = new URLSearchParams({ page: String(nextPage), page_size: "50" });
+      const params = new URLSearchParams({ page: String(nextPage), page_size: String(DEFAULT_PAGE_SIZE) });
       setData(await api<ListRes>(`/api/admin/templates?${params}`));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "加载失败");
@@ -185,8 +186,8 @@ export function TemplatesPage() {
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">模板管理</h1>
-          <p className="text-sm text-muted-foreground">增删改、上下架与 premium</p>
+          <h2 className="text-xl font-semibold text-[#303133]">模板管理</h2>
+          <p className="mt-1 text-sm text-[#909399]">增删改、上下架与 premium</p>
         </div>
         <Button onClick={openCreate}>新建模板</Button>
       </div>

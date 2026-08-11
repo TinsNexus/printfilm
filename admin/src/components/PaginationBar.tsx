@@ -1,32 +1,101 @@
-import { Button } from "@/components/ui/button";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { buildPageItems, DEFAULT_PAGE_SIZE } from "@/lib/pagination";
+import { cn } from "@/lib/utils";
 
 type Props = {
   page: number;
-  pageSize: number;
+  pageSize?: number;
   total: number;
   onPageChange: (page: number) => void;
+  onPageSizeChange?: (size: number) => void;
+  pageSizeOptions?: number[];
+  className?: string;
 };
 
-// Simple prev/next pagination
-export function PaginationBar({ page, pageSize, total, onPageChange }: Props) {
+/**
+ * Global admin pagination — default 10 / page, numbered pages + optional size
+ */
+export function PaginationBar({
+  page,
+  pageSize = DEFAULT_PAGE_SIZE,
+  total,
+  onPageChange,
+  onPageSizeChange,
+  pageSizeOptions = [10, 20, 50],
+  className,
+}: Props) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const items = buildPageItems(page, totalPages);
+  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
+
   return (
-    <div className="flex items-center justify-between gap-3 pt-4 text-sm text-muted-foreground">
-      <span>
-        共 {total} 条 · 第 {page}/{totalPages} 页
-      </span>
-      <div className="flex gap-2">
-        <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
-          上一页
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
+    <div
+      className={cn(
+        "flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[#fafbfc] px-3 py-2.5 text-sm text-[#909399]",
+        className,
+      )}
+    >
+      <div className="flex flex-wrap items-center gap-3">
+        <span>
+          共 <em className="not-italic font-semibold text-[#303133]">{total}</em> 条
+          <span className="mx-1.5 text-[#dcdfe6]">·</span>
+          {from}-{to}
+        </span>
+        {onPageSizeChange && (
+          <label className="flex items-center gap-1.5 text-xs">
+            <span>每页</span>
+            <select
+              className="h-7 rounded-md border border-[#dcdfe6] bg-white px-1.5 text-[#606266] outline-none focus:border-[#67c23a]"
+              value={pageSize}
+              onChange={(e) => onPageSizeChange(Number(e.target.value))}
+            >
+              {pageSizeOptions.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+            <span>条</span>
+          </label>
+        )}
+      </div>
+
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          className="admin-page-btn"
+          disabled={page <= 1}
+          onClick={() => onPageChange(page - 1)}
+          aria-label="上一页"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        {items.map((n, idx) =>
+          n === -1 ? (
+            <span key={`e-${idx}`} className="px-1.5 text-[#c0c4cc]">
+              …
+            </span>
+          ) : (
+            <button
+              key={n}
+              type="button"
+              className={cn("admin-page-btn", n === page && "is-active")}
+              onClick={() => onPageChange(n)}
+            >
+              {n}
+            </button>
+          ),
+        )}
+        <button
+          type="button"
+          className="admin-page-btn"
           disabled={page >= totalPages}
           onClick={() => onPageChange(page + 1)}
+          aria-label="下一页"
         >
-          下一页
-        </Button>
+          <ChevronRight className="h-4 w-4" />
+        </button>
       </div>
     </div>
   );

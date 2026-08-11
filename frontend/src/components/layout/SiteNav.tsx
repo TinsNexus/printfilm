@@ -7,7 +7,7 @@ import HelpCenter from '../ui/HelpCenter'
 import { IconBell, IconGift, IconHelp } from '../ui/Icons'
 
 type Props = {
-  active?: 'home' | 'templates' | 'studio' | 'history' | 'pricing'
+  active?: 'home' | 'templates' | 'studio' | 'history' | 'pricing' | 'drama'
 }
 
 export default function SiteNav({ active }: Props) {

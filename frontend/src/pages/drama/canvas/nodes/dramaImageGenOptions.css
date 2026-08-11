@@ -1,0 +1,187 @@
+/* 漫剧生图选项条：风格 / 模型 / 画幅 */
+
+.fc-gen-opts {
+  position: relative;
+  margin-top: 8px;
+}
+
+.fc-gen-opts-triggers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fc-gen-opt-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 148px;
+  height: 30px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: #475569;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.fc-gen-opt-btn:hover:not(:disabled) {
+  background: #f1f5f9;
+}
+
+.fc-gen-opt-btn.active {
+  background: #f5f3ff;
+  color: #6d28d9;
+}
+
+.fc-gen-opt-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.fc-gen-opt-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fc-gen-opt-panel {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 30;
+  width: min(360px, calc(100vw - 64px));
+  max-height: 320px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
+}
+
+.drama-assets-gen-opts .fc-gen-opt-panel {
+  bottom: auto;
+  top: calc(100% + 8px);
+}
+
+.fc-gen-style-panel {
+  width: min(420px, calc(100vw - 48px));
+  max-height: 360px;
+}
+
+.fc-gen-opt-panel-title {
+  margin-bottom: 8px;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.fc-gen-style-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.fc-gen-style-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+}
+
+.fc-gen-style-card img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  background: #f8fafc;
+}
+
+.fc-gen-style-card span {
+  padding: 4px 6px 6px;
+  color: #334155;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.fc-gen-style-card.selected {
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 1px #7c3aed;
+}
+
+.fc-gen-model-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fc-gen-model-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fc-gen-model-item strong {
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.fc-gen-model-item span {
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.fc-gen-model-item.selected {
+  border-color: #7c3aed;
+  background: #faf5ff;
+}
+
+.fc-gen-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fc-gen-chip {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #fff;
+  color: #475569;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.fc-gen-chip.selected {
+  border-color: #7c3aed;
+  background: #f5f3ff;
+  color: #6d28d9;
+}
+
+.drama-assets-gen-opts {
+  margin: 0 0 1rem;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.drama-assets-gen-opts .fc-gen-opts {
+  margin-top: 0;
+}

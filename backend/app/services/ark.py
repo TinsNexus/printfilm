@@ -249,6 +249,21 @@ class ArkGateway:
                 "每镜 img_prompt 只写本镜场景与构图（景物、动作、光影），不要重复粘贴大段画风/人物锁定原文；"
                 "出现人物时用短句点出与 character_bible 一致的关键特征即可。"
             )
+        # shot_cap 单镜 duration 上限（秒），写入 prompt 与校验说明
+        shot_cap = min(duration_max, max_shot_duration)
+        # segment_rules 科普逐段脚本生产约束（对齐漫剧 cue，无 @asset）
+        segment_rules = (
+            "【segments 生产规范】"
+            "segments 必填；系统会落成 @duration +【字幕】/【BGM】/【旁白·慢速清晰·同步字幕】生产脚本，"
+            "因此 kind/text/duration 必须可直接消费。"
+            "段序优先「画面→旁白」交替，首段尽量 kind=visual（保证首帧有料）；"
+            "visual/action 的 text 必须含景别+主体动作+场景/界面类型，禁止空镜与模糊氛围词堆砌；"
+            "narration 的 text 为一句一事、可朗读口播，按约 3 字/秒估 duration；"
+            "单段 duration 3-12 秒，镜内各段之和约等于本镜 duration，且不超过 "
+            f"{shot_cap} 秒。"
+            "禁止真实商标/公司名/人名（改用泛称）。"
+            "character_bible 与 bgm_lock 全片唯一，各镜不得改人设或漂移 BGM 氛围。"
+        )
         if pipeline_mode == "image_text":
             diversity_note = (
                 "拆成 5-10 个分镜，每镜一个独立视觉场景；"
@@ -263,7 +278,7 @@ class ArkGateway:
             system = (
                 f"你是{orient}图文短视频编剧。所有字段必须使用简体中文。"
                 f"{consistency}{llm_system_addon}"
-                f"每镜 duration 在 {duration_min}-{min(duration_max, max_shot_duration)} 秒。"
+                f"每镜 duration 在 {duration_min}-{shot_cap} 秒。"
                 "这是「静图+叠字+配音」模式：不生成 AI 视频，但需要旁白配音；"
                 "画面禁止出现任何文字/水印/字幕。"
                 "shots 字段说明："
@@ -273,11 +288,12 @@ class ArkGateway:
                 "subtitle(对本镜卖点/要点的一句概括，8-22字，同样禁止原文截取前缀)、"
                 "text(旁白台词，口语化，约匹配该镜时长，可供 TTS 朗读，一般 20-60 字)、"
                 "segments(数组，精确到每一段：每项含 duration 秒、kind=visual|narration、text；"
-                "visual 写景别与画面动作，narration 写口播；单段 3-12 秒，合计约等于本镜 duration)、"
+                "visual 写景别与画面动作，narration 写口播)、"
                 f"img_prompt({orient} {ratio} 构图画面提示词，留出边缘给文字叠层，主体居中，"
                 "禁止要求画面内写字；禁止出现真实商标/公司名/人名，用泛称)、"
                 "video_prompt(可留空或写轻微推拉)、camera(如：缓慢推近/轻拉远)、bgm(情绪，全片尽量同一氛围)。"
                 "另输出顶层 bgm_lock(全片统一 BGM 氛围一句)。"
+                f"{segment_rules}"
                 f"{diversity_note}"
             )
         else:
@@ -290,24 +306,20 @@ class ArkGateway:
                 "你是短视频分镜编剧。所有字段必须使用简体中文"
                 "（包括 title、text、img_prompt、video_prompt、camera、bgm、segments）。"
                 f"{consistency}{llm_system_addon}"
-                f"每镜 duration 在 {duration_min}-{min(duration_max, max_shot_duration)} 秒。"
+                f"每镜 duration 在 {duration_min}-{shot_cap} 秒。"
                 "shots 字段说明："
                 "shot(序号)、duration(秒)、"
                 "title(对本镜旁白的概括短标题，2-8字，语义完整；"
                 "必须是总结提炼，禁止从 text 截取前缀，禁止截断专有名词如 ERP→ER)、"
                 "subtitle(可选，一句要点概括 8-22字)、"
-                "text(旁白台词)、"
-                "segments(必填数组，精确到每一段：每项 duration、kind=visual|narration|action、text；"
-                "先画面后旁白或交替；visual/action 写清景别、主体动作、场景/界面类型；"
-                "narration 为可朗读口播；单段 3-12 秒，按约 3 字/秒估旁白时长；"
-                "镜内各段 duration 之和应约等于本镜 duration，且不超过 "
-                f"{min(duration_max, max_shot_duration)} 秒)、"
-                "img_prompt(首段画面中文提示词，含具体景物与构图；"
-                "禁止真实商标/公司名/人名，改用泛称)、"
+                "text(旁白台词，与 segments 中 narration 文案一致或为其摘要)、"
+                "segments(必填数组，精确到每一段：每项 duration、kind=visual|narration|action、text)、"
+                "img_prompt(与首段 visual 一致的中文首帧提示词，含具体景物与构图)、"
                 "video_prompt(可与 segments 画面摘要一致)、"
                 "camera(运镜，如：缓慢上摇/轻推/横移)、bgm(情绪，全片同一氛围)。"
                 "顶层另输出 bgm_lock(全片统一 BGM 氛围一句，与各镜 bgm 一致)。"
                 "img_prompt 与 video_prompt 禁止英文句子，专有名词可保留原文。"
+                f"{segment_rules}"
                 f"{diversity_note}"
             )
         user = (
@@ -342,6 +354,7 @@ class ArkGateway:
         project_id: int | None = None,
         shot_no: int | None = None,
         size: str | None = None,
+        model: str | None = None,
     ) -> ImageResult:
         if self.mock:
             local = await asyncio.to_thread(self._write_mock_image, prompt, size)
@@ -374,6 +387,7 @@ class ArkGateway:
                     project_id=project_id,
                     shot_no=shot_no,
                     size=size,
+                    model=model,
                     prompt_hash_src=prompt,
                 )
             except Exception as exc:  # noqa: BLE001
@@ -398,9 +412,10 @@ class ArkGateway:
         shot_no: int | None,
         size: str | None,
         prompt_hash_src: str,
+        model: str | None = None,
     ) -> ImageResult:
         body: dict[str, Any] = {
-            "model": self.settings.model_image,
+            "model": (model or "").strip() or self.settings.model_image,
             "prompt": full_prompt,
             "size": size or self.settings.ark_image_size,
             "response_format": "url",
@@ -539,17 +554,24 @@ class ArkGateway:
                 "role": "first_frame",
             },
         ]
+        # 首帧/首尾帧生视频：ratio 必须省略，输出比例跟随首帧图
+        # （传 ratio 会报 InvalidParameter.TaskTypeConstraint）
         body: dict[str, Any] = {
             "model": self.settings.model_video,
             "content": content,
             "duration": self._seedance_duration(duration),
-            "ratio": ratio or self.settings.ark_video_ratio,
             "resolution": resolution,
             "watermark": False,
             "generate_audio": False,
             "return_last_frame": bool(return_last_frame),
         }
         # Do not send character_consistency — unknown fields have caused BodyFormat failures
+        logger.info(
+            "Seedance i2v create model=%s duration=%s resolution=%s (ratio omitted for first_frame)",
+            body["model"],
+            body["duration"],
+            resolution,
+        )
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(
@@ -566,8 +588,19 @@ class ArkGateway:
                     json=body,
                 )
             if resp.status_code >= 400:
-                # Last try: drop role
+                err_text = resp.text or ""
+                # 若仍因 ratio 报错（兼容旧调用残留），显式去掉再试
+                if "ratio" in err_text.lower() and "ratio" in body:
+                    body.pop("ratio", None)
+                    resp = await client.post(
+                        self._url("/contents/generations/tasks"),
+                        headers=self._headers(),
+                        json=body,
+                    )
+            if resp.status_code >= 400:
+                # Last try: drop role（参考图模式，可按需带 adaptive）
                 body["content"][1].pop("role", None)
+                body["ratio"] = "adaptive"
                 resp = await client.post(
                     self._url("/contents/generations/tasks"),
                     headers=self._headers(),

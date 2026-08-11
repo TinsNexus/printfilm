@@ -28,40 +28,12 @@ import {
   shotStatusLabel,
   statusLabel,
 } from '../../lib/status'
-
-type SegmentBeatView = { duration: number; text: string; isCue?: boolean }
-
-function parseSegmentScript(script: string | undefined | null): {
-  cues: string[]
-  beats: SegmentBeatView[]
-} {
-  const cues: string[] = []
-  const beats: SegmentBeatView[] = []
-  const lines = String(script || '')
-    .replace(/\r\n/g, '\n')
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean)
-  let pendingDur = 0
-  for (const line of lines) {
-    if (line.startsWith('【字幕') || line.startsWith('【BGM')) {
-      cues.push(line)
-      continue
-    }
-    const m = line.match(/^@duration:(\d+)/)
-    if (m) {
-      pendingDur = Number(m[1]) || 0
-      continue
-    }
-    if (pendingDur > 0 || beats.length === 0) {
-      beats.push({ duration: pendingDur || 0, text: line })
-      pendingDur = 0
-    } else {
-      beats.push({ duration: 0, text: line })
-    }
-  }
-  return { cues, beats }
-}
+import {
+  SEGMENT_SCRIPT_PLACEHOLDER,
+  SHOT_DURATION_MAX,
+  parseSegmentScript,
+  validateSegmentScriptDuration,
+} from '../../lib/segmentDuration'
 
 function csvEscape(value: string | number | null | undefined) {
   const s = String(value ?? '')
@@ -206,6 +178,14 @@ export default function StoryboardPage() {
   const totalDuration = useMemo(
     () => (project?.shots || []).reduce((s, x) => s + (Number(x.duration) || 0), 0),
     [project?.shots],
+  )
+
+  // editScriptText 弹窗中当前编辑的逐段脚本
+  const editScriptText = editing?.segment_script || editing?.video_prompt || ''
+  // editDurationCheck 弹窗脚本时长校验
+  const editDurationCheck = useMemo(
+    () => validateSegmentScriptDuration(editScriptText),
+    [editScriptText],
   )
 
   const shots = project?.shots || []
@@ -525,6 +505,14 @@ export default function StoryboardPage() {
 
   async function saveShot() {
     if (!project || !editing) return
+    // scriptText 当前编辑中的逐段脚本
+    const scriptText = editing.segment_script || editing.video_prompt || ''
+    // durationCheck 时长校验结果
+    const durationCheck = validateSegmentScriptDuration(scriptText)
+    if (!durationCheck.valid) {
+      setError(durationCheck.message || '分镜时长不合法')
+      return
+    }
     setBusy(true)
     try {
       await api.updateShot(project.id, editing.id, {
@@ -1288,6 +1276,9 @@ export default function StoryboardPage() {
                 onChange={(e) => setEditing({ ...editing, narration: e.target.value })}
                 rows={3}
               />
+              <span className="pf-muted" style={{ fontSize: '0.75rem', marginTop: 4, display: 'block' }}>
+                保存后将按脚本中旁白段回写
+              </span>
             </label>
             <label>
               画面提示词（首帧）
@@ -1297,6 +1288,9 @@ export default function StoryboardPage() {
                 onChange={(e) => setEditing({ ...editing, img_prompt: e.target.value })}
                 rows={3}
               />
+              <span className="pf-muted" style={{ fontSize: '0.75rem', marginTop: 4, display: 'block' }}>
+                保存后将按脚本首段画面回写
+              </span>
             </label>
             <label>
               逐段分镜脚本（@duration + 字幕/BGM）
@@ -1311,11 +1305,40 @@ export default function StoryboardPage() {
                   })
                 }
                 rows={10}
-                placeholder={
-                  '【字幕：全程简体中文字幕，旁白逐句同步烧录】\n【BGM：轻快专业，音量低于人声】\n@duration:4\n过肩工位操作画面…\n@duration:8\n【旁白·慢速清晰·同步字幕】口播内容…'
-                }
+                placeholder={SEGMENT_SCRIPT_PLACEHOLDER}
               />
             </label>
+            <div
+              className="pf-chips"
+              style={{ marginTop: '-0.35rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}
+            >
+              {editDurationCheck.durations.length > 0 ? (
+                editDurationCheck.durations.map((sec, i) => (
+                  <span key={`${sec}-${i}`} className="pf-chip" style={{ cursor: 'default' }}>
+                    {sec}s
+                  </span>
+                ))
+              ) : (
+                <span className="pf-muted" style={{ fontSize: '0.8rem' }}>
+                  暂无 @duration 标签
+                </span>
+              )}
+              <span
+                className="pf-muted"
+                style={{
+                  fontSize: '0.8rem',
+                  marginLeft: 'auto',
+                  color: editDurationCheck.valid ? undefined : 'var(--pf-danger, #c0392b)',
+                }}
+              >
+                合计 {editDurationCheck.total}s / {SHOT_DURATION_MAX}s
+              </span>
+            </div>
+            {!editDurationCheck.valid && editDurationCheck.message ? (
+              <p className="pf-error" style={{ margin: '0 0 0.75rem', fontSize: '0.85rem' }}>
+                {editDurationCheck.message}
+              </p>
+            ) : null}
             <label>
               运镜备注
               <input
@@ -1334,7 +1357,12 @@ export default function StoryboardPage() {
               </label>
             </div>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button type="button" className="pf-btn pf-btn-lime" disabled={busy} onClick={saveShot}>
+              <button
+                type="button"
+                className="pf-btn pf-btn-lime"
+                disabled={busy || !editDurationCheck.valid}
+                onClick={saveShot}
+              >
                 保存
               </button>
               <button

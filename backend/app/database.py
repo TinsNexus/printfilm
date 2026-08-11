@@ -7,7 +7,7 @@ from app.config import get_settings
 
 settings = get_settings()
 
-_engine_kwargs: dict = {"echo": settings.debug}
+_engine_kwargs: dict = {"echo": bool(settings.sql_echo)}
 if settings.database_url.startswith("postgresql"):
     _engine_kwargs.update(pool_pre_ping=True, pool_size=10, max_overflow=20)
 
@@ -26,6 +26,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 async def init_db() -> None:
     from app import models  # noqa: F401
+    from app import models_drama  # noqa: F401
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

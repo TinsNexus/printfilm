@@ -1,0 +1,232 @@
+"""Drama agent endpoints: summary, episode script, route, chat."""
+
+from __future__ import annotations
+
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import get_settings
+from app.database import get_db
+from app.deps import get_current_user
+from app.models import User
+from app.schemas_drama import (
+    DramaChatRequest,
+    DramaEpisodeScriptRequest,
+    DramaRouteRequest,
+    DramaScriptOut,
+    DramaScriptSummaryRequest,
+)
+from app.services.billing import record_usage
+from app.services.drama.access import get_owned_drama_project
+from app.services.drama.agents import (
+    count_completed_episodes,
+    resolve_episode_target,
+)
+from app.services.drama.jobs import dispatch_episode_scripts_job, dispatch_script_summary_job
+from app.services.drama.llm import drama_chat_text
+
+router = APIRouter()
+logger = logging.getLogger("app.drama.agents")
+
+
+@router.post("/agents/script_summary")
+async def script_summary(
+    body: DramaScriptSummaryRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    # 入队摘要任务，立即返回；前端轮询 script.params.summary_status
+    project = await get_owned_drama_project(db, body.project_id, user, with_script=True)
+    if not project.script:
+        raise HTTPException(status_code=400, detail="缺少剧本")
+    creative = (body.creative or project.script.source or "").strip()
+    if len(creative) < 20:
+        raise HTTPException(status_code=400, detail="创意文案至少 20 字")
+
+    project.script.source = creative
+    params = dict(project.script.params or {})
+    if body.episode_count:
+        params["episode_count"] = int(body.episode_count)
+        proj_params = dict(project.params or {})
+        proj_params["episode_count"] = int(body.episode_count)
+        project.params = proj_params
+    if body.image_style_id:
+        params["image_style_id"] = str(body.image_style_id)
+        proj_params = dict(project.params or {})
+        proj_params["image_style_id"] = str(body.image_style_id)
+        project.params = proj_params
+    existing_status = str(params.get("summary_status") or "")
+    if existing_status == "generating":
+        logger.info(
+            "剧本摘要已在生成中，跳过重复入队 project_id=%s user_id=%s",
+            project.id,
+            user.id,
+        )
+        await db.commit()
+        return {
+            "ok": True,
+            "queued": True,
+            "status": "generating",
+            "task_id": None,
+            "script": DramaScriptOut.model_validate(project.script).model_dump(),
+        }
+    params["summary_status"] = "generating"
+    params.pop("summary_error", None)
+    project.script.params = params
+    await db.commit()
+    await db.refresh(project)
+
+    task_id = dispatch_script_summary_job(project.id)
+    logger.info(
+        "已入队剧本摘要 project_id=%s user_id=%s task_id=%s creative_len=%s",
+        project.id,
+        user.id,
+        task_id,
+        len(creative),
+    )
+    return {
+        "ok": True,
+        "queued": True,
+        "status": "generating",
+        "task_id": task_id,
+        "script": DramaScriptOut.model_validate(project.script).model_dump(),
+    }
+
+
+@router.post("/agents/episode_script")
+async def episode_script(
+    body: DramaEpisodeScriptRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    # 入队完整分集生成；前端轮询 episode_content_status / progress
+    project = await get_owned_drama_project(db, body.project_id, user, with_script=True)
+    if not project.script or not project.script.summary:
+        raise HTTPException(status_code=400, detail="请先生成剧本摘要")
+
+    summary = project.script.summary if isinstance(project.script.summary, dict) else {}
+    total = resolve_episode_target(summary, project.params, project.script.params)
+    if summary.get("episodeCount") != total:
+        summary = {**summary, "episodeCount": total}
+        project.script.summary = summary
+
+    params = dict(project.script.params or {})
+    if str(params.get("episode_content_status") or "") == "generating" and not body.force:
+        content = project.script.episode_content
+        existing: list = []
+        if isinstance(content, dict) and isinstance(content.get("episodes"), list):
+            existing = list(content["episodes"])
+        elif isinstance(content, list):
+            existing = list(content)
+        generated = count_completed_episodes(existing, total)
+        logger.info(
+            "分集剧本已在生成中，跳过重复入队 project_id=%s progress=%s/%s",
+            project.id,
+            generated,
+            total,
+        )
+        await db.commit()
+        return {
+            "ok": True,
+            "queued": True,
+            "status": "generating",
+            "task_id": None,
+            "episodes": [],
+            "total_generated": generated,
+            "total_target": total,
+            "done": False,
+            "script": DramaScriptOut.model_validate(project.script).model_dump(),
+        }
+
+    params["episode_content_status"] = "generating"
+    params["episode_count"] = total
+    params.pop("episode_content_error", None)
+    if body.force:
+        content = project.script.episode_content
+        existing: list = []
+        if isinstance(content, dict) and isinstance(content.get("episodes"), list):
+            existing = list(content["episodes"])
+        elif isinstance(content, list):
+            existing = list(content)
+        if existing:
+            project.script.episode_content = {
+                "episodes": [
+                    {
+                        "episodeNumber": int(item.get("episodeNumber") or 0),
+                        "title": str(item.get("title") or f"第 {item.get('episodeNumber')} 集"),
+                        "body": "",
+                    }
+                    for item in existing
+                    if isinstance(item, dict) and int(item.get("episodeNumber") or 0) >= 1
+                ]
+            }
+        params["episode_content_progress"] = {"done": 0, "total": total}
+    project.script.params = params
+    await db.commit()
+    await db.refresh(project)
+
+    task_id = dispatch_episode_scripts_job(project.id, force=bool(body.force))
+    content = project.script.episode_content
+    existing = []
+    if isinstance(content, dict) and isinstance(content.get("episodes"), list):
+        existing = list(content["episodes"])
+    elif isinstance(content, list):
+        existing = list(content)
+    generated = count_completed_episodes(existing, total)
+    logger.info(
+        "已入队分集剧本 project_id=%s user_id=%s task_id=%s force=%s target=%s done=%s",
+        project.id,
+        user.id,
+        task_id,
+        bool(body.force),
+        total,
+        generated,
+    )
+    return {
+        "ok": True,
+        "queued": True,
+        "status": "generating",
+        "task_id": task_id,
+        "episodes": [],
+        "total_generated": generated,
+        "total_target": total,
+        "done": False,
+        "script": DramaScriptOut.model_validate(project.script).model_dump(),
+    }
+
+
+@router.post("/agents/route")
+async def route_agent(body: DramaRouteRequest, user: User = Depends(get_current_user)) -> dict:
+    _ = user
+    msg = (body.message or "").strip().lower()
+    if any(k in msg for k in ("剧本", "短剧", "漫剧", "分集", "大纲", "编剧")):
+        return {"agent": "drama_script", "action": "create_project"}
+    if any(k in msg for k in ("画布", "节点", "自由创作")):
+        return {"agent": "canvas", "action": "open_canvas"}
+    return {"agent": "chat", "action": "chat"}
+
+
+@router.post("/ai/chat")
+async def ai_chat(
+    body: DramaChatRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    logger.info("漫剧聊天 user_id=%s project_id=%s", user.id, body.project_id)
+    reply = await drama_chat_text(
+        "你是 PRINTFILM 漫剧创作助手，帮助用户构思短剧创意、人物与分集结构。用简洁中文回答。",
+        body.message,
+    )
+    await record_usage(
+        db,
+        user_id=user.id,
+        project_id=None,
+        drama_project_id=body.project_id,
+        billing_key="llm_chat",
+        model=get_settings().model_llm,
+        estimated=True,
+    )
+    await db.commit()
+    return {"reply": reply}

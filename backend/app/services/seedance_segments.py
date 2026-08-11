@@ -19,6 +19,7 @@ DURATION_TOKEN_RE = re.compile(r"@duration:(\d+)")
 NARRATION_PREFIX = "【旁白·慢速清晰·同步字幕】"
 SUBTITLE_CUE = "【字幕：全程简体中文字幕，旁白逐句同步烧录】"
 DEFAULT_BGM_MOOD = "贴合内容的轻量配乐，情绪平稳，不抢旁白"
+SEEDANCE_PRODUCTION_SECTION_HEADER = "【强制约束：音频、字幕与配乐】"
 
 BGM_MOOD_KEYWORDS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"紧张|危机|压迫|悬疑"), "低沉紧张、鼓点渐强，烘托压迫感，音量低于人声"),
@@ -82,6 +83,62 @@ def build_production_cues(bgm_mood: str) -> list[str]:
     if "音量低于人声" not in mood:
         mood = f"{mood}，音量低于人声"
     return [SUBTITLE_CUE, f"【BGM：{mood}】"]
+
+
+def script_has_narration_cue(content: str) -> bool:
+    """检测脚本是否含旁白 cue / 旁白前缀。"""
+    for raw in (content or "").replace("\r\n", "\n").split("\n"):
+        line = raw.strip()
+        if not line or line.startswith("@duration:"):
+            continue
+        if NARRATION_PREFIX in line or line.startswith("【旁白"):
+            return True
+        if "旁白" in line[:24]:
+            return True
+    return False
+
+
+def build_seedance_production_section(segment_script: str) -> str:
+    """组装科普版 Seedance 音频/字幕/BGM 强制约束（对齐漫剧子集，无人物介绍/@asset）。"""
+    # has_vo 脚本是否含旁白
+    has_vo = script_has_narration_cue(segment_script)
+    # bgm_mood 从脚本 BGM cue 或正文推断
+    bgm_mood = DEFAULT_BGM_MOOD
+    for raw in (segment_script or "").replace("\r\n", "\n").split("\n"):
+        line = raw.strip()
+        if line.startswith("【BGM："):
+            mood = line.removeprefix("【BGM：").removesuffix("】").strip()
+            if mood:
+                bgm_mood = mood
+            break
+    else:
+        bgm_mood = infer_bgm_mood(segment_script)
+
+    if "音量低于人声" not in bgm_mood:
+        bgm_mood = f"{bgm_mood}，音量低于人声"
+
+    # lines 约束条目
+    lines = [
+        "1. 语速：旁白语速自然偏慢，吐字清晰，留有呼吸与停顿；严禁加速赶词、压缩台词或提高播放倍速。",
+        "2. 字幕：全程烧录简体中文字幕，位置底部居中，字号清晰可读；旁白须逐句同步显示，字幕与口播一致。",
+    ]
+    if has_vo:
+        lines.append(
+            "3. 旁白：脚本含旁白段落时以第三人称旁白配音，沉稳清晰、语速偏慢；"
+            "视频内不要自行添加嘈杂对白；旁白出现时字幕同步显示全文。"
+        )
+    else:
+        lines.append(
+            "3. 旁白：若脚本含旁白标记，按第三人称旁白慢速清晰配音，并同步烧录字幕；"
+            "视频内不要自行添加嘈杂对白。"
+        )
+    lines.append(
+        f"4. 背景音乐：{bgm_mood}；BGM 音量低于人声约 30%，不得盖过旁白与关键音效。"
+    )
+    lines.append(
+        "5. 音效：环境音与动作音效与画面同步，层次低于人声。"
+    )
+    return f"{SEEDANCE_PRODUCTION_SECTION_HEADER}\n" + "\n".join(lines)
 
 
 def format_segment_line(kind: str, text: str) -> str:
@@ -217,9 +274,14 @@ def parse_beats_from_llm_shot(item: dict[str, Any], narration_fallback: str = ""
             raw_dur = seg.get("duration")
             if kind in {"narration", "vo", "旁白"}:
                 dur = int(raw_dur) if raw_dur else estimate_narration_duration(text)
+                if raw_dur:
+                    # 旁白时长再按字数下限钳制，避免 LLM 给过短 duration
+                    dur = max(dur, estimate_narration_duration(text))
             else:
                 dur = int(raw_dur) if raw_dur else estimate_visual_duration(text)
-            beats.append(SegmentBeat(duration=dur, kind=kind, text=text))
+            beats.append(
+                SegmentBeat(duration=clamp_segment_duration(dur), kind=kind, text=text)
+            )
         return beats
 
     img = str(item.get("img_prompt") or item.get("visual") or "").strip()
@@ -248,7 +310,7 @@ def build_seedance_prompt(
     motion_bias: str = "",
     camera: str = "",
 ) -> str:
-    """Assemble final Seedance text: style lock + production note + timed body."""
+    """Assemble final Seedance text: style lock + production constraints + timed body."""
     parts: list[str] = []
     style = (style_prefix or "").strip()
     if style:
@@ -256,9 +318,9 @@ def build_seedance_prompt(
             "【强制约束：视频画面风格】全片画面必须严格遵循以下风格描述，"
             f"严禁偏离或混用其他画风：{style}"
         )
+    parts.append(build_seedance_production_section(segment_script))
     parts.append(
-        "【强制约束：节奏与叠字】严格按时间轴段落演绎画面；"
-        "旁白由后期配音，视频内不要自行添加嘈杂对白；"
+        "【强制约束：节奏与画面】严格按时间轴段落演绎画面；"
         "保持主体外形与首帧一致，动作自然。"
     )
     if motion_bias or camera:

@@ -2,25 +2,25 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api, type AdminProject, type PageMeta } from "@/api/client";
 import { PaginationBar } from "@/components/PaginationBar";
+import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { PROJECT_STATUS_OPTIONS, projectStatusLabel } from "@/lib/statusLabels";
 
 type ListRes = { items: AdminProject[]; meta: PageMeta };
 
-const STATUS_OPTIONS = [
-  "",
-  "DRAFT",
-  "SCRIPTING",
-  "FAILED",
-  "DONE",
-  "CANCELLED",
-  "VIDEOING",
-  "COMPOSING",
-];
+// Badge color by project status
+function statusBadgeVariant(status: string): "destructive" | "success" | "warning" | "info" | "secondary" {
+  if (status === "FAILED" || status === "REJECTED") return "destructive";
+  if (status === "DONE") return "success";
+  if (status === "CANCELLED") return "secondary";
+  if (status === "DRAFT") return "secondary";
+  return "info";
+}
 
 // Project list and failure detail
 export function ProjectsPage() {
@@ -40,7 +40,7 @@ export function ProjectsPage() {
   // Load projects
   async function load(nextPage = page) {
     try {
-      const params = new URLSearchParams({ page: String(nextPage), page_size: "20" });
+      const params = new URLSearchParams({ page: String(nextPage), page_size: String(DEFAULT_PAGE_SIZE) });
       if (status) params.set("status", status);
       if (q.trim()) params.set("q", q.trim());
       setData(await api<ListRes>(`/api/admin/projects?${params}`));
@@ -66,14 +66,14 @@ export function ProjectsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-semibold">项目管理</h1>
-        <p className="text-sm text-muted-foreground">按状态筛选，查看失败原因与进度</p>
+        <h2 className="text-xl font-semibold text-[#303133]">项目管理</h2>
+        <p className="mt-1 text-sm text-[#909399]">按状态筛选，查看失败原因与进度</p>
       </div>
       <div className="flex flex-wrap gap-2">
         <Select className="w-44" value={status} onChange={(e) => setStatus(e.target.value)}>
-          {STATUS_OPTIONS.map((s) => (
-            <option key={s || "all"} value={s}>
-              {s || "全部状态"}
+          {PROJECT_STATUS_OPTIONS.map((opt) => (
+            <option key={opt.value || "all"} value={opt.value}>
+              {opt.label}
             </option>
           ))}
         </Select>
@@ -114,7 +114,7 @@ export function ProjectsPage() {
                 <TableCell className="max-w-[180px] truncate">{p.title}</TableCell>
                 <TableCell className="text-sm">{p.user_email ?? p.user_id}</TableCell>
                 <TableCell>
-                  <Badge variant={p.status === "FAILED" ? "destructive" : "secondary"}>{p.status}</Badge>
+                  <Badge variant={statusBadgeVariant(p.status)}>{projectStatusLabel(p.status)}</Badge>
                 </TableCell>
                 <TableCell>{p.progress}%</TableCell>
                 <TableCell>{p.shot_count}</TableCell>
@@ -151,7 +151,7 @@ export function ProjectsPage() {
             <div className="space-y-2 text-sm">
               <div>用户：{detail.user_email ?? detail.user_id}</div>
               <div>
-                状态：{detail.status} · 进度 {detail.progress}% · 镜头 {detail.shot_count}
+                状态：{projectStatusLabel(detail.status)} · 进度 {detail.progress}% · 镜头 {detail.shot_count}
               </div>
               <div>模板：{detail.template_id}</div>
               <div>管线：{detail.pipeline_mode}</div>
