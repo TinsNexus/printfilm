@@ -258,22 +258,28 @@ function EpisodeEditInner() {
     })
   }
 
-  // 保存全部分镜
+  // 保存全部分镜（标记为用户已编辑，避免自动重切覆盖）
   async function save() {
     setBusy(true)
     setError('')
     try {
       const ep = await dramaApi.saveFragments(
         eid,
-        fragments.map((f, i) => ({
-          sort_order: i,
-          content: f.content,
-          cover: f.cover,
-          video: f.video,
-          duration_sec: resolveFragmentDurationSec(f.content, f.duration_sec),
-          params: f.params,
-          asset_ids: f.asset_ids || [],
-        })),
+        fragments.map((f, i) => {
+          const prevParams =
+            f.params && typeof f.params === 'object' && !Array.isArray(f.params)
+              ? (f.params as Record<string, unknown>)
+              : {}
+          return {
+            sort_order: i,
+            content: f.content,
+            cover: f.cover,
+            video: f.video,
+            duration_sec: resolveFragmentDurationSec(f.content, f.duration_sec),
+            params: { ...prevParams, user_edited: true },
+            asset_ids: f.asset_ids || [],
+          }
+        }),
       )
       setEpisode(ep)
       setFragments(ep.fragments || [])

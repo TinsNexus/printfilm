@@ -65,7 +65,7 @@ export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
     const ok = await dialog.confirm({
       title: '重新切分分镜',
       message:
-        '将按最新分集剧本重新切分镜（已生成视频的分集也会重写），是否继续？',
+        '将按最新分集剧本强制重切全部分镜（含已编辑、已生成视频的分集），是否继续？',
       confirmText: '继续切分',
       tone: 'danger',
     })

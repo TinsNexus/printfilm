@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import re
 from dataclasses import dataclass, field
@@ -429,7 +430,7 @@ async def seed_episodes_from_script(
         await db.commit()
         return await _reload_episodes(db, project.id)
 
-    # 已有分集：按集号同步名称与分镜（已生成视频的分镜默认保留，除非 force）
+    # 已有分集：按集号同步名称与分镜（已生成视频 / 用户编辑过的分镜默认保留，除非 force）
     for episode in existing:
         params = episode.params if isinstance(episode.params, dict) else {}
         ep_no = int(params.get("episodeNumber") or 0)
@@ -439,8 +440,7 @@ async def seed_episodes_from_script(
         title = str(item.get("title") or episode.name)
         body = str(item.get("body") or item.get("content") or "")
         episode.name = title
-        has_video = any((f.video or "").strip() for f in (episode.fragments or []))
-        if force or not has_video or _episode_needs_replan(episode):
+        if force or _episode_should_replace_fragments(episode, body):
             await _replace_episode_fragments(db, episode, body, assets)
 
     # 补建剧本里有、库中没有的集
@@ -473,7 +473,7 @@ async def _replace_episode_fragments(
     body: str,
     assets: list[DramaAsset],
 ) -> None:
-    # 删除旧分镜并按场次重建
+    # 删除旧分镜并按场次重建（一场可拆多条）
     for old in list(episode.fragments or []):
         await db.delete(old)
     await db.flush()
@@ -488,6 +488,7 @@ async def _replace_episode_fragments(
             params={
                 "sceneName": frag.get("scene_name"),
                 "characterNames": frag.get("character_names") or [],
+                "user_edited": False,
             },
         )
         db.add(row)
@@ -495,12 +496,33 @@ async def _replace_episode_fragments(
         for asset_id in frag.get("asset_ids") or []:
             db.add(DramaFragmentAssetRef(fragment_id=row.id, asset_id=int(asset_id)))
 
+    # 记录切分所用剧本身份，供后续判断是否需要自动重切
+    ep_params = dict(episode.params) if isinstance(episode.params, dict) else {}
+    ep_params["fragment_source_fp"] = _script_body_fingerprint(body)
+    episode.params = ep_params
+
+
+def _script_body_fingerprint(body: str) -> str:
+    # 分集正文指纹（用于判断剧本是否变更）
+    normalized = (body or "").replace("\r\n", "\n").strip()
+    return hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:16]
+
+
+def _fragment_is_protected(frag: DramaEpisodeFragment) -> bool:
+    # 已有视频或用户手改过的分镜，非 force 时不覆盖
+    if (frag.video or "").strip():
+        return True
+    params = frag.params if isinstance(frag.params, dict) else {}
+    return bool(params.get("user_edited"))
+
+
+def _episode_has_protected_fragments(episode: DramaEpisode) -> bool:
+    return any(_fragment_is_protected(f) for f in (episode.fragments or []))
+
 
 def _should_auto_replan(existing: list[DramaEpisode], bodies: list[dict[str, Any]]) -> bool:
-    # 无分集、分镜为空、仍是场记原文、场次数与正文不符、或剧本集数更多时自动重切
+    # 无分集、分镜为空、仍是场记原文、剧本变更且无保护分镜、或剧本集数更多时自动重切
     if not existing:
-        return True
-    if any(_episode_needs_replan(ep) for ep in existing):
         return True
     body_by_number = {
         int(item.get("episodeNumber") or 0): item
@@ -511,25 +533,40 @@ def _should_auto_replan(existing: list[DramaEpisode], bodies: list[dict[str, Any
         params = episode.params if isinstance(episode.params, dict) else {}
         ep_no = int(params.get("episodeNumber") or 0)
         item = body_by_number.get(ep_no)
-        if not item:
-            continue
-        script_body = str(item.get("body") or item.get("content") or "")
-        scene_count = len(split_episode_content_into_scenes(script_body))
-        frag_count = len(episode.fragments or [])
-        if scene_count > 0 and frag_count != scene_count:
+        body = str((item or {}).get("body") or (item or {}).get("content") or "") if item else ""
+        if _episode_should_replace_fragments(episode, body):
             return True
     if len(bodies) > len(existing):
         return True
     return False
 
 
-def _episode_needs_replan(episode: DramaEpisode) -> bool:
+def _episode_should_replace_fragments(episode: DramaEpisode, script_body: str) -> bool:
+    # 是否应用规则重切本集分镜（保护视频/手改）
     frags = list(episode.fragments or [])
     if not frags:
         return True
     if any(is_raw_screenplay_fragment(f.content or "") for f in frags):
+        # 场记原文必须重切；若已有保护项仍重切（自动修复旧数据）
         return True
+    if _episode_has_protected_fragments(episode):
+        return False
+    params = episode.params if isinstance(episode.params, dict) else {}
+    stored_fp = str(params.get("fragment_source_fp") or "")
+    current_fp = _script_body_fingerprint(script_body) if script_body else ""
+    if stored_fp and current_fp and stored_fp != current_fp:
+        return True
+    if not stored_fp and script_body:
+        # 旧数据无指纹：场次数明显大于 1 且仅 1 条分镜时重切
+        scene_count = len(split_episode_content_into_scenes(script_body))
+        if scene_count > 1 and len(frags) == 1:
+            return True
     return False
+
+
+def _episode_needs_replan(episode: DramaEpisode) -> bool:
+    # 兼容旧调用名
+    return _episode_should_replace_fragments(episode, "")
 
 
 async def _reload_episodes(db: AsyncSession, project_id: int) -> list[DramaEpisode]:

@@ -19,7 +19,9 @@ EMPTY_CAST = {"无", "无出场", "无人物", "-", "—", "无。"}
 
 FRAGMENT_DURATION_MIN = 3
 FRAGMENT_DURATION_MAX = 12
-# 单分镜总时长上限（Seedance 2.5 支持至 30s）
+# 单分镜软上限：超过后新开一条分镜（仍可继续填到硬上限）
+FRAGMENT_SOFT_MAX = 20
+# 单分镜总时长硬上限（Seedance 2.5 支持至 30s）
 FRAGMENT_TOTAL_MAX = 30
 
 
@@ -247,15 +249,9 @@ def _build_production_cues(
     return lines
 
 
-def plan_fragment_content_from_scene(
-    body: str,
-    meta: dict[str, Any],
-    scene_asset_id: int | None,
-    character_bindings: list[dict[str, Any]],
-) -> tuple[str, int]:
-    # 规划单场视频向分镜正文，返回 (content, duration_sec)
-    location_line, narrative_lines = _strip_screenplay_meta(body)
-    intro_lines = [
+def _build_character_intro_lines(character_bindings: list[dict[str, Any]]) -> list[str]:
+    # 本场人物介绍叠字行
+    return [
         (
             f"【人物介绍·画面叠字】{b['name']}｜{b['introText']}"
             if b.get("introText")
@@ -263,34 +259,123 @@ def plan_fragment_content_from_scene(
         )
         for b in character_bindings
     ]
-    planned = _build_production_cues(location_line, narrative_lines, intro_lines)
-    used = 0
+
+
+def _flush_fragment_chunk(
+    cue_lines: list[str],
+    body_lines: list[str],
+    used: int,
+) -> tuple[str, int]:
+    # 组装单条分镜草稿；无正文时给最小时长占位
+    planned = [*cue_lines, *body_lines]
+    duration = used
+    if duration <= 0:
+        planned.append(f"@duration:{FRAGMENT_DURATION_MIN}")
+        duration = FRAGMENT_DURATION_MIN
+    return "\n".join(planned).strip(), duration
+
+
+def plan_fragments_from_scene(
+    body: str,
+    meta: dict[str, Any],
+    scene_asset_id: int | None,
+    character_bindings: list[dict[str, Any]],
+) -> list[tuple[str, int]]:
+    """
+    规划单场视频向分镜正文；超软上限时拆成多条，避免截断后半场。
+    返回 [(content, duration_sec), ...]
+    """
+    location_line, narrative_lines = _strip_screenplay_meta(body)
+    intro_lines = _build_character_intro_lines(character_bindings)
+    first_cues = _build_production_cues(location_line, narrative_lines, intro_lines)
+    cont_cues = _build_production_cues(location_line, narrative_lines, [])
+
+    # timed_blocks 待打包的 (时长, 文本行列表)
+    timed_blocks: list[tuple[int, list[str]]] = []
 
     opener = _format_location_opener(location_line, scene_asset_id, meta.get("sceneName"))
     if opener:
         opener_dur = _clamp_duration(3)
-        if used + opener_dur <= FRAGMENT_TOTAL_MAX:
-            planned.append(f"@duration:{opener_dur}")
-            planned.append(_inject_character_mentions(opener, character_bindings))
-            used += opener_dur
+        timed_blocks.append(
+            (
+                opener_dur,
+                [
+                    f"@duration:{opener_dur}",
+                    _inject_character_mentions(opener, character_bindings),
+                ],
+            )
+        )
 
     for line in narrative_lines:
         raw = _inject_character_mentions(line, character_bindings)
         formatted = _format_narrative_line(raw)
         line_dur = _clamp_duration(_estimate_line_duration(formatted))
-        if used + line_dur > FRAGMENT_TOTAL_MAX:
-            line_dur = max(FRAGMENT_TOTAL_MAX - used, 0)
-            if line_dur <= 0:
-                break
-        planned.append(f"@duration:{line_dur}")
-        planned.append(formatted)
-        used += line_dur
+        if line_dur <= 0:
+            continue
+        timed_blocks.append((line_dur, [f"@duration:{line_dur}", formatted]))
 
-    if used == 0:
-        planned.append(f"@duration:{FRAGMENT_DURATION_MIN}")
-        used = FRAGMENT_DURATION_MIN
+    if not timed_blocks:
+        return [_flush_fragment_chunk(first_cues, [], 0)]
 
-    return "\n".join(planned).strip(), used
+    fragments: list[tuple[str, int]] = []
+    body_lines: list[str] = []
+    used = 0
+    is_first = True
+
+    for block_dur, block_lines in timed_blocks:
+        # 已达软上限且本块放不下 → 先落盘当前镜
+        if used > 0 and used >= FRAGMENT_SOFT_MAX and used + block_dur > FRAGMENT_SOFT_MAX:
+            cues = first_cues if is_first else cont_cues
+            fragments.append(_flush_fragment_chunk(cues, body_lines, used))
+            body_lines = []
+            used = 0
+            is_first = False
+
+        # 硬上限：本块放不下则开新镜；单块超过硬上限则截断到硬上限
+        if used > 0 and used + block_dur > FRAGMENT_TOTAL_MAX:
+            cues = first_cues if is_first else cont_cues
+            fragments.append(_flush_fragment_chunk(cues, body_lines, used))
+            body_lines = []
+            used = 0
+            is_first = False
+
+        take_dur = block_dur
+        if take_dur > FRAGMENT_TOTAL_MAX:
+            take_dur = FRAGMENT_TOTAL_MAX
+        if used + take_dur > FRAGMENT_TOTAL_MAX:
+            take_dur = FRAGMENT_TOTAL_MAX - used
+        if take_dur <= 0:
+            cues = first_cues if is_first else cont_cues
+            fragments.append(_flush_fragment_chunk(cues, body_lines, used))
+            body_lines = []
+            used = 0
+            is_first = False
+            take_dur = min(block_dur, FRAGMENT_TOTAL_MAX)
+
+        if take_dur != block_dur:
+            # 时长被截断时改写 @duration 行
+            rewritten = [f"@duration:{take_dur}" if ln.startswith("@duration:") else ln for ln in block_lines]
+            body_lines.extend(rewritten)
+        else:
+            body_lines.extend(block_lines)
+        used += take_dur
+
+    if body_lines or not fragments:
+        cues = first_cues if is_first else cont_cues
+        fragments.append(_flush_fragment_chunk(cues, body_lines, used))
+
+    return fragments
+
+
+def plan_fragment_content_from_scene(
+    body: str,
+    meta: dict[str, Any],
+    scene_asset_id: int | None,
+    character_bindings: list[dict[str, Any]],
+) -> tuple[str, int]:
+    # 兼容旧调用：返回本场第一条分镜
+    chunks = plan_fragments_from_scene(body, meta, scene_asset_id, character_bindings)
+    return chunks[0] if chunks else ("", FRAGMENT_DURATION_MIN)
 
 
 def is_raw_screenplay_fragment(content: str) -> bool:
@@ -361,20 +446,21 @@ def build_fragments_from_episode_body(
             if character_asset.id not in matched_ids:
                 matched_ids.append(int(character_asset.id))
 
-        planned, duration = plan_fragment_content_from_scene(
+        # 一场可拆多条分镜（按时长软/硬上限）
+        for planned, duration in plan_fragments_from_scene(
             scene["body"],
             meta,
             scene_asset_id,
             character_bindings,
-        )
-        fragments.append(
-            {
-                "content": planned,
-                "duration_sec": duration or 8,
-                "asset_ids": matched_ids,
-                "scene_name": meta.get("sceneName"),
-                "character_names": meta.get("characterNames") or [],
-            }
-        )
+        ):
+            fragments.append(
+                {
+                    "content": planned,
+                    "duration_sec": duration or 8,
+                    "asset_ids": list(matched_ids),
+                    "scene_name": meta.get("sceneName"),
+                    "character_names": meta.get("characterNames") or [],
+                }
+            )
 
     return fragments
