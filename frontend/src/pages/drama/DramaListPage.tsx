@@ -1,14 +1,14 @@
-/** 漫剧 Agent 首页：AI 生剧本 / 自由画布 + 我的项目 */
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+/** 漫剧 Agent 首页：AI 生剧本 / 自由画布 + 我的项目（多选删除） */
+import { useCallback, useEffect, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { Clapperboard, MoreHorizontal, Trash2 } from 'lucide-react'
 import AppShell from '../../components/layout/AppShell'
 import { dramaApi, type DramaProjectListItem } from '../../api/drama'
-import {
-  EPISODE_COUNT_PRESETS,
-  IMAGE_STYLE_OPTIONS,
-  type ImageStyleId,
-} from '../../lib/dramaImageStyles'
+import { dialog } from '../../lib/dialog'
+import { type ImageStyleId } from '../../lib/dramaImageStyles'
 import RequireAuth from './RequireAuth'
+import { DramaEpisodeCountPopover } from './DramaEpisodeCountPopover'
+import { DramaImageStyleModal } from './DramaImageStyleModal'
 import './drama.css'
 
 const CREATIVE_MIN_LENGTH = 20
@@ -16,6 +16,15 @@ const CANVAS_PLACEHOLDER =
   '自由画布创作项目，稍后在画布中完善故事与资产。'
 
 type AgentTab = 'ai' | 'canvas'
+
+// 格式化更新时间
+function formatUpdatedAt(raw?: string) {
+  if (!raw) return ''
+  const d = new Date(raw)
+  if (Number.isNaN(d.getTime())) return raw
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
 
 export default function DramaListPage() {
   return (
@@ -37,6 +46,8 @@ function DramaListInner() {
    * busy 创建中
    * canvasBusy 画布创建中
    * error 错误文案
+   * selected 多选 id
+   * deleting 批量删除中
    */
   const [tab, setTab] = useState<AgentTab>('ai')
   const [storyText, setStoryText] = useState('')
@@ -46,11 +57,17 @@ function DramaListInner() {
   const [busy, setBusy] = useState(false)
   const [canvasBusy, setCanvasBusy] = useState(false)
   const [error, setError] = useState('')
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [deleting, setDeleting] = useState(false)
 
   // 加载项目列表
   async function loadProjects() {
     const rows = await dramaApi.listProjects()
     setItems(rows)
+    setSelected((prev) => {
+      const ids = new Set(rows.map((r) => r.id))
+      return new Set([...prev].filter((id) => ids.has(id)))
+    })
   }
 
   useEffect(() => {
@@ -109,13 +126,101 @@ function DramaListInner() {
     setTab('ai')
   }
 
+  const selectionMode = selected.size > 0
+
+  // 切换选中
+  const toggleSelect = useCallback((id: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  // 打开项目（多选模式下改为勾选）
+  function openProject(item: DramaProjectListItem) {
+    if (selectionMode) {
+      toggleSelect(item.id)
+      return
+    }
+    navigate(`/drama/projects/${item.id}`)
+  }
+
+  // 重命名
+  async function handleRename(item: DramaProjectListItem) {
+    const name = await dialog.prompt({
+      title: '重命名项目',
+      message: '输入新的项目名称',
+      defaultValue: item.title,
+      confirmText: '保存',
+    })
+    if (!name?.trim() || name.trim() === item.title) return
+    try {
+      await dramaApi.updateProject(item.id, { title: name.trim() })
+      await loadProjects()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '重命名失败')
+    }
+  }
+
+  // 删除单个
+  async function handleDeleteOne(item: DramaProjectListItem) {
+    const ok = await dialog.confirm({
+      title: '删除项目',
+      message: `确定删除「${item.title}」？分集、剧本与资产将一并删除，且无法恢复。`,
+      confirmText: '删除',
+      tone: 'danger',
+    })
+    if (!ok) return
+    try {
+      await dramaApi.deleteProject(item.id)
+      setSelected((prev) => {
+        const next = new Set(prev)
+        next.delete(item.id)
+        return next
+      })
+      await loadProjects()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '删除失败')
+    }
+  }
+
+  // 批量删除
+  async function handleDeleteSelected() {
+    const ids = [...selected]
+    if (ids.length === 0) return
+    const ok = await dialog.confirm({
+      title: '删除项目',
+      message: `将删除已选择的 ${ids.length} 个项目，包含分集、剧本与资产等数据，删除后无法恢复。`,
+      confirmText: '删除',
+      tone: 'danger',
+    })
+    if (!ok) return
+    setDeleting(true)
+    try {
+      await Promise.all(ids.map((id) => dramaApi.deleteProject(id)))
+      setSelected(new Set())
+      await loadProjects()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '删除失败')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   const canGenerate = storyText.trim().length >= CREATIVE_MIN_LENGTH && !busy
 
   return (
     <AppShell active="drama">
       <div className="drama-page drama-agent-page">
         <header className="drama-agent-hero">
-          <h1>漫剧 Agent</h1>
+          <div className="drama-agent-hero-row">
+            <h1>漫剧 Agent</h1>
+            <Link className="pf-btn" to="/drama/assets">
+              外部资产库
+            </Link>
+          </div>
         </header>
 
         <section className="drama-agent-panel">
@@ -152,35 +257,17 @@ function DramaListInner() {
               />
               <div className="drama-agent-ai-footer">
                 <div className="drama-agent-ai-options">
-                  <label>
-                    风格
-                    <select
-                      value={imageStyleId}
-                      onChange={(e) => setImageStyleId((e.target.value || '') as ImageStyleId | '')}
-                      disabled={busy}
-                    >
-                      <option value="">风格库</option>
-                      {IMAGE_STYLE_OPTIONS.map((opt) => (
-                        <option key={opt.id} value={opt.id}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    集数
-                    <select
-                      value={episodeCount}
-                      onChange={(e) => setEpisodeCount(Number(e.target.value) || 12)}
-                      disabled={busy}
-                    >
-                      {EPISODE_COUNT_PRESETS.map((n) => (
-                        <option key={n} value={n}>
-                          {n} 集
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <DramaImageStyleModal
+                    value={imageStyleId}
+                    onChange={setImageStyleId}
+                    disabled={busy}
+                  />
+                  <span className="drama-agent-opt-divider" aria-hidden />
+                  <DramaEpisodeCountPopover
+                    value={episodeCount}
+                    onChange={setEpisodeCount}
+                    disabled={busy}
+                  />
                 </div>
                 <button
                   type="button"
@@ -199,26 +286,93 @@ function DramaListInner() {
 
         <section className="drama-project-section">
           <h2>我的项目</h2>
-          {items.length === 0 ? <p className="drama-muted">暂无项目，先用上方面板生成一部吧</p> : null}
-          <div className="drama-project-grid">
-            {items.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className="drama-project-card"
-                onClick={() => navigate(`/drama/projects/${item.id}`)}
-              >
-                <div className="drama-project-card-cover" aria-hidden>
-                  <span className="drama-project-card-icon">▶</span>
-                </div>
-                <div className="drama-project-card-body">
-                  <strong>{item.title}</strong>
-                  <span className="drama-badge">{item.episode_count || 0} 集</span>
-                </div>
-              </button>
-            ))}
-          </div>
+          {items.length === 0 ? (
+            <p className="drama-muted drama-project-empty">暂无项目，先用上方面板生成一部吧</p>
+          ) : (
+            <div className="drama-project-grid">
+              {items.map((item) => {
+                const isSelected = selected.has(item.id)
+                return (
+                  <article
+                    key={item.id}
+                    className={`drama-project-card${isSelected ? ' is-selected' : ''}`}
+                  >
+                    <button
+                      type="button"
+                      className="drama-project-card-cover"
+                      onClick={() => openProject(item)}
+                    >
+                      <Clapperboard className="drama-project-card-clapper" size={40} strokeWidth={1.5} />
+                      <label
+                        className={`drama-project-card-check${isSelected || selectionMode ? ' is-visible' : ''}`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelect(item.id)}
+                        />
+                      </label>
+                      <span className="drama-project-card-eps">{item.episode_count || 0} 集</span>
+                    </button>
+                    <div className="drama-project-card-body">
+                      <button
+                        type="button"
+                        className="drama-project-card-meta"
+                        onClick={() => openProject(item)}
+                      >
+                        <strong>{item.title}</strong>
+                        <span>{formatUpdatedAt(item.updated_at || item.created_at)}</span>
+                      </button>
+                      <details className="drama-project-card-more" onClick={(e) => e.stopPropagation()}>
+                        <summary aria-label="更多操作">
+                          <MoreHorizontal size={16} strokeWidth={1.8} />
+                        </summary>
+                        <div className="drama-project-card-menu">
+                          <button type="button" onClick={() => void handleRename(item)}>
+                            重命名
+                          </button>
+                          <button
+                            type="button"
+                            className="is-danger"
+                            onClick={() => void handleDeleteOne(item)}
+                          >
+                            删除
+                          </button>
+                        </div>
+                      </details>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          )}
         </section>
+
+        {selected.size > 0 ? (
+          <div className="drama-project-selection-bar">
+            <div className="drama-project-selection-inner">
+              <span>已选择 {selected.size} 个项目</span>
+              <button
+                type="button"
+                className="drama-project-selection-cancel"
+                disabled={deleting}
+                onClick={() => setSelected(new Set())}
+              >
+                取消选择
+              </button>
+              <button
+                type="button"
+                className="drama-project-selection-delete"
+                disabled={deleting}
+                onClick={() => void handleDeleteSelected()}
+              >
+                <Trash2 size={16} strokeWidth={1.8} />
+                {deleting ? '删除中…' : '删除'}
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
     </AppShell>
   )

@@ -19,6 +19,7 @@ import httpx
 from app.config import Settings, get_settings
 from app.services import storage
 from app.services.ffmpeg_compose import is_near_silent_audio
+from app.services.llm_client import chat_completions
 from app.services import seedance_segments as segplan
 
 logger = logging.getLogger(__name__)
@@ -326,24 +327,14 @@ class ArkGateway:
             f"输入类型：{source_type}。请先理解内容与应用场景，再拆成精确到每一段的分镜"
             f"（4-6 镜为佳，完整模式）：\n{source_text}"
         )
-        payload = {
-            "model": self.settings.model_llm,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-        }
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(
-                self._url("/chat/completions"),
-                headers=self._headers(),
-                json=payload,
-            )
-            if resp.status_code >= 400:
-                raise RuntimeError(f"LLM error {resp.status_code}: {resp.text[:800]}")
-            data = resp.json()
-        content = data["choices"][0]["message"]["content"] or "{}"
-        return self._parse_storyboard(content, style_prefix, duration_min, duration_max, max_shot_duration)
+        content = await chat_completions(system, user, temperature=0.6, timeout=120.0)
+        return self._parse_storyboard(
+            content or "{}",
+            style_prefix,
+            duration_min,
+            duration_max,
+            max_shot_duration,
+        )
 
     async def gen_image(
         self,
@@ -532,6 +523,7 @@ class ArkGateway:
         ratio: str | None = None,
         prompt_as_json: bool = True,
         return_last_frame: bool = True,
+        generate_audio: bool = False,
     ) -> str:
         if self.mock:
             digest = hashlib.md5(f"{image_url}:{prompt}".encode()).hexdigest()[:10]
@@ -562,15 +554,17 @@ class ArkGateway:
             "duration": self._seedance_duration(duration),
             "resolution": resolution,
             "watermark": False,
-            "generate_audio": False,
+            "generate_audio": bool(generate_audio),
             "return_last_frame": bool(return_last_frame),
         }
         # Do not send character_consistency — unknown fields have caused BodyFormat failures
         logger.info(
-            "Seedance i2v create model=%s duration=%s resolution=%s (ratio omitted for first_frame)",
+            "Seedance i2v create model=%s duration=%s resolution=%s generate_audio=%s "
+            "(ratio omitted for first_frame)",
             body["model"],
             body["duration"],
             resolution,
+            body["generate_audio"],
         )
 
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -614,6 +608,81 @@ class ArkGateway:
         if not task_id:
             raise RuntimeError(f"Seedance missing task id: {data}")
         return str(task_id)
+
+    async def _resolve_media_ref(self, media_url: str, *, prefer_https: bool = False) -> str:
+        """解析图片/音频 URL 供 Seedance 拉取。"""
+        return await self._resolve_image_ref(media_url, prefer_https=prefer_https)
+
+    async def _resolve_seedance_content_items(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        resolved: list[dict[str, Any]] = []
+        for item in items:
+            copy = dict(item)
+            if item.get("type") == "image_url":
+                raw_url = (item.get("image_url") or {}).get("url") or ""
+                copy["image_url"] = {
+                    "url": await self._resolve_media_ref(str(raw_url), prefer_https=True)
+                }
+            elif item.get("type") == "audio_url":
+                raw_url = (item.get("audio_url") or {}).get("url") or ""
+                copy["audio_url"] = {
+                    "url": await self._resolve_media_ref(str(raw_url), prefer_https=True)
+                }
+            resolved.append(copy)
+        return resolved
+
+    async def gen_video_seedance_body(self, body: dict[str, Any]) -> str:
+        """提交 Seedance 多模态请求体（参考图 + reference_audio）。"""
+        if self.mock:
+            digest = hashlib.md5(json.dumps(body, sort_keys=True, default=str).encode()).hexdigest()[
+                :10
+            ]
+            return f"mock-task-{digest}"
+
+        payload = dict(body)
+        content = payload.get("content")
+        if isinstance(content, list):
+            payload["content"] = await self._resolve_seedance_content_items(content)
+        payload["duration"] = self._seedance_duration(payload.get("duration", 8))
+
+        logger.info(
+            "Seedance multimodal create model=%s duration=%s items=%s",
+            payload.get("model"),
+            payload.get("duration"),
+            len(payload.get("content") or []),
+        )
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                self._url("/contents/generations/tasks"),
+                headers=self._headers(),
+                json=payload,
+            )
+            if resp.status_code >= 400:
+                raise RuntimeError(f"Seedance create error {resp.status_code}: {resp.text[:800]}")
+            data = resp.json()
+
+        task_id = data.get("id") or data.get("task_id")
+        if not task_id:
+            raise RuntimeError(f"Seedance missing task id: {data}")
+        return str(task_id)
+
+    async def gen_and_wait_seedance_body(
+        self,
+        body: dict[str, Any],
+        *,
+        project_id: int,
+        shot_no: int,
+        max_attempts: int = 2,
+    ) -> str:
+        """创建 Seedance 多模态任务并等待完成。"""
+        last_err: Exception | None = None
+        for _attempt in range(max_attempts):
+            try:
+                task_id = await self.gen_video_seedance_body(body)
+                return await self.wait_video(task_id, project_id=project_id, shot_no=shot_no)
+            except Exception as exc:  # noqa: BLE001
+                last_err = exc
+        raise RuntimeError(str(last_err) if last_err else "Seedance multimodal failed")
 
     async def poll_task(self, task_id: str) -> TaskResult:
         if self.mock or task_id.startswith("mock-task-"):
@@ -672,6 +741,7 @@ class ArkGateway:
         resolution: str = "480p",
         ratio: str | None = None,
         max_attempts: int = 3,
+        generate_audio: bool = False,
     ) -> str:
         """Create Seedance i2v task and wait; retry on summary_caption / transient BodyFormat."""
         last_err: Exception | None = None
@@ -686,6 +756,7 @@ class ArkGateway:
                     resolution=resolution,
                     ratio=ratio,
                     prompt_as_json=use_json,
+                    generate_audio=generate_audio,
                 )
                 return await self.wait_video(task_id, project_id=project_id, shot_no=shot_no)
             except Exception as exc:  # noqa: BLE001
@@ -1131,24 +1202,14 @@ class ArkGateway:
                 "title：8-18 字。"
                 "content：一句话主题，40-90 字，写清受众与要讲清的核心知识点；不要换行。"
             )
-        payload = {
-            "model": self.settings.model_llm,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": f"主题/素材：{topic}"},
-            ],
-        }
-        async with httpx.AsyncClient(timeout=90.0) as client:
-            resp = await client.post(
-                self._url("/chat/completions"),
-                headers=self._headers(),
-                json=payload,
-            )
-            if resp.status_code >= 400:
-                raise RuntimeError(f"LLM error {resp.status_code}: {resp.text[:800]}")
-            data = resp.json()
-        raw = data["choices"][0]["message"]["content"] or "{}"
-        return self._parse_expand_content(raw, topic, mode)
+        content = await chat_completions(
+            system,
+            f"主题/素材：{topic}",
+            temperature=0.6,
+            max_tokens=4096,
+            timeout=90.0,
+        )
+        return self._parse_expand_content(content or "{}", topic, mode)
 
     def _mock_expand_content(self, topic: str, mode: str) -> dict[str, str]:
         short = topic[:18].rstrip("？?。.!！") or "科普短片"

@@ -1048,6 +1048,129 @@ def compose_project(
     return output
 
 
+def concat_native_videos(video_paths: list[Path], output: Path) -> Path:
+    """仅拼接已含配音的 Seedance 镜头，不叠 TTS / 不烧字幕 / 不加 BGM。"""
+    if not video_paths:
+        raise ValueError("no videos to concat")
+    ffmpeg = _which("ffmpeg")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if len(video_paths) == 1:
+        src = video_paths[0]
+        _run(
+            [
+                ffmpeg,
+                "-y",
+                "-i",
+                str(src),
+                "-c",
+                "copy",
+                "-movflags",
+                "+faststart",
+                str(output),
+            ]
+        )
+        return output
+
+    with tempfile.TemporaryDirectory(prefix="native_concat_") as tmp:
+        tmp_path = Path(tmp)
+        # normalized 统一为可 stream-copy 的中间段（失败则整片重编码）
+        normalized: list[Path] = []
+        for idx, src in enumerate(video_paths):
+            if not src.exists():
+                raise FileNotFoundError(f"missing video: {src}")
+            dest = tmp_path / f"seg_{idx:03d}.mp4"
+            try:
+                _run(
+                    [
+                        ffmpeg,
+                        "-y",
+                        "-i",
+                        str(src),
+                        "-c",
+                        "copy",
+                        str(dest),
+                    ]
+                )
+            except RuntimeError:
+                _run(
+                    [
+                        ffmpeg,
+                        "-y",
+                        "-i",
+                        str(src),
+                        "-c:v",
+                        "libx264",
+                        "-pix_fmt",
+                        "yuv420p",
+                        "-c:a",
+                        "aac",
+                        "-ar",
+                        "44100",
+                        "-ac",
+                        "2",
+                        str(dest),
+                    ]
+                )
+            normalized.append(dest)
+
+        concat_list = tmp_path / "concat.txt"
+        concat_list.write_text(
+            "\n".join(f"file '{p.resolve().as_posix()}'" for p in normalized),
+            encoding="utf-8",
+        )
+        merged = tmp_path / "merged.mp4"
+        try:
+            _run(
+                [
+                    ffmpeg,
+                    "-y",
+                    "-f",
+                    "concat",
+                    "-safe",
+                    "0",
+                    "-i",
+                    str(concat_list),
+                    "-c",
+                    "copy",
+                    str(merged),
+                ]
+            )
+        except RuntimeError:
+            _run(
+                [
+                    ffmpeg,
+                    "-y",
+                    "-f",
+                    "concat",
+                    "-safe",
+                    "0",
+                    "-i",
+                    str(concat_list),
+                    "-c:v",
+                    "libx264",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-c:a",
+                    "aac",
+                    str(merged),
+                ]
+            )
+        _run(
+            [
+                ffmpeg,
+                "-y",
+                "-i",
+                str(merged),
+                "-c",
+                "copy",
+                "-movflags",
+                "+faststart",
+                str(output),
+            ]
+        )
+    return output
+
+
 def _mix_bgm(video: Path, bgm: Path, output: Path, *, volume: float = 0.22) -> None:
     """Loop/trim BGM under existing audio; duck volume below narration."""
     ffmpeg = _which("ffmpeg")

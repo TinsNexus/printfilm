@@ -1,5 +1,5 @@
 /** 分集编辑：左侧资产栏（本集/全集 + 分类卡片） */
-import type { DramaAsset } from '../../api/drama'
+import { resolveDramaMediaUrl, type DramaAsset } from '../../api/drama'
 import {
   ASSET_TABS,
   normalizeAssetTab,
@@ -11,6 +11,7 @@ type Props = {
   scope: AssetScope
   tab: AssetTab | null
   assets: DramaAsset[]
+  activeIds?: Set<number>
   onScopeChange: (scope: AssetScope) => void
   onTabChange: (tab: AssetTab | null) => void
   onOpenCanvas: () => void
@@ -22,6 +23,7 @@ export function EpisodeEditAssetPanel({
   scope,
   tab,
   assets,
+  activeIds,
   onScopeChange,
   onTabChange,
   onOpenCanvas,
@@ -76,20 +78,22 @@ export function EpisodeEditAssetPanel({
           </p>
         ) : (
           assets.map((asset) => {
-            const cover = asset.cover || asset.url
+            const cover = resolveDramaMediaUrl(asset.cover || asset.url)
             const isScene = normalizeAssetTab(asset.type) === 'scene'
+            const isActive = activeIds?.has(asset.id)
             return (
               <button
                 key={asset.id}
                 type="button"
-                className={`drama-ep-asset-card ${isScene ? 'scene' : ''}`}
+                className={`drama-ep-asset-card ${isScene ? 'scene' : ''}${isActive ? ' is-linked' : ''}`}
                 onClick={() => onMention(asset)}
-                title="点击插入到当前分镜"
+                title={isActive ? '本镜已关联 · 点击再次插入' : '点击插入到当前分镜'}
               >
                 <div className="drama-ep-asset-thumb">
                   {cover ? <img src={cover} alt="" /> : <span>{(asset.name || '?')[0]}</span>}
                 </div>
                 <span className="drama-ep-asset-name">{asset.name || `资产 ${asset.id}`}</span>
+                {isActive ? <span className="drama-ep-asset-linked">已关联</span> : null}
               </button>
             )
           })

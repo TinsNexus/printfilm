@@ -65,7 +65,7 @@ TEMPLATES: list[dict] = [
         "seedance_config": {
             "motion_bias": "手部轻微点击与屏幕内容切换，缓慢推近工位",
             "character_consistency": False,
-            "generate_audio": False,
+            "generate_audio": True,
         },
         "audio_config": {"voice_preset": "urban_editorial", "bgm_mood": "轻快专业"},
         "subtitle_config": {
@@ -122,7 +122,7 @@ TEMPLATES: list[dict] = [
         "seedance_config": {
             "motion_bias": "手部轻微点击与屏幕内容切换，缓慢推近工位",
             "character_consistency": False,
-            "generate_audio": False,
+            "generate_audio": True,
         },
         "audio_config": {"voice_preset": "urban_editorial", "bgm_mood": "轻快专业"},
         "subtitle_config": {
@@ -164,7 +164,7 @@ TEMPLATES: list[dict] = [
         "seedance_config": {
             "motion_bias": "轻微手持感，缓慢推近",
             "character_consistency": True,
-            "generate_audio": False,
+            "generate_audio": True,
         },
         "audio_config": {"voice_preset": "warm_storyteller", "bgm_mood": "温暖人文"},
         "subtitle_config": {"font": "SourceHanSans", "position": "top", "caption_scale": 1.3},
@@ -201,7 +201,7 @@ TEMPLATES: list[dict] = [
         "seedance_config": {
             "motion_bias": "手部点击滑动，轻微推近屏幕",
             "character_consistency": False,
-            "generate_audio": False,
+            "generate_audio": True,
         },
         "audio_config": {"voice_preset": "narrator_calm", "bgm_mood": "冷静纪实"},
         "subtitle_config": {

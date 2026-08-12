@@ -99,4 +99,7 @@ backend/static/       模板封面与 mock 素材
 frontend/src/         首页模板墙 + 创作工作台
 admin/src/            运营管理后台（用户/订单/项目/作品/模板）
 deploy/               仅 Postgres + Redis 的 compose
+docs/                 规范、发布、计费与产品文档
 ```
+
+工程约定见 **[docs/STANDARDS.md](docs/STANDARDS.md)**；线上发布见 [docs/DEPLOY.md](docs/DEPLOY.md)。

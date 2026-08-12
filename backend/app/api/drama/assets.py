@@ -13,7 +13,7 @@ from app.database import get_db
 from app.deps import get_current_user
 from app.models import User
 from app.models_drama import DramaAsset
-from app.schemas_drama import DramaAssetCreate, DramaAssetOut, DramaAssetUpdate
+from app.schemas_drama import DramaAssetCreate, DramaAssetOut, DramaAssetUpdate, SeedAssetsFromScriptOut
 from app.services.drama.access import get_owned_drama_project
 from app.services.drama.seed import seed_assets_from_script
 
@@ -179,20 +179,30 @@ async def delete_asset(
     return {"ok": True}
 
 
-@router.post("/assets/seed_from_script", response_model=list[DramaAssetOut])
+@router.post("/assets/seed_from_script", response_model=SeedAssetsFromScriptOut)
 async def seed_assets(
     project_id: int,
+    refresh_prompts: bool = False,
+    reextract_props: bool = False,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> list[DramaAssetOut]:
+) -> SeedAssetsFromScriptOut:
     project = await get_owned_drama_project(db, project_id, user, with_script=True)
     try:
-        created = await seed_assets_from_script(db, project)
+        result = await seed_assets_from_script(
+            db,
+            project,
+            refresh_prompts=refresh_prompts,
+            reextract_props=reextract_props,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    # Return all project assets after seed
-    all_assets = (
-        await db.execute(select(DramaAsset).where(DramaAsset.project_id == project_id))
-    ).scalars().all()
-    _ = created
-    return [DramaAssetOut.model_validate(a) for a in all_assets]
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)[:500]) from exc
+    return SeedAssetsFromScriptOut(
+        assets=[DramaAssetOut.model_validate(a) for a in result.assets],
+        created_count=result.created_count,
+        prompts_refreshed=result.prompts_refreshed,
+        props_updated=result.props_updated,
+        llm_errors=result.llm_errors,
+    )

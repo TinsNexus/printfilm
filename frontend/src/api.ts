@@ -311,9 +311,22 @@ export const api = {
       body: JSON.stringify({ voice_id: voiceId }),
     })
   },
-  listProjects() {
-    return request<
-      Array<{
+  listProjects(params?: {
+    page?: number
+    page_size?: number
+    status?: 'all' | 'draft' | 'running' | 'done' | 'published' | string
+    q?: string
+    pipeline_mode?: '' | 'full' | 'image_text' | string
+  }) {
+    const sp = new URLSearchParams()
+    if (params?.page) sp.set('page', String(params.page))
+    if (params?.page_size) sp.set('page_size', String(params.page_size))
+    if (params?.status && params.status !== 'all') sp.set('status', params.status)
+    if (params?.q?.trim()) sp.set('q', params.q.trim())
+    if (params?.pipeline_mode) sp.set('pipeline_mode', params.pipeline_mode)
+    const qs = sp.toString()
+    return request<{
+      items: Array<{
         id: number
         title: string
         template_id: string
@@ -324,10 +337,13 @@ export const api = {
         error_msg?: string | null
         pipeline_mode?: PipelineMode
         output_ratio?: string
+        published?: boolean
         created_at: string
         updated_at?: string
       }>
-    >('/api/projects')
+      meta: { page: number; page_size: number; total: number }
+      stats: { total: number; generating: number; done: number; published: number }
+    }>(`/api/projects${qs ? `?${qs}` : ''}`)
   },
   async downloadZip(ids: number[]) {
     const res = await fetch(`${API_BASE}/api/projects/download-zip`, {

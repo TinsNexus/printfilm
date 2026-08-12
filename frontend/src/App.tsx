@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import DialogHost from './components/ui/DialogHost'
+import { DramaGenQueuePanel } from './components/drama/DramaGenQueuePanel'
 import AuthPage from './pages/AuthPage'
 import HistoryPage from './pages/HistoryPage'
 import HomePage from './pages/HomePage'
@@ -41,6 +42,7 @@ export default function App() {
         <Route path="/drama/projects/:projectId/canvas" element={<CanvasPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <DramaGenQueuePanel />
       <DialogHost />
     </BrowserRouter>
   )

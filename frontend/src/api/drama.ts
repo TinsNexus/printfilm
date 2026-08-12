@@ -105,6 +105,14 @@ export type DramaAsset = {
   project_id: number
 }
 
+export type SeedAssetsResult = {
+  assets: DramaAsset[]
+  created_count: number
+  prompts_refreshed: number
+  props_updated: number
+  llm_errors: string[]
+}
+
 export type DramaFragment = {
   id: number
   episode_id: number
@@ -157,6 +165,17 @@ export type DramaImageGenerateResult = {
   asset?: DramaAsset | null
 }
 
+export type DramaVoicePromptResult = {
+  ok: boolean
+  voice_prompt: string
+  asset_id: number
+}
+
+export type DramaVoiceGenerateResult = {
+  ok: boolean
+  asset: DramaAsset
+}
+
 export const dramaApi = {
   listProjects: () => request<DramaProjectListItem[]>('/api/drama/projects'),
   createProject: (body: {
@@ -206,10 +225,12 @@ export const dramaApi = {
       body: JSON.stringify({ message, project_id }),
     }),
 
-  listAssets: (projectId?: number) =>
-    request<DramaAsset[]>(
+  listAssets: async (projectId?: number) => {
+    const list = await request<DramaAsset[]>(
       projectId != null ? `/api/drama/assets?project_id=${projectId}` : '/api/drama/assets',
-    ),
+    )
+    return Array.isArray(list) ? list : []
+  },
   createAsset: (body: Partial<DramaAsset> & { project_id: number }) =>
     request<DramaAsset>('/api/drama/assets', { method: 'POST', body: JSON.stringify(body) }),
   updateAsset: (id: number, body: Partial<DramaAsset>) =>
@@ -238,10 +259,25 @@ export const dramaApi = {
   },
   deleteAsset: (id: number) =>
     request<{ ok: boolean }>(`/api/drama/assets/${id}`, { method: 'DELETE' }),
-  seedAssets: (projectId: number) =>
-    request<DramaAsset[]>(`/api/drama/assets/seed_from_script?project_id=${projectId}`, {
+  seedAssets: async (
+    projectId: number,
+    options?: { refreshPrompts?: boolean; reextractProps?: boolean },
+  ) => {
+    const params = new URLSearchParams({ project_id: String(projectId) })
+    if (options?.refreshPrompts) params.set('refresh_prompts', 'true')
+    if (options?.reextractProps) params.set('reextract_props', 'true')
+    const result = await request<SeedAssetsResult>(`/api/drama/assets/seed_from_script?${params}`, {
       method: 'POST',
-    }),
+    })
+    return {
+      ...result,
+      assets: Array.isArray(result?.assets) ? result.assets : [],
+      created_count: result?.created_count ?? 0,
+      prompts_refreshed: result?.prompts_refreshed ?? 0,
+      props_updated: result?.props_updated ?? 0,
+      llm_errors: Array.isArray(result?.llm_errors) ? result.llm_errors : [],
+    }
+  },
 
   listEpisodes: (projectId: number) =>
     request<DramaEpisode[]>(`/api/drama/episodes?project_id=${projectId}`),
@@ -259,6 +295,7 @@ export const dramaApi = {
       cover?: string
       video?: string
       duration_sec?: number | null
+      params?: Record<string, unknown> | null
       asset_ids?: number[]
     }>,
   ) =>
@@ -278,7 +315,7 @@ export const dramaApi = {
       failed: number
       running: number
       total: number
-      fragments: Array<{ fragment_id: number; status: string; video?: string }>
+      fragments: Array<{ fragment_id: number; status: string; video?: string; cover?: string }>
     }>(`/api/drama/episodes/${episodeId}/generate_status`),
 
   generateImage: (body: {
@@ -293,6 +330,25 @@ export const dramaApi = {
     resolution?: string
   }) =>
     request<DramaImageGenerateResult>('/api/drama/generation/image', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  generateVoice: (body: {
+    project_id: number
+    asset_id?: number
+    name?: string
+    voice_prompt: string
+    sample_text?: string
+    speaker?: string
+  }) =>
+    request<DramaVoiceGenerateResult>('/api/drama/generation/voice', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  suggestVoicePrompt: (body: { project_id: number; asset_id: number }) =>
+    request<DramaVoicePromptResult>('/api/drama/generation/voice_prompt', {
       method: 'POST',
       body: JSON.stringify(body),
     }),

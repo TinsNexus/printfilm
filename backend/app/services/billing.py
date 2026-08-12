@@ -16,10 +16,10 @@ from app.models import Project, UsageEvent, User, WalletLedger
 logger = logging.getLogger(__name__)
 
 SKUS: list[dict[str, Any]] = [
-    {"id": "topup_10", "name": "体验充值", "amount_fen": 1000, "credit_fen": 1000},
-    {"id": "topup_49", "name": "基础充值", "amount_fen": 4900, "credit_fen": 4900},
-    {"id": "topup_99", "name": "进阶充值", "amount_fen": 9900, "credit_fen": 10400, "recommended": True},
-    {"id": "topup_199", "name": "专业充值", "amount_fen": 19900, "credit_fen": 22000},
+    {"id": "topup_10", "name": "体验充值", "amount_fen": 10000, "credit_fen": 10000},
+    {"id": "topup_49", "name": "基础充值", "amount_fen": 49000, "credit_fen": 49000},
+    {"id": "topup_99", "name": "进阶充值", "amount_fen": 99000, "credit_fen": 104000, "recommended": True},
+    {"id": "topup_199", "name": "专业充值", "amount_fen": 199000, "credit_fen": 220000},
 ]
 
 

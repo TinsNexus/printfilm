@@ -4,6 +4,7 @@ import {
   Bell,
   Clapperboard,
   FileVideo,
+  Film,
   LayoutDashboard,
   LogOut,
   Maximize2,
@@ -21,8 +22,7 @@ const navItems = [
   { to: "/users", label: "用户管理", icon: Users },
   { to: "/orders", label: "订单流水", icon: Receipt },
   { to: "/projects", label: "项目管理", icon: Clapperboard },
-  // 漫剧入口暂隐藏，路由与 API 仍保留
-  // { to: "/drama-projects", label: "漫剧项目", icon: Film },
+  { to: "/drama-projects", label: "漫剧项目", icon: Film },
   { to: "/works", label: "作品审核", icon: FileVideo },
   { to: "/templates", label: "模板管理", icon: Shapes },
 ];

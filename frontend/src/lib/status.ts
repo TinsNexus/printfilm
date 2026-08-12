@@ -12,18 +12,18 @@ export const STATUS_CN: Record<string, string> = {
   DRAFT: '草稿',
   SCRIPTING: '拆分镜中',
   SCRIPT_READY: '分镜待确认',
-  IMAGING: '出图+配音并行中',
-  IMAGE_READY: '分镜图/配音完成',
-  VIDEOING: '生成 AI 视频',
+  IMAGING: '出图中',
+  IMAGE_READY: '分镜图完成',
+  VIDEOING: '生成带配音视频',
   VIDEO_READY: '镜头视频完成',
   AUDIOING: '生成配音',
-  COMPOSING: '合成成片',
+  COMPOSING: '拼接成片',
   AUDITING: '审核中',
   DONE: '已完成',
   FAILED: '失败',
   CANCELLED: '已取消',
   REJECTED: '未通过',
-  PARALLEL_ASSETS: '出图+配音并行',
+  PARALLEL_ASSETS: '出图中',
   ASSETS_READY: '素材就绪',
 }
 
@@ -49,8 +49,10 @@ export function effectiveStatus(project: {
   const auds = shots.filter((s) => s.audio_url).length
   const vids = shots.filter((s) => s.video_url).length
   const n = shots.length
+  // full 管线配音由视频模型完成，不要求 TTS audio_url
+  const assetsOk = full ? imgs === n : imgs === n && auds === n
 
-  if (imgs === n && auds === n) {
+  if (assetsOk) {
     if (full && vids < n) return 'VIDEOING'
     if (full && vids === n) return 'COMPOSING'
     if (!full) return 'COMPOSING'

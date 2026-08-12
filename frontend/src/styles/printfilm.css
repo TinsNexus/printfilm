@@ -1770,7 +1770,13 @@ button.pf-shot-editable:disabled {
   border-radius: 10px;
   padding: 0.5rem 0.75rem;
   font-size: 0.85rem;
+  color: var(--pf-ink);
+  cursor: pointer;
+}
+
+.pf-type-select:disabled {
   color: var(--pf-muted);
+  cursor: not-allowed;
 }
 
 .pf-search-field {

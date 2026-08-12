@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { dramaApi, type DramaEpisode } from '../../api/drama'
+import { dialog } from '../../lib/dialog'
 
 type EpisodesStepProps = {
   projectId: number
@@ -21,6 +22,10 @@ export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
   const [loading, setLoading] = useState(true)
   const [reseeding, setReseeding] = useState(false)
   const seeded = useRef(false)
+
+  useEffect(() => {
+    seeded.current = false
+  }, [projectId])
 
   // 拉取 / 切分分镜
   async function loadEpisodes(force = false) {
@@ -57,12 +62,22 @@ export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
   // 按最新分集剧本强制重切全部分镜
   async function handleReseed() {
     if (reseeding) return
-    if (!window.confirm('将按最新分集剧本重新切分镜（已生成视频的分集也会重写），是否继续？')) {
-      return
-    }
+    const ok = await dialog.confirm({
+      title: '重新切分分镜',
+      message:
+        '将按最新分集剧本重新切分镜（已生成视频的分集也会重写），是否继续？',
+      confirmText: '继续切分',
+      tone: 'danger',
+    })
+    if (!ok) return
     setReseeding(true)
     try {
-      await loadEpisodes(true)
+      const rows = await loadEpisodes(true)
+      await dialog.alert({
+        title: '切分完成',
+        message: `已更新 ${rows.length} 集分镜，可进入各集编辑查看。`,
+        tone: 'success',
+      })
     } catch (err) {
       onError(err instanceof Error ? err.message : '重新切分失败')
     } finally {
@@ -80,10 +95,10 @@ export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
         <button
           type="button"
           className="drama-btn-primary"
-          disabled={loading || reseeding}
+          disabled={reseeding}
           onClick={() => void handleReseed()}
         >
-          {reseeding ? '切分中…' : '按剧本重切分镜'}
+          {reseeding ? '切分中…' : '重新切分分镜'}
         </button>
       </div>
       {loading ? <p className="drama-muted">正在创建分集与分镜…</p> : null}

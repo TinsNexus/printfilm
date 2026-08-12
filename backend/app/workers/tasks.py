@@ -93,6 +93,15 @@ def run_pipeline_task(self, project_id: int) -> dict:
                 "PrivacyInformation",
                 "BodyFormat",
                 "summary_caption",
+                # Seedance / 参数约束类：400 通常为输入不合法，重试大概率仍失败
+                "Seedance create error 400",
+                "InvalidParameter",
+                "TaskTypeConstraint",
+                # 代码/调用不匹配类：应直接修复发布版本或入参映射
+                "NameError: name 'shot_id' is not defined",
+                "shot_id' is not defined",
+                "unexpected keyword argument 'image_style_id'",
+                "got an unexpected keyword argument 'image_style_id'",
             )
         )
         if permanent:

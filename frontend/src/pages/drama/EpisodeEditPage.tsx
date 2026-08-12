@@ -3,22 +3,31 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   dramaApi,
+  resolveDramaMediaUrl,
   type DramaAsset,
   type DramaEpisode,
   type DramaFragment,
 } from '../../api/drama'
-import { IMAGE_STYLE_OPTIONS, type ImageStyleId } from '../../lib/dramaImageStyles'
+import { type ImageStyleId } from '../../lib/dramaImageStyles'
 import {
-  MODEL_OPTIONS,
   RATIO_OPTIONS,
   RES_OPTIONS,
+  buildFragmentRefStripItems,
+  collectFragmentAssetIds,
   extractAssetIds,
   filterEpisodeAssets,
   formatFragLabel,
+  normalizeAssetTab,
+  readFragmentGenerationStatus,
+  resolveFragmentDurationSec,
   type AssetScope,
   type AssetTab,
 } from './dramaEpisodeEditUtils'
+import { getImageStyleId } from './dramaWorkspaceUtils'
 import { EpisodeEditAssetPanel } from './EpisodeEditAssetPanel'
+import { EpisodeEditHeaderControls } from './EpisodeEditHeaderControls'
+import { EpisodeEditPromptEditor } from './EpisodeEditPromptEditor'
+import { EpisodeEditReferenceStrip } from './EpisodeEditReferenceStrip'
 import RequireAuth from './RequireAuth'
 import './drama.css'
 
@@ -60,11 +69,20 @@ function EpisodeEditInner() {
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
+  const [genProgress, setGenProgress] = useState<Record<number, string>>({})
   const pollRef = useRef<number | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
 
   const selected = fragments[selectedIndex] || null
   const selectedDuration = selected?.duration_sec ?? 8
+  const selectedRefIds = useMemo(
+    () => new Set(collectFragmentAssetIds(selected)),
+    [selected],
+  )
+  const selectedRefItems = useMemo(
+    () => buildFragmentRefStripItems(selected, assets, resolveDramaMediaUrl),
+    [selected, assets],
+  )
 
   const referencedIds = useMemo(() => {
     const set = new Set<number>()
@@ -79,6 +97,68 @@ function EpisodeEditInner() {
     () => filterEpisodeAssets(assets, assetScope, assetTab, referencedIds),
     [assets, assetScope, assetTab, referencedIds],
   )
+
+  // 停止轮询
+  function stopGeneratePolling() {
+    if (pollRef.current) {
+      window.clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+  }
+
+  // 应用后端生成进度并同步分镜状态
+  function applyGenerateStatus(st: Awaited<ReturnType<typeof dramaApi.generateStatus>>) {
+    setStatus(`完成 ${st.done}/${st.total} · 进行中 ${st.running} · 失败 ${st.failed}`)
+    const byId = new Map(st.fragments.map((f) => [f.fragment_id, f.status]))
+    setGenProgress(Object.fromEntries(byId))
+    setFragments((prev) =>
+      prev.map((f) => {
+        if (!f.id) return f
+        const genStatus = byId.get(f.id)
+        if (!genStatus) return f
+        const item = st.fragments.find((x) => x.fragment_id === f.id)
+        return {
+          ...f,
+          video: item?.video || f.video,
+          cover: item?.cover || f.cover,
+          params: {
+            ...(f.params || {}),
+            generation: { status: genStatus, video: item?.video, cover: item?.cover },
+          },
+        }
+      }),
+    )
+    return st
+  }
+
+  // 启动生成进度轮询（刷新页面后也会恢复）
+  function startGeneratePolling() {
+    stopGeneratePolling()
+    setBusy(true)
+    pollRef.current = window.setInterval(async () => {
+      try {
+        const st = applyGenerateStatus(await dramaApi.generateStatus(eid))
+        if (st.running === 0 && st.done + st.failed >= st.total) {
+          stopGeneratePolling()
+          await reload()
+          setBusy(false)
+        }
+      } catch {
+        stopGeneratePolling()
+        setBusy(false)
+      }
+    }, 3000)
+  }
+
+  // 进页检查是否有进行中的生成任务
+  async function resumeGenerateIfNeeded() {
+    try {
+      const st = applyGenerateStatus(await dramaApi.generateStatus(eid))
+      if (st.running > 0) startGeneratePolling()
+    } catch {
+      /* ignore */
+    }
+  }
 
   // 重新加载分集
   async function reload() {
@@ -99,6 +179,7 @@ function EpisodeEditInner() {
         },
       ])
     }
+    await resumeGenerateIfNeeded()
   }
 
   useEffect(() => {
@@ -108,8 +189,18 @@ function EpisodeEditInner() {
       .listAssets(pid)
       .then(setAssets)
       .catch(() => setAssets([]))
+    // 加载项目默认画面风格到顶栏
+    dramaApi
+      .getProject(pid)
+      .then((project) => {
+        const styleId = getImageStyleId(project.script, project)
+        if (styleId) setVideoStyleId(styleId as ImageStyleId)
+      })
+      .catch(() => {
+        /* ignore */
+      })
     return () => {
-      if (pollRef.current) window.clearInterval(pollRef.current)
+      stopGeneratePolling()
     }
   }, [eid, pid])
 
@@ -179,7 +270,8 @@ function EpisodeEditInner() {
           content: f.content,
           cover: f.cover,
           video: f.video,
-          duration_sec: f.duration_sec,
+          duration_sec: resolveFragmentDurationSec(f.content, f.duration_sec),
+          params: f.params,
           asset_ids: f.asset_ids || [],
         })),
       )
@@ -206,23 +298,7 @@ function EpisodeEditInner() {
       await save()
       setBusy(true)
       await dramaApi.generateEpisode(eid)
-      if (pollRef.current) window.clearInterval(pollRef.current)
-      pollRef.current = window.setInterval(async () => {
-        try {
-          const st = await dramaApi.generateStatus(eid)
-          setStatus(`完成 ${st.done}/${st.total} · 进行中 ${st.running} · 失败 ${st.failed}`)
-          if (st.running === 0 && st.done + st.failed >= st.total) {
-            if (pollRef.current) window.clearInterval(pollRef.current)
-            pollRef.current = null
-            await reload()
-            setBusy(false)
-          }
-        } catch {
-          if (pollRef.current) window.clearInterval(pollRef.current)
-          pollRef.current = null
-          setBusy(false)
-        }
-      }, 3000)
+      startGeneratePolling()
     } catch (err) {
       setError(err instanceof Error ? err.message : '生成失败')
       setBusy(false)
@@ -238,10 +314,21 @@ function EpisodeEditInner() {
   function mentionAsset(asset: DramaAsset) {
     if (!selected) return
     const mention = `@asset:${asset.id}`
-    const content = selected.content ? `${selected.content} ${mention}` : mention
+    const raw = selected.content || ''
+    const already = new RegExp(`@asset:${asset.id}(?!\\d)`).test(raw)
+    const content = already ? raw : raw ? `${raw.trimEnd()}\n${mention}` : mention
     const ids = Array.from(new Set([...(selected.asset_ids || []), asset.id]))
     updateSelected({ content, asset_ids: ids })
     setEditing(true)
+  }
+
+  // 从关联条跳到对应分类
+  function focusLinkedAsset(assetId: number) {
+    const asset = assets.find((a) => a.id === assetId)
+    if (!asset) return
+    const tab = normalizeAssetTab(asset.type)
+    if (tab) setAssetTab(tab)
+    setAssetScope('series')
   }
 
   if (!episode) {
@@ -252,8 +339,8 @@ function EpisodeEditInner() {
     )
   }
 
-  const previewUrl = selected?.video || ''
-  const previewCover = selected?.cover || ''
+  const previewUrl = selected?.video ? resolveDramaMediaUrl(selected.video) : ''
+  const previewCover = selected?.cover ? resolveDramaMediaUrl(selected.cover) : ''
 
   return (
     <div className="drama-ep-fullscreen">
@@ -265,56 +352,17 @@ function EpisodeEditInner() {
           <h1>{episode.name}</h1>
         </div>
         <div className="drama-ep-header-controls">
-          <label className="drama-ep-select">
-            <span>风格</span>
-            <select
-              value={videoStyleId}
-              onChange={(e) => setVideoStyleId(e.target.value as ImageStyleId | '')}
-            >
-              <option value="">视频风格</option>
-              {IMAGE_STYLE_OPTIONS.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="drama-ep-select">
-            <span>模型</span>
-            <select value={modelId} onChange={(e) => setModelId(e.target.value)}>
-              {MODEL_OPTIONS.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="drama-ep-select">
-            <span>比例</span>
-            <select
-              value={aspectRatio}
-              onChange={(e) => setAspectRatio(e.target.value as (typeof RATIO_OPTIONS)[number])}
-            >
-              {RATIO_OPTIONS.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="drama-ep-select">
-            <span>分辨率</span>
-            <select
-              value={resolution}
-              onChange={(e) => setResolution(e.target.value as (typeof RES_OPTIONS)[number])}
-            >
-              {RES_OPTIONS.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
-          </label>
+          <EpisodeEditHeaderControls
+            styleId={videoStyleId}
+            modelId={modelId}
+            aspectRatio={aspectRatio}
+            resolution={resolution}
+            onStyleChange={setVideoStyleId}
+            onModelChange={setModelId}
+            onAspectRatioChange={setAspectRatio}
+            onResolutionChange={setResolution}
+            disabled={busy}
+          />
         </div>
       </header>
 
@@ -330,6 +378,7 @@ function EpisodeEditInner() {
           scope={assetScope}
           tab={assetTab}
           assets={filteredAssets}
+          activeIds={selectedRefIds}
           onScopeChange={setAssetScope}
           onTabChange={setAssetTab}
           onOpenCanvas={() => navigate(`/drama/projects/${pid}/canvas`)}
@@ -340,7 +389,7 @@ function EpisodeEditInner() {
           <div className="drama-ep-editor-head">
             <div>
               <strong>{formatFragLabel(selectedIndex, selectedDuration)}</strong>
-              <p>键入 @asset:id 可引用资产；脚本可含旁白、字幕与 BGM 说明</p>
+              <p>顶部显示本镜关联；键入 @ 可引用资产或插入时长标签</p>
             </div>
             <label className="drama-ep-duration">
               时长
@@ -358,13 +407,20 @@ function EpisodeEditInner() {
             </label>
           </div>
 
+          <EpisodeEditReferenceStrip items={selectedRefItems} onSelect={focusLinkedAsset} />
+
           <div className={`drama-ep-editor-box ${editing ? 'editing' : ''}`}>
-            <textarea
-              value={selected?.content || ''}
-              readOnly={!editing}
-              rows={16}
-              placeholder="输入画面描述、对白、旁白或背景音乐提示…"
-              onChange={(e) => updateSelected({ content: e.target.value })}
+            <EpisodeEditPromptEditor
+              content={selected?.content || ''}
+              assets={assets}
+              referencedIds={referencedIds}
+              editing={editing}
+              onOpenAsset={focusLinkedAsset}
+              onContentChange={(nextContent) => {
+                const fromContent = extractAssetIds(nextContent)
+                const ids = Array.from(new Set([...(selected?.asset_ids || []), ...fromContent]))
+                updateSelected({ content: nextContent, asset_ids: ids })
+              }}
             />
           </div>
 
@@ -451,19 +507,29 @@ function EpisodeEditInner() {
           >
             +
           </button>
-          {fragments.map((frag, index) => (
+          {fragments.map((frag, index) => {
+            const fragStatus =
+              (frag.id ? genProgress[frag.id] : undefined) ||
+              readFragmentGenerationStatus(frag).status
+            const clipVideo = frag.video ? resolveDramaMediaUrl(frag.video) : ''
+            const clipCover = frag.cover ? resolveDramaMediaUrl(frag.cover) : ''
+            return (
             <div key={`${frag.id}-${index}`} className="drama-ep-clip-wrap">
               <button
                 type="button"
-                className={`drama-ep-clip ${selectedIndex === index ? 'active' : ''}`}
+                className={`drama-ep-clip ${selectedIndex === index ? 'active' : ''}${
+                  fragStatus === 'running' || fragStatus === 'queued' ? ' is-generating' : ''
+                }${fragStatus === 'failed' ? ' is-failed' : ''}`}
                 onClick={() => setSelectedIndex(index)}
               >
-                {frag.cover ? (
-                  <img src={frag.cover} alt="" />
-                ) : frag.video ? (
-                  <video src={frag.video} muted />
+                {clipCover ? (
+                  <img src={clipCover} alt="" />
+                ) : clipVideo ? (
+                  <video src={clipVideo} muted />
                 ) : (
-                  <span className="drama-ep-clip-empty">+</span>
+                  <span className="drama-ep-clip-empty">
+                    {fragStatus === 'running' || fragStatus === 'queued' ? '…' : '+'}
+                  </span>
                 )}
                 <em>{formatFragLabel(index, frag.duration_sec)}</em>
               </button>
@@ -484,7 +550,8 @@ function EpisodeEditInner() {
                 </button>
               </div>
             </div>
-          ))}
+            )
+          })}
         </div>
       </footer>
     </div>

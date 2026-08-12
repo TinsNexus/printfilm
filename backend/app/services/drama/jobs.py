@@ -6,6 +6,7 @@ import asyncio
 import logging
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
@@ -29,6 +30,7 @@ from app.services.drama.agents import (
     run_script_summary,
 )
 from app.services.drama.generation import generate_asset_image, generate_fragment_video
+from app.services.drama.visual_prompt import resolve_visual_prompt_for_asset
 
 logger = logging.getLogger(__name__)
 
@@ -378,12 +380,29 @@ async def run_episode_generate_job(
             )
             if not frag or frag.episode_id != episode_id:
                 continue
+            params = dict(frag.params or {})
+            params["generation"] = {"status": "running"}
+            frag.params = params
+            await db.commit()
             try:
                 logger.info("生成分镜视频 fragment_id=%s episode_id=%s", fid, episode_id)
                 await generate_fragment_video(db, user, project, frag)
+                await db.refresh(frag)
+                params = dict(frag.params or {})
+                params["generation"] = {
+                    "status": "done",
+                    "video": frag.video,
+                    "cover": frag.cover,
+                }
+                frag.params = params
+                await db.commit()
                 ok_count += 1
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
                 fail_count += 1
+                params = dict(frag.params or {})
+                params["generation"] = {"status": "failed", "error": str(exc)[:500]}
+                frag.params = params
+                await db.commit()
                 logger.exception("分镜视频失败 fragment_id=%s", fid)
                 continue
         logger.info(
@@ -489,7 +508,13 @@ async def run_asset_image_job(
         model_id,
     )
     async with AsyncSessionLocal() as db:
-        project = await db.get(DramaProject, project_id)
+        project = (
+            await db.execute(
+                select(DramaProject)
+                .where(DramaProject.id == project_id)
+                .options(selectinload(DramaProject.script))
+            )
+        ).scalar_one_or_none()
         user = await db.get(User, user_id)
         if not project or not user:
             return {"ok": False, "error": "missing"}
@@ -499,11 +524,27 @@ async def run_asset_image_job(
             if not asset or asset.project_id != project_id:
                 return {"ok": False, "error": "asset_not_found"}
         try:
+            resolved_prompt = prompt
+            if asset:
+                resolved_prompt = await resolve_visual_prompt_for_asset(asset, project, prompt)
+                params = dict(asset.params or {})
+                params["visualPrompt"] = resolved_prompt
+                if not str(params.get("visualImage") or "").strip():
+                    params["visualImage"] = resolved_prompt
+                asset.params = params
+                await db.commit()
+                await db.refresh(asset)
+                logger.info(
+                    "资产生图提示词已解析 project_id=%s asset_id=%s len=%s",
+                    project_id,
+                    asset_id,
+                    len(resolved_prompt),
+                )
             asset = await generate_asset_image(
                 db,
                 user,
                 project,
-                prompt,
+                resolved_prompt,
                 asset=asset,
                 name=name,
                 kind=kind,

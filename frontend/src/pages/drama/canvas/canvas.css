@@ -515,6 +515,11 @@
   background: #f8fafc;
 }
 
+.fc-toolbar-chip.is-active {
+  background: #f0fdf4;
+  color: #166534;
+}
+
 .fc-toolbar-chip:disabled {
   opacity: 0.55;
   cursor: wait;

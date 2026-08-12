@@ -5,45 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 from app.services.drama.llm import drama_chat_json
-
-# 与 manju scriptSummary 对齐的摘要系统提示
-SCRIPT_SUMMARY_SYSTEM = """你是专业的短剧/网剧剧本策划，负责把用户提供的原始创意、故事大纲或灵感，整理成可直接用于立项与编剧开工的结构化「剧本摘要」。
-
-输出要求：
-1. 忠实于用户创意，可合理补全细节，但不要擅自改掉核心设定、主线与结局
-2. 若用户提供了目标集数，episodeCount 必须与该值完全一致；未提供时根据故事体量合理估算（短篇 12–24 集）
-3. 若用户提供了画面风格，人物 visualImage 须体现该风格的视觉美学，storyType 可融合风格相关标签
-4. storyType、coreHook 用「+」连接多个标签，风格参考：古风奇幻+神话后传+反乌托邦
-5. targetAudience 简洁，如：男频 / 大众、女频 / 青年 等
-6. oneLineStory 一句话说清主线 + 最大反转或钩子
-7. characters 至少包含全部主角与 1–2 名关键配角/反派；每人字段须饱满、可拍摄、有戏剧张力
-8. 人物小传中 growthArc 必须用「阶段A -> 阶段B -> 阶段C」格式
-9. synopsis 用一段完整中文叙述故事，从世界观、矛盾、结盟、高潮、结局到余韵，长度 200–400 字
-10. 语言统一使用简体中文，偏影视策划文档风格，避免空泛形容词堆砌
-
-必须输出严格 JSON 对象（不要 markdown、不要代码围栏），字段：
-{
-  "episodeCount": number,
-  "storyType": string,
-  "targetAudience": string,
-  "coreHook": string,
-  "oneLineStory": string,
-  "characters": [
-    {
-      "name": string,
-      "title": string,
-      "roleType": string,
-      "visualImage": string,
-      "coreTags": string,
-      "identityBackground": string,
-      "growthExperience": string,
-      "personality": string,
-      "relationships": string,
-      "growthArc": string
-    }
-  ],
-  "synopsis": string
-}"""
+from app.services.drama.script_summary_prompt import (
+    SCRIPT_SUMMARY_SYSTEM_PROMPT,
+    build_script_summary_user_message,
+)
 
 # 与 manju episodeScript 对齐：先规划全集集名
 EPISODE_OUTLINE_SYSTEM = """你是专业的短剧/网剧编剧策划，负责根据原始创意与剧本摘要，规划全部分集的「集数 + 集名」大纲。
@@ -95,18 +60,16 @@ async def run_script_summary(
     if len(trimmed) < 10:
         raise ValueError("原始创意至少需要 10 个字")
 
-    user_parts = [f"原始创意：\n{trimmed}"]
-    if episode_count:
-        user_parts.append(f"目标集数：{episode_count}（episodeCount 必须等于该值）")
-    if image_style_id:
-        user_parts.append(f"画面风格 ID：{image_style_id}")
+    user_message = build_script_summary_user_message(
+        trimmed,
+        episode_count=episode_count,
+        image_style_id=image_style_id,
+    )
     data = await drama_chat_json(
-        SCRIPT_SUMMARY_SYSTEM,
-        "\n\n".join(user_parts),
+        SCRIPT_SUMMARY_SYSTEM_PROMPT,
+        user_message,
         max_tokens=8192,
     )
-    if isinstance(data, dict) and data.get("mock"):
-        data = _mock_summary(trimmed, episode_count or 12)
     if episode_count:
         data["episodeCount"] = episode_count
     return data
@@ -284,11 +247,6 @@ async def run_episode_outline(
         ]
     )
     data = await drama_chat_json(EPISODE_OUTLINE_SYSTEM, user, max_tokens=4096)
-    if isinstance(data, dict) and data.get("mock"):
-        return [
-            {"episodeNumber": i, "title": f"第{i}集钩子", "body": ""}
-            for i in range(1, episode_count + 1)
-        ]
     episodes = data.get("episodes") if isinstance(data, dict) else data
     if not isinstance(episodes, list) or not episodes:
         raise ValueError("分集大纲返回格式无效")
@@ -385,18 +343,9 @@ async def run_episode_script_batch(
     data = await drama_chat_json(
         EPISODE_BATCH_CONTENT_SYSTEM,
         user,
-        temperature=0.65,
+        temperature=0.6,
         max_tokens=16384,
     )
-    if isinstance(data, dict) and data.get("mock"):
-        return [
-            {
-                "episodeNumber": i,
-                "title": title_by_num.get(i) or f"第{i}集",
-                "body": _mock_episode_body(i, summary),
-            }
-            for i in range(start, end + 1)
-        ]
 
     episodes = data.get("episodes") if isinstance(data, dict) else data
     if not isinstance(episodes, list):
@@ -419,7 +368,7 @@ async def run_episode_script_batch(
         retry = await drama_chat_json(
             EPISODE_BATCH_CONTENT_SYSTEM,
             retry_user,
-            temperature=0.7,
+            temperature=0.6,
             max_tokens=16384,
         )
         retry_eps = retry.get("episodes") if isinstance(retry, dict) else retry
@@ -464,66 +413,3 @@ def _normalize_batch_episodes(
             }
         )
     return normalized
-
-
-def _mock_episode_body(episode_number: int, summary: dict[str, Any]) -> str:
-    hook = str(summary.get("oneLineStory") or "主线推进")
-    chars = summary.get("characters") or []
-    names = "、".join(
-        str(c.get("name")) for c in chars if isinstance(c, dict) and c.get("name")
-    ) or "主角、配角"
-    return "\n".join(
-        [
-            f"### 场{episode_number}-1",
-            "日 外 主场景",
-            f"出场人物：{names}",
-            f"△ 远景拉开，气氛压抑，呼应钩子：{hook}",
-            "△ 主角站在高处，目光扫过众生",
-            f"主角（沉声）：这一集，我们不能再退。",
-            "配角（紧绷）：可对面已经布好了局。",
-            f"### 场{episode_number}-2",
-            "日 内 议事厅",
-            f"出场人物：{names}",
-            "△ 众人围桌争执，烛火晃动",
-            "△ 主角拍案而起，地图被压得发皱",
-            "主角（决断）：听我的——疏，不堵。",
-            "【空镜：门外风雨将至】",
-        ]
-    )
-
-
-def _mock_summary(creative: str, episode_count: int) -> dict[str, Any]:
-    return {
-        "episodeCount": episode_count,
-        "storyType": "都市+成长",
-        "targetAudience": "大众",
-        "coreHook": "逆袭+关系反转",
-        "oneLineStory": creative[:80],
-        "characters": [
-            {
-                "name": "林辰",
-                "title": "主角",
-                "roleType": "主角",
-                "visualImage": "二十多岁青年，短发，运动夹克",
-                "coreTags": "坚韧、聪明",
-                "identityBackground": "普通人卷入变故",
-                "growthExperience": "从被动到主动",
-                "personality": "外冷内热",
-                "relationships": "与搭档互信",
-                "growthArc": "迷茫 -> 觉醒 -> 担当",
-            },
-            {
-                "name": "苏晚",
-                "title": "搭档",
-                "roleType": "配角",
-                "visualImage": "干练短发女性，浅色风衣",
-                "coreTags": "理性、锋利",
-                "identityBackground": "调查记者",
-                "growthExperience": "从旁观到共谋",
-                "personality": "直率",
-                "relationships": "与林辰搭档",
-                "growthArc": "质疑 -> 同盟 -> 并肩",
-            },
-        ],
-        "synopsis": f"（模拟）故事围绕：{creative[:200]}",
-    }

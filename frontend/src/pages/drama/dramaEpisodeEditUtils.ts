@@ -1,5 +1,5 @@
 /** 分集编辑页辅助：资产分类、引用解析、标签文案 */
-import type { DramaAsset } from '../../api/drama'
+import type { DramaAsset, DramaFragment } from '../../api/drama'
 
 export type AssetScope = 'episode' | 'series'
 export type AssetTab = 'character' | 'scene' | 'prop' | 'material'
@@ -30,6 +30,45 @@ export function extractAssetIds(content: string): number[] {
   return ids
 }
 
+// 合并正文 @asset 与 asset_ids，去重保序
+export function collectFragmentAssetIds(frag: DramaFragment | null | undefined): number[] {
+  if (!frag) return []
+  const seen = new Set<number>()
+  const out: number[] = []
+  for (const id of [...extractAssetIds(frag.content || ''), ...(frag.asset_ids || [])]) {
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    out.push(id)
+  }
+  return out
+}
+
+export type FragmentRefStripItem = {
+  assetId: number
+  name: string
+  type: string
+  previewUrl: string
+}
+
+// 组装当前分镜关联资产条
+export function buildFragmentRefStripItems(
+  frag: DramaFragment | null | undefined,
+  assets: DramaAsset[],
+  resolveUrl: (url: string | null | undefined) => string,
+): FragmentRefStripItem[] {
+  const byId = new Map(assets.map((a) => [a.id, a]))
+  return collectFragmentAssetIds(frag).map((assetId) => {
+    const asset = byId.get(assetId)
+    const preview = asset ? resolveUrl(asset.cover || asset.url) : ''
+    return {
+      assetId,
+      name: asset?.name || `资产 ${assetId}`,
+      type: asset?.type || '',
+      previewUrl: preview,
+    }
+  })
+}
+
 // 规范化资产分类
 export function normalizeAssetTab(type: string): AssetTab | null {
   const t = (type || '').toLowerCase()
@@ -38,6 +77,44 @@ export function normalizeAssetTab(type: string): AssetTab | null {
   if (t === 'prop' || t === '道具') return 'prop'
   if (t === 'material' || t === '素材') return 'material'
   return null
+}
+
+// 从分镜正文合计 @duration 秒数（与后端 fragment_content_duration 一致）
+export function sumFragmentContentDuration(content: string): number {
+  const re = /@duration:(\d+)/g
+  let total = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(content || ''))) {
+    const sec = Number(m[1])
+    if (sec > 0) total += sec
+  }
+  return total
+}
+
+// 解析分镜生成状态（params.generation 或已有 video）
+export function readFragmentGenerationStatus(
+  frag: DramaFragment,
+): { status: string; error?: string } {
+  if (frag.video) return { status: 'done' }
+  const gen = frag.params?.generation
+  if (gen && typeof gen === 'object') {
+    const row = gen as Record<string, unknown>
+    const status = typeof row.status === 'string' ? row.status : 'idle'
+    const error = typeof row.error === 'string' ? row.error : undefined
+    return { status, error }
+  }
+  return { status: 'idle' }
+}
+
+// 保存前：有 @duration 标签时用合计值作为 duration_sec
+export function resolveFragmentDurationSec(
+  content: string,
+  durationSec: number | null | undefined,
+): number {
+  const fromTags = sumFragmentContentDuration(content)
+  if (fromTags > 0) return Math.min(30, Math.max(4, fromTags))
+  const fallback = durationSec && durationSec > 0 ? durationSec : 8
+  return Math.min(30, Math.max(4, fallback))
 }
 
 // 格式化片段标签

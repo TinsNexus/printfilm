@@ -50,6 +50,16 @@ class DramaAssetOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SeedAssetsFromScriptOut(BaseModel):
+    """从剧本抽取/刷新资产的结果统计。"""
+
+    assets: list[DramaAssetOut]
+    created_count: int = 0
+    prompts_refreshed: int = 0
+    props_updated: int = 0
+    llm_errors: list[str] = Field(default_factory=list)
+
+
 class DramaFragmentOut(BaseModel):
     id: int
     episode_id: int
@@ -151,6 +161,20 @@ class DramaImageGenerateRequest(BaseModel):
     aspect_ratio: str | None = None
     # 清晰度 3K / 4K
     resolution: str | None = None
+
+
+class DramaVoicePromptRequest(BaseModel):
+    project_id: int
+    asset_id: int
+
+
+class DramaVoiceGenerateRequest(BaseModel):
+    project_id: int
+    asset_id: int | None = None
+    name: str | None = None
+    voice_prompt: str = Field(description="音色描述，用于 TTS 试听与 Seedance reference_audio")
+    sample_text: str | None = Field(default=None, description="试听台词，缺省自动生成")
+    speaker: str | None = Field(default=None, description="可选 TTS speaker 覆盖")
 
 
 class DramaFragmentSaveItem(BaseModel):

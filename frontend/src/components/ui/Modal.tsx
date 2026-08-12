@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 
 type ModalProps = {
   open: boolean
@@ -15,6 +16,7 @@ type ModalProps = {
   className?: string
 }
 
+// 全局居中/抽屉弹层（portal 到 body，统一 pf-modal 样式）
 export default function Modal({
   open,
   onClose,
@@ -44,7 +46,7 @@ export default function Modal({
 
   const isDrawer = variant === 'drawer'
 
-  return (
+  return createPortal(
     <div
       className={['pf-dialog-root', isDrawer ? 'pf-dialog-root--drawer' : ''].filter(Boolean).join(' ')}
       role="presentation"
@@ -83,6 +85,7 @@ export default function Modal({
         <div className="pf-modal-body">{children}</div>
         {footer ? <footer className="pf-modal-foot">{footer}</footer> : null}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

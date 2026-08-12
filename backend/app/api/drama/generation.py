@@ -1,4 +1,4 @@
-"""Drama Seedream generation endpoint."""
+"""Drama Seedream / voice / Seedance generation endpoints."""
 
 from __future__ import annotations
 
@@ -11,9 +11,16 @@ from app.database import get_db
 from app.deps import get_current_user
 from app.models import User
 from app.models_drama import DramaAsset
-from app.schemas_drama import DramaAssetOut, DramaImageGenerateRequest
+from app.schemas_drama import (
+    DramaAssetOut,
+    DramaImageGenerateRequest,
+    DramaVoiceGenerateRequest,
+    DramaVoicePromptRequest,
+)
 from app.services.drama.access import get_owned_drama_project
+from app.services.drama.generation import generate_voice_asset_audio
 from app.services.drama.jobs import dispatch_asset_image_job
+from app.services.drama.voice_prompt import suggest_voice_prompt_for_character
 
 router = APIRouter()
 logger = logging.getLogger("app.drama.generation")
@@ -78,4 +85,94 @@ async def generate_image(
         "task_id": task_id,
         "asset_id": asset.id if asset else None,
         "asset": DramaAssetOut.model_validate(asset).model_dump() if asset else None,
+    }
+
+
+@router.post("/generation/voice_prompt")
+async def suggest_voice_prompt(
+    body: DramaVoicePromptRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """根据角色设定 AI 生成音色描述提示词。"""
+    project = await get_owned_drama_project(db, body.project_id, user, with_script=True)
+    asset = await db.get(DramaAsset, body.asset_id)
+    if not asset or asset.project_id != project.id:
+        raise HTTPException(status_code=404, detail="资产不存在")
+    if (asset.type or "").lower() != "character":
+        raise HTTPException(status_code=400, detail="仅支持角色资产")
+
+    prompt = await suggest_voice_prompt_for_character(asset, project)
+    logger.info(
+        "音色提示词已生成 project_id=%s asset_id=%s len=%s",
+        project.id,
+        asset.id,
+        len(prompt),
+    )
+    return {"ok": True, "voice_prompt": prompt, "asset_id": asset.id}
+
+
+@router.post("/generation/voice")
+async def generate_voice(
+    body: DramaVoiceGenerateRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """按提示词合成 voice 资产参考音频（漫剧独立音色库，非科普 /api/voices）。"""
+    project = await get_owned_drama_project(db, body.project_id, user, with_script=True)
+    prompt = (body.voice_prompt or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="缺少 voice_prompt")
+
+    asset = None
+    if body.asset_id:
+        asset = await db.get(DramaAsset, body.asset_id)
+        if not asset or asset.project_id != project.id:
+            raise HTTPException(status_code=404, detail="资产不存在")
+    else:
+        asset = DramaAsset(
+            project_id=project.id,
+            type="voice",
+            asset_type="audio",
+            name=(body.name or "").strip() or "未命名音色",
+            params={"voicePrompt": prompt, "generation": {"status": "generating"}},
+        )
+        db.add(asset)
+        await db.commit()
+        await db.refresh(asset)
+
+    params = dict(asset.params or {})
+    params["generation"] = {"status": "generating"}
+    params["voicePrompt"] = prompt
+    asset.params = params
+    await db.commit()
+    await db.refresh(asset)
+
+    try:
+        updated = await generate_voice_asset_audio(
+            db,
+            user,
+            project,
+            asset,
+            voice_prompt=prompt,
+            sample_text=body.sample_text,
+            speaker=body.speaker,
+        )
+    except Exception as exc:  # noqa: BLE001
+        params = dict(asset.params or {})
+        params["generation"] = {"status": "failed", "error": str(exc)[:500]}
+        asset.params = params
+        await db.commit()
+        logger.exception("音色合成失败 project_id=%s asset_id=%s", project.id, asset.id)
+        raise HTTPException(status_code=500, detail=str(exc)[:500]) from exc
+
+    logger.info(
+        "音色合成完成 project_id=%s asset_id=%s url=%s",
+        project.id,
+        updated.id,
+        (updated.url or "")[:80],
+    )
+    return {
+        "ok": True,
+        "asset": DramaAssetOut.model_validate(updated).model_dump(),
     }

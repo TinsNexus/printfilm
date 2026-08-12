@@ -172,6 +172,7 @@ class ProjectListItem(BaseModel):
     error_msg: str | None = None
     pipeline_mode: str = "full"
     output_ratio: str = ""
+    published: bool = False
     created_at: datetime
     updated_at: datetime | None = None
 
@@ -231,6 +232,19 @@ class PageMeta(BaseModel):
     page: int
     page_size: int
     total: int
+
+
+class ProjectListStats(BaseModel):
+    total: int = 0
+    generating: int = 0
+    done: int = 0
+    published: int = 0
+
+
+class ProjectListOut(BaseModel):
+    items: list[ProjectListItem]
+    meta: PageMeta
+    stats: ProjectListStats
 
 
 class AdminStatsOut(BaseModel):

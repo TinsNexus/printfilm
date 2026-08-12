@@ -19,14 +19,17 @@ class Settings(BaseSettings):
 
     ark_api_key: str = ""
     ark_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
-    model_llm: str = "doubao-seed-2-0-pro-260215"
+    # 文字模型（Kimi 等 OpenAI 兼容 API，对齐 manju OPENAI_*）
+    openai_api_key: str = ""
+    openai_base_url: str = ""
+    model_llm: str = "kimi-k2.6"
     model_image: str = "doubao-seedream-5-0-260128"
     # Seedream 4.5 接入点（可选；未配则回退 model_image）
     model_image_45: str = ""
     model_video: str = "doubao-seedance-2-5-260628"
-    # Seedance 2.0/2.5 i2v 官方范围约 4–15 秒；勿超过模型上限
+    # Seedance 2.5 官方范围约 4–30 秒
     seedance_duration_min: int = 4
-    seedance_duration_max: int = 15
+    seedance_duration_max: int = 30
     model_audio: str = "seed-tts-2.0"
     # 豆包语音（openspeech）— 与方舟 ARK_API_KEY 不同产品线
     volc_tts_app_id: str = ""
@@ -44,8 +47,10 @@ class Settings(BaseSettings):
     pipeline_image_concurrency: int = 3
     pipeline_video_concurrency: int = 2
     pipeline_audio_concurrency: int = 4
+    # 科普 full：Seedance generate_audio 配音，跳过 TTS + 重合成，仅拼接镜头
+    kepu_seedance_generate_audio: bool = True
 
-    ark_mock: bool = True
+    ark_mock: bool = False
     use_celery: bool = True
 
     # Celery worker autoscaler (python -m app.workers.autoscale)
@@ -56,9 +61,11 @@ class Settings(BaseSettings):
     celery_autoscale_idle_sec: float = 45.0
     celery_autoscale_queue: str = "pipeline"
     # Prevent zombie tasks: hard kill hung workers; Redis redelivers after visibility_timeout
-    celery_task_soft_time_limit: int = 1800  # 30 min soft
-    celery_task_time_limit: int = 2100  # 35 min hard
-    celery_visibility_timeout: int = 2400  # 40 min — must be > time_limit
+    # 视频阶段包含多镜头/多重试（Seedance/合成/OSS回填），线上曾触发 soft time limit 导致 project 进度停在中间。
+    # 这里适当放大，确保在“可预期的失败重试窗口”内有足够时间完成状态回写/标记失败。
+    celery_task_soft_time_limit: int = 3600  # 60 min soft
+    celery_task_time_limit: int = 4500  # 75 min hard
+    celery_visibility_timeout: int = 5400  # 90 min — must be > time_limit
     celery_stale_project_sec: int = 900  # redispatch RUNNING with no progress for 15 min
 
     max_shot_duration: int = 30

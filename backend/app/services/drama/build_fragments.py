@@ -19,8 +19,8 @@ EMPTY_CAST = {"无", "无出场", "无人物", "-", "—", "无。"}
 
 FRAGMENT_DURATION_MIN = 3
 FRAGMENT_DURATION_MAX = 12
-# 单分镜总时长不超过 Seedance 2.x i2v 上限（约 15s）
-FRAGMENT_TOTAL_MAX = 15
+# 单分镜总时长上限（Seedance 2.5 支持至 30s）
+FRAGMENT_TOTAL_MAX = 30
 
 
 def normalize_scene_location_name(raw: str) -> str:

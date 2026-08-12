@@ -1,5 +1,8 @@
 # PRINTFILM 部署（Docker 只跑库与缓存）
 
+> **生产站点发布（kepu.printfilm.com / admin）** 请以 [docs/DEPLOY.md](../docs/DEPLOY.md) 为准；每次发布写 [docs/releases/](../docs/releases/)。  
+> 本文仅描述 Postgres/Redis compose 与本机跑 API 的补充说明。**不要**用 OSS 上传前端 dist 代替机器发布。
+
 ## 分工
 
 | 组件 | 运行方式 |
@@ -7,7 +10,7 @@
 | PostgreSQL | Docker |
 | Redis | Docker |
 | FastAPI / Celery worker | 宿主机 Python 进程 |
-| 前端 | 宿主机 `npm run dev` 或 `npm run build` + 静态托管 |
+| 前端 / 管理后台 | 宿主机 `npm run build` + nginx 静态托管 |
 
 ## 1. 启动中间件（独立目录，不复用其它项目的库）
 

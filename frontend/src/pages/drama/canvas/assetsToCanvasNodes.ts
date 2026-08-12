@@ -1,6 +1,8 @@
 /** 将项目资产与已保存画布布局合并为 React Flow 节点/边 */
 import type { Edge, Node } from '@xyflow/react'
-import type { DramaAsset } from '../../../api/drama'
+import { resolveDramaMediaUrl, type DramaAsset } from '../../../api/drama'
+import { readVisualPrompt } from '../../../lib/dramaVisualPrompt'
+import { readAssetVoiceBinding } from '../CharacterVoiceBindModal'
 import {
   CANVAS_NODE_DEFAULT_LABEL,
   CANVAS_NODE_SIZE,
@@ -30,21 +32,21 @@ export function getCanvasNodeId(assetId: number) {
 export function buildNodeDataFromAsset(asset: DramaAsset): CanvasAssetNodeData {
   const kind = dramaAssetTypeToKind(asset.type)
   const params = (asset.params || {}) as Record<string, unknown>
-  const promptHint =
-    (typeof params.visualImage === 'string' && params.visualImage) ||
-    (typeof params.prompt === 'string' && params.prompt) ||
-    ''
+  const promptHint = readVisualPrompt(asset)
   const label =
     (typeof asset.name === 'string' && asset.name.trim()) || CANVAS_NODE_DEFAULT_LABEL[kind]
+  const voice = kind === 'character' ? readAssetVoiceBinding(asset) : null
 
   return {
     kind,
     label,
     assetId: asset.id,
-    mediaUrl: asset.url || asset.cover || null,
+    mediaUrl: resolveDramaMediaUrl(asset.url || asset.cover) || null,
     textContent: kind === 'text' ? String(params.textContent || '') : undefined,
     promptHint,
     characterName: kind === 'character' ? label : undefined,
+    voiceLabel: voice?.label || null,
+    voiceUrl: voice?.url || null,
   }
 }
 

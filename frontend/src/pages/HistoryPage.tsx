@@ -26,9 +26,30 @@ import {
 } from '../lib/clientDownload'
 import { isRunning, STATUS_CN, statusTone } from '../lib/status'
 
-type HistoryItem = Omit<Project, 'shots'>
+type HistoryItem = Omit<Project, 'shots'> & {
+  published?: boolean
+  final_video_url?: string | null
+  error_msg?: string | null
+  pipeline_mode?: string
+  output_ratio?: string
+  updated_at?: string
+}
 
 const PAGE_SIZE = 8
+
+const TAB_STATUS: Record<string, 'all' | 'draft' | 'running' | 'done' | 'published'> = {
+  全部: 'all',
+  草稿: 'draft',
+  生成中: 'running',
+  已完成: 'done',
+  已发布: 'published',
+}
+
+const TYPE_OPTIONS: Array<{ value: '' | 'full' | 'image_text'; label: string }> = [
+  { value: '', label: '全部类型' },
+  { value: 'full', label: '成片视频' },
+  { value: 'image_text', label: '图文视频' },
+]
 
 /** 格式化 token 数量，过大时用 k/M 缩写 */
 function formatTokens(n: number) {
@@ -52,7 +73,28 @@ function statusBadgeClass(status: string) {
 
 export default function HistoryPage() {
   const nav = useNavigate()
+  /*
+   * items 当前页项目
+   * total 筛选后总数（后端）
+   * stats 顶部统计
+   * templates 模板名映射
+   * error 错误文案
+   * loading 加载中
+   * busyId 单条操作中的项目 id
+   * packing 打包中
+   * packProgress 打包进度
+   * selected 勾选 id
+   * tab 状态 Tab
+   * typeMode 类型筛选（pipeline_mode）
+   * q 搜索框
+   * debouncedQ 防抖后的搜索词
+   * page 页码
+   * usage 本月用量
+   * preview 预览弹层
+   */
   const [items, setItems] = useState<HistoryItem[]>([])
+  const [total, setTotal] = useState(0)
+  const [stats, setStats] = useState({ total: 0, generating: 0, done: 0, published: 0 })
   const [templates, setTemplates] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -61,7 +103,9 @@ export default function HistoryPage() {
   const [packProgress, setPackProgress] = useState('')
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [tab, setTab] = useState('全部')
+  const [typeMode, setTypeMode] = useState<'' | 'full' | 'image_text'>('')
   const [q, setQ] = useState('')
+  const [debouncedQ, setDebouncedQ] = useState('')
   const [page, setPage] = useState(1)
   const [usage, setUsage] = useState<UsageSummary | null>(null)
   const [preview, setPreview] = useState<{
@@ -71,17 +115,31 @@ export default function HistoryPage() {
   } | null>(null)
 
   const hasRunning = useMemo(
-    () => items.some((p) => isRunning(p.status) && p.progress < 100),
-    [items],
+    () => items.some((p) => isRunning(p.status) && p.progress < 100) || stats.generating > 0,
+    [items, stats.generating],
   )
+
+  // 搜索防抖
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedQ(q.trim()), 300)
+    return () => window.clearTimeout(t)
+  }, [q])
 
   async function load() {
     try {
-      const list = await api.listProjects()
-      setItems(list as HistoryItem[])
+      const res = await api.listProjects({
+        page,
+        page_size: PAGE_SIZE,
+        status: TAB_STATUS[tab] || 'all',
+        q: debouncedQ,
+        pipeline_mode: typeMode,
+      })
+      setItems(res.items as HistoryItem[])
+      setTotal(res.meta.total)
+      setStats(res.stats)
       setError('')
       setSelected((prev) => {
-        const ids = new Set(list.map((x) => x.id))
+        const ids = new Set(res.items.map((x) => x.id))
         return new Set([...prev].filter((id) => ids.has(id)))
       })
     } catch (err) {
@@ -96,7 +154,6 @@ export default function HistoryPage() {
       nav('/auth')
       return
     }
-    load()
     api.templates().then((list) => {
       const map: Record<string, string> = {}
       for (const t of list) map[t.id] = t.name
@@ -109,39 +166,31 @@ export default function HistoryPage() {
   }, [nav])
 
   useEffect(() => {
+    setLoading(true)
+    load().catch(() => undefined)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional reload keys
+  }, [page, tab, typeMode, debouncedQ])
+
+  useEffect(() => {
     if (!hasRunning) return
     const timer = setInterval(() => {
       load().catch(() => undefined)
     }, 2000)
     return () => clearInterval(timer)
-  }, [hasRunning])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasRunning, page, tab, typeMode, debouncedQ])
 
   useEffect(() => {
     setPage(1)
-  }, [tab, q])
+  }, [tab, debouncedQ, typeMode])
 
-  const stats = useMemo(() => {
-    const total = items.length
-    const generating = items.filter((p) => isRunning(p.status)).length
-    const done = items.filter((p) => p.status === 'DONE').length
-    return { total, generating, done }
-  }, [items])
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const pageItems = items
 
-  const filtered = useMemo(() => {
-    let list = items
-    if (tab === '草稿') list = list.filter((p) => p.status === 'DRAFT')
-    else if (tab === '生成中') list = list.filter((p) => isRunning(p.status))
-    else if (tab === '已完成') list = list.filter((p) => p.status === 'DONE')
-    else if (tab === '已发布') list = list.filter((p) => p.status === 'DONE')
-    if (q.trim()) {
-      const s = q.trim().toLowerCase()
-      list = list.filter((p) => p.title.toLowerCase().includes(s))
-    }
-    return list
-  }, [items, tab, q])
-
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  // 筛选后若当前页超出范围则回退
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount)
+  }, [page, pageCount])
 
   const downloadable = useMemo(() => items.filter(canDownload), [items])
   const selectedDownloadable = useMemo(
@@ -268,6 +317,9 @@ export default function HistoryPage() {
         <Link to="/studio/new" className="pf-btn pf-btn-sm" style={{ marginLeft: 8 }}>
           新建科普
         </Link>
+        <Link to="/drama" className="pf-btn pf-btn-sm" style={{ marginLeft: 8 }}>
+          新建漫剧
+        </Link>
       </div>
 
       <div className="pf-stats">
@@ -307,9 +359,18 @@ export default function HistoryPage() {
               ariaLabel="项目状态"
             />
             <div className="pf-history-filter-right">
-              <button type="button" className="pf-type-select" disabled title="即将推出">
-                全部类型
-              </button>
+              <select
+                className="pf-type-select"
+                value={typeMode}
+                aria-label="项目类型"
+                onChange={(e) => setTypeMode(e.target.value as '' | 'full' | 'image_text')}
+              >
+                {TYPE_OPTIONS.map((opt) => (
+                  <option key={opt.value || 'all'} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
               <label className="pf-search-field">
                 <IconSearch size={15} />
                 <input
@@ -337,7 +398,7 @@ export default function HistoryPage() {
 
           {error ? <p className="pf-error">{error}</p> : null}
           {loading ? <p className="pf-muted">加载中…</p> : null}
-          {!loading && filtered.length === 0 ? (
+          {!loading && total === 0 ? (
             <div className="pf-history-empty">暂无项目，点击「新建项目」开始创作</div>
           ) : null}
 
@@ -373,7 +434,10 @@ export default function HistoryPage() {
                     ) : null}
                   </button>
                   <div className="pf-project-info">
-                    <h3>{p.title}</h3>
+                    <h3>
+                      {p.title}
+                      {p.published ? <span className="pf-badge ok" style={{ marginLeft: 8 }}>已发布</span> : null}
+                    </h3>
                     <div className="pf-project-meta">
                       <span className={`pf-badge ${badge}`}>
                         {STATUS_CN[p.status] || p.status}
@@ -439,7 +503,7 @@ export default function HistoryPage() {
             })}
           </div>
 
-          {filtered.length > 0 ? (
+          {total > 0 ? (
             <div className="pf-pagination">
               <button
                 type="button"

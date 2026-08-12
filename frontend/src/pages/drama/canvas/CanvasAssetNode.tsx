@@ -33,8 +33,15 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
   const mediaSrc = resolveDramaMediaUrl(data.mediaUrl)
   const showUpload = selected && CANVAS_UPLOADABLE_KINDS.has(data.kind)
   const showGenerate = selected && CANVAS_GENERATABLE_KINDS.has(data.kind)
+  const voiceLabel = typeof data.voiceLabel === 'string' ? data.voiceLabel : ''
   const footerLabel =
-    data.kind === 'character' ? '基础形象' : data.kind === 'scene' ? data.label : null
+    data.kind === 'character'
+      ? voiceLabel
+        ? `基础形象 · ${voiceLabel}`
+        : '基础形象'
+      : data.kind === 'scene'
+        ? data.label
+        : null
 
   const handleTextChange = useCallback(
     (event: ChangeEvent<HTMLTextAreaElement>) => {
@@ -47,7 +54,11 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
     <div className={`fc-asset-node${selected ? ' is-selected' : ''}${data.generating ? ' is-generating' : ''}`}>
       {showUpload ? (
         <NodeToolbar nodeId={id} position={Position.Top} align="center" offset={10}>
-          <CanvasNodeUploadBar nodeId={id} kind={data.kind} />
+          <CanvasNodeUploadBar
+            nodeId={id}
+            kind={data.kind}
+            voiceLabel={data.kind === 'character' ? voiceLabel || null : null}
+          />
         </NodeToolbar>
       ) : null}
 

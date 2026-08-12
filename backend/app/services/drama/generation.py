@@ -14,8 +14,14 @@ from app.models import User
 from app.models_drama import DramaAsset, DramaEpisodeFragment, DramaFragmentAssetRef, DramaProject
 from app.services.ark import get_ark
 from app.services.billing import record_usage
+from app.services.drama.build_seedance_generate_body import (
+    build_seedance_generate_body,
+    build_seedance_reference_catalog,
+    drama_asset_to_payload,
+)
 from app.services.drama.generation_prompt import build_generation_prompt
 from app.services.drama.seedream_options import resolve_seedream_model_endpoint, resolve_seedream_size
+from app.services.drama.voice_synthesis import synthesize_voice_asset
 
 logger = logging.getLogger(__name__)
 
@@ -116,11 +122,37 @@ async def generate_asset_image(
         asset.url = url
         params = dict(asset.params or {})
         params.update(gen_meta)
+        if prompt.strip():
+            params["visualPrompt"] = prompt.strip()
+            if not str(params.get("visualImage") or "").strip():
+                params["visualImage"] = prompt.strip()
         asset.params = params
 
     await db.commit()
     await db.refresh(asset)
     return asset
+
+
+async def generate_voice_asset_audio(
+    db: AsyncSession,
+    user: User,
+    project: DramaProject,
+    asset: DramaAsset,
+    *,
+    voice_prompt: str,
+    sample_text: str | None = None,
+    speaker: str | None = None,
+) -> DramaAsset:
+    """为 voice 类型资产按提示词合成参考音频。"""
+    return await synthesize_voice_asset(
+        db,
+        user,
+        project,
+        asset,
+        voice_prompt=voice_prompt,
+        sample_text=sample_text,
+        speaker=speaker,
+    )
 
 
 async def generate_fragment_video(
@@ -129,7 +161,7 @@ async def generate_fragment_video(
     project: DramaProject,
     fragment: DramaEpisodeFragment,
 ) -> DramaEpisodeFragment:
-    """为单个分镜片段生成 Seedance 视频。"""
+    """为单个分镜片段生成 Seedance 视频（含参考图与角色音色 reference_audio）。"""
     settings = get_settings()
     ark = get_ark()
     prompt = (fragment.content or "").strip() or "短剧分镜"
@@ -143,15 +175,43 @@ async def generate_fragment_video(
             .order_by(DramaFragmentAssetRef.id.asc())
         )
     ).scalars().all()
-    image_url = ""
+    ref_assets: list[DramaAsset] = []
+    seen_ids: set[int] = set()
     for ref in refs:
+        if ref.asset_id in seen_ids:
+            continue
         asset = await db.get(DramaAsset, ref.asset_id)
-        if asset and (asset.url or asset.cover):
-            image_url = asset.url or asset.cover or ""
-            break
+        if asset:
+            seen_ids.add(ref.asset_id)
+            ref_assets.append(asset)
+
+    ref_payloads = [drama_asset_to_payload(a) for a in ref_assets]
+    style_id = str((project.params or {}).get("image_style_id") or "").strip() or None
+    catalog = build_seedance_reference_catalog(ref_payloads)
 
     t0 = time.time()
-    if image_url:
+    image_url = ""
+    for item in catalog.images:
+        image_url = item.url
+        break
+
+    if ref_payloads and (catalog.images or catalog.audios):
+        body = build_seedance_generate_body(
+            {
+                "content": prompt,
+                "reference": ref_payloads,
+                "video_style_id": style_id,
+                "aspect_ratio": "16:9",
+                "resolution": "480p",
+                "duration_fallback": duration,
+            }
+        )
+        local_video = await ark.gen_and_wait_seedance_body(
+            body,
+            project_id=project.id,
+            shot_no=fragment.id,
+        )
+    elif image_url:
         local_video = await ark.gen_and_wait_video(
             image_url,
             prompt,
@@ -162,6 +222,7 @@ async def generate_fragment_video(
         )
     else:
         still = await ark.gen_image(prompt[:500], project_id=project.id, shot_no=fragment.id)
+        image_url = still.local_url or ""
         local_video = await ark.gen_and_wait_video(
             still.local_url,
             prompt,

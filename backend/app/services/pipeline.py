@@ -19,6 +19,7 @@ from app.services.ffmpeg_compose import (
     ShotMedia,
     allocate_durations_by_narration,
     compose_project,
+    concat_native_videos,
     is_near_silent_audio,
     probe_duration,
 )
@@ -185,6 +186,13 @@ def _is_image_text(project: Project) -> bool:
     return (project.pipeline_mode or "full") == "image_text"
 
 
+def _use_native_video_audio(project: Project | None = None) -> bool:
+    """科普 full 管线：用 Seedance generate_audio，跳过 TTS 与重合成。"""
+    if project is not None and _is_image_text(project):
+        return False
+    return bool(get_settings().kepu_seedance_generate_audio)
+
+
 def _project_output_ratio(project: Project) -> str:
     """User-selected output ratio, else template default, else 16:9."""
     allowed = {"16:9", "9:16", "1:1", "4:3", "21:9"}
@@ -321,6 +329,7 @@ async def _resume_plan(project_id: int) -> tuple[bool, bool, bool, bool]:
         if not project or not project.shots:
             return False, False, False, False
         image_text = _is_image_text(project)
+        native_audio = _use_native_video_audio(project)
         shots = list(project.shots)
         has_images = all(bool(s.image_url or s.image_ark_url) for s in shots)
 
@@ -332,7 +341,12 @@ async def _resume_plan(project_id: int) -> tuple[bool, bool, bool, bool]:
                 return False
             return not is_near_silent_audio(path)
 
-        has_audio = _continuous_audio_ok(project_id) or all(_audio_ok(s) for s in shots)
+        # 模型配音模式不依赖 TTS；静图成片仍要整片配音
+        has_audio = (
+            True
+            if native_audio
+            else (_continuous_audio_ok(project_id) or all(_audio_ok(s) for s in shots))
+        )
         has_videos = all(bool(s.video_url) for s in shots)
         # Keep existing storyboard whenever shots already exist (user may edit before continue)
         skip_script = len(shots) > 0
@@ -406,7 +420,11 @@ async def run_pipeline(project_id: int) -> None:
                     "message": (
                         "沿用已有分镜图与配音，开始合成"
                         if image_text
-                        else "沿用已有分镜图与配音，继续生成 AI 视频"
+                        else (
+                            "沿用已有分镜图，继续生成带配音的 AI 视频"
+                            if _use_native_video_audio(project)
+                            else "沿用已有分镜图与配音，继续生成 AI 视频"
+                        )
                     ),
                 },
             )
@@ -717,7 +735,7 @@ def _db_write_lock() -> asyncio.Lock:
 
 
 async def _parallel_image_and_audio(project_id: int) -> None:
-    """Generate storyboard images and TTS in parallel (audio does not need images)."""
+    """Generate storyboard images; TTS only for image_text (full 用视频模型配音)。"""
     await _set_status(project_id, ProjectStatus.IMAGING, 18, "PARALLEL_ASSETS")
     cfg = get_settings()
     ark = get_ark()
@@ -731,6 +749,7 @@ async def _parallel_image_and_audio(project_id: int) -> None:
         project = result.scalar_one()
         tpl = project.template
         image_text = _is_image_text(project)
+        native_audio = _use_native_video_audio(project)
         shot_rows = sorted(project.shots, key=lambda s: s.shot_no)
         total = len(shot_rows)
         shot_meta = [
@@ -768,14 +787,15 @@ async def _parallel_image_and_audio(project_id: int) -> None:
     img_sem = asyncio.Semaphore(max(1, cfg.pipeline_image_concurrency))
     done_img = 0
     progress_lock = asyncio.Lock()
-    need_audio = not _continuous_audio_ok(project_id)
+    # 模型配音：跳过整片 TTS；静图成片仍合成连贯旁白
+    need_audio = (not native_audio) and (not _continuous_audio_ok(project_id))
 
     async def bump_images() -> None:
         nonlocal done_img
         async with progress_lock:
             done_img += 1
             # 18 → ~55 while images; audio fills the rest when done
-            img_w = 0.7 if image_text else 0.55
+            img_w = 0.7 if image_text else (0.85 if native_audio else 0.55)
             frac = (done_img / max(total, 1)) * img_w
             pct = 18 + int(40 * frac)
             async with _db_write_lock():
@@ -785,14 +805,19 @@ async def _parallel_image_and_audio(project_id: int) -> None:
                         project.progress = pct
                         project.status = ProjectStatus.IMAGING
                         await db.commit()
+            if native_audio:
+                msg = f"出图 {done_img}/{total}（配音交由视频模型）"
+            else:
+                msg = f"出图 {done_img}/{total}" + (
+                    " · 整片配音生成中…" if need_audio else " · 配音已就绪"
+                )
             await publish_progress(
                 project_id,
                 {
                     "event": "progress",
                     "stage": "PARALLEL_ASSETS",
                     "percent": pct,
-                    "message": f"出图 {done_img}/{total}"
-                    + (" · 整片配音生成中…" if need_audio else " · 配音已就绪"),
+                    "message": msg,
                     "shot": None,
                     "total": total,
                 },
@@ -956,7 +981,11 @@ async def _parallel_image_and_audio(project_id: int) -> None:
             "event": "progress",
             "stage": "ASSETS_READY",
             "percent": 70 if image_text else 50,
-            "message": "分镜图与整片配音已完成",
+            "message": (
+                "分镜图已完成，准备视频模型配音"
+                if native_audio
+                else "分镜图与整片配音已完成"
+            ),
         },
     )
 
@@ -975,6 +1004,8 @@ async def _parallel_videos(project_id: int) -> None:
         )
         project = result.scalar_one()
         tpl = project.template
+        # 科普 full：以 KEPU_SEEDANCE_GENERATE_AUDIO 为准（忽略库内旧模板 False）
+        generate_audio = _use_native_video_audio(project)
         consistency = template_consistency_mode(tpl) == "character" and bool(
             tpl.seedance_config.get("character_consistency", True)
         )
@@ -1049,6 +1080,7 @@ async def _parallel_videos(project_id: int) -> None:
                     character_consistency=consistency,
                     resolution=resolution,
                     ratio=ratio,
+                    generate_audio=generate_audio,
                 )
             except Exception as exc:  # noqa: BLE001
                 msg = str(exc)
@@ -1078,7 +1110,10 @@ async def _parallel_videos(project_id: int) -> None:
                             "shot": meta["shot_no"],
                             "total": total,
                             "percent": pct,
-                            "message": f"镜头 {meta['shot_no']} 含真人已跳过 AI 视频，将用静图合成",
+                            "message": (
+                                f"镜头 {meta['shot_no']} 含真人已跳过 AI 视频"
+                                + ("（成片将缺该镜）" if generate_audio else "，将用静图合成")
+                            ),
                         },
                     )
                     return
@@ -1087,7 +1122,7 @@ async def _parallel_videos(project_id: int) -> None:
         dur = max(float(dur), 2.0)
         await _record_usage_est(
             project_id,
-            "seedance2:video0",
+            "seedance2:video0" if generate_audio else "seedance2:video1",
             tokens=int(dur * s.billing_est_seedance_tokens_per_sec),
             model=s.model_video,
         )
@@ -1117,7 +1152,11 @@ async def _parallel_videos(project_id: int) -> None:
                     "shot": meta["shot_no"],
                     "total": total,
                     "percent": pct,
-                    "message": f"AI 视频 {done}/{total}",
+                    "message": (
+                        f"AI 视频+配音 {done}/{total}"
+                        if generate_audio
+                        else f"AI 视频 {done}/{total}"
+                    ),
                 },
             )
 
@@ -1227,6 +1266,7 @@ async def _video_stage(project_id: int) -> None:
         )
         project = result.scalar_one()
         tpl = project.template
+        generate_audio = _use_native_video_audio(project)
         consistency = template_consistency_mode(tpl) == "character" and bool(
             tpl.seedance_config.get("character_consistency", True)
         )
@@ -1263,6 +1303,7 @@ async def _video_stage(project_id: int) -> None:
                 character_consistency=consistency,
                 resolution=resolution,
                 ratio=ratio,
+                generate_audio=generate_audio,
             )
             shot.video_url = local_video
             shot.status = ShotStatus.VIDEO_READY
@@ -1314,91 +1355,124 @@ async def _compose_stage(project_id: int) -> None:
             .options(selectinload(Project.shots), selectinload(Project.template))
         )
         project = result.scalar_one()
-        media: list[ShotMedia] = []
-        for shot in sorted(project.shots, key=lambda s: s.shot_no):
-            pdir = storage.project_dir(project_id)
-            # Resolve/download to local for FFmpeg; keep OSS URLs in DB for frontend preview
-            video_path = storage.local_path_from_url(shot.video_url or "")
-            audio_path = storage.local_path_from_url(shot.audio_url or "")
-            image_path = storage.local_path_from_url(shot.image_url or "")
-            if shot.video_url and (not video_path or not video_path.exists()):
-                if shot.video_url.startswith("http"):
-                    video_path = await storage.ensure_local_media(
-                        shot.video_url, pdir / f"shot_{shot.shot_no:03d}.mp4"
-                    )
-            if shot.audio_url and (not audio_path or not audio_path.exists()):
-                if shot.audio_url.startswith("http"):
-                    audio_path = await storage.ensure_local_media(
-                        shot.audio_url, pdir / f"shot_{shot.shot_no:03d}_tts.mp3"
-                    )
-            if shot.image_url and (not image_path or not image_path.exists()):
-                if shot.image_url.startswith("http"):
-                    image_path = await storage.ensure_local_media(
-                        shot.image_url, pdir / f"shot_{shot.shot_no:03d}.png"
-                    )
-            media.append(
-                ShotMedia(
-                    shot_no=shot.shot_no,
-                    duration=float(shot.duration),
-                    narration=shot.narration,
-                    overlay_title=getattr(shot, "overlay_title", "") or "",
-                    overlay_subtitle=getattr(shot, "overlay_subtitle", "") or "",
-                    video_path=video_path if video_path and video_path.exists() else None,
-                    audio_path=audio_path if audio_path and audio_path.exists() else None,
-                    image_path=image_path if image_path and image_path.exists() else None,
-                )
-            )
-
-        ratio = _project_output_ratio(project)
-        mode = project.pipeline_mode or "full"
-
-        full_audio = _full_narration_path(project_id)
-        if not full_audio.exists():
-            full_audio = None
-
-        sub_cfg = (project.template.subtitle_config if project.template else None) or {}
-        layout = str(sub_cfg.get("position") or "top")
-        if layout not in {"top", "split", "bottom", "center"}:
-            layout = "top"
-        # bottom/center still use top dual-line unless explicitly split
-        subtitle_layout = "split" if layout == "split" else "top"
-
-        def _f(key: str, default: float) -> float:
-            try:
-                return float(sub_cfg.get(key, default))
-            except (TypeError, ValueError):
-                return default
-
-        bgm_mood = (getattr(project, "bgm_lock", None) or "").strip()
-        if not bgm_mood and project.shots:
-            bgm_mood = (project.shots[0].bgm_mood or "").strip()
-        if not bgm_mood and project.template and isinstance(project.template.audio_config, dict):
-            bgm_mood = str(project.template.audio_config.get("bgm_mood") or "").strip()
-        bgm_path = resolve_bgm_path(bgm_mood)
-
+        native_audio = _use_native_video_audio(project)
         out = storage.project_dir(project_id) / "final.mp4"
-        await asyncio.to_thread(
-            compose_project,
-            media,
-            out,
-            ComposeOptions(
-                ratio=ratio,
-                mode=mode,
-                resolution_mode=project.resolution_mode or "preview",
-                full_audio_path=full_audio,
-                subtitle_layout=subtitle_layout,
-                title_scale=_f("title_scale", 1.35),
-                sub_scale=_f("sub_scale", 1.3),
-                caption_scale=_f("caption_scale", 1.25),
-                bgm_path=bgm_path,
-                bgm_volume=0.22,
-            ),
-        )
-        project.final_video_url = storage.publish_local(out)
-        if project.status != ProjectStatus.CANCELLED:
-            project.status = ProjectStatus.AUDITING
-            project.progress = 96
-        await db.commit()
+
+        if native_audio:
+            # 模型已含配音/字幕：只拼接镜头，不再 TTS 叠轨与烧字
+            video_paths: list[Path] = []
+            for shot in sorted(project.shots, key=lambda s: s.shot_no):
+                pdir = storage.project_dir(project_id)
+                video_path = storage.local_path_from_url(shot.video_url or "")
+                if shot.video_url and (not video_path or not video_path.exists()):
+                    if shot.video_url.startswith("http"):
+                        video_path = await storage.ensure_local_media(
+                            shot.video_url, pdir / f"shot_{shot.shot_no:03d}.mp4"
+                        )
+                if video_path and video_path.exists():
+                    video_paths.append(video_path)
+            if not video_paths:
+                raise RuntimeError("没有可用镜头视频，无法拼接成片（视频模型配音模式）")
+            await publish_progress(
+                project_id,
+                {
+                    "event": "progress",
+                    "stage": "COMPOSING",
+                    "percent": 94,
+                    "message": f"拼接 {len(video_paths)} 段带配音视频…",
+                },
+            )
+            await asyncio.to_thread(concat_native_videos, video_paths, out)
+            project.final_video_url = storage.publish_local(out)
+            if project.status != ProjectStatus.CANCELLED:
+                project.status = ProjectStatus.AUDITING
+                project.progress = 96
+            await db.commit()
+        else:
+            media: list[ShotMedia] = []
+            for shot in sorted(project.shots, key=lambda s: s.shot_no):
+                pdir = storage.project_dir(project_id)
+                # Resolve/download to local for FFmpeg; keep OSS URLs in DB for frontend preview
+                video_path = storage.local_path_from_url(shot.video_url or "")
+                audio_path = storage.local_path_from_url(shot.audio_url or "")
+                image_path = storage.local_path_from_url(shot.image_url or "")
+                if shot.video_url and (not video_path or not video_path.exists()):
+                    if shot.video_url.startswith("http"):
+                        video_path = await storage.ensure_local_media(
+                            shot.video_url, pdir / f"shot_{shot.shot_no:03d}.mp4"
+                        )
+                if shot.audio_url and (not audio_path or not audio_path.exists()):
+                    if shot.audio_url.startswith("http"):
+                        audio_path = await storage.ensure_local_media(
+                            shot.audio_url, pdir / f"shot_{shot.shot_no:03d}_tts.mp3"
+                        )
+                if shot.image_url and (not image_path or not image_path.exists()):
+                    if shot.image_url.startswith("http"):
+                        image_path = await storage.ensure_local_media(
+                            shot.image_url, pdir / f"shot_{shot.shot_no:03d}.png"
+                        )
+                media.append(
+                    ShotMedia(
+                        shot_no=shot.shot_no,
+                        duration=float(shot.duration),
+                        narration=shot.narration,
+                        overlay_title=getattr(shot, "overlay_title", "") or "",
+                        overlay_subtitle=getattr(shot, "overlay_subtitle", "") or "",
+                        video_path=video_path if video_path and video_path.exists() else None,
+                        audio_path=audio_path if audio_path and audio_path.exists() else None,
+                        image_path=image_path if image_path and image_path.exists() else None,
+                    )
+                )
+
+            ratio = _project_output_ratio(project)
+            mode = project.pipeline_mode or "full"
+
+            full_audio = _full_narration_path(project_id)
+            if not full_audio.exists():
+                full_audio = None
+
+            sub_cfg = (project.template.subtitle_config if project.template else None) or {}
+            layout = str(sub_cfg.get("position") or "top")
+            if layout not in {"top", "split", "bottom", "center"}:
+                layout = "top"
+            # bottom/center still use top dual-line unless explicitly split
+            subtitle_layout = "split" if layout == "split" else "top"
+
+            def _f(key: str, default: float) -> float:
+                try:
+                    return float(sub_cfg.get(key, default))
+                except (TypeError, ValueError):
+                    return default
+
+            bgm_mood = (getattr(project, "bgm_lock", None) or "").strip()
+            if not bgm_mood and project.shots:
+                bgm_mood = (project.shots[0].bgm_mood or "").strip()
+            if not bgm_mood and project.template and isinstance(project.template.audio_config, dict):
+                bgm_mood = str(project.template.audio_config.get("bgm_mood") or "").strip()
+            bgm_path = resolve_bgm_path(bgm_mood)
+
+            await asyncio.to_thread(
+                compose_project,
+                media,
+                out,
+                ComposeOptions(
+                    ratio=ratio,
+                    mode=mode,
+                    resolution_mode=project.resolution_mode or "preview",
+                    full_audio_path=full_audio,
+                    subtitle_layout=subtitle_layout,
+                    title_scale=_f("title_scale", 1.35),
+                    sub_scale=_f("sub_scale", 1.3),
+                    caption_scale=_f("caption_scale", 1.25),
+                    bgm_path=bgm_path,
+                    bgm_volume=0.22,
+                ),
+            )
+            project.final_video_url = storage.publish_local(out)
+            if project.status != ProjectStatus.CANCELLED:
+                project.status = ProjectStatus.AUDITING
+                project.progress = 96
+            await db.commit()
 
     async with AsyncSessionLocal() as db:
         project = await db.get(Project, project_id)
@@ -1463,6 +1537,7 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
         shot = next((s for s in project.shots if s.id == shot_id), None)
         if not shot or not (shot.image_url or shot.image_ark_url):
             raise ValueError("shot image required")
+        generate_audio = _use_native_video_audio(project)
         motion = str(project.template.seedance_config.get("motion_bias", ""))
         consistency = template_consistency_mode(project.template) == "character" and bool(
             project.template.seedance_config.get("character_consistency", True)
@@ -1494,6 +1569,7 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
             character_consistency=consistency,
             resolution=resolution,
             ratio=_project_output_ratio(project) or cfg.ark_video_ratio,
+            generate_audio=generate_audio,
         )
         shot.video_url = local_video
         shot.status = ShotStatus.VIDEO_READY
@@ -1512,6 +1588,8 @@ async def regen_shot_audio(project_id: int, shot_id: int) -> None:
             .options(selectinload(Project.template), selectinload(Project.shots))
         )
         project = result.scalar_one()
+        if _use_native_video_audio(project):
+            raise ValueError("当前为视频模型配音，请使用「重生视频」重做该镜旁白")
         shot = next((s for s in project.shots if s.id == shot_id), None)
         if not shot:
             raise ValueError("shot not found")
@@ -1536,6 +1614,10 @@ async def regen_shot_audio(project_id: int, shot_id: int) -> None:
 
 async def regen_project_audio_and_compose(project_id: int) -> None:
     """Force continuous re-TTS with current voice, then compose."""
+    async with AsyncSessionLocal() as db:
+        project = await db.get(Project, project_id)
+        if project and _use_native_video_audio(project):
+            raise ValueError("当前为视频模型配音，请重生各镜视频后点「拼接成片」")
     await _set_status(project_id, ProjectStatus.AUDIOING, 80, "AUDIOING")
     async with AsyncSessionLocal() as db:
         result = await db.execute(

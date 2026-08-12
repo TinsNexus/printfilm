@@ -25,7 +25,7 @@ from app.services.drama.agents import (
     resolve_episode_target,
 )
 from app.services.drama.jobs import dispatch_episode_scripts_job, dispatch_script_summary_job
-from app.services.drama.llm import drama_chat_text
+from app.services.drama.llm import DramaLlmUnavailableError, drama_chat_text
 
 router = APIRouter()
 logger = logging.getLogger("app.drama.agents")
@@ -215,10 +215,13 @@ async def ai_chat(
     user: User = Depends(get_current_user),
 ) -> dict:
     logger.info("漫剧聊天 user_id=%s project_id=%s", user.id, body.project_id)
-    reply = await drama_chat_text(
-        "你是 PRINTFILM 漫剧创作助手，帮助用户构思短剧创意、人物与分集结构。用简洁中文回答。",
-        body.message,
-    )
+    try:
+        reply = await drama_chat_text(
+            "你是 PRINTFILM 漫剧创作助手，帮助用户构思短剧创意、人物与分集结构。用简洁中文回答。",
+            body.message,
+        )
+    except DramaLlmUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     await record_usage(
         db,
         user_id=user.id,

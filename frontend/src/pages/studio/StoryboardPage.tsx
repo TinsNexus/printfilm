@@ -210,7 +210,9 @@ export default function StoryboardPage() {
   const audDone = shots.filter((s) => s.audio_url).length
   const vidDone = shots.filter((s) => s.video_url).length
   const assetsReady =
-    shots.length > 0 && imgDone === shots.length && audDone === shots.length
+    shots.length > 0 &&
+    imgDone === shots.length &&
+    (isFullPipeline || audDone === shots.length)
   /**
    * Full pipeline: need AI videos before compose.
    * VIDEO_READY+ means video stage finished (incl. privacy skips without video_url).
@@ -261,14 +263,10 @@ export default function StoryboardPage() {
         label: `画面生成 (${imgs}/${list.length || 0})`,
         done: list.length > 0 && imgs === list.length,
       },
-      {
-        label: `配音合成 (${auds}/${list.length || 0})`,
-        done: list.length > 0 && auds === list.length,
-      },
     ]
     if (full) {
       items.push({
-        label: `AI 视频 (${vids}/${list.length || 0})`,
+        label: `视频模型配音 (${vids}/${list.length || 0})`,
         done:
           list.length > 0 &&
           (vids === list.length ||
@@ -276,9 +274,14 @@ export default function StoryboardPage() {
         run: stage === 'VIDEOING',
         pct: stage === 'VIDEOING' ? project.progress : undefined,
       })
+    } else {
+      items.push({
+        label: `配音合成 (${auds}/${list.length || 0})`,
+        done: list.length > 0 && auds === list.length,
+      })
     }
     items.push({
-      label: '成片渲染',
+      label: full ? '镜头拼接' : '成片渲染',
       done: Boolean(project.final_video_url) || project.status === 'DONE',
       run: stage === 'COMPOSING',
       pct: stage === 'COMPOSING' ? project.progress : undefined,
@@ -604,7 +607,7 @@ export default function StoryboardPage() {
                 onClick={composeOnly}
               >
                 <IconPlay size={14} />
-                合成成片
+                拼接成片
               </button>
             ) : (
               <button
@@ -647,10 +650,10 @@ export default function StoryboardPage() {
                 className="pf-btn-text"
                 disabled={busy || running}
                 onClick={composeOnly}
-                title="用当前分镜重新合成"
-              >
-                重新合成
-              </button>
+title="用当前镜头重新拼接"
+            >
+              重新拼接
+            </button>
             ) : null}
             {primaryAction !== 'generate' && !readyToCompose ? (
               <button
@@ -874,7 +877,7 @@ export default function StoryboardPage() {
                     disabled={busy || running || !readyToCompose}
                     onClick={composeOnly}
                   >
-                    合成成片
+                    拼接成片
                   </button>
                 )}
               </div>

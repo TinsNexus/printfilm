@@ -7,9 +7,9 @@ from datetime import datetime
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sse_starlette.sse import EventSourceResponse
@@ -20,9 +20,12 @@ from app.models import Project, ProjectStatus, Shot, User, Work
 from app.schemas import (
     ContentExpandOut,
     ContentExpandRequest,
+    PageMeta,
     ProjectCreate,
     ProjectDownloadRequest,
     ProjectListItem,
+    ProjectListOut,
+    ProjectListStats,
     ProjectOut,
     ProjectUpdate,
     ShotOut,
@@ -124,15 +127,145 @@ async def create_project(
     return result.scalar_one()
 
 
-@router.get("/projects", response_model=list[ProjectListItem])
+_RUNNING_STATUSES = {
+    ProjectStatus.SCRIPTING,
+    ProjectStatus.IMAGING,
+    ProjectStatus.VIDEOING,
+    ProjectStatus.AUDIOING,
+    ProjectStatus.COMPOSING,
+    ProjectStatus.AUDITING,
+}
+
+
+@router.get("/projects", response_model=ProjectListOut)
 async def list_projects(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(8, ge=1, le=50),
+    status: str | None = Query(
+        None,
+        description="all|draft|running|done|published",
+    ),
+    q: str | None = Query(None, description="title search"),
+    pipeline_mode: str | None = Query(
+        None,
+        description="full|image_text；空=全部类型",
+    ),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> list[Project]:
-    result = await db.execute(
-        select(Project).where(Project.user_id == user.id).order_by(Project.id.desc())
+) -> ProjectListOut:
+    """Paginated project list with status / published / type filters."""
+    published_exists = (
+        select(Work.id)
+        .where(Work.project_id == Project.id, Work.user_id == user.id)
+        .correlate(Project)
+        .exists()
     )
-    return list(result.scalars().all())
+
+    base = select(Project).where(Project.user_id == user.id)
+    count_base = select(func.count()).select_from(Project).where(Project.user_id == user.id)
+
+    mode = (pipeline_mode or "").strip().lower()
+    if mode in {"full", "image_text"}:
+        base = base.where(Project.pipeline_mode == mode)
+        count_base = count_base.where(Project.pipeline_mode == mode)
+
+    keyword = (q or "").strip()
+    if keyword:
+        like = f"%{keyword}%"
+        filt = or_(Project.title.ilike(like), Project.error_msg.ilike(like))
+        base = base.where(filt)
+        count_base = count_base.where(filt)
+
+    tab = (status or "all").strip().lower()
+    if tab == "draft":
+        base = base.where(Project.status == ProjectStatus.DRAFT)
+        count_base = count_base.where(Project.status == ProjectStatus.DRAFT)
+    elif tab == "running":
+        base = base.where(Project.status.in_(_RUNNING_STATUSES))
+        count_base = count_base.where(Project.status.in_(_RUNNING_STATUSES))
+    elif tab == "done":
+        base = base.where(Project.status == ProjectStatus.DONE)
+        count_base = count_base.where(Project.status == ProjectStatus.DONE)
+    elif tab == "published":
+        base = base.where(published_exists)
+        count_base = count_base.where(published_exists)
+
+    total = int((await db.execute(count_base)).scalar_one() or 0)
+    rows = list(
+        (
+            await db.execute(
+                base.order_by(Project.id.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    published_ids: set[int] = set()
+    if rows:
+        pub_result = await db.execute(
+            select(Work.project_id).where(
+                Work.user_id == user.id,
+                Work.project_id.in_([p.id for p in rows]),
+            )
+        )
+        published_ids = {int(x) for x in pub_result.scalars().all()}
+
+    items = [
+        ProjectListItem(
+            id=p.id,
+            title=p.title,
+            template_id=p.template_id,
+            status=p.status,
+            progress=int(p.progress or 0),
+            cover_url=p.cover_url,
+            final_video_url=p.final_video_url,
+            error_msg=p.error_msg,
+            pipeline_mode=p.pipeline_mode or "full",
+            output_ratio=p.output_ratio or "",
+            published=p.id in published_ids,
+            created_at=p.created_at,
+            updated_at=p.updated_at,
+        )
+        for p in rows
+    ]
+
+    # Stats ignore status tab but keep type + search scope
+    stats_filter = [Project.user_id == user.id]
+    if mode in {"full", "image_text"}:
+        stats_filter.append(Project.pipeline_mode == mode)
+    if keyword:
+        like = f"%{keyword}%"
+        stats_filter.append(or_(Project.title.ilike(like), Project.error_msg.ilike(like)))
+
+    async def _count(*extra):
+        stmt = select(func.count()).select_from(Project).where(*stats_filter, *extra)
+        return int((await db.execute(stmt)).scalar_one() or 0)
+
+    stats_total = await _count()
+    stats_generating = await _count(Project.status.in_(_RUNNING_STATUSES))
+    stats_done = await _count(Project.status == ProjectStatus.DONE)
+    pub_stmt = (
+        select(func.count())
+        .select_from(Work)
+        .join(Project, Project.id == Work.project_id)
+        .where(Work.user_id == user.id, *stats_filter)
+    )
+    stats_published = int((await db.execute(pub_stmt)).scalar_one() or 0)
+    stats = ProjectListStats(
+        total=stats_total,
+        generating=stats_generating,
+        done=stats_done,
+        published=stats_published,
+    )
+
+    return ProjectListOut(
+        items=items,
+        meta=PageMeta(page=page, page_size=page_size, total=total),
+        stats=stats,
+    )
 
 
 def _safe_zip_name(title: str, project_id: int) -> str:
@@ -366,8 +499,11 @@ async def generate_project(
     else:
         # Continue: label the real next stage so UI never shows「拆分镜中」
         image_text = (project.pipeline_mode or "full") == "image_text"
+        from app.config import get_settings
+
+        native_audio = (not image_text) and bool(get_settings().kepu_seedance_generate_audio)
         has_images = all(bool(s.image_url or s.image_ark_url) for s in shots)
-        has_audio = all(bool(s.audio_url) for s in shots)
+        has_audio = True if native_audio else all(bool(s.audio_url) for s in shots)
         has_videos = all(bool(s.video_url) for s in shots)
         if not has_images or not has_audio:
             project.status = ProjectStatus.IMAGING
@@ -642,7 +778,14 @@ async def compose_only(
         ProjectStatus.AUDITING,
     }:
         raise HTTPException(status_code=409, detail="生成进行中，请稍后")
-    if not project.shots or not any(s.image_url for s in project.shots):
+    image_text = (project.pipeline_mode or "full") == "image_text"
+    from app.config import get_settings
+
+    native_audio = (not image_text) and bool(get_settings().kepu_seedance_generate_audio)
+    if native_audio:
+        if not project.shots or not any(s.video_url for s in project.shots):
+            raise HTTPException(status_code=400, detail="缺少镜头视频，无法拼接成片")
+    elif not project.shots or not any(s.image_url for s in project.shots):
         raise HTTPException(status_code=400, detail="缺少分镜图，无法合成")
     project.status = ProjectStatus.COMPOSING
     project.progress = 90

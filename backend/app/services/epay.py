@@ -57,8 +57,9 @@ def build_submit_fields(
         raise ValueError("易支付未配置 EPAY_PID / EPAY_KEY")
     notify = (notify_url or s.epay_notify_url or "").strip()
     ret = (return_url or s.epay_return_url or "").strip()
+    # Avoid "/api/" in notify_url — pay.gitcc.com WAF blocks those payloads.
     if not notify:
-        notify = f"{s.public_base_url.rstrip('/')}/api/billing/epay/notify"
+        notify = f"{s.public_base_url.rstrip('/')}/epay/notify"
     if not ret:
         ret = f"{s.public_base_url.rstrip('/')}/pricing?paid=1"
     fields: dict[str, str] = {
@@ -117,8 +118,13 @@ async def create_mapi_payment(
     try:
         data = resp.json()
     except Exception as exc:
-        logger.error("epay mapi non-json status=%s body=%s", resp.status_code, resp.text[:400])
-        raise ValueError("易支付返回异常") from exc
+        snippet = (resp.text or "").replace("\n", " ")[:200]
+        logger.error("epay mapi non-json status=%s body=%s", resp.status_code, snippet)
+        if resp.status_code == 403 or "防火墙" in (resp.text or ""):
+            raise ValueError(
+                "易支付防火墙拦截（请确认 notify_url 不含 /api/ 路径）"
+            ) from exc
+        raise ValueError(f"易支付返回异常(HTTP {resp.status_code})") from exc
     if int(data.get("code") or 0) != 1:
         msg = str(data.get("msg") or data.get("message") or "下单失败")
         raise ValueError(msg)

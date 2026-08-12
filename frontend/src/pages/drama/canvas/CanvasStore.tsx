@@ -23,6 +23,8 @@ import {
   type OnNodesChange,
 } from '@xyflow/react'
 import { dramaApi } from '../../../api/drama'
+import type { DramaAsset } from '../../../api/drama'
+import { enqueueDramaImageGen } from '../../../lib/dramaImageGenQueue'
 import type { ImageGenerationOptions } from '../../../lib/dramaGenerationOptions'
 import { getImageStyleId } from '../dramaWorkspaceUtils'
 import {
@@ -32,7 +34,7 @@ import {
   undoHistory,
   type CanvasHistoryState,
 } from './canvasHistory'
-import { mergeAssetsWithCanvasLayout } from './assetsToCanvasNodes'
+import { mergeAssetsWithCanvasLayout, buildNodeDataFromAsset } from './assetsToCanvasNodes'
 import {
   CANVAS_NODE_DEFAULT_LABEL,
   canvasKindToAssetType,
@@ -68,6 +70,9 @@ type CanvasStoreValue = {
   clearFocusNode: () => void
   ensureNodeAsset: (nodeId: string) => Promise<number>
   uploadNodeMedia: (nodeId: string, file: File) => Promise<void>
+  applyLibraryMediaToNode: (nodeId: string, source: DramaAsset) => Promise<void>
+  /** 用最新资产字段同步节点（音色绑定等） */
+  syncNodeFromAsset: (nodeId: string, asset: DramaAsset) => void
   generateNodeImage: (
     nodeId: string,
     prompt: string,
@@ -317,6 +322,55 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
     [ensureNodeAsset, markDirty, pushSnapshot],
   )
 
+  /** 从全局资产库选用图片并写回节点 */
+  const applyLibraryMediaToNode = useCallback(
+    async (nodeId: string, source: DramaAsset) => {
+      if (!source.url && !source.cover) {
+        throw new Error('所选资产没有可用图片')
+      }
+      pushSnapshot()
+      const assetId = await ensureNodeAsset(nodeId)
+      const updated = await dramaApi.updateAsset(assetId, {
+        url: source.url || source.cover,
+        cover: source.cover || source.url,
+      })
+      const mediaUrl = updated.url || updated.cover || ''
+      setNodes((current) =>
+        current.map((n) =>
+          n.id === nodeId
+            ? { ...n, data: { ...n.data, assetId, mediaUrl, generating: false } }
+            : n,
+        ),
+      )
+      markDirty()
+    },
+    [ensureNodeAsset, markDirty, pushSnapshot],
+  )
+
+  /** 用最新资产字段同步节点展示（音色、封面、提示词等） */
+  const syncNodeFromAsset = useCallback(
+    (nodeId: string, asset: DramaAsset) => {
+      const next = buildNodeDataFromAsset(asset)
+      setNodes((current) =>
+        current.map((n) =>
+          n.id === nodeId
+            ? {
+                ...n,
+                data: {
+                  ...n.data,
+                  ...next,
+                  // 保留本地 generating 状态，避免绑定时闪断
+                  generating: n.data.generating,
+                },
+              }
+            : n,
+        ),
+      )
+      markDirty()
+    },
+    [markDirty],
+  )
+
   /** AI 生图并写回节点 */
   const generateNodeImage = useCallback(
     async (nodeId: string, prompt: string, options?: Partial<ImageGenerationOptions>) => {
@@ -334,34 +388,20 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
 
       try {
         const assetId = await ensureNodeAsset(nodeId)
-        await dramaApi.generateImage({
-          project_id: projectId,
-          asset_id: assetId,
+        const latest = await enqueueDramaImageGen({
+          projectId,
+          assetId,
+          assetName: node.data.label,
+          assetType: node.data.kind,
           prompt: trimmed,
-          name: node.data.label,
-          asset_type_kind: node.data.kind,
-          image_style_id: options?.image_style_id || projectImageStyleId || undefined,
-          model_id: options?.model_id,
-          aspect_ratio: options?.aspect_ratio,
-          resolution: options?.resolution,
+          options: {
+            image_style_id: options?.image_style_id || projectImageStyleId || undefined,
+            model_id: options?.model_id,
+            aspect_ratio: options?.aspect_ratio,
+            resolution: options?.resolution,
+          },
         })
-        const started = Date.now()
-        let mediaUrl = ''
-        while (Date.now() - started < 10 * 60 * 1000) {
-          const list = await dramaApi.listAssets(projectId)
-          const latest = list.find((a) => a.id === assetId)
-          const gen = (latest?.params || {}).generation as
-            | { status?: string; error?: string }
-            | undefined
-          const status = String(gen?.status || '')
-          mediaUrl = latest?.url || latest?.cover || ''
-          if (mediaUrl && status !== 'generating') break
-          if (status === 'failed') {
-            throw new Error(String(gen?.error || '生图失败'))
-          }
-          if (status === 'done' && mediaUrl) break
-          await new Promise((r) => setTimeout(r, 2000))
-        }
+        const mediaUrl = latest.url || latest.cover || ''
         if (!mediaUrl) throw new Error('生图超时，请重试')
         setNodes((current) =>
           current.map((n) =>
@@ -472,6 +512,8 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
       clearFocusNode: () => setFocusNodeId(null),
       ensureNodeAsset,
       uploadNodeMedia,
+      applyLibraryMediaToNode,
+      syncNodeFromAsset,
       generateNodeImage,
       updateNodeTextContent,
       projectImageStyleId,
@@ -497,6 +539,8 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
       focusNodeId,
       ensureNodeAsset,
       uploadNodeMedia,
+      applyLibraryMediaToNode,
+      syncNodeFromAsset,
       generateNodeImage,
       updateNodeTextContent,
       projectImageStyleId,

@@ -222,8 +222,16 @@ async def seed_templates() -> None:
     async with AsyncSessionLocal() as db:
         for item in TEMPLATES:
             data = dict(item)
+            existing = await db.get(Template, data["id"])
             cover = (data.get("preview_cover") or "").strip()
-            if cover.startswith("/static/"):
+            # Skip re-upload when DB already has a public URL (avoids blocking API startup).
+            if (
+                existing
+                and (existing.preview_cover or "").startswith(("http://", "https://"))
+                and cover.startswith("/static/")
+            ):
+                data["preview_cover"] = existing.preview_cover
+            elif cover.startswith("/static/"):
                 local = storage.STATIC_ROOT / cover.removeprefix("/static/")
                 if local.is_file():
                     try:
@@ -232,7 +240,6 @@ async def seed_templates() -> None:
                         log.exception("template cover OSS publish failed: %s", local)
                 else:
                     log.warning("template cover missing on disk: %s", local)
-            existing = await db.get(Template, data["id"])
             if existing:
                 for k, v in data.items():
                     setattr(existing, k, v)

@@ -1,8 +1,8 @@
-/** 全局漫剧资产库：角色 / 场景 / 道具 / 素材 */
+/** 全局漫剧资产库：角色 / 场景 / 道具 / 素材（跨项目） */
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import AppShell from '../../components/layout/AppShell'
-import { dramaApi, type DramaAsset } from '../../api/drama'
+import { dramaApi, resolveDramaMediaUrl, type DramaAsset } from '../../api/drama'
 import RequireAuth from './RequireAuth'
 import './drama.css'
 
@@ -66,9 +66,12 @@ function AssetLibraryInner() {
       <div className="drama-page">
         <header className="drama-header">
           <div>
-            <h1>资产库</h1>
-            <p className="drama-muted">跨项目角色 / 场景 / 道具 / 素材</p>
+            <h1>外部资产库</h1>
+            <p className="drama-muted">展示你名下全部漫剧项目的角色 / 场景 / 道具 / 素材</p>
           </div>
+          <Link className="pf-btn" to="/drama">
+            返回漫剧
+          </Link>
         </header>
 
         <div className="drama-library-toolbar">
@@ -94,23 +97,30 @@ function AssetLibraryInner() {
 
         {error ? <p className="drama-error">{error}</p> : null}
 
+        <p className="drama-muted">
+          共 {assets.length} 项 · 当前 Tab {filtered.length} 项
+        </p>
+
         <div className="drama-asset-grid">
-          {filtered.map((asset) => (
-            <article key={asset.id} className="drama-asset-card">
-              {asset.cover || asset.url ? (
-                <img src={asset.cover || asset.url || ''} alt={asset.name || ''} />
-              ) : (
-                <div className="drama-asset-placeholder">{asset.type || 'asset'}</div>
-              )}
-              <h3>{asset.name || '未命名'}</h3>
-              <p>
-                {asset.type === 'none' ? '素材' : asset.type} · 项目 #{asset.project_id}
-              </p>
-              <Link className="pf-link" to={`/drama/projects/${asset.project_id}`}>
-                打开项目
-              </Link>
-            </article>
-          ))}
+          {filtered.map((asset) => {
+            const mediaSrc = resolveDramaMediaUrl(asset.cover || asset.url)
+            return (
+              <article key={asset.id} className="drama-asset-card">
+                {mediaSrc ? (
+                  <img src={mediaSrc} alt={asset.name || ''} />
+                ) : (
+                  <div className="drama-asset-placeholder">{asset.type || 'asset'}</div>
+                )}
+                <h3>{asset.name || '未命名'}</h3>
+                <p>
+                  {asset.type === 'none' ? '素材' : asset.type} · 项目 #{asset.project_id}
+                </p>
+                <Link className="pf-link" to={`/drama/projects/${asset.project_id}`}>
+                  打开项目
+                </Link>
+              </article>
+            )
+          })}
         </div>
         {filtered.length === 0 ? <p className="drama-muted">暂无匹配资产</p> : null}
       </div>
