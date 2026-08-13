@@ -317,9 +317,6 @@ export default function HistoryPage() {
         <Link to="/studio/new" className="pf-btn pf-btn-sm" style={{ marginLeft: 8 }}>
           新建科普
         </Link>
-        <Link to="/drama" className="pf-btn pf-btn-sm" style={{ marginLeft: 8 }}>
-          新建漫剧
-        </Link>
       </div>
 
       <div className="pf-stats">
