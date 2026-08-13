@@ -1130,7 +1130,37 @@ title="用当前镜头重新拼接"
           </section>
         </div>
 
-        <aside className="pf-create-col">
+        <aside className="pf-create-col pf-board-settings">
+          <h3>分镜设置</h3>
+          <label className="pf-board-field">
+            <span>时长（秒）</span>
+            <input
+              type="number"
+              min={1}
+              step={0.5}
+              value={shots[0] ? Number(shots[0].duration) || '' : ''}
+              readOnly
+              title="选中镜头后可在表格中编辑；此处为布局预览"
+            />
+          </label>
+          <label className="pf-board-field">
+            <span>运镜</span>
+            <select disabled defaultValue="auto">
+              <option value="auto">自动</option>
+              <option value="push">推进</option>
+              <option value="pan">横移</option>
+            </select>
+          </label>
+          <label className="pf-board-field">
+            <span>转场</span>
+            <select disabled defaultValue="cut">
+              <option value="cut">硬切</option>
+              <option value="fade">淡入淡出</option>
+            </select>
+          </label>
+          <p className="pf-muted" style={{ fontSize: '0.75rem', margin: '0.35rem 0 1rem' }}>
+            运镜 / 转场能力即将接入，当前可先在分镜表中改时长与旁白。
+          </p>
           <h3>生成进度</h3>
           <ul className="pf-progress-list">
             {progressItems.map((item) => (
