@@ -34,6 +34,7 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
   const showUpload = selected && CANVAS_UPLOADABLE_KINDS.has(data.kind)
   const showGenerate = selected && CANVAS_GENERATABLE_KINDS.has(data.kind)
   const voiceLabel = typeof data.voiceLabel === 'string' ? data.voiceLabel : ''
+  const voiceUrl = typeof data.voiceUrl === 'string' ? data.voiceUrl : ''
   const footerLabel =
     data.kind === 'character'
       ? voiceLabel
@@ -58,6 +59,7 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
             nodeId={id}
             kind={data.kind}
             voiceLabel={data.kind === 'character' ? voiceLabel || null : null}
+            voiceUrl={data.kind === 'character' ? voiceUrl || null : null}
           />
         </NodeToolbar>
       ) : null}

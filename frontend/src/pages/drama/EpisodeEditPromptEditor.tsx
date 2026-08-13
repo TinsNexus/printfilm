@@ -6,6 +6,7 @@ import {
   getCaretClientRect,
   insertDurationChipAtRange,
   insertMentionChipAtRange,
+  insertPlainTextAtRange,
   renderPromptEditorContent,
   resolveChipFromAsset,
   serializePromptEditorContent,
@@ -157,6 +158,21 @@ export function EpisodeEditPromptEditor({
     [closeMentionPopover, emitContent],
   )
 
+  // 插入景别 / 运镜前缀纯文本
+  const handleSelectCameraPhrase = useCallback(
+    (text: string) => {
+      const editor = editorRef.current
+      const triggerRange = mentionTriggerRangeRef.current
+      if (!editor || !triggerRange || !text) return
+      insertPlainTextAtRange(triggerRange, text)
+      mentionTriggerRangeRef.current = null
+      closeMentionPopover()
+      emitContent()
+      editor.focus()
+    },
+    [closeMentionPopover, emitContent],
+  )
+
   const contentDurationTotal = sumContentDurationSeconds(
     mentionOpen && editorRef.current
       ? serializePromptEditorContent(editorRef.current)
@@ -226,6 +242,7 @@ export function EpisodeEditPromptEditor({
         onItemsCountChange={setMentionItemsCount}
         onSelectAsset={handleSelectAsset}
         onSelectDuration={handleSelectDuration}
+        onSelectCameraPhrase={handleSelectCameraPhrase}
         onClose={closeMentionPopover}
       />
     </>

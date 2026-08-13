@@ -19,6 +19,12 @@ type Props = {
   onError: (message: string) => void
 }
 
+// 读取 voice 资产已保存的 speaker
+function readVoiceSpeaker(asset: DramaAsset): string {
+  const params = (asset.params || {}) as Record<string, unknown>
+  return typeof params.speaker === 'string' ? params.speaker.trim() : ''
+}
+
 // 读取 voice 资产的音色描述
 export function readVoicePrompt(asset: DramaAsset): string {
   const params = (asset.params || {}) as Record<string, unknown>
@@ -68,7 +74,7 @@ export function readAssetVoiceBinding(asset: DramaAsset): VoiceBinding | null {
 }
 
 // 构建绑定后的 params（同时写 voiceAudio 与 canvas.voiceAudio）
-function buildBoundParams(asset: DramaAsset, voice: DramaAsset): Record<string, unknown> {
+export function buildBoundParams(asset: DramaAsset, voice: DramaAsset): Record<string, unknown> {
   const url = voice.url || ''
   const binding: VoiceBinding = {
     sourceAssetId: voice.id,
@@ -116,6 +122,7 @@ export function CharacterVoiceBindModal({
   const [busy, setBusy] = useState(false)
   const [synthBusy, setSynthBusy] = useState(false)
   const [promptBusy, setPromptBusy] = useState(false)
+  const [suggestedSpeaker, setSuggestedSpeaker] = useState('')
   const [mode, setMode] = useState<'pick' | 'create'>('pick')
   const promptRequestedRef = useRef(false)
 
@@ -135,6 +142,7 @@ export function CharacterVoiceBindModal({
           asset_id: asset.id,
         })
         setNewPrompt(result.voice_prompt || '')
+        setSuggestedSpeaker(result.speaker || '')
       } catch (err) {
         onError(err instanceof Error ? err.message : 'AI 生成音色描述失败')
       } finally {
@@ -151,6 +159,7 @@ export function CharacterVoiceBindModal({
     }
     setSelectedId(bound?.sourceAssetId ?? null)
     setNewPrompt('')
+    setSuggestedSpeaker('')
     setNewName(`${asset.name || '角色'}音色`)
     setMode('pick')
     promptRequestedRef.current = false
@@ -189,6 +198,8 @@ export function CharacterVoiceBindModal({
         project_id: projectId,
         name: newName.trim() || undefined,
         voice_prompt: prompt,
+        speaker: suggestedSpeaker || undefined,
+        character_asset_id: asset.id,
       })
       const created = result.asset
       if (!created) throw new Error('合成失败')
@@ -212,6 +223,8 @@ export function CharacterVoiceBindModal({
         project_id: projectId,
         asset_id: voice.id,
         voice_prompt: prompt,
+        speaker: readVoiceSpeaker(voice) || suggestedSpeaker || undefined,
+        character_asset_id: asset.id,
       })
       if (result.asset) {
         setVoiceAssets((prev) => prev.map((v) => (v.id === voice.id ? result.asset! : v)))
@@ -389,6 +402,11 @@ export function CharacterVoiceBindModal({
               placeholder="将根据角色身份、性格、外形等自动生成，也可手动编辑"
             />
           </label>
+          {suggestedSpeaker ? (
+            <p className="drama-muted" style={{ margin: 0, fontSize: 12 }}>
+              推荐声线：<code>{suggestedSpeaker}</code>（不同角色会自动匹配不同 TTS 发音人）
+            </p>
+          ) : null}
           <button
             type="button"
             className="pf-btn pf-btn-lime"

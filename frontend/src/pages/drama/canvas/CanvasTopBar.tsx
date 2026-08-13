@@ -1,32 +1,39 @@
 /** 画布顶栏：返回、标题、已保存指示、设置占位 */
 import { useState } from 'react'
-import { ChevronLeft, Settings } from 'lucide-react'
+import { ChevronLeft, Maximize2, Settings } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useCanvasStore } from './CanvasStore'
 
+type Props = {
+  variant?: 'fullscreen' | 'embedded'
+}
+
 /** 渲染画布页顶部工具栏 */
-export function CanvasTopBar() {
+export function CanvasTopBar({ variant = 'fullscreen' }: Props) {
   const navigate = useNavigate()
   const { saveStatusVisible, projectId } = useCanvasStore()
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const embedded = variant === 'embedded'
 
   return (
     <>
       <div className="fc-overlay fc-topbar">
         <div className="fc-topbar-left">
-          <button
-            type="button"
-            className="fc-icon-btn"
-            aria-label="返回"
-            title="返回"
-            onClick={() => {
-              if (window.history.length > 1) navigate(-1)
-              else navigate(`/drama/projects/${projectId}`)
-            }}
-          >
-            <ChevronLeft size={20} strokeWidth={1.8} />
-          </button>
-          <span className="fc-topbar-title">资产库编排</span>
+          {embedded ? null : (
+            <button
+              type="button"
+              className="fc-icon-btn"
+              aria-label="返回"
+              title="返回"
+              onClick={() => {
+                if (window.history.length > 1) navigate(-1)
+                else navigate(`/drama/projects/${projectId}`)
+              }}
+            >
+              <ChevronLeft size={20} strokeWidth={1.8} />
+            </button>
+          )}
+          <span className="fc-topbar-title">{embedded ? '资产画布' : '资产库编排'}</span>
           {saveStatusVisible ? (
             <span className="fc-save-pill">
               <span className="fc-save-dot" />
@@ -35,16 +42,29 @@ export function CanvasTopBar() {
           ) : null}
         </div>
 
-        <button
-          type="button"
-          className="fc-icon-btn"
-          aria-label="设置"
-          title="设置"
-          aria-expanded={settingsOpen}
-          onClick={() => setSettingsOpen((v) => !v)}
-        >
-          <Settings size={18} strokeWidth={1.8} />
-        </button>
+        <div className="fc-topbar-right">
+          {embedded ? (
+            <button
+              type="button"
+              className="fc-icon-btn"
+              aria-label="全屏画布"
+              title="全屏画布"
+              onClick={() => navigate(`/drama/projects/${projectId}/canvas`)}
+            >
+              <Maximize2 size={18} strokeWidth={1.8} />
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="fc-icon-btn"
+            aria-label="设置"
+            title="设置"
+            aria-expanded={settingsOpen}
+            onClick={() => setSettingsOpen((v) => !v)}
+          >
+            <Settings size={18} strokeWidth={1.8} />
+          </button>
+        </div>
       </div>
 
       {settingsOpen ? (

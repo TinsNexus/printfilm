@@ -162,6 +162,47 @@ def _which(bin_name: str) -> str:
     return path
 
 
+def extract_video_poster_frame(
+    video: str | Path,
+    dest: Path,
+    *,
+    at_sec: float = 0.05,
+) -> bool:
+    """从视频抽取封面帧（默认接近首帧），成功返回 True。"""
+    src = Path(video)
+    if not src.exists():
+        logger.warning("抽封面失败：视频不存在 path=%s", src)
+        return False
+    try:
+        ffmpeg = _which("ffmpeg")
+    except RuntimeError:
+        logger.warning("抽封面失败：未找到 ffmpeg")
+        return False
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        ffmpeg,
+        "-y",
+        "-ss",
+        f"{max(0.0, float(at_sec)):.3f}",
+        "-i",
+        str(src),
+        "-frames:v",
+        "1",
+        "-q:v",
+        "2",
+        str(dest),
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0 or not dest.exists() or dest.stat().st_size <= 0:
+        logger.warning(
+            "抽封面失败 path=%s stderr=%s",
+            src,
+            (proc.stderr or "")[-500:],
+        )
+        return False
+    return True
+
+
 def _canvas(opts: ComposeOptions) -> tuple[int, int]:
     w, h = _RATIO_SIZE.get(opts.ratio, _RATIO_SIZE["16:9"])
     if opts.resolution_mode == "hd":

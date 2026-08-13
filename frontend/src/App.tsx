@@ -16,6 +16,7 @@ import AssetLibraryPage from './pages/drama/AssetLibraryPage'
 import ProjectWorkspacePage from './pages/drama/ProjectWorkspacePage'
 import EpisodeEditPage from './pages/drama/EpisodeEditPage'
 import CanvasPage from './pages/drama/canvas/CanvasPage'
+import EpisodeStoryboardPage from './pages/drama/episodeCanvas/EpisodeStoryboardPage'
 import './styles/printfilm.css'
 import './App.css'
 
@@ -39,6 +40,10 @@ export default function App() {
         <Route path="/drama/assets" element={<AssetLibraryPage />} />
         <Route path="/drama/projects/:projectId" element={<ProjectWorkspacePage />} />
         <Route path="/drama/projects/:projectId/episodes/:episodeId" element={<EpisodeEditPage />} />
+        <Route
+          path="/drama/projects/:projectId/episodes/:episodeId/canvas"
+          element={<EpisodeStoryboardPage />}
+        />
         <Route path="/drama/projects/:projectId/canvas" element={<CanvasPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

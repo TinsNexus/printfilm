@@ -8,6 +8,8 @@ from typing import Any
 
 from app.models_drama import DramaAsset, DramaProject
 from app.services.drama.llm import drama_chat_text
+from app.services.drama.voice_synthesis import build_voice_sample_text
+from app.services.voices import infer_drama_speaker_from_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -114,8 +116,8 @@ def fallback_voice_prompt(asset: DramaAsset, summary_char: dict[str, Any] | None
 async def suggest_voice_prompt_for_character(
     asset: DramaAsset,
     project: DramaProject,
-) -> str:
-    """根据角色资产与剧本摘要生成音色描述。"""
+) -> tuple[str, str, str]:
+    """根据角色资产与剧本摘要生成音色描述、推荐 speaker 与试听台词。"""
     summary = None
     if project.script and isinstance(project.script.summary, dict):
         summary = project.script.summary
@@ -138,4 +140,7 @@ async def suggest_voice_prompt_for_character(
     prompt = normalize_voice_prompt_text(raw)
     if len(prompt) < 8:
         prompt = fallback_voice_prompt(asset, summary_char)
-    return prompt
+    name = asset.name or "角色"
+    speaker = infer_drama_speaker_from_prompt(prompt, character_name=name, asset_id=asset.id)
+    sample_text = build_voice_sample_text(prompt, name, short=True)
+    return prompt, speaker, sample_text

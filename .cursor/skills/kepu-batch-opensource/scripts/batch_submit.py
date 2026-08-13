@@ -66,13 +66,22 @@ def build_runner() -> str:
                 "output_ratio": it["output_ratio"],
                 "voice_id": it["voice_id"],
             }}
+            if it.get("character_prompt"):
+                body["character_prompt"] = it["character_prompt"]
+            if it.get("extra_prompt"):
+                body["extra_prompt"] = it["extra_prompt"]
             p = api("POST", "/api/projects", body, token=tok)
             pid = p["id"]
-            api("PATCH", f"/api/projects/{{pid}}", {{
+            patch = {{
                 "output_ratio": it["output_ratio"],
                 "voice_id": it["voice_id"],
                 "pipeline_mode": it.get("pipeline_mode", "full"),
-            }}, token=tok)
+            }}
+            if it.get("character_prompt"):
+                patch["character_prompt"] = it["character_prompt"]
+            if it.get("extra_prompt"):
+                patch["extra_prompt"] = it["extra_prompt"]
+            api("PATCH", f"/api/projects/{{pid}}", patch, token=tok)
             gen = api("POST", f"/api/projects/{{pid}}/generate", token=tok)
             row = {{
                 "id": pid,

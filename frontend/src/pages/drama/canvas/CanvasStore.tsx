@@ -24,7 +24,7 @@ import {
 } from '@xyflow/react'
 import { dramaApi } from '../../../api/drama'
 import type { DramaAsset } from '../../../api/drama'
-import { enqueueDramaImageGen } from '../../../lib/dramaImageGenQueue'
+import { enqueueDramaImageGen, resumeDramaImageGensFromAssets } from '../../../lib/dramaImageGenQueue'
 import type { ImageGenerationOptions } from '../../../lib/dramaGenerationOptions'
 import { getImageStyleId } from '../dramaWorkspaceUtils'
 import {
@@ -139,6 +139,7 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
         if (project) {
           setProjectImageStyleId(getImageStyleId(project.script, project))
         }
+        resumeDramaImageGensFromAssets(projectId, assets)
         readyRef.current = true
       })
       .catch((err) => {

@@ -53,10 +53,11 @@ class CeleryAutoscaler:
         self.poll_sec = max(2.0, float(self.settings.celery_autoscale_poll_sec))
         self.scale_down_sec = max(5.0, float(self.settings.celery_autoscale_idle_sec))
         self.queue = (self.settings.celery_autoscale_queue or QUEUE_NAME).strip() or QUEUE_NAME
-        # Always also consume OSS upload queue so async media publish is processed.
+        # Always also consume OSS + 漫剧视频队列，避免被资产生图堵住
         queues = [q.strip() for q in self.queue.split(",") if q.strip()]
-        if "oss" not in queues:
-            queues.append("oss")
+        for extra in ("oss", "video"):
+            if extra not in queues:
+                queues.append(extra)
         self.worker_queues = ",".join(queues)
         self.host = socket.gethostname().split(".")[0]
         self.workers: dict[int, WorkerProc] = {}
@@ -85,10 +86,11 @@ class CeleryAutoscaler:
     def queue_load(self) -> tuple[int, int, int]:
         """Return (pending, unacked, load)."""
         pending = int(self._redis.llen(self.queue) or 0)
-        try:
-            pending += int(self._redis.llen("oss") or 0)
-        except Exception:  # noqa: BLE001
-            pass
+        for extra_q in ("oss", "video"):
+            try:
+                pending += int(self._redis.llen(extra_q) or 0)
+            except Exception:  # noqa: BLE001
+                pass
         try:
             unacked = int(self._redis.hlen("unacked") or 0)
         except Exception:  # noqa: BLE001

@@ -17,11 +17,17 @@ from app.schemas_drama import (
     DramaEpisodeOut,
     DramaFragmentOut,
     DramaGenerateRequest,
+    DramaPlanFragmentsRequest,
     DramaSaveFragmentsRequest,
 )
 from app.services.drama.access import get_owned_drama_project, get_owned_episode
 from app.services.drama.generation import fragment_generation_status
-from app.services.drama.jobs import dispatch_episode_generate_job
+from app.services.drama.jobs import (
+    cancel_all_episode_video_jobs,
+    cancel_episode_video_jobs,
+    dispatch_episode_fragment_plan_job,
+    dispatch_episode_generate_job,
+)
 from app.services.drama.seed import seed_episodes_from_script
 
 router = APIRouter()
@@ -78,6 +84,62 @@ async def get_episode(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DramaEpisodeOut:
+    ep = await get_owned_episode(db, episode_id, user)
+    return _episode_out(ep)
+
+
+@router.post("/episodes/{episode_id}/plan_fragments", response_model=DramaEpisodeOut)
+async def plan_episode_fragments(
+    episode_id: int,
+    body: DramaPlanFragmentsRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DramaEpisodeOut:
+    # 入队单集 LLM 分镜；前端轮询 episode.params.fragment_plan_status
+    req = body or DramaPlanFragmentsRequest()
+    ep = await get_owned_episode(db, episode_id, user)
+    await get_owned_drama_project(db, ep.project_id, user)
+
+    params = dict(ep.params or {})
+    existing = str(params.get("fragment_plan_status") or "")
+    # force 时允许重入队（避免 Celery 丢任务后卡在 generating）
+    if existing == "generating" and not req.force:
+        logger.info("单集分镜已在进行中 episode_id=%s", episode_id)
+        return _episode_out(ep)
+    if existing == "generating" and req.force:
+        logger.warning("单集分镜强制重入队 episode_id=%s prev_status=generating", episode_id)
+
+    if not req.force:
+        # 非 force：有保护分镜则拒绝
+        protected = any(
+            (f.video or "").strip()
+            or (isinstance(f.params, dict) and f.params.get("user_edited"))
+            for f in (ep.fragments or [])
+        )
+        if protected:
+            raise HTTPException(
+                status_code=409,
+                detail="本集含已生成视频或手改分镜，请确认后强制重新分镜",
+            )
+
+    params["fragment_plan_status"] = "generating"
+    params.pop("fragment_plan_error", None)
+    params["fragment_plan_mode"] = "llm"
+    ep.params = params
+    await db.commit()
+    await db.refresh(ep)
+
+    task_id = dispatch_episode_fragment_plan_job(
+        episode_id,
+        fallback_rules=bool(req.fallback_rules),
+    )
+    logger.info(
+        "已入队单集 LLM 分镜 episode_id=%s force=%s task_id=%s",
+        episode_id,
+        req.force,
+        task_id,
+    )
+    # 再取一次带 fragments 的 episode
     ep = await get_owned_episode(db, episode_id, user)
     return _episode_out(ep)
 
@@ -165,12 +227,26 @@ async def generate_episode(
     # 入队 Celery / 进程内任务，前端用 generate_status 轮询
     ep = await get_owned_episode(db, episode_id, user)
     await get_owned_drama_project(db, ep.project_id, user)
-    frags = sorted(ep.fragments or [], key=lambda f: f.sort_order)
+    all_frags = sorted(ep.fragments or [], key=lambda f: f.sort_order)
     if body.fragment_ids:
         id_set = set(body.fragment_ids)
-        frags = [f for f in frags if f.id in id_set]
+        frags = [f for f in all_frags if f.id in id_set]
+    else:
+        frags = list(all_frags)
     if not frags:
         raise HTTPException(status_code=400, detail="没有可生成的分镜")
+
+    # 已有分镜在排队/生成时，仅禁止重复提交同一分镜
+    busy_same = [
+        f.id
+        for f in frags
+        if fragment_generation_status(f).get("status") in {"queued", "running"}
+    ]
+    if busy_same:
+        raise HTTPException(
+            status_code=409,
+            detail="所选分镜正在生成，请等待完成后再试",
+        )
 
     frag_ids = [f.id for f in frags]
     for f in frags:
@@ -224,3 +300,32 @@ async def generate_status(
         "total": len(items),
         "fragments": items,
     }
+
+
+@router.post("/episodes/{episode_id}/cancel_generate")
+async def cancel_generate_episode(
+    episode_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """取消本集全部分镜视频生成（排队/进行中）。"""
+    ep = await get_owned_episode(db, episode_id, user)
+    await get_owned_drama_project(db, ep.project_id, user)
+    result = await cancel_episode_video_jobs(episode_id)
+    logger.info(
+        "已取消分集视频 episode_id=%s project_id=%s result=%s",
+        episode_id,
+        ep.project_id,
+        result,
+    )
+    return result
+
+
+@router.post("/cancel_video_jobs")
+async def cancel_all_video_jobs(
+    user: User = Depends(get_current_user),
+) -> dict:
+    """取消当前用户触发的全部漫剧分镜视频任务。"""
+    result = await cancel_all_episode_video_jobs()
+    logger.info("已取消全部视频任务 user_id=%s result=%s", user.id, result)
+    return result

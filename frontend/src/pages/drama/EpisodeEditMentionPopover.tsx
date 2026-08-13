@@ -1,8 +1,14 @@
-/** 分集编辑：输入 @ 时弹出的资产 / 时长选择层 */
+/** 分集编辑：输入 @ 时弹出的资产 / 时长 / 运镜选择层 */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Clapperboard, LayoutGrid, Timer, User } from 'lucide-react'
+import { Aperture, Clapperboard, LayoutGrid, Timer, User } from 'lucide-react'
 import { resolveDramaMediaUrl, type DramaAsset } from '../../api/drama'
+import {
+  DRAMA_CAMERA_LEXICON,
+  DRAMA_CAMERA_USAGE_TIPS,
+  filterDramaCameraLexicon,
+  type DramaCameraLexiconItem,
+} from '../../lib/dramaCameraLexicon'
 import {
   DURATION_PRESET_OPTIONS,
   FRAGMENT_CONTENT_DURATION_MAX,
@@ -24,11 +30,12 @@ type Props = {
   onItemsCountChange: (count: number) => void
   onSelectAsset: (asset: DramaAsset) => void
   onSelectDuration: (seconds: number) => void
+  onSelectCameraPhrase: (insert: string) => void
   onClose: () => void
 }
 
 type TabKey = 'assets' | 'tools'
-type ToolsView = 'list' | 'duration'
+type ToolsView = 'list' | 'duration' | 'camera'
 
 const TYPE_LABEL: Record<string, string> = {
   character: '角色',
@@ -52,6 +59,7 @@ export function EpisodeEditMentionPopover({
   onItemsCountChange,
   onSelectAsset,
   onSelectDuration,
+  onSelectCameraPhrase,
   onClose,
 }: Props) {
   const panelRef = useRef<HTMLDivElement>(null)
@@ -70,6 +78,20 @@ export function EpisodeEditMentionPopover({
     if (!q) return list
     return list.filter((a) => (a.name || '').toLowerCase().includes(q) || String(a.id).includes(q))
   }, [assets, query, referencedIds, scope])
+
+  const filteredCamera = useMemo(
+    () => filterDramaCameraLexicon(DRAMA_CAMERA_LEXICON, toolsView === 'camera' ? query : ''),
+    [query, toolsView],
+  )
+
+  const shotItems = useMemo(
+    () => filteredCamera.filter((i) => i.group === 'shot'),
+    [filteredCamera],
+  )
+  const moveItems = useMemo(
+    () => filteredCamera.filter((i) => i.group === 'move'),
+    [filteredCamera],
+  )
 
   useEffect(() => {
     onItemsCountChange(tab === 'assets' ? filteredAssets.length : 0)
@@ -97,10 +119,34 @@ export function EpisodeEditMentionPopover({
 
   if (!open || !anchorRect) return null
 
-  const top = Math.min(anchorRect.bottom + 8, window.innerHeight - 360)
-  const left = Math.min(Math.max(12, anchorRect.left), window.innerWidth - 340)
+  const top = Math.min(anchorRect.bottom + 8, window.innerHeight - 420)
+  const left = Math.min(Math.max(12, anchorRect.left), window.innerWidth - 360)
 
   const remaining = Math.max(0, FRAGMENT_CONTENT_DURATION_MAX - contentDurationTotal)
+
+  // 渲染一组运镜/景别按钮
+  function renderCameraGroup(title: string, items: DramaCameraLexiconItem[]) {
+    if (items.length === 0) return null
+    return (
+      <div className="drama-ep-mention-pop-camera-group">
+        <p className="drama-ep-mention-pop-camera-heading">{title}</p>
+        <div className="drama-ep-mention-pop-camera-grid">
+          {items.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              title={item.hint}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => onSelectCameraPhrase(item.insert)}
+            >
+              <strong>{item.label}</strong>
+              <em>{item.hint}</em>
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   return createPortal(
     <div
@@ -200,9 +246,28 @@ export function EpisodeEditMentionPopover({
               <em>剩余可用 {remaining}s</em>
             </span>
           </button>
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setToolsView('camera')}
+          >
+            <Aperture size={16} />
+            <span>
+              <strong>景别 / 运镜</strong>
+              <em>插入空镜、特写、推拉摇移等前缀</em>
+            </span>
+          </button>
         </div>
-      ) : (
+      ) : toolsView === 'duration' ? (
         <div className="drama-ep-mention-pop-duration">
+          <button
+            type="button"
+            className="drama-ep-mention-pop-back"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setToolsView('list')}
+          >
+            ← 返回
+          </button>
           <div className="drama-ep-mention-pop-duration-presets">
             {DURATION_PRESET_OPTIONS.map((sec) => {
               const disabled = sec > remaining
@@ -241,6 +306,30 @@ export function EpisodeEditMentionPopover({
               插入
             </button>
           </div>
+        </div>
+      ) : (
+        <div className="drama-ep-mention-pop-camera">
+          <button
+            type="button"
+            className="drama-ep-mention-pop-back"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setToolsView('list')}
+          >
+            ← 返回
+          </button>
+          {filteredCamera.length === 0 ? (
+            <p className="drama-ep-mention-pop-empty">无匹配词条</p>
+          ) : (
+            <>
+              {renderCameraGroup('景别', shotItems)}
+              {renderCameraGroup('运镜', moveItems)}
+            </>
+          )}
+          <ul className="drama-ep-mention-pop-camera-tips">
+            {DRAMA_CAMERA_USAGE_TIPS.map((tip) => (
+              <li key={tip}>{tip}</li>
+            ))}
+          </ul>
         </div>
       )}
     </div>,

@@ -13,7 +13,10 @@ from app.services.drama.fragment_content_duration import (
     resolve_seedance_duration_from_content,
 )
 from app.services.drama.image_styles import resolve_image_style_prompt
-from app.services.seedance_segments import build_seedance_production_section
+from app.services.seedance_segments import (
+    build_seedance_production_section,
+    rewrite_misclassified_visual_voice_lines,
+)
 
 ASSET_MENTION_TOKEN_PATTERN = re.compile(r"@asset:(\d+)")
 WHITESPACE_PATTERN = re.compile(r"\s+")
@@ -24,6 +27,10 @@ SEEDANCE_VISUAL_STYLE_SECTION_INTRO = (
 )
 SEEDANCE_CHARACTER_VOICE_SECTION_HEADER = (
     "【强制约束：角色音色】以下角色说话的音色、语气、节奏与发声质感必须与对应参考音频严格一致，"
+    "语速自然偏慢、吐字清晰，严禁加速赶词、替换、混用其他声线或自行改写："
+)
+SEEDANCE_NARRATION_VOICE_SECTION_HEADER = (
+    "【强制约束：旁白音色】以下旁白说话的音色、语气、节奏与发声质感必须与对应参考音频严格一致，"
     "语速自然偏慢、吐字清晰，严禁加速赶词、替换、混用其他声线或自行改写："
 )
 SEEDANCE_CHARACTER_APPEARANCE_SECTION_HEADER = (
@@ -44,6 +51,8 @@ class BuildSeedanceGenerateBodyInput(TypedDict, total=False):
     resolution: str | None
     video_style_id: str | None
     duration_fallback: int | None
+    # 上一镜尾帧公网/本地 URL；有参考媒体时作 reference_image（不可与 first_frame 混用）
+    continuity_first_frame_url: str | None
 
 
 @dataclass
@@ -122,6 +131,10 @@ def resolve_character_prompt_name(asset: dict[str, Any]) -> str:
     return resolve_asset_prompt_name(asset, "角色")
 
 
+def resolve_narration_prompt_name(asset: dict[str, Any]) -> str:
+    return resolve_asset_prompt_name(asset, "旁白")
+
+
 def resolve_scene_prompt_name(asset: dict[str, Any]) -> str:
     return resolve_asset_prompt_name(asset, "场景")
 
@@ -146,7 +159,7 @@ def build_seedance_reference_catalog(
             seen_image_asset_ids.add(asset_id)
             catalog.images.append(SeedanceReferenceFile(asset_id=asset_id, url=image_url))
 
-        if asset.get("type") == "character":
+        if asset.get("type") in {"character", "narration"}:
             voice_audio_url = read_asset_voice_audio_url(asset.get("params"))
             if voice_audio_url and asset_id not in seen_audio_asset_ids:
                 seen_audio_asset_ids.add(asset_id)
@@ -227,8 +240,10 @@ def build_seedance_body_text(
     reference: list[dict[str, Any]] | None,
     catalog: SeedanceReferenceCatalog,
 ) -> str:
+    # 先纠正误标为对白/旁白的空镜画面行
+    normalized = rewrite_misclassified_visual_voice_lines(content or "")
     asset_by_id = {int(asset["id"]): asset for asset in (reference or [])}
-    replaced = replace_duration_mentions_with_time_ranges(content or "")
+    replaced = replace_duration_mentions_with_time_ranges(normalized)
     replaced = ASSET_MENTION_TOKEN_PATTERN.sub(
         lambda match: replace_asset_mention_token(int(match.group(1)), asset_by_id, catalog),
         replaced,
@@ -242,10 +257,12 @@ def build_seedance_prompt_text(
     catalog: SeedanceReferenceCatalog | None = None,
     video_style_id: str | None = None,
 ) -> str:
+    # 提交前统一纠正空镜误标，保证强制约束与正文一致
+    normalized = rewrite_misclassified_visual_voice_lines(content or "")
     resolved_catalog = catalog or build_seedance_reference_catalog(reference)
     sections = [
         build_visual_style_section(video_style_id),
-        build_seedance_production_section(content or ""),
+        build_seedance_production_section(normalized),
         build_reference_index_section(
             reference,
             "character",
@@ -253,6 +270,14 @@ def build_seedance_prompt_text(
             SEEDANCE_CHARACTER_VOICE_SECTION_HEADER,
             "参考音频",
             resolve_character_prompt_name,
+        ),
+        build_reference_index_section(
+            reference,
+            "narration",
+            resolved_catalog.audio_index_by_asset_id,
+            SEEDANCE_NARRATION_VOICE_SECTION_HEADER,
+            "参考音频",
+            resolve_narration_prompt_name,
         ),
         build_reference_index_section(
             reference,
@@ -270,7 +295,7 @@ def build_seedance_prompt_text(
             "参考图",
             resolve_scene_prompt_name,
         ),
-        build_seedance_body_text(content, reference, resolved_catalog),
+        build_seedance_body_text(normalized, reference, resolved_catalog),
     ]
     return "\n\n".join(section for section in sections if section)
 
@@ -280,10 +305,29 @@ def build_seedance_content_items(
     content: str | None,
     reference: list[dict[str, Any]] | None,
     video_style_id: str | None = None,
+    continuity_first_frame_url: str | None = None,
 ) -> list[dict[str, Any]]:
     catalog = build_seedance_reference_catalog(reference)
     prompt_text = build_seedance_prompt_text(content, reference, catalog, video_style_id)
     items: list[dict[str, Any]] = []
+
+    continuity = (continuity_first_frame_url or "").strip()
+    has_reference_media = bool(catalog.images or catalog.audios)
+
+    if continuity and prompt_text:
+        # Seedance：first/last_frame 不能与 reference_* 混用；有角色/场景参考时改挂 reference_image
+        if has_reference_media:
+            prompt_text = (
+                "【强制约束：镜头衔接】另附上一镜尾帧作为参考图（参考图序列最后一张）。"
+                "本段开场须从该尾帧画面自然续接，保持主体、场景与光影连贯，禁止跳切到无关画面。\n\n"
+                + prompt_text
+            )
+        else:
+            prompt_text = (
+                "【强制约束：镜头衔接】本段视频必须以首帧图为开场画面自然续接，"
+                "保持主体、场景与光影连贯，禁止跳切到无关画面。\n\n"
+                + prompt_text
+            )
 
     if prompt_text:
         items.append({"type": "text", "text": prompt_text})
@@ -297,6 +341,25 @@ def build_seedance_content_items(
         items.append(
             {"type": "audio_url", "audio_url": {"url": audio.url}, "role": "reference_audio"}
         )
+
+    if continuity:
+        if has_reference_media:
+            items.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": continuity},
+                    "role": "reference_image",
+                }
+            )
+        else:
+            # 无参考媒体时可用 first_frame，并在外层省略 ratio
+            items.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": continuity},
+                    "role": "first_frame",
+                }
+            )
 
     return items
 
@@ -317,18 +380,27 @@ def resolve_seedance_resolution(resolution: str | None) -> str:
 def build_seedance_generate_body(input_params: BuildSeedanceGenerateBodyInput) -> dict[str, Any]:
     content = input_params.get("content")
     fallback = int(input_params.get("duration_fallback") or 8)
+    continuity = (input_params.get("continuity_first_frame_url") or "").strip() or None
+    reference = input_params.get("reference")
+    catalog = build_seedance_reference_catalog(reference)
+    # 仅「纯首帧、无参考媒体」时省略 ratio；混用参考时必须保留 ratio、且尾帧用 reference_image
+    use_first_frame_mode = bool(continuity) and not (catalog.images or catalog.audios)
 
-    return {
+    body: dict[str, Any] = {
         "model": resolve_seedance_model_endpoint(input_params.get("model_id")),
         "content": build_seedance_content_items(
             content,
-            input_params.get("reference"),
+            reference,
             input_params.get("video_style_id"),
+            continuity_first_frame_url=continuity,
         ),
         "duration": resolve_seedance_duration_from_content(content, fallback=fallback),
-        "ratio": resolve_seedance_ratio(input_params.get("aspect_ratio")),
         "resolution": resolve_seedance_resolution(input_params.get("resolution")),
         "watermark": False,
-        "generate_audio": False,
+        # Seedance 原生配音+烧录字幕；关闭则仅有画面、无对白/BGM/字幕
+        "generate_audio": True,
         "return_last_frame": True,
     }
+    if not use_first_frame_mode:
+        body["ratio"] = resolve_seedance_ratio(input_params.get("aspect_ratio"))
+    return body

@@ -48,6 +48,9 @@ export type FragmentRefStripItem = {
   name: string
   type: string
   previewUrl: string
+  isCharacter?: boolean
+  voiceLabel?: string
+  voiceUrl?: string
 }
 
 // 组装当前分镜关联资产条
@@ -55,16 +58,22 @@ export function buildFragmentRefStripItems(
   frag: DramaFragment | null | undefined,
   assets: DramaAsset[],
   resolveUrl: (url: string | null | undefined) => string,
+  readVoice?: (asset: DramaAsset) => { label: string; url: string } | null,
 ): FragmentRefStripItem[] {
   const byId = new Map(assets.map((a) => [a.id, a]))
   return collectFragmentAssetIds(frag).map((assetId) => {
     const asset = byId.get(assetId)
     const preview = asset ? resolveUrl(asset.cover || asset.url) : ''
+    const isCharacter = asset ? normalizeAssetTab(asset.type) === 'character' : false
+    const voice = asset && readVoice ? readVoice(asset) : null
     return {
       assetId,
       name: asset?.name || `资产 ${assetId}`,
       type: asset?.type || '',
       previewUrl: preview,
+      isCharacter,
+      voiceLabel: voice?.label,
+      voiceUrl: voice?.url,
     }
   })
 }
@@ -94,14 +103,16 @@ export function sumFragmentContentDuration(content: string): number {
 // 解析分镜生成状态（params.generation 或已有 video）
 export function readFragmentGenerationStatus(
   frag: DramaFragment,
-): { status: string; error?: string } {
+): { status: string; error?: string; message?: string; phase?: string } {
   if (frag.video) return { status: 'done' }
   const gen = frag.params?.generation
   if (gen && typeof gen === 'object') {
     const row = gen as Record<string, unknown>
     const status = typeof row.status === 'string' ? row.status : 'idle'
     const error = typeof row.error === 'string' ? row.error : undefined
-    return { status, error }
+    const message = typeof row.message === 'string' ? row.message : undefined
+    const phase = typeof row.phase === 'string' ? row.phase : undefined
+    return { status, error, message, phase }
   }
   return { status: 'idle' }
 }

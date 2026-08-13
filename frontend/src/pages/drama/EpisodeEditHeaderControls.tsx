@@ -1,6 +1,7 @@
 /** 分集编辑顶栏：视频风格 / 模型 / 画幅（pill 按钮 + 下拉面板） */
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
-import { BarChart3, ChevronDown, RectangleVertical, Smile } from 'lucide-react'
+import { BarChart3, ChevronDown, CircleHelp, RectangleVertical, Smile } from 'lucide-react'
+import { SeedanceRulesModal } from '../../components/drama/SeedanceRulesModal'
 import {
   getImageStyleLabel,
   IMAGE_STYLE_OPTIONS,
@@ -14,10 +15,12 @@ type Props = {
   modelId: string
   aspectRatio: (typeof RATIO_OPTIONS)[number]
   resolution: (typeof RES_OPTIONS)[number]
+  linkLastFrame: boolean
   onStyleChange: (id: ImageStyleId | '') => void
   onModelChange: (id: string) => void
   onAspectRatioChange: (r: (typeof RATIO_OPTIONS)[number]) => void
   onResolutionChange: (r: (typeof RES_OPTIONS)[number]) => void
+  onLinkLastFrameChange: (enabled: boolean) => void
   disabled?: boolean
 }
 
@@ -37,14 +40,17 @@ export function EpisodeEditHeaderControls({
   modelId,
   aspectRatio,
   resolution,
+  linkLastFrame,
   onStyleChange,
   onModelChange,
   onAspectRatioChange,
   onResolutionChange,
+  onLinkLastFrameChange,
   disabled = false,
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState<OpenPanel>(null)
+  const [rulesOpen, setRulesOpen] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -107,7 +113,20 @@ export function EpisodeEditHeaderControls({
           <span className="fc-gen-opt-label">{outputLabel}</span>
           <ChevronDown size={12} strokeWidth={2} />
         </button>
+
+        <button
+          type="button"
+          className="fc-gen-opt-btn drama-seedance-help-btn"
+          disabled={disabled}
+          title="Seedance 传值与使用规则"
+          aria-label="Seedance 传值与使用规则"
+          onClick={() => setRulesOpen(true)}
+        >
+          <CircleHelp size={14} strokeWidth={1.8} />
+        </button>
       </div>
+
+      <SeedanceRulesModal open={rulesOpen} onClose={() => setRulesOpen(false)} />
 
       {open === 'style' ? (
         <div className="fc-gen-opt-panel fc-gen-style-panel drama-ep-opt-panel" role="dialog" aria-label="视频风格">
@@ -185,6 +204,21 @@ export function EpisodeEditHeaderControls({
               </button>
             ))}
           </div>
+          <div className="fc-gen-opt-panel-title" style={{ marginTop: 12 }}>
+            镜间衔接
+          </div>
+          <label className="drama-ep-link-last-frame">
+            <input
+              type="checkbox"
+              checked={linkLastFrame}
+              disabled={disabled}
+              onChange={(e) => onLinkLastFrameChange(e.target.checked)}
+            />
+            <span>
+              用上一镜尾帧衔接
+              <em>有角色/场景参考时以参考图附带尾帧（不可与 first_frame 混用）</em>
+            </span>
+          </label>
         </div>
       ) : null}
     </div>

@@ -1,9 +1,10 @@
 /** 资产库步骤：进入时 seed，分类 Tab + 生图队列 + 角色音色绑定 */
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { dramaApi, resolveDramaMediaUrl, type DramaAsset } from '../../api/drama'
+import { Boxes, Sparkles } from 'lucide-react'
+import { dramaApi, resolveDramaMediaUrl, type DramaAsset, type DramaProject } from '../../api/drama'
 import { useDramaImageGenQueue } from '../../hooks/useDramaImageGenQueue'
-import { enqueueDramaImageGen } from '../../lib/dramaImageGenQueue'
+import { enqueueDramaImageGen, resumeDramaImageGensFromAssets } from '../../lib/dramaImageGenQueue'
 import {
   defaultOptionsForAssetKind,
   type ImageGenerationOptions,
@@ -15,6 +16,9 @@ import {
   readAssetVoiceBinding,
   readVoicePrompt,
 } from './CharacterVoiceBindModal'
+import { CharacterVoicePreviewButton } from '../../components/drama/CharacterVoicePreviewButton'
+import { generateAndBindCharacterVoice } from '../../lib/characterVoiceGenerate'
+import { NarratorVoiceBindModal } from './NarratorVoiceBindModal'
 import { DramaAssetDetailModal } from './DramaAssetDetailModal'
 import { DramaImageLightbox } from './DramaImageLightbox'
 import { GlobalAssetPickerModal, importGlobalAssetToProject } from './GlobalAssetPickerModal'
@@ -39,6 +43,13 @@ type AssetsStepProps = {
 // 将接口返回规范为资产数组，避免 undefined.filter 崩溃
 function normalizeAssetList(value: unknown): DramaAsset[] {
   return Array.isArray(value) ? (value as DramaAsset[]) : []
+}
+
+// 判断资产是否尚未出图（无有效封面/主图）
+function needsImageGeneration(asset: DramaAsset): boolean {
+  const cover = (asset.cover || '').trim()
+  const url = (asset.url || '').trim()
+  return !cover && !url
 }
 
 // 渲染资产库步骤
@@ -68,6 +79,11 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
   const [voicePromptDrafts, setVoicePromptDrafts] = useState<Record<number, string>>({})
   const [pickerOpen, setPickerOpen] = useState(false)
   const [reseedBusy, setReseedBusy] = useState(false)
+  const [project, setProject] = useState<DramaProject | null>(null)
+  const [selectedCharacterIds, setSelectedCharacterIds] = useState<number[]>([])
+  const [characterVoiceBusyIds, setCharacterVoiceBusyIds] = useState<Set<number>>(() => new Set())
+  const [batchVoiceBusy, setBatchVoiceBusy] = useState(false)
+  const [narratorVoiceOpen, setNarratorVoiceOpen] = useState(false)
   const genQueue = useDramaImageGenQueue()
   const seeded = useRef(false)
 
@@ -79,8 +95,9 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
     async function enter() {
       setLoading(true)
       try {
-        const project = await dramaApi.getProject(projectId).catch(() => null)
-        const styleId = project ? getImageStyleId(project.script, project) : ''
+        const p = await dramaApi.getProject(projectId).catch(() => null)
+        setProject(p)
+        const styleId = p ? getImageStyleId(p.script, p) : ''
         setGenOptions((prev) => ({
           ...defaultOptionsForAssetKind(tab),
           image_style_id: styleId || prev.image_style_id,
@@ -90,14 +107,20 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
         if (!seeded.current) {
           seeded.current = true
           const seededResult = await dramaApi.seedAssets(projectId)
-          setAssets(normalizeAssetList(seededResult?.assets))
+          const list = normalizeAssetList(seededResult?.assets)
+          setAssets(list)
+          resumeDramaImageGensFromAssets(projectId, list)
         } else {
-          setAssets(normalizeAssetList(await dramaApi.listAssets(projectId)))
+          const list = normalizeAssetList(await dramaApi.listAssets(projectId))
+          setAssets(list)
+          resumeDramaImageGensFromAssets(projectId, list)
         }
       } catch (err) {
         onError(err instanceof Error ? err.message : '资产加载失败')
         try {
-          setAssets(normalizeAssetList(await dramaApi.listAssets(projectId)))
+          const list = normalizeAssetList(await dramaApi.listAssets(projectId))
+          setAssets(list)
+          resumeDramaImageGensFromAssets(projectId, list)
         } catch {
           /* ignore */
         }
@@ -115,6 +138,12 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
       model_id: prev.model_id,
       resolution: prev.resolution,
     }))
+  }, [tab])
+
+  useEffect(() => {
+    if (tab !== 'character') {
+      setSelectedCharacterIds([])
+    }
   }, [tab])
 
   // 队列完成时把最新封面写回卡片
@@ -142,13 +171,22 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
   }, [genQueue, projectId])
 
   const assetList = assets ?? []
+  const narrationVoiceLabel =
+    project?.params && typeof project.params === 'object'
+      ? String(
+          ((project.params as Record<string, unknown>).narrationVoiceAudio as Record<string, unknown> | undefined)?.label ||
+            '未设置',
+        )
+      : '未设置'
   const filtered = assetList.filter((a) => {
     const t = (a.type || '').toLowerCase()
     if (tab === 'voice') return t === 'voice'
     if (tab === 'material') return t === 'material' || t === 'none' || !t
     return t === tab
   })
-  const pending = filtered.filter((a) => !(a.url || a.cover))
+  const selectedCharacterAssets = assetList.filter(
+    (a) => (a.type || '').toLowerCase() === 'character' && selectedCharacterIds.includes(a.id),
+  )
   const busyAssetIds = new Set(
     genQueue
       .filter(
@@ -157,6 +195,8 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
       )
       .map((j) => j.assetId),
   )
+  // 未出图：无有效 cover/url，且当前未在队列中
+  const pending = filtered.filter((a) => needsImageGeneration(a) && !busyAssetIds.has(a.id))
   const queueBusy = busyAssetIds.size > 0
 
   // 持久化项目画面风格
@@ -187,10 +227,23 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
       })
   }
 
-  // 一键将无封面资产全部入队
-  function batchGenerate() {
+  // 一键只入队「当前分类下尚未出图」的资产（已有图 / 排队中跳过）
+  async function batchGenerate() {
+    const targets = filtered.filter(
+      (a) => needsImageGeneration(a) && !busyAssetIds.has(a.id),
+    )
+    if (targets.length === 0) {
+      onError('当前分类没有未生成的资产')
+      return
+    }
+    const ok = await dialog.confirm({
+      title: '批量生成形象',
+      message: `将为当前「${ASSET_TABS.find((t) => t.key === tab)?.label || '分类'}」下 ${targets.length} 个未出图资产排队生图（最多 3 路并行）。是否继续？`,
+      confirmText: '开始生成',
+    })
+    if (!ok) return
     setBatchBusy(true)
-    const tasks = pending.map((asset) =>
+    const tasks = targets.map((asset) =>
       enqueueDramaImageGen({
         projectId,
         assetId: asset.id,
@@ -221,6 +274,67 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
   // 音色绑定成功后刷新列表项
   function handleVoiceBound(updated: DramaAsset) {
     setAssets((prev) => (prev ?? []).map((a) => (a.id === updated.id ? updated : a)))
+  }
+
+  function handleVoiceCreated(voice: DramaAsset) {
+    setAssets((prev) => {
+      const list = prev ?? []
+      if (list.some((a) => a.id === voice.id)) return list
+      return [...list, voice]
+    })
+  }
+
+  // 一键 AI 生成音色并绑定（各角色独立 busy，互不阻塞）
+  async function handleGenerateCharacterVoice(asset: DramaAsset) {
+    if (characterVoiceBusyIds.has(asset.id) || batchVoiceBusy) return
+    setCharacterVoiceBusyIds((prev) => new Set(prev).add(asset.id))
+    try {
+      const { character, voice } = await generateAndBindCharacterVoice(projectId, asset)
+      handleVoiceBound(character)
+      handleVoiceCreated(voice)
+    } catch (err) {
+      onError(err instanceof Error ? err.message : '音色生成失败')
+    } finally {
+      setCharacterVoiceBusyIds((prev) => {
+        const next = new Set(prev)
+        next.delete(asset.id)
+        return next
+      })
+    }
+  }
+
+  // 批量按角色设定生成音色
+  async function batchGenerateCharacterVoices() {
+    if (batchVoiceBusy || selectedCharacterAssets.length === 0) return
+    const ok = await dialog.confirm({
+      title: '批量生成音色',
+      message: `将为选中的 ${selectedCharacterAssets.length} 个角色分别 AI 生成音色并绑定，是否继续？`,
+      confirmText: '开始生成',
+    })
+    if (!ok) return
+    setBatchVoiceBusy(true)
+    let failCount = 0
+    for (const asset of selectedCharacterAssets) {
+      setCharacterVoiceBusyIds((prev) => new Set(prev).add(asset.id))
+      try {
+        const { character, voice } = await generateAndBindCharacterVoice(projectId, asset)
+        handleVoiceBound(character)
+        handleVoiceCreated(voice)
+      } catch {
+        failCount += 1
+      } finally {
+        setCharacterVoiceBusyIds((prev) => {
+          const next = new Set(prev)
+          next.delete(asset.id)
+          return next
+        })
+      }
+    }
+    setBatchVoiceBusy(false)
+    setSelectedCharacterIds([])
+    if (failCount > 0) {
+      onError(`${failCount} 个角色音色生成失败`)
+    }
   }
 
   // 从全局资产库导入到当前项目
@@ -424,6 +538,26 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
 
   return (
     <div className="drama-assets-step">
+      <header className="drama-assets-hero">
+        <div className="drama-step-hero-main">
+          <div className="drama-step-hero-icon" aria-hidden>
+            <Boxes size={22} strokeWidth={1.75} />
+          </div>
+          <div>
+            <h2>资产库</h2>
+            <p className="drama-step-hero-sub">
+              共 <strong>{assetList.length}</strong> 项资产 · 待生图{' '}
+              <strong>{pending.length}</strong>
+            </p>
+          </div>
+        </div>
+      </header>
+
+      <div className="drama-assets-tips" role="note">
+        <Sparkles size={15} strokeWidth={1.75} aria-hidden />
+        <span>先完成角色/场景出图，再进入分集视频步骤生成镜头。</span>
+      </div>
+
       <div className="drama-assets-toolbar">
         <div className="drama-asset-tabs">
           {ASSET_TABS.map((t) => (
@@ -448,6 +582,17 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
               新增音色
             </button>
           ) : null}
+          {tab !== 'voice' ? (
+            <button
+              type="button"
+              className="pf-btn"
+              onClick={() => setNarratorVoiceOpen(true)}
+              title="全局旁白音色（用于所有镜头旁白 reference_audio 一致性）"
+              disabled={!project}
+            >
+              旁白音色：{narrationVoiceLabel}
+            </button>
+          ) : null}
           <button type="button" className="pf-btn" onClick={() => setPickerOpen(true)}>
             从资产库选择
           </button>
@@ -469,9 +614,32 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
               type="button"
               className="drama-btn-primary"
               disabled={batchBusy || pending.length === 0}
-              onClick={batchGenerate}
+              onClick={() => void batchGenerate()}
+              title={
+                pending.length > 0
+                  ? `仅生成当前分类下尚未出图的 ${pending.length} 项（最多同时 3 路）`
+                  : '当前分类没有未出图资产'
+              }
             >
-              {batchBusy || queueBusy ? `队列 ${busyAssetIds.size || '…'}` : '一键生成'}
+              {batchBusy || queueBusy
+                ? `生成中 ${busyAssetIds.size}`
+                : pending.length > 0
+                  ? `一键生成未出图 (${pending.length})`
+                  : '一键生成未出图'}
+            </button>
+          ) : null}
+
+          {tab === 'character' ? (
+            <button
+              type="button"
+              className="pf-btn pf-btn-lime"
+              disabled={batchBusy || batchVoiceBusy || selectedCharacterIds.length === 0}
+              onClick={() => void batchGenerateCharacterVoices()}
+              title="按各角色人物设定分别生成音色并绑定"
+            >
+              {batchVoiceBusy
+                ? '批量生成中…'
+                : `批量生成音色（${selectedCharacterIds.length}）`}
             </button>
           ) : null}
           <Link className="pf-btn" to={`/drama/projects/${projectId}/canvas`}>
@@ -596,6 +764,26 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
                 onClick={(e) => e.stopPropagation()}
                 onKeyDown={(e) => e.stopPropagation()}
               >
+                {tab === 'character' && isCharacter ? (
+                  <label
+                    className="drama-voice-multi-select"
+                    style={{ display: 'inline-flex', gap: 8, alignItems: 'center', marginRight: 8, cursor: 'pointer' }}
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedCharacterIds.includes(asset.id)}
+                      onChange={(e) => {
+                        e.stopPropagation()
+                        setSelectedCharacterIds((prev) =>
+                          prev.includes(asset.id) ? prev.filter((id) => id !== asset.id) : [...prev, asset.id],
+                        )
+                      }}
+                    />
+                    <span className="drama-muted">选中</span>
+                  </label>
+                ) : null}
                 <button
                   type="button"
                   className="pf-btn pf-btn-sm"
@@ -606,18 +794,30 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
                 </button>
                 {isCharacter ? (
                   <>
-                    <button
-                      type="button"
-                      className="pf-btn pf-btn-sm"
-                      disabled={batchBusy}
-                      onClick={() => setVoiceAsset(asset)}
-                    >
-                      {voice ? '更换音色' : '绑定音色'}
-                    </button>
+                    {voice ? (
+                      <CharacterVoicePreviewButton
+                        url={voice.url}
+                        label={voice.label}
+                        onError={onError}
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        className="pf-btn pf-btn-sm pf-btn-lime"
+                        disabled={
+                          batchBusy ||
+                          batchVoiceBusy ||
+                          characterVoiceBusyIds.has(asset.id)
+                        }
+                        onClick={() => void handleGenerateCharacterVoice(asset)}
+                      >
+                        {characterVoiceBusyIds.has(asset.id) ? '生成中…' : '生成音色'}
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="pf-btn pf-btn-sm drama-btn-danger-text"
-                      disabled={busy || batchBusy}
+                      disabled={busy || batchBusy || batchVoiceBusy}
                       onClick={() => void handleDeleteCharacter(asset)}
                     >
                       删除
@@ -666,7 +866,20 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
           projectId={projectId}
           open
           onClose={() => setVoiceAsset(null)}
-          onBound={handleVoiceBound}
+          onBound={(updated) => {
+            handleVoiceBound(updated)
+            setDetailAsset((prev) => (prev?.id === updated.id ? updated : prev))
+          }}
+          onError={onError}
+        />
+      ) : null}
+
+      {project ? (
+        <NarratorVoiceBindModal
+          project={project}
+          open={narratorVoiceOpen}
+          onClose={() => setNarratorVoiceOpen(false)}
+          onUpdated={(p) => setProject(p)}
           onError={onError}
         />
       ) : null}

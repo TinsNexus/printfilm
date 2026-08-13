@@ -36,7 +36,8 @@ celery_app.conf.update(
         "app.workers.tasks.upload_media_task": {"queue": "oss"},
         "drama.script_summary": {"queue": "pipeline"},
         "drama.episode_scripts": {"queue": "pipeline"},
-        "drama.episode_generate": {"queue": "pipeline"},
+        # 分镜视频独立队列，避免被资产生图堵在 pipeline 后面
+        "drama.episode_generate": {"queue": "video"},
         "drama.asset_image": {"queue": "pipeline"},
     },
 )

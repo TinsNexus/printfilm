@@ -23,6 +23,7 @@ from app.models_drama import (
 from app.services.drama.build_fragments import (
     CAST_LINE_RE,
     build_fragments_from_episode_body,
+    extract_introduced_names_from_content,
     is_raw_screenplay_fragment,
     parse_cast_names,
     split_episode_content_into_scenes,
@@ -228,7 +229,9 @@ async def seed_assets_from_script(
     for name in character_names:
         if not name or name in existing_names:
             continue
-        ch = summary_by_name.get(name) or _character_stub_from_cast(name, story_type)
+        ch = summary_by_name.get(name) or _character_stub_from_cast(
+            name, story_type, summary=summary, bodies=bodies,
+        )
         asset = DramaAsset(
             project_id=project.id,
             type="character",
@@ -386,6 +389,7 @@ async def seed_episodes_from_script(
             await db.execute(select(DramaAsset).where(DramaAsset.project_id == project.id))
         ).scalars().all()
     )
+    summary = script.summary if isinstance(script.summary, dict) else None
 
     existing = list(
         (
@@ -414,6 +418,8 @@ async def seed_episodes_from_script(
 
     if not existing:
         created: list[DramaEpisode] = []
+        # series_introduced 本剧已介绍角色（按集号累计）
+        series_introduced: set[str] = set()
         for item in bodies:
             ep_no = int(item.get("episodeNumber") or len(created) + 1)
             title = str(item.get("title") or f"第{ep_no}集")
@@ -425,23 +431,59 @@ async def seed_episodes_from_script(
             )
             db.add(episode)
             await db.flush()
-            await _replace_episode_fragments(db, episode, body, assets)
+            planned = await _replace_episode_fragments(
+                db,
+                episode,
+                body,
+                assets,
+                already_introduced=series_introduced,
+                summary=summary,
+            )
+            for frag in planned:
+                series_introduced.update(
+                    extract_introduced_names_from_content(str(frag.get("content") or ""))
+                )
             created.append(episode)
         await db.commit()
         return await _reload_episodes(db, project.id)
 
     # 已有分集：按集号同步名称与分镜（已生成视频 / 用户编辑过的分镜默认保留，除非 force）
-    for episode in existing:
+    # series_introduced 按集号累计本剧已介绍角色
+    series_introduced: set[str] = set()
+    ordered_existing = sorted(
+        existing,
+        key=lambda ep: (
+            int((ep.params or {}).get("episodeNumber") or 0) if isinstance(ep.params, dict) else 0,
+            int(ep.id or 0),
+        ),
+    )
+    for episode in ordered_existing:
         params = episode.params if isinstance(episode.params, dict) else {}
         ep_no = int(params.get("episodeNumber") or 0)
         item = body_by_number.get(ep_no)
         if item is None:
+            for frag in episode.fragments or []:
+                series_introduced.update(extract_introduced_names_from_content(frag.content or ""))
             continue
         title = str(item.get("title") or episode.name)
         body = str(item.get("body") or item.get("content") or "")
         episode.name = title
         if force or _episode_should_replace_fragments(episode, body):
-            await _replace_episode_fragments(db, episode, body, assets)
+            planned = await _replace_episode_fragments(
+                db,
+                episode,
+                body,
+                assets,
+                already_introduced=series_introduced,
+                summary=summary,
+            )
+            for frag in planned:
+                series_introduced.update(
+                    extract_introduced_names_from_content(str(frag.get("content") or ""))
+                )
+        else:
+            for frag in episode.fragments or []:
+                series_introduced.update(extract_introduced_names_from_content(frag.content or ""))
 
     # 补建剧本里有、库中没有的集
     existing_numbers = {
@@ -461,8 +503,18 @@ async def seed_episodes_from_script(
         )
         db.add(episode)
         await db.flush()
-        await _replace_episode_fragments(db, episode, body, assets)
-
+        planned = await _replace_episode_fragments(
+            db,
+            episode,
+            body,
+            assets,
+            already_introduced=series_introduced,
+            summary=summary,
+        )
+        for frag in planned:
+            series_introduced.update(
+                extract_introduced_names_from_content(str(frag.get("content") or ""))
+            )
     await db.commit()
     return await _reload_episodes(db, project.id)
 
@@ -472,17 +524,52 @@ async def _replace_episode_fragments(
     episode: DramaEpisode,
     body: str,
     assets: list[DramaAsset],
-) -> None:
-    # 删除旧分镜并按场次重建（一场可拆多条）
-    for old in list(episode.fragments or []):
-        await db.delete(old)
+    drafts: list[dict[str, Any]] | None = None,
+    already_introduced: set[str] | None = None,
+    summary: dict[str, Any] | None = None,
+    *,
+    preserve_protected: bool = False,
+    continuation: bool = False,
+) -> list[dict[str, Any]]:
+    # 删除旧分镜并重建；preserve_protected 时保留已有视频/手改分镜
+    existing = list(episode.fragments or [])
+    protected = (
+        sorted(
+            [f for f in existing if _fragment_is_protected(f)],
+            key=lambda f: int(f.sort_order or 0),
+        )
+        if preserve_protected
+        else []
+    )
+    protected_ids = {int(f.id) for f in protected}
+    for old in existing:
+        if int(old.id) not in protected_ids:
+            await db.delete(old)
     await db.flush()
 
-    drafts = build_fragments_from_episode_body(body, assets)
-    for i, frag in enumerate(drafts):
+    planned = (
+        drafts
+        if drafts is not None
+        else build_fragments_from_episode_body(
+            body,
+            assets,
+            already_introduced=already_introduced,
+            summary=summary,
+        )
+    )
+    # 全量重拆时跳过与已拍前缀等量的草稿；续拆（continuation）则草稿全是后续镜
+    if protected and not continuation:
+        skip = min(len(protected), len(planned))
+        planned = planned[skip:]
+    if protected:
+        for i, frag in enumerate(protected):
+            frag.sort_order = i
+
+    base = len(protected)
+    for i, frag in enumerate(planned):
         row = DramaEpisodeFragment(
             episode_id=episode.id,
-            sort_order=i,
+            sort_order=base + i,
             content=str(frag.get("content") or ""),
             duration_sec=int(frag.get("duration_sec") or 8),
             params={
@@ -500,6 +587,40 @@ async def _replace_episode_fragments(
     ep_params = dict(episode.params) if isinstance(episode.params, dict) else {}
     ep_params["fragment_source_fp"] = _script_body_fingerprint(body)
     episode.params = ep_params
+    return planned
+
+
+def resolve_episode_script_body(episode_content: Any, episode: DramaEpisode) -> str:
+    # 按 episodeNumber 从剧本 episode_content 取本集场记正文
+    ep_no = 0
+    if isinstance(episode.params, dict):
+        ep_no = int(episode.params.get("episodeNumber") or 0)
+    for item in _normalize_episode_list(episode_content):
+        if int(item.get("episodeNumber") or 0) == ep_no:
+            return str(item.get("body") or item.get("content") or "")
+    return ""
+
+
+async def replace_episode_fragments_with_drafts(
+    db: AsyncSession,
+    episode: DramaEpisode,
+    body: str,
+    assets: list[DramaAsset],
+    drafts: list[dict[str, Any]],
+    *,
+    preserve_protected: bool = True,
+    continuation: bool = False,
+) -> None:
+    # 用外部草稿（LLM）覆盖本集分镜；默认保留已生成视频/手改
+    await _replace_episode_fragments(
+        db,
+        episode,
+        body,
+        assets,
+        drafts=drafts,
+        preserve_protected=preserve_protected,
+        continuation=continuation,
+    )
 
 
 def _script_body_fingerprint(body: str) -> str:
@@ -606,10 +727,17 @@ def _extract_cast_names_from_bodies(bodies: list[str]) -> list[str]:
     return names
 
 
-def _character_stub_from_cast(name: str, story_type: str = "") -> dict[str, Any]:
+def _character_stub_from_cast(
+    name: str,
+    story_type: str = "",
+    summary: dict[str, Any] | None = None,
+    bodies: list[str] | None = None,
+) -> dict[str, Any]:
     """分集出场但摘要未写小传时的角色 stub（供建资产 + 后续 AI 补提示词）。"""
+    from app.services.drama.build_fragments import infer_character_intro_text
+
     genre = (story_type or "").strip() or "短剧"
-    return {
+    stub_params = {
         "name": name,
         "title": "出场人物",
         "roleType": "配角",
@@ -624,6 +752,11 @@ def _character_stub_from_cast(name: str, story_type: str = "") -> dict[str, Any]
         "relationships": "",
         "growthArc": "出场 -> 卷入冲突 -> 结局余韵",
     }
+    intro = infer_character_intro_text(name, stub_params, summary, bodies)
+    if intro:
+        stub_params["title"] = intro
+        stub_params["identityBackground"] = intro
+    return stub_params
 
 
 def _normalize_episode_list(episode_content: Any) -> list[dict[str, Any]]:

@@ -1,7 +1,17 @@
 /** 漫剧 Agent 首页：AI 生剧本 / 自由画布 + 我的项目（多选删除） */
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Clapperboard, MoreHorizontal, Trash2 } from 'lucide-react'
+import {
+  Clapperboard,
+  FolderOpen,
+  LayoutGrid,
+  Library,
+  MoreHorizontal,
+  PenLine,
+  Sparkles,
+  Trash2,
+  Wand2,
+} from 'lucide-react'
 import AppShell from '../../components/layout/AppShell'
 import { dramaApi, type DramaProjectListItem } from '../../api/drama'
 import { dialog } from '../../lib/dialog'
@@ -26,6 +36,13 @@ function formatUpdatedAt(raw?: string) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+// 封面竖排标题（无预览图时）
+function verticalTitleLabel(name: string, max = 12): string {
+  const clean = (name || '').replace(/\s+/g, '')
+  if (clean.length <= max) return clean
+  return `${clean.slice(0, max - 1)}…`
+}
+
 export default function DramaListPage() {
   return (
     <RequireAuth>
@@ -43,6 +60,7 @@ function DramaListInner() {
    * episodeCount 目标集数
    * imageStyleId 画面风格
    * items 我的项目列表
+   * loading 列表加载中
    * busy 创建中
    * canvasBusy 画布创建中
    * error 错误文案
@@ -54,6 +72,7 @@ function DramaListInner() {
   const [episodeCount, setEpisodeCount] = useState(12)
   const [imageStyleId, setImageStyleId] = useState<ImageStyleId | ''>('')
   const [items, setItems] = useState<DramaProjectListItem[]>([])
+  const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [canvasBusy, setCanvasBusy] = useState(false)
   const [error, setError] = useState('')
@@ -71,7 +90,10 @@ function DramaListInner() {
   }
 
   useEffect(() => {
-    loadProjects().catch((err) => setError(err instanceof Error ? err.message : '加载失败'))
+    setLoading(true)
+    loadProjects()
+      .catch((err) => setError(err instanceof Error ? err.message : '加载失败'))
+      .finally(() => setLoading(false))
   }, [])
 
   // AI 立即生成：创建项目并进入大纲步骤
@@ -127,6 +149,9 @@ function DramaListInner() {
   }
 
   const selectionMode = selected.size > 0
+  const storyLen = storyText.trim().length
+  const canGenerate = storyLen >= CREATIVE_MIN_LENGTH && !busy
+  const withScript = items.filter((i) => i.has_script).length
 
   // 切换选中
   const toggleSelect = useCallback((id: number) => {
@@ -209,52 +234,84 @@ function DramaListInner() {
     }
   }
 
-  const canGenerate = storyText.trim().length >= CREATIVE_MIN_LENGTH && !busy
-
   return (
     <AppShell active="drama">
       <div className="drama-page drama-agent-page">
         <header className="drama-agent-hero">
-          <div className="drama-agent-hero-row">
-            <h1>漫剧 Agent</h1>
-            <Link className="pf-btn" to="/drama/assets">
+          <div className="drama-agent-hero-main">
+            <div className="drama-agent-hero-icon" aria-hidden>
+              <Wand2 size={22} strokeWidth={1.75} />
+            </div>
+            <div>
+              <h1>漫剧 Agent</h1>
+              <p className="drama-agent-hero-sub">
+                输入创意一键生成分集剧本，或从{' '}
+                <strong>自由画布</strong> 搭故事与资产
+              </p>
+            </div>
+          </div>
+          <div className="drama-agent-hero-actions">
+            <Link className="drama-btn-ghost drama-agent-assets-link" to="/drama/assets">
+              <Library size={16} strokeWidth={1.75} aria-hidden />
               外部资产库
             </Link>
           </div>
         </header>
 
-        <section className="drama-agent-panel">
-          <div className="drama-agent-tabs" role="tablist">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === 'ai'}
-              className={tab === 'ai' ? 'active' : ''}
-              onClick={() => handleTabClick('ai')}
-            >
-              AI 生剧本
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={false}
-              className=""
-              disabled={canvasBusy}
-              onClick={() => handleTabClick('canvas')}
-            >
-              {canvasBusy ? '创建中…' : '自由画布'}
-            </button>
+        <div className="drama-agent-tips" role="note">
+          <Sparkles size={15} strokeWidth={1.75} aria-hidden />
+          <span>
+            建议写明 <strong>故事设定</strong>、<strong>人物特征</strong>、<strong>剧情脉络</strong> 与结局走向，生成更稳。
+          </span>
+        </div>
+
+        <section className="drama-agent-panel" aria-label="创作入口">
+          <div className="drama-agent-panel-head">
+            <div className="drama-agent-tabs" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === 'ai'}
+                className={tab === 'ai' ? 'active' : ''}
+                onClick={() => handleTabClick('ai')}
+              >
+                <PenLine size={15} strokeWidth={1.75} aria-hidden />
+                AI 生剧本
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={false}
+                disabled={canvasBusy}
+                onClick={() => handleTabClick('canvas')}
+              >
+                <LayoutGrid size={15} strokeWidth={1.75} aria-hidden />
+                {canvasBusy ? '创建中…' : '自由画布'}
+              </button>
+            </div>
           </div>
 
           {tab === 'ai' ? (
             <div className="drama-agent-ai">
-              <textarea
-                value={storyText}
-                onChange={(e) => setStoryText(e.target.value)}
-                disabled={busy}
-                placeholder="在此输入你构想的故事内容。可以尝试输入这些要素：故事设定、主角特征、剧情脉络、最终结局等等"
-                rows={6}
-              />
+              <label className="drama-agent-ai-label" htmlFor="drama-agent-story">
+                故事创意
+              </label>
+              <div className="drama-agent-ai-field">
+                <textarea
+                  id="drama-agent-story"
+                  value={storyText}
+                  onChange={(e) => setStoryText(e.target.value)}
+                  disabled={busy}
+                  placeholder="在此输入你构想的故事内容。可以尝试输入这些要素：故事设定、主角特征、剧情脉络、最终结局等等"
+                  rows={6}
+                />
+                <span
+                  className={`drama-agent-char-count${storyLen >= CREATIVE_MIN_LENGTH ? ' is-ok' : ''}`}
+                  aria-live="polite"
+                >
+                  {storyLen}/{CREATIVE_MIN_LENGTH}
+                </span>
+              </div>
               <div className="drama-agent-ai-footer">
                 <div className="drama-agent-ai-options">
                   <DramaImageStyleModal
@@ -271,10 +328,11 @@ function DramaListInner() {
                 </div>
                 <button
                   type="button"
-                  className="drama-btn-primary"
+                  className="drama-btn-primary drama-agent-generate-btn"
                   disabled={!canGenerate}
                   onClick={() => void handleGenerate()}
                 >
+                  <Sparkles size={16} strokeWidth={1.75} aria-hidden />
                   {busy ? '创建中…' : '立即生成'}
                 </button>
               </div>
@@ -285,26 +343,62 @@ function DramaListInner() {
         {error ? <p className="drama-error drama-agent-error">{error}</p> : null}
 
         <section className="drama-project-section">
-          <h2>我的项目</h2>
-          {items.length === 0 ? (
-            <p className="drama-muted drama-project-empty">暂无项目，先用上方面板生成一部吧</p>
+          <header className="drama-project-section-head">
+            <div className="drama-project-section-title">
+              <FolderOpen size={18} strokeWidth={1.75} aria-hidden />
+              <h2>我的项目</h2>
+              {!loading && items.length > 0 ? (
+                <span className="drama-project-section-count">{items.length}</span>
+              ) : null}
+            </div>
+            {!loading && items.length > 0 ? (
+              <p className="drama-project-section-sub">
+                共 <strong>{items.length}</strong> 部 · 已写剧本{' '}
+                <strong>{withScript}</strong>
+              </p>
+            ) : null}
+          </header>
+
+          {loading ? (
+            <div className="drama-project-list" aria-busy="true" aria-label="加载项目">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="drama-project-row drama-project-row-skeleton" />
+              ))}
+            </div>
+          ) : items.length === 0 ? (
+            <div className="drama-project-empty">
+              <Clapperboard size={40} strokeWidth={1.25} aria-hidden />
+              <p>暂无项目，先用上方面板生成一部吧</p>
+              <button
+                type="button"
+                className="drama-btn-ghost"
+                onClick={() => document.getElementById('drama-agent-story')?.focus()}
+              >
+                去写故事创意
+              </button>
+            </div>
           ) : (
-            <div className="drama-project-grid">
+            <div className="drama-project-list">
               {items.map((item) => {
                 const isSelected = selected.has(item.id)
                 return (
                   <article
                     key={item.id}
-                    className={`drama-project-card${isSelected ? ' is-selected' : ''}`}
+                    className={`drama-project-row${isSelected ? ' is-selected' : ''}`}
                   >
                     <button
                       type="button"
-                      className="drama-project-card-cover"
+                      className="drama-project-row-poster"
                       onClick={() => openProject(item)}
+                      aria-label={`打开 ${item.title}`}
                     >
-                      <Clapperboard className="drama-project-card-clapper" size={40} strokeWidth={1.5} />
+                      <div className="drama-project-row-poster-fallback">
+                        <span className="drama-project-row-poster-vertical">
+                          {verticalTitleLabel(item.title)}
+                        </span>
+                      </div>
                       <label
-                        className={`drama-project-card-check${isSelected || selectionMode ? ' is-visible' : ''}`}
+                        className={`drama-project-row-check${isSelected || selectionMode ? ' is-visible' : ''}`}
                         onClick={(e) => e.stopPropagation()}
                       >
                         <input
@@ -313,35 +407,50 @@ function DramaListInner() {
                           onChange={() => toggleSelect(item.id)}
                         />
                       </label>
-                      <span className="drama-project-card-eps">{item.episode_count || 0} 集</span>
+                      <span className="drama-project-row-ep-badge">
+                        {item.episode_count || 0} 集
+                      </span>
                     </button>
-                    <div className="drama-project-card-body">
-                      <button
-                        type="button"
-                        className="drama-project-card-meta"
-                        onClick={() => openProject(item)}
-                      >
-                        <strong>{item.title}</strong>
-                        <span>{formatUpdatedAt(item.updated_at || item.created_at)}</span>
-                      </button>
-                      <details className="drama-project-card-more" onClick={(e) => e.stopPropagation()}>
-                        <summary aria-label="更多操作">
-                          <MoreHorizontal size={16} strokeWidth={1.8} />
-                        </summary>
-                        <div className="drama-project-card-menu">
-                          <button type="button" onClick={() => void handleRename(item)}>
-                            重命名
-                          </button>
-                          <button
-                            type="button"
-                            className="is-danger"
-                            onClick={() => void handleDeleteOne(item)}
-                          >
-                            删除
-                          </button>
-                        </div>
-                      </details>
-                    </div>
+
+                    <button
+                      type="button"
+                      className="drama-project-row-body"
+                      onClick={() => openProject(item)}
+                    >
+                      <strong className="drama-project-row-title">{item.title}</strong>
+                      <div className="drama-project-row-meta">
+                        <span>
+                          <Clapperboard size={14} strokeWidth={1.75} aria-hidden />
+                          {item.asset_count || 0} 资产
+                        </span>
+                        {item.has_script ? (
+                          <span className="drama-project-row-tag is-script">已有剧本</span>
+                        ) : (
+                          <span className="drama-project-row-tag">待写剧本</span>
+                        )}
+                        <span className="drama-project-row-time">
+                          {formatUpdatedAt(item.updated_at || item.created_at)}
+                        </span>
+                      </div>
+                    </button>
+
+                    <details className="drama-project-row-more" onClick={(e) => e.stopPropagation()}>
+                      <summary aria-label="更多操作">
+                        <MoreHorizontal size={16} strokeWidth={1.8} />
+                      </summary>
+                      <div className="drama-project-row-menu">
+                        <button type="button" onClick={() => void handleRename(item)}>
+                          重命名
+                        </button>
+                        <button
+                          type="button"
+                          className="is-danger"
+                          onClick={() => void handleDeleteOne(item)}
+                        >
+                          删除
+                        </button>
+                      </div>
+                    </details>
                   </article>
                 )
               })}

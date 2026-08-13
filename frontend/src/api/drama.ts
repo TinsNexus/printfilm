@@ -168,6 +168,8 @@ export type DramaImageGenerateResult = {
 export type DramaVoicePromptResult = {
   ok: boolean
   voice_prompt: string
+  speaker?: string
+  sample_text?: string
   asset_id: number
 }
 
@@ -187,7 +189,7 @@ export const dramaApi = {
   }) =>
     request<DramaProject>('/api/drama/projects', { method: 'POST', body: JSON.stringify(body) }),
   getProject: (id: number) => request<DramaProject>(`/api/drama/projects/${id}`),
-  updateProject: (id: number, body: { title?: string; description?: string }) =>
+  updateProject: (id: number, body: { title?: string; description?: string; params?: Record<string, unknown> | null }) =>
     request<DramaProject>(`/api/drama/projects/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteProject: (id: number) =>
     request<{ ok: boolean }>(`/api/drama/projects/${id}`, { method: 'DELETE' }),
@@ -287,6 +289,18 @@ export const dramaApi = {
       `/api/drama/episodes/seed_from_script?project_id=${projectId}${force ? '&force=true' : ''}`,
       { method: 'POST' },
     ),
+  /** 单集 AI（LLM）重新分镜；轮询 episode.params.fragment_plan_status */
+  planEpisodeFragments: (
+    episodeId: number,
+    body?: { force?: boolean; fallback_rules?: boolean },
+  ) =>
+    request<DramaEpisode>(`/api/drama/episodes/${episodeId}/plan_fragments`, {
+      method: 'POST',
+      body: JSON.stringify({
+        force: body?.force ?? true,
+        fallback_rules: body?.fallback_rules ?? true,
+      }),
+    }),
   saveFragments: (
     episodeId: number,
     fragments: Array<{
@@ -318,6 +332,18 @@ export const dramaApi = {
       fragments: Array<{ fragment_id: number; status: string; video?: string; cover?: string }>
     }>(`/api/drama/episodes/${episodeId}/generate_status`),
 
+  cancelEpisodeGenerate: (episodeId: number) =>
+    request<{ ok: boolean; episode_id: number; fragments: number }>(
+      `/api/drama/episodes/${episodeId}/cancel_generate`,
+      { method: 'POST' },
+    ),
+
+  cancelAllVideoJobs: () =>
+    request<{ ok: boolean; purged: number; revoked: number; fragments: number }>(
+      '/api/drama/cancel_video_jobs',
+      { method: 'POST' },
+    ),
+
   generateImage: (body: {
     project_id: number
     asset_id?: number
@@ -341,6 +367,7 @@ export const dramaApi = {
     voice_prompt: string
     sample_text?: string
     speaker?: string
+    character_asset_id?: number
   }) =>
     request<DramaVoiceGenerateResult>('/api/drama/generation/voice', {
       method: 'POST',

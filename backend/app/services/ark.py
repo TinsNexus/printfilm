@@ -142,7 +142,30 @@ class StoryboardResult:
 class TaskResult:
     status: str  # pending | running | succeeded | failed
     url: str | None = None
+    last_frame_url: str | None = None
     error: str | None = None
+
+
+# 从 Seedance 任务成功响应中提取尾帧 URL
+def _extract_seedance_last_frame_url(data: dict[str, Any]) -> str | None:
+    content = data.get("content")
+    if isinstance(content, dict):
+        for key in ("last_frame_url", "last_frame_image_url", "lastFrameUrl"):
+            value = content.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        nested = content.get("last_frame")
+        if isinstance(nested, dict):
+            nested_url = nested.get("url")
+            if isinstance(nested_url, str) and nested_url.strip():
+                return nested_url.strip()
+        if isinstance(nested, str) and nested.strip():
+            return nested.strip()
+    for key in ("last_frame_url", "last_frame_image_url", "lastFrameUrl"):
+        value = data.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
 
 
 @dataclass
@@ -613,7 +636,12 @@ class ArkGateway:
         """解析图片/音频 URL 供 Seedance 拉取。"""
         return await self._resolve_image_ref(media_url, prefer_https=prefer_https)
 
-    async def _resolve_seedance_content_items(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    async def _resolve_seedance_content_items(
+        self,
+        items: list[dict[str, Any]],
+        *,
+        project_id: int = 0,
+    ) -> list[dict[str, Any]]:
         resolved: list[dict[str, Any]] = []
         for item in items:
             copy = dict(item)
@@ -630,7 +658,12 @@ class ArkGateway:
             resolved.append(copy)
         return resolved
 
-    async def gen_video_seedance_body(self, body: dict[str, Any]) -> str:
+    async def gen_video_seedance_body(
+        self,
+        body: dict[str, Any],
+        *,
+        project_id: int = 0,
+    ) -> str:
         """提交 Seedance 多模态请求体（参考图 + reference_audio）。"""
         if self.mock:
             digest = hashlib.md5(json.dumps(body, sort_keys=True, default=str).encode()).hexdigest()[
@@ -641,7 +674,10 @@ class ArkGateway:
         payload = dict(body)
         content = payload.get("content")
         if isinstance(content, list):
-            payload["content"] = await self._resolve_seedance_content_items(content)
+            payload["content"] = await self._resolve_seedance_content_items(
+                content,
+                project_id=project_id,
+            )
         payload["duration"] = self._seedance_duration(payload.get("duration", 8))
 
         logger.info(
@@ -673,20 +709,26 @@ class ArkGateway:
         project_id: int,
         shot_no: int,
         max_attempts: int = 2,
-    ) -> str:
-        """创建 Seedance 多模态任务并等待完成。"""
+    ) -> tuple[str, str | None]:
+        """创建 Seedance 多模态任务并等待完成；返回 (本地视频 URL, 可选本地尾帧 URL)。"""
         last_err: Exception | None = None
         for _attempt in range(max_attempts):
             try:
-                task_id = await self.gen_video_seedance_body(body)
-                return await self.wait_video(task_id, project_id=project_id, shot_no=shot_no)
+                task_id = await self.gen_video_seedance_body(body, project_id=project_id)
+                return await self.wait_video_assets(
+                    task_id, project_id=project_id, shot_no=shot_no
+                )
             except Exception as exc:  # noqa: BLE001
                 last_err = exc
         raise RuntimeError(str(last_err) if last_err else "Seedance multimodal failed")
 
     async def poll_task(self, task_id: str) -> TaskResult:
         if self.mock or task_id.startswith("mock-task-"):
-            return TaskResult(status="succeeded", url=f"/static/mock/video_{task_id[-8:]}.mp4")
+            return TaskResult(
+                status="succeeded",
+                url=f"/static/mock/video_{task_id[-8:]}.mp4",
+                last_frame_url=f"/static/mock/last_{task_id[-8:]}.jpg",
+            )
 
         deadline = time.monotonic() + self.settings.ark_video_poll_timeout
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -706,12 +748,53 @@ class ArkGateway:
                         url = content.get("video_url")
                     if not url:
                         url = data.get("video_url")
-                    return TaskResult(status="succeeded", url=url)
+                    return TaskResult(
+                        status="succeeded",
+                        url=url,
+                        last_frame_url=_extract_seedance_last_frame_url(data),
+                    )
                 if status in {"failed", "cancelled", "canceled", "expired"}:
                     err = data.get("error") or data.get("message") or status
                     return TaskResult(status="failed", error=str(err))
                 await asyncio.sleep(self.settings.ark_video_poll_interval)
         return TaskResult(status="failed", error="poll timeout")
+
+    async def wait_video_assets(
+        self,
+        task_id: str,
+        *,
+        project_id: int,
+        shot_no: int,
+    ) -> tuple[str, str | None]:
+        """等待任务完成并落盘视频；若有尾帧则一并落盘。"""
+        result = await self.poll_task(task_id)
+        if result.status != "succeeded" or not result.url:
+            raise RuntimeError(result.error or "video generation failed")
+
+        if result.url.startswith("/static/"):
+            video_local = result.url
+        else:
+            dest = storage.project_dir(project_id) / f"shot_{shot_no:03d}.mp4"
+            await storage.download_to(result.url, dest)
+            video_local = storage.publish_local(dest)
+
+        last_local: str | None = None
+        if result.last_frame_url:
+            try:
+                if result.last_frame_url.startswith("/static/"):
+                    last_local = result.last_frame_url
+                else:
+                    frame_dest = storage.project_dir(project_id) / f"shot_{shot_no:03d}_last.jpg"
+                    await storage.download_to(result.last_frame_url, frame_dest)
+                    last_local = storage.publish_local(frame_dest)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Seedance last frame download failed shot_no=%s err=%s",
+                    shot_no,
+                    exc,
+                )
+                last_local = None
+        return video_local, last_local
 
     async def wait_video(
         self,
@@ -720,14 +803,10 @@ class ArkGateway:
         project_id: int,
         shot_no: int,
     ) -> str:
-        result = await self.poll_task(task_id)
-        if result.status != "succeeded" or not result.url:
-            raise RuntimeError(result.error or "video generation failed")
-        if result.url.startswith("/static/"):
-            return result.url
-        dest = storage.project_dir(project_id) / f"shot_{shot_no:03d}.mp4"
-        await storage.download_to(result.url, dest)
-        return storage.publish_local(dest)
+        video_local, _last = await self.wait_video_assets(
+            task_id, project_id=project_id, shot_no=shot_no
+        )
+        return video_local
 
     async def gen_and_wait_video(
         self,
@@ -783,6 +862,25 @@ class ArkGateway:
                 await asyncio.sleep(1.5 * (attempt + 1))
         raise RuntimeError(str(last_err) if last_err else "video generation failed")
 
+    def _openspeech_configured(self) -> bool:
+        """豆包 openspeech 是否已配置（新版 API Key 或旧版 AppId + AccessKey）。"""
+        if (self.settings.volc_tts_api_key or "").strip():
+            return True
+        return bool(self.settings.volc_tts_app_id and self.settings.volc_tts_access_key)
+
+    @staticmethod
+    def _build_tts_additions(speaker: str, emotion_hint: str | None) -> str | None:
+        """组装 openspeech additions（S_ 克隆 + 语气 context_texts）。"""
+        additions: dict[str, Any] = {}
+        if speaker.startswith("S_"):
+            additions["model_type"] = 4
+        hint = (emotion_hint or "").strip()
+        if hint:
+            additions["context_texts"] = [f"用「{hint}」的语气朗读"]
+        if not additions:
+            return None
+        return json.dumps(additions, ensure_ascii=False)
+
     async def tts(
         self,
         text: str,
@@ -791,6 +889,7 @@ class ArkGateway:
         project_id: int | None = None,
         shot_no: int | None = None,
         duration_hint: float = 4.0,
+        emotion_hint: str | None = None,
     ) -> str:
         voice_map = {
             "narrator_calm": "zh_female_cancan_uranus_bigtts",
@@ -826,10 +925,10 @@ class ArkGateway:
                 return None
             return storage.publish_local(dest)
 
-        # 1) 豆包 openspeech（需 APP ID + Access Key）
-        if self.settings.volc_tts_app_id and self.settings.volc_tts_access_key:
+        # 1) 豆包 openspeech（X-Api-Key 或 AppId + AccessKey）
+        if self._openspeech_configured():
             try:
-                ok = await self._tts_openspeech(clean, speaker, dest)
+                ok = await self._tts_openspeech(clean, speaker, dest, emotion_hint=emotion_hint)
                 if ok:
                     url = await _accept_if_audible("openspeech")
                     if url:
@@ -881,14 +980,25 @@ class ArkGateway:
             return self.settings.volc_tts_resource_id or "seed-tts-2.0"
         return "seed-tts-1.0"
 
-    async def _tts_openspeech(self, text: str, speaker: str, dest: Path) -> bool:
+    async def _tts_openspeech(
+        self,
+        text: str,
+        speaker: str,
+        dest: Path,
+        *,
+        emotion_hint: str | None = None,
+    ) -> bool:
         resource = self._tts_resource_id(speaker)
-        headers = {
+        headers: dict[str, str] = {
             "Content-Type": "application/json",
-            "X-Api-App-Id": self.settings.volc_tts_app_id,
-            "X-Api-Access-Key": self.settings.volc_tts_access_key,
             "X-Api-Resource-Id": resource,
         }
+        api_key = (self.settings.volc_tts_api_key or "").strip()
+        if api_key:
+            headers["X-Api-Key"] = api_key
+        else:
+            headers["X-Api-App-Id"] = self.settings.volc_tts_app_id
+            headers["X-Api-Access-Key"] = self.settings.volc_tts_access_key
         body: dict[str, Any] = {
             "user": {"uid": "framecut"},
             "req_params": {
@@ -897,8 +1007,9 @@ class ArkGateway:
                 "audio_params": {"format": "mp3", "sample_rate": 24000},
             },
         }
-        if speaker.startswith("S_"):
-            body["req_params"]["additions"] = json.dumps({"model_type": 4}, ensure_ascii=False)
+        additions = self._build_tts_additions(speaker, emotion_hint)
+        if additions:
+            body["req_params"]["additions"] = additions
 
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(self.settings.volc_tts_url, headers=headers, json=body)
@@ -986,11 +1097,15 @@ class ArkGateway:
             ):
                 return raw
         if prefer_https:
-            # Seedance 2.0: avoid data URI (often Invalid base64 / odd BodyFormat)
+            # Seedance 2.0: 需要公网 https；本地 /static 先同步上 OSS
             local = storage.local_path_from_url(raw)
             if local and local.exists():
+                public = storage.republish_url(raw, sync=True)
+                if public and str(public).startswith("https://"):
+                    return str(public)
                 raise RuntimeError(
-                    "Seedance 需要公网可访问的图片 URL（image_ark_url），本地图无法提交"
+                    "Seedance 需要公网可访问的图片 URL（请启用 OSS 并确保参考图已上传），"
+                    "本地 /static 图无法被方舟拉取"
                 )
             if raw.startswith("data:"):
                 raise RuntimeError("Seedance 不支持 data URI 图片，请使用 Ark CDN https 链接")

@@ -3018,14 +3018,20 @@ button.pf-shot-editable:disabled {
   border-radius: 14px;
   display: grid;
   place-items: center;
-  font-family: 'Noto Serif SC', Georgia, serif;
-  font-size: 1.35rem;
-  font-weight: 600;
   background: var(--pf-lime-soft);
   color: #3d6500;
   border: 1px solid rgba(182, 255, 0, 0.45);
   position: relative;
   z-index: 1;
+  flex-shrink: 0;
+}
+
+.pf-dialog-header {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
 }
 
 .pf-dialog--danger .pf-dialog-mark {
@@ -3045,17 +3051,18 @@ button.pf-shot-editable:disabled {
   z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
+  gap: 0.35rem;
+  min-width: 0;
+  flex: 1;
 }
 
 .pf-dialog-title {
   margin: 0;
-  font-family: 'Noto Serif SC', Georgia, serif;
-  font-size: 1.35rem;
-  font-weight: 500;
+  font-size: 1.15rem;
+  font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--pf-ink);
-  line-height: 1.25;
+  line-height: 1.3;
 }
 
 .pf-dialog-message {
@@ -3066,7 +3073,9 @@ button.pf-shot-editable:disabled {
 }
 
 .pf-dialog-input {
-  margin-top: 0.35rem;
+  position: relative;
+  z-index: 1;
+  margin-top: 0;
   border: 1px solid var(--pf-line);
   border-radius: 10px;
   padding: 0.65rem 0.8rem;

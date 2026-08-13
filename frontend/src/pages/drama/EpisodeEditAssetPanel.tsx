@@ -1,5 +1,7 @@
 /** 分集编辑：左侧资产栏（本集/全集 + 分类卡片） */
 import { resolveDramaMediaUrl, type DramaAsset } from '../../api/drama'
+import { CharacterVoicePreviewButton } from '../../components/drama/CharacterVoicePreviewButton'
+import { readAssetVoiceBinding } from './CharacterVoiceBindModal'
 import {
   ASSET_TABS,
   normalizeAssetTab,
@@ -16,6 +18,9 @@ type Props = {
   onTabChange: (tab: AssetTab | null) => void
   onOpenCanvas: () => void
   onMention: (asset: DramaAsset) => void
+  onGenerateVoice?: (asset: DramaAsset) => void
+  voiceBusyIds?: ReadonlySet<number>
+  onVoiceError?: (message: string) => void
 }
 
 // 渲染分集编辑左侧资产栏
@@ -28,6 +33,9 @@ export function EpisodeEditAssetPanel({
   onTabChange,
   onOpenCanvas,
   onMention,
+  onGenerateVoice,
+  voiceBusyIds,
+  onVoiceError,
 }: Props) {
   return (
     <aside className="drama-ep-assets">
@@ -51,7 +59,7 @@ export function EpisodeEditAssetPanel({
         <button
           type="button"
           className="drama-ep-icon-btn solid"
-          aria-label="去画布添加素材"
+          aria-label="打开分镜故事板画布"
           onClick={onOpenCanvas}
         >
           +
@@ -74,27 +82,59 @@ export function EpisodeEditAssetPanel({
           <p className="drama-ep-empty">
             {scope === 'episode'
               ? '本集暂无引用素材，可切换「全集」或点击资产插入脚本'
-              : '暂无素材，点击右上角前往画布添加'}
+              : '暂无素材，可打开分镜画布或前往资产画布添加'}
           </p>
         ) : (
           assets.map((asset) => {
             const cover = resolveDramaMediaUrl(asset.cover || asset.url)
             const isScene = normalizeAssetTab(asset.type) === 'scene'
+            const isCharacter = normalizeAssetTab(asset.type) === 'character'
+            const voice = isCharacter ? readAssetVoiceBinding(asset) : null
             const isActive = activeIds?.has(asset.id)
+            const voiceGenerating = voiceBusyIds?.has(asset.id) ?? false
             return (
-              <button
-                key={asset.id}
-                type="button"
-                className={`drama-ep-asset-card ${isScene ? 'scene' : ''}${isActive ? ' is-linked' : ''}`}
-                onClick={() => onMention(asset)}
-                title={isActive ? '本镜已关联 · 点击再次插入' : '点击插入到当前分镜'}
-              >
-                <div className="drama-ep-asset-thumb">
-                  {cover ? <img src={cover} alt="" /> : <span>{(asset.name || '?')[0]}</span>}
-                </div>
-                <span className="drama-ep-asset-name">{asset.name || `资产 ${asset.id}`}</span>
-                {isActive ? <span className="drama-ep-asset-linked">已关联</span> : null}
-              </button>
+              <div key={asset.id} className="drama-ep-asset-card-wrap">
+                <button
+                  type="button"
+                  className={`drama-ep-asset-card ${isScene ? 'scene' : ''}${isActive ? ' is-linked' : ''}`}
+                  onClick={() => onMention(asset)}
+                  title={isActive ? '本镜已关联 · 点击再次插入' : '点击插入到当前分镜'}
+                >
+                  <div className="drama-ep-asset-thumb">
+                    {cover ? (
+                      <img src={cover} alt="" loading="lazy" decoding="async" />
+                    ) : (
+                      <span>{(asset.name || '?')[0]}</span>
+                    )}
+                  </div>
+                  <span className="drama-ep-asset-name">{asset.name || `资产 ${asset.id}`}</span>
+                  {isActive ? <span className="drama-ep-asset-linked">已关联</span> : null}
+                  {voice ? <span className="drama-ep-asset-voice">音色</span> : null}
+                </button>
+                {isCharacter && onGenerateVoice ? (
+                  voice ? (
+                    <CharacterVoicePreviewButton
+                      url={voice.url}
+                      label={voice.label}
+                      variant="inline"
+                      className="drama-ep-asset-voice-btn is-bound"
+                      onError={onVoiceError}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      className="drama-ep-asset-voice-btn"
+                      disabled={voiceGenerating}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onGenerateVoice(asset)
+                      }}
+                    >
+                      {voiceGenerating ? '生成中…' : '生成音色'}
+                    </button>
+                  )
+                ) : null}
+              </div>
             )
           })
         )}

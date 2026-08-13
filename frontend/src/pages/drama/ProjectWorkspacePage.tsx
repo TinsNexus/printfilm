@@ -1,6 +1,7 @@
 /** 漫剧项目工作流：剧情大纲 / 资产库 / 分集视频 */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { ChevronLeft } from 'lucide-react'
 import AppShell from '../../components/layout/AppShell'
 import { dramaApi, type DramaProject } from '../../api/drama'
 import {
@@ -149,7 +150,7 @@ function WorkspaceInner() {
               aria-label="返回"
               onClick={() => navigate('/drama/dramas')}
             >
-              ←
+              <ChevronLeft size={20} strokeWidth={1.75} />
             </button>
             {editingTitle ? (
               <input

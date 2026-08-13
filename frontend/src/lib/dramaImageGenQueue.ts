@@ -1,6 +1,7 @@
-/** 漫剧资产生图全局队列：串行入队，避免多次点击互相顶掉 */
+/** 漫剧资产生图队列：入队即提交后端 Worker，刷新后可从资产状态恢复 */
 import { dramaApi, type DramaAsset } from '../api/drama'
 import type { ImageGenerationOptions } from './dramaGenerationOptions'
+import { syncImageJobToUnified } from './dramaGenQueue'
 
 export type DramaImageGenStatus = 'queued' | 'running' | 'done' | 'failed'
 
@@ -25,32 +26,37 @@ type EnqueueInput = {
   assetType?: string
   prompt: string
   options?: Partial<ImageGenerationOptions>
+  /** 仅恢复轮询（后端已在 generating，不再重复 POST） */
+  resumeOnly?: boolean
 }
 
 type InternalJob = DramaImageGenJob & {
+  resumeOnly: boolean
   resolve: (asset: DramaAsset) => void
   reject: (err: Error) => void
 }
 
-/* 同时跑几路生图；1 = 严格队列，避免互相顶掉与限流 */
-const MAX_CONCURRENT = 1
-/* 完成后在面板保留多久 */
+/* 前端同时轮询几路；真正执行在 Celery Worker */
+const MAX_POLL_CONCURRENT = 6
 const DONE_RETENTION_MS = 45_000
 const POLL_INTERVAL_MS = 2000
 const POLL_TIMEOUT_MS = 10 * 60 * 1000
 
+/** 对外暴露（文案用） */
+export const DRAMA_IMAGE_GEN_MAX_CONCURRENT = MAX_POLL_CONCURRENT
+
 /*
- * jobs 内部队列
- * cachedSnapshot useSyncExternalStore 稳定快照（必须复用引用）
- * listeners 订阅回调
- * activeCount 正在请求/轮询的任务数
- * pumping 是否已调度 pump
+ * jobs 本地队列（UI + 轮询）
+ * cachedSnapshot useSyncExternalStore 快照
+ * listeners 订阅
+ * pollingCount 正在 waitForAssetImage 的数量
+ * pumping 是否已调度 poll pump
  */
 let jobs: InternalJob[] = []
 const EMPTY_SNAPSHOT: DramaImageGenJob[] = []
 let cachedSnapshot: DramaImageGenJob[] = EMPTY_SNAPSHOT
 const listeners = new Set<() => void>()
-let activeCount = 0
+let pollingCount = 0
 let pumping = false
 
 // 将内部 job 转为对外结构
@@ -89,44 +95,50 @@ function snapshotsEqual(a: DramaImageGenJob[], b: DramaImageGenJob[]): boolean {
   return true
 }
 
-// 重建并缓存对外快照（仅在内容变化时换新引用）
+// 清理过期完成项
+function pruneFinished() {
+  const now = Date.now()
+  jobs = jobs.filter((job) => {
+    if (job.status === 'queued' || job.status === 'running') return true
+    if (!job.finishedAt) return true
+    return now - job.finishedAt < DONE_RETENTION_MS
+  })
+}
+
+// 重建并缓存对外快照
 function refreshSnapshot() {
   pruneFinished()
-  const next =
-    jobs.length === 0 ? EMPTY_SNAPSHOT : jobs.map((job) => toPublicJob(job))
+  const next = jobs.length === 0 ? EMPTY_SNAPSHOT : jobs.map((job) => toPublicJob(job))
   if (!snapshotsEqual(cachedSnapshot, next)) {
     cachedSnapshot = next
   }
 }
 
-// 通知所有订阅方刷新
+// 通知订阅者，并同步到统一生成队列
 function emit() {
   refreshSnapshot()
-  listeners.forEach((fn) => {
-    try {
-      fn()
-    } catch {
-      /* ignore listener errors */
+  listeners.forEach((listener) => listener())
+  for (const job of jobs) {
+    if (job.status === 'queued' || job.status === 'running' || job.finishedAt) {
+      syncImageJobToUnified({
+        assetId: job.assetId,
+        projectId: job.projectId,
+        assetName: job.assetName,
+        assetType: job.assetType,
+        status: job.status,
+        error: job.error,
+      })
     }
-  })
+  }
 }
 
-// 清理过期的完成/失败项
-function pruneFinished() {
-  const now = Date.now()
-  jobs = jobs.filter((job) => {
-    if (job.status === 'queued' || job.status === 'running') return true
-    if (!job.finishedAt) return false
-    return now - job.finishedAt < DONE_RETENTION_MS
-  })
-}
-
-// 对外只读快照（稳定引用，供 useSyncExternalStore）
+// 读取队列快照
 export function getDramaImageGenQueue(): DramaImageGenJob[] {
+  refreshSnapshot()
   return cachedSnapshot
 }
 
-// 资产是否仍在队列中（排队或生成中）
+// 某资产是否忙
 export function isDramaAssetImageBusy(assetId: number): boolean {
   return jobs.some(
     (job) =>
@@ -152,21 +164,25 @@ function makeJobId() {
   return `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-// 轮询直到资产生图结束，返回最新资产
+// 读取资产 generation 状态
+function readGenerationStatus(asset: DramaAsset): string {
+  const gen = (asset.params || {}).generation as { status?: string } | undefined
+  return String(gen?.status || '')
+}
+
+// 轮询直到资产生图结束
 async function waitForAssetImage(projectId: number, assetId: number): Promise<DramaAsset> {
   const started = Date.now()
   while (Date.now() - started < POLL_TIMEOUT_MS) {
     const list = await dramaApi.listAssets(projectId)
     const latest = list.find((a) => a.id === assetId)
     if (!latest) throw new Error('资产不存在')
-    const gen = (latest.params || {}).generation as
-      | { status?: string; error?: string }
-      | undefined
-    const status = String(gen?.status || '')
+    const status = readGenerationStatus(latest)
     if ((latest.url || latest.cover) && status !== 'generating') {
       return latest
     }
     if (status === 'failed') {
+      const gen = (latest.params || {}).generation as { error?: string } | undefined
       throw new Error(String(gen?.error || '生图失败'))
     }
     if (status === 'done' && (latest.url || latest.cover)) {
@@ -177,22 +193,15 @@ async function waitForAssetImage(projectId: number, assetId: number): Promise<Dr
   throw new Error('生图超时，请刷新后重试')
 }
 
-// 执行单个任务：调 API + 轮询
-async function runJob(job: InternalJob) {
-  job.status = 'running'
-  emit()
+/*
+ * waitingPoll 已提交、等待轮询槽位的任务
+ */
+const waitingPoll: InternalJob[] = []
+
+// 有限并发轮询后端结果
+async function pollJob(job: InternalJob) {
+  pollingCount += 1
   try {
-    await dramaApi.generateImage({
-      project_id: job.projectId,
-      asset_id: job.assetId,
-      prompt: job.prompt,
-      name: job.assetName || undefined,
-      asset_type_kind: job.assetType,
-      image_style_id: job.options.image_style_id,
-      model_id: job.options.model_id,
-      aspect_ratio: job.options.aspect_ratio,
-      resolution: job.options.resolution,
-    })
     const asset = await waitForAssetImage(job.projectId, job.assetId)
     job.status = 'done'
     job.finishedAt = Date.now()
@@ -205,32 +214,64 @@ async function runJob(job: InternalJob) {
     job.finishedAt = Date.now()
     emit()
     job.reject(err instanceof Error ? err : new Error(message))
+  } finally {
+    pollingCount -= 1
+    pump()
+    emit()
   }
 }
 
-// 拉取排队任务并控制并发
+// 调度轮询槽位
 function pump() {
   if (pumping) return
   pumping = true
   queueMicrotask(() => {
     pumping = false
-    while (activeCount < MAX_CONCURRENT) {
-      const next = jobs.find((job) => job.status === 'queued')
+    while (pollingCount < MAX_POLL_CONCURRENT && waitingPoll.length > 0) {
+      const next = waitingPoll.shift()
       if (!next) break
-      activeCount += 1
-      void runJob(next).finally(() => {
-        activeCount -= 1
-        pump()
-        emit()
-      })
+      if (next.status === 'failed' || next.status === 'done') continue
+      void pollJob(next)
     }
     emit()
   })
 }
 
+// 提交后端（Worker 入队）后进入轮询队列
+function startJob(job: InternalJob) {
+  void (async () => {
+    try {
+      if (!job.resumeOnly) {
+        await dramaApi.generateImage({
+          project_id: job.projectId,
+          asset_id: job.assetId,
+          prompt: job.prompt,
+          name: job.assetName || undefined,
+          asset_type_kind: job.assetType,
+          image_style_id: job.options.image_style_id,
+          model_id: job.options.model_id,
+          aspect_ratio: job.options.aspect_ratio,
+          resolution: job.options.resolution,
+        })
+      }
+      job.status = 'running'
+      emit()
+      waitingPoll.push(job)
+      pump()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '生图失败'
+      job.status = 'failed'
+      job.error = message
+      job.finishedAt = Date.now()
+      emit()
+      job.reject(err instanceof Error ? err : new Error(message))
+    }
+  })()
+}
+
 /**
- * 将资产生图加入全局队列；同资产已在排队/生成中时复用同一 Promise。
- * @returns 完成后的最新资产
+ * 将资产生图加入队列：立刻 POST 到后端 Worker，再本地轮询结果。
+ * 同资产已在排队/生成中时复用同一 Promise。
  */
 export function enqueueDramaImageGen(input: EnqueueInput): Promise<DramaAsset> {
   const existing = jobs.find(
@@ -264,16 +305,43 @@ export function enqueueDramaImageGen(input: EnqueueInput): Promise<DramaAsset> {
       options: input.options || {},
       status: 'queued',
       createdAt: Date.now(),
+      resumeOnly: Boolean(input.resumeOnly),
       resolve,
       reject,
     }
     jobs = [...jobs, job]
     emit()
-    pump()
+    startJob(job)
   })
 }
 
-// 清空已结束项（手动关闭面板时）
+/**
+ * 从资产列表恢复「后端仍在 generating」的任务（刷新页面后调用）。
+ * 不再重复 POST，只接上轮询与队列 UI。
+ */
+export function resumeDramaImageGensFromAssets(
+  projectId: number,
+  assets: DramaAsset[],
+): void {
+  for (const asset of assets) {
+    if (asset.project_id !== projectId) continue
+    const status = readGenerationStatus(asset)
+    if (status !== 'generating') continue
+    if (isDramaAssetImageBusy(asset.id)) continue
+    void enqueueDramaImageGen({
+      projectId,
+      assetId: asset.id,
+      assetName: asset.name || undefined,
+      assetType: asset.type,
+      prompt: '',
+      resumeOnly: true,
+    }).catch(() => {
+      /* 面板会显示失败；页面层可再 toast */
+    })
+  }
+}
+
+// 清空已结束项
 export function clearFinishedDramaImageGenJobs() {
   jobs = jobs.filter((job) => job.status === 'queued' || job.status === 'running')
   emit()

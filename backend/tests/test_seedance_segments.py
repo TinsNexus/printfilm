@@ -100,3 +100,55 @@ def test_apply_segment_script_edit_fills_cues():
     assert "【字幕：" in out["segment_script"]
     assert "【BGM：" in out["segment_script"]
     assert out["narration"]
+
+
+def test_empty_shot_misclassified_as_dialogue_is_rewritten():
+    from app.services.seedance_segments import (
+        DRAMA_SUBTITLE_CUE,
+        rewrite_misclassified_visual_voice_lines,
+        script_has_dialogue_cue,
+        script_has_visual_only_cue,
+    )
+
+    mistagged = "\n".join(
+        [
+            DRAMA_SUBTITLE_CUE,
+            "【BGM：流动感环境音乐；音量低于人声】",
+            "@duration:6",
+            "【对白·慢速清晰·同步字幕】空镜：浑浊的黄河浪扣打着门口老石。",
+        ]
+    )
+    fixed = rewrite_misclassified_visual_voice_lines(mistagged)
+    assert "【对白" not in fixed
+    assert "【画面·无配音仅环境音】空镜：" in fixed
+    assert script_has_dialogue_cue(fixed) is False
+    assert script_has_visual_only_cue(fixed) is True
+    section = build_seedance_production_section(fixed)
+    assert "禁止为其生成配音" in section
+    assert "画面描述段不出现字幕" in section
+    assert "逐句轮换" in section
+
+
+def test_legacy_drama_subtitle_cue_normalized_on_rewrite():
+    from app.services.seedance_segments import (
+        DRAMA_SUBTITLE_CUE,
+        rewrite_misclassified_visual_voice_lines,
+    )
+
+    legacy = "【字幕：底部居中·简体中文·仅标记段落同步】\n@duration:4\n空镜：黄河浪。"
+    fixed = rewrite_misclassified_visual_voice_lines(legacy)
+    assert DRAMA_SUBTITLE_CUE in fixed
+    assert "仅标记段落同步" not in fixed
+    assert "逐句轮换" in build_seedance_production_section(fixed)
+
+
+def test_character_intro_cue_normalized_beside_character():
+    from app.services.seedance_segments import rewrite_misclassified_visual_voice_lines
+
+    legacy = "【人物介绍·画面叠字】禹｜治水英雄\n@duration:4\n【对白·慢速清晰·同步字幕】禹：水患未平。"
+    fixed = rewrite_misclassified_visual_voice_lines(legacy)
+    assert "【人物介绍·画面叠字·角色身旁】禹｜治水英雄" in fixed
+    assert "【人物介绍·画面叠字】禹" not in fixed.replace("【人物介绍·画面叠字·角色身旁】", "")
+    section = build_seedance_production_section(fixed)
+    assert "角色身旁" in section
+    assert "禁止居中大标题" in section

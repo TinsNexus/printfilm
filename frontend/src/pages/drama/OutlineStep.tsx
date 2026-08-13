@@ -1,5 +1,6 @@
 /** 剧情大纲步骤：自动摘要 + 分集剧本流水线 */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { BookOpen } from 'lucide-react'
 import {
   dramaApi,
   type DramaProject,
@@ -12,6 +13,7 @@ import {
   getSummaryStatus,
   parseEpisodeBodies,
 } from './dramaWorkspaceUtils'
+import { dialog } from '../../lib/dialog'
 
 type OutlineSectionKey = 'source' | 'summary' | 'episodes'
 
@@ -195,7 +197,14 @@ export function OutlineStep({
   // 手动强制重写全部分集正文
   async function handleRegenerateEpisodes() {
     if (episodeGenerating) return
-    if (!window.confirm('将清空当前分集正文并按新提示词重新生成，是否继续？')) return
+    const ok = await dialog.confirm({
+      title: '重新生成分集剧本',
+      message:
+        '将清空当前分集正文并按最新剧本摘要重新生成全部集数，已有编辑将丢失。是否继续？',
+      confirmText: '重新生成',
+      tone: 'danger',
+    })
+    if (!ok) return
     onOutlineReadyChange(false)
     await runEpisodeScripts(undefined, true)
   }
@@ -323,9 +332,22 @@ export function OutlineStep({
       ) : null}
 
       <div className="drama-outline-main">
-        <div className="drama-outline-toolbar">
-          <h2>{episodeCount ? `共 ${episodeCount} 集` : '共 — 集'}</h2>
-          <label className="drama-style-select">
+        <header className="drama-outline-hero">
+          <div className="drama-step-hero-main">
+            <div className="drama-step-hero-icon" aria-hidden>
+              <BookOpen size={22} strokeWidth={1.75} />
+            </div>
+            <div>
+              <h2>剧情大纲</h2>
+              <p className="drama-step-hero-sub">
+                {episodeCount ? `共 ${episodeCount} 集` : '集数待定'}
+                {imageStyleId
+                  ? ` · ${IMAGE_STYLE_OPTIONS.find((o) => o.id === imageStyleId)?.label || '已选风格'}`
+                  : ' · 未选画面风格'}
+              </p>
+            </div>
+          </div>
+          <label className="drama-style-select drama-outline-style">
             项目风格
             <select
               value={imageStyleId}
@@ -339,7 +361,7 @@ export function OutlineStep({
               ))}
             </select>
           </label>
-        </div>
+        </header>
 
         <div className="drama-accordions">
           <Accordion

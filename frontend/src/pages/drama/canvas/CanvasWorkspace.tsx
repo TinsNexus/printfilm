@@ -13,10 +13,15 @@ import './canvas.css'
 
 type CanvasWorkspaceProps = {
   projectId: number
+  /** fullscreen 独立页；embedded 嵌入分集编辑右侧 */
+  variant?: 'fullscreen' | 'embedded'
 }
 
 /** 渲染画布主体与各区域 overlay */
-function CanvasWorkspaceContent({ projectId }: CanvasWorkspaceProps) {
+function CanvasWorkspaceContent({
+  projectId,
+  variant = 'fullscreen',
+}: CanvasWorkspaceProps) {
   const {
     showNodeSelector,
     errorMessage,
@@ -27,6 +32,7 @@ function CanvasWorkspaceContent({ projectId }: CanvasWorkspaceProps) {
     loading,
   } = useCanvasStore()
   const { screenToFlowPosition } = useReactFlow()
+  const embedded = variant === 'embedded'
 
   const handleSelectNode = useCallback(
     (kind: CanvasNodeKind) => {
@@ -56,9 +62,9 @@ function CanvasWorkspaceContent({ projectId }: CanvasWorkspaceProps) {
   }, [undo, redo])
 
   return (
-    <div className="free-canvas-page">
+    <div className={`free-canvas-page${embedded ? ' is-embedded' : ''}`}>
       <FreeCanvasFlow projectId={projectId} />
-      <CanvasTopBar />
+      <CanvasTopBar variant={variant} />
       <CanvasLeftToolbar onSelectNode={handleSelectNode} />
       <CanvasBottomControls />
       {showNodeSelector ? <CanvasNodeSelector onSelect={handleSelectNode} /> : null}
@@ -77,11 +83,14 @@ function CanvasWorkspaceContent({ projectId }: CanvasWorkspaceProps) {
 }
 
 /** 提供 React Flow 与画布状态上下文 */
-export function CanvasWorkspace({ projectId }: CanvasWorkspaceProps) {
+export function CanvasWorkspace({
+  projectId,
+  variant = 'fullscreen',
+}: CanvasWorkspaceProps) {
   return (
     <ReactFlowProvider>
       <CanvasStoreProvider projectId={projectId}>
-        <CanvasWorkspaceContent projectId={projectId} />
+        <CanvasWorkspaceContent projectId={projectId} variant={variant} />
       </CanvasStoreProvider>
     </ReactFlowProvider>
   )

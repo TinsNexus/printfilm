@@ -175,6 +175,10 @@ class DramaVoiceGenerateRequest(BaseModel):
     voice_prompt: str = Field(description="音色描述，用于 TTS 试听与 Seedance reference_audio")
     sample_text: str | None = Field(default=None, description="试听台词，缺省自动生成")
     speaker: str | None = Field(default=None, description="可选 TTS speaker 覆盖")
+    character_asset_id: int | None = Field(
+        default=None,
+        description="关联角色资产 ID，用于 voice_design image_prompt",
+    )
 
 
 class DramaFragmentSaveItem(BaseModel):
@@ -194,6 +198,13 @@ class DramaSaveFragmentsRequest(BaseModel):
 
 class DramaGenerateRequest(BaseModel):
     fragment_ids: list[int] | None = None
+
+
+class DramaPlanFragmentsRequest(BaseModel):
+    # force 是否覆盖已有视频/手改分镜（单集 AI 重切默认 true）
+    force: bool = True
+    # fallback_rules LLM 失败时是否回退规则切分
+    fallback_rules: bool = True
 
 
 class DramaCanvasSaveRequest(BaseModel):

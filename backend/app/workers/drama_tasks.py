@@ -41,6 +41,26 @@ def drama_episode_scripts_task(self, project_id: int, force: bool = False) -> di
     return result
 
 
+@celery_app.task(name="drama.episode_fragment_plan", bind=True, max_retries=1)
+def drama_episode_fragment_plan_task(
+    self,
+    episode_id: int,
+    fallback_rules: bool = True,
+) -> dict:
+    # Celery：单集 LLM 分镜
+    from app.services.drama.jobs import run_episode_fragment_plan_job
+
+    logger.info(
+        "[Celery] 领取单集分镜任务 episode_id=%s fallback=%s task_id=%s",
+        episode_id,
+        fallback_rules,
+        self.request.id,
+    )
+    result = _run(run_episode_fragment_plan_job(episode_id, fallback_rules=fallback_rules))
+    logger.info("[Celery] 单集分镜任务结束 episode_id=%s result=%s", episode_id, result)
+    return result
+
+
 @celery_app.task(name="drama.episode_generate", bind=True, max_retries=1)
 def drama_episode_generate_task(
     self,

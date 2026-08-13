@@ -114,6 +114,20 @@ export function insertDurationChipAtRange(range: Range, seconds: number) {
   selection.addRange(caretRange)
 }
 
+// 在 Range 处插入纯文本（运镜/景别前缀等）
+export function insertPlainTextAtRange(range: Range, text: string) {
+  const selection = window.getSelection()
+  range.deleteContents()
+  const node = document.createTextNode(text)
+  range.insertNode(node)
+  if (!selection) return
+  const caretRange = document.createRange()
+  caretRange.setStartAfter(node)
+  caretRange.collapse(true)
+  selection.removeAllRanges()
+  selection.addRange(caretRange)
+}
+
 // 在 Range 处插入资产标签
 export function insertMentionChipAtRange(range: Range, chip: DramaMentionChipData) {
   const selection = window.getSelection()

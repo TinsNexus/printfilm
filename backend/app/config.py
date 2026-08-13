@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     volc_tts_resource_id: str = "seed-tts-2.0"
     volc_tts_speaker: str = "zh_female_cancan_uranus_bigtts"
     volc_tts_url: str = "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
+    # 新版控制台 API Key（与 app_id/access_key 二选一，优先 api_key）
+    volc_tts_api_key: str = ""
+    # 音色设计：控制台购买的 S_ 槽位，逗号分隔；配了且鉴权齐全则漫剧走 voice_design
+    volc_tts_voice_design_url: str = "https://openspeech.bytedance.com/api/v3/tts/voice_design"
+    volc_tts_voice_design_speaker_ids: str = ""
     # Seedream: 2k|3k|4k or WIDTHxHEIGHT，且总像素 >= 3686400（约 2560x1440）
     ark_image_size: str = "2k"
     ark_video_resolution: str = "480p"
@@ -45,7 +50,8 @@ class Settings(BaseSettings):
     ark_video_poll_timeout: float = 900.0
     # Parallel generation concurrency (per project)
     pipeline_image_concurrency: int = 3
-    pipeline_video_concurrency: int = 2
+    # Seedance 2.5 官方并发上限约 10
+    pipeline_video_concurrency: int = 10
     pipeline_audio_concurrency: int = 4
     # 科普 full：Seedance generate_audio 配音，跳过 TTS + 重合成，仅拼接镜头
     kepu_seedance_generate_audio: bool = True

@@ -102,14 +102,21 @@ async def suggest_voice_prompt(
     if (asset.type or "").lower() != "character":
         raise HTTPException(status_code=400, detail="仅支持角色资产")
 
-    prompt = await suggest_voice_prompt_for_character(asset, project)
+    voice_prompt, speaker, sample_text = await suggest_voice_prompt_for_character(asset, project)
     logger.info(
-        "音色提示词已生成 project_id=%s asset_id=%s len=%s",
+        "音色提示词已生成 project_id=%s asset_id=%s len=%s speaker=%s",
         project.id,
         asset.id,
-        len(prompt),
+        len(voice_prompt),
+        speaker,
     )
-    return {"ok": True, "voice_prompt": prompt, "asset_id": asset.id}
+    return {
+        "ok": True,
+        "voice_prompt": voice_prompt,
+        "speaker": speaker,
+        "sample_text": sample_text,
+        "asset_id": asset.id,
+    }
 
 
 @router.post("/generation/voice")
@@ -148,6 +155,14 @@ async def generate_voice(
     await db.commit()
     await db.refresh(asset)
 
+    character_asset = None
+    if body.character_asset_id:
+        character_asset = await db.get(DramaAsset, body.character_asset_id)
+        if not character_asset or character_asset.project_id != project.id:
+            raise HTTPException(status_code=404, detail="角色资产不存在")
+        if (character_asset.type or "").lower() != "character":
+            raise HTTPException(status_code=400, detail="character_asset_id 须为角色资产")
+
     try:
         updated = await generate_voice_asset_audio(
             db,
@@ -157,6 +172,7 @@ async def generate_voice(
             voice_prompt=prompt,
             sample_text=body.sample_text,
             speaker=body.speaker,
+            character_asset=character_asset,
         )
     except Exception as exc:  # noqa: BLE001
         params = dict(asset.params or {})

@@ -22,8 +22,12 @@ export function EpisodeEditReferenceStrip({ items, onSelect }: Props) {
         <button
           key={item.assetId}
           type="button"
-          className="drama-ep-ref-chip"
-          title={`${item.name}${item.type ? ` · ${item.type}` : ''}`}
+          className={`drama-ep-ref-chip${item.isCharacter ? ' is-character' : ''}${
+            item.voiceUrl ? ' has-voice' : item.isCharacter ? ' no-voice' : ''
+          }`}
+          title={`${item.name}${item.type ? ` · ${item.type}` : ''}${
+            item.isCharacter ? (item.voiceLabel ? ` · 音色：${item.voiceLabel}` : ' · 未绑定音色') : ''
+          }`}
           onClick={() => onSelect?.(item.assetId)}
         >
           {item.previewUrl ? (
@@ -31,6 +35,11 @@ export function EpisodeEditReferenceStrip({ items, onSelect }: Props) {
           ) : (
             <span className="drama-ep-ref-chip-fallback">{(item.name || '?')[0]}</span>
           )}
+          {item.isCharacter ? (
+            <span className={`drama-ep-ref-voice-badge${item.voiceUrl ? ' bound' : ''}`}>
+              {item.voiceUrl ? '音' : '无音'}
+            </span>
+          ) : null}
           <em>{item.name}</em>
         </button>
       ))}

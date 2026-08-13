@@ -1,5 +1,13 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent } from 'react'
 import {
+  AlertTriangle,
+  CheckCircle2,
+  CircleHelp,
+  PencilLine,
+  Sparkles,
+  type LucideIcon,
+} from 'lucide-react'
+import {
   closeDialog,
   getDialogRequest,
   subscribeDialog,
@@ -7,18 +15,19 @@ import {
   type DialogTone,
 } from '../../lib/dialog'
 
+// 按弹窗类型与语气返回图标
+function dialogIcon(kind: DialogRequest['kind'], tone: DialogTone | undefined): LucideIcon {
+  if (tone === 'danger') return AlertTriangle
+  if (tone === 'success') return CheckCircle2
+  if (kind === 'prompt') return PencilLine
+  if (kind === 'confirm') return Sparkles
+  return CircleHelp
+}
+
 function toneClass(tone: DialogTone | undefined) {
   if (tone === 'danger') return 'pf-dialog--danger'
   if (tone === 'success') return 'pf-dialog--success'
   return 'pf-dialog--default'
-}
-
-function iconFor(kind: DialogRequest['kind'], tone: DialogTone | undefined) {
-  if (tone === 'danger') return '!'
-  if (tone === 'success') return '✓'
-  if (kind === 'prompt') return '✎'
-  if (kind === 'confirm') return '?'
-  return 'i'
 }
 
 function dismissRequest(active: DialogRequest) {
@@ -70,6 +79,7 @@ export default function DialogHost() {
 
   const active: DialogRequest = req
   const tone = active.options.tone || 'default'
+  const Icon = dialogIcon(active.kind, tone)
   const title =
     active.options.title ||
     (active.kind === 'confirm' ? '请确认' : active.kind === 'prompt' ? '请输入' : '提示')
@@ -98,28 +108,30 @@ export default function DialogHost() {
         onSubmit={onSubmit}
       >
         <div className="pf-dialog-glow" aria-hidden />
-        <div className="pf-dialog-mark" aria-hidden>
-          <span>{iconFor(active.kind, tone)}</span>
+        <div className="pf-dialog-header">
+          <div className="pf-dialog-mark" aria-hidden>
+            <Icon size={22} strokeWidth={1.75} />
+          </div>
+          <div className="pf-dialog-body">
+            <h2 id={titleId} className="pf-dialog-title">
+              {title}
+            </h2>
+            {message ? (
+              <p id={descId} className="pf-dialog-message">
+                {message}
+              </p>
+            ) : null}
+          </div>
         </div>
-        <div className="pf-dialog-body">
-          <h2 id={titleId} className="pf-dialog-title">
-            {title}
-          </h2>
-          {message ? (
-            <p id={descId} className="pf-dialog-message">
-              {message}
-            </p>
-          ) : null}
-          {active.kind === 'prompt' ? (
-            <input
-              ref={inputRef}
-              className="pf-dialog-input"
-              value={promptValue}
-              placeholder={active.options.placeholder || ''}
-              onChange={(e) => setPromptValue(e.target.value)}
-            />
-          ) : null}
-        </div>
+        {active.kind === 'prompt' ? (
+          <input
+            ref={inputRef}
+            className="pf-dialog-input"
+            value={promptValue}
+            placeholder={active.options.placeholder || ''}
+            onChange={(e) => setPromptValue(e.target.value)}
+          />
+        ) : null}
         <div className="pf-dialog-actions">
           {cancelText ? (
             <button

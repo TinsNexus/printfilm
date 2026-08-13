@@ -36,6 +36,247 @@ logger = logging.getLogger(__name__)
 
 # in-process fallback handles
 _running: dict[str, asyncio.Task] = {}
+# 分集视频取消标记（episode_id）
+_video_cancelled_episodes: set[int] = set()
+_episode_video_celery_ids: dict[int, str] = {}
+
+VIDEO_CELERY_TASKS = frozenset(
+    {
+        "drama.episode_generate",
+        "app.workers.tasks.regen_video_task",
+    }
+)
+VIDEO_QUEUES = ("video", "pipeline")
+ACTIVE_VIDEO_GEN_STATUSES = frozenset({"queued", "running", "generating"})
+
+
+def _is_episode_video_cancelled(episode_id: int) -> bool:
+    return int(episode_id) in _video_cancelled_episodes
+
+
+def _mark_episode_video_cancelled(episode_id: int) -> None:
+    _video_cancelled_episodes.add(int(episode_id))
+
+
+def _clear_episode_video_cancelled(episode_id: int) -> None:
+    _video_cancelled_episodes.discard(int(episode_id))
+
+
+def _cancel_inprocess_episode_video(episode_id: int) -> bool:
+    key = _job_key("epgen", episode_id)
+    task = _running.get(key)
+    if task is None or task.done():
+        return False
+    task.cancel()
+    return True
+
+
+def _revoke_celery_task_ids(task_ids: list[str]) -> int:
+    if not task_ids:
+        return 0
+    try:
+        from app.workers.celery_app import celery_app
+
+        for tid in task_ids:
+            celery_app.control.revoke(tid, terminate=True, signal="SIGTERM")
+        return len(task_ids)
+    except Exception:  # noqa: BLE001
+        logger.exception("revoke celery video tasks failed")
+        return 0
+
+
+def _episode_id_from_video_celery_message(msg: dict[str, Any]) -> int | None:
+    headers = msg.get("headers") or {}
+    task = str(headers.get("task") or "")
+    if task != "drama.episode_generate":
+        return None
+    body = msg.get("body")
+    if not body:
+        return None
+    try:
+        import base64
+        import json
+
+        if isinstance(body, bytes):
+            body = body.decode("utf-8", errors="replace")
+        raw = base64.b64decode(body)
+        payload = json.loads(raw.decode("utf-8"))
+        args = payload[0] if isinstance(payload, (list, tuple)) and payload else None
+        if isinstance(args, (list, tuple)) and args:
+            return int(args[0])
+    except Exception:  # noqa: BLE001
+        return None
+    return None
+
+
+def _purge_video_queue_messages(*, episode_id: int | None = None) -> tuple[int, list[str]]:
+    """从 video/pipeline 队列移除视频任务；返回 (removed, revoked_ids)。"""
+    try:
+        import json
+
+        import redis
+
+        r = redis.Redis.from_url(get_settings().redis_url, decode_responses=True)
+        total_removed = 0
+        revoked_ids: list[str] = []
+        for queue in VIDEO_QUEUES:
+            items = r.lrange(queue, 0, -1) or []
+            if not items:
+                continue
+            kept: list[str] = []
+            queue_removed = 0
+            for raw in items:
+                try:
+                    msg = json.loads(raw)
+                except Exception:  # noqa: BLE001
+                    kept.append(raw)
+                    continue
+                headers = msg.get("headers") or {}
+                task = str(headers.get("task") or "")
+                if task not in VIDEO_CELERY_TASKS:
+                    kept.append(raw)
+                    continue
+                ep_id = _episode_id_from_video_celery_message(msg)
+                if episode_id is not None and ep_id != int(episode_id):
+                    kept.append(raw)
+                    continue
+                tid = str(headers.get("id") or "")
+                if tid:
+                    revoked_ids.append(tid)
+                queue_removed += 1
+            if queue_removed <= 0:
+                continue
+            pipe = r.pipeline()
+            pipe.delete(queue)
+            if kept:
+                pipe.rpush(queue, *kept)
+            pipe.execute()
+            total_removed += queue_removed
+        return total_removed, revoked_ids
+    except Exception:  # noqa: BLE001
+        logger.exception("purge video queue failed episode_id=%s", episode_id)
+        return 0, []
+
+
+def _collect_active_video_celery_ids(*, episode_id: int | None = None) -> list[str]:
+    ids: list[str] = []
+    try:
+        from app.workers.celery_app import celery_app
+
+        inspect = celery_app.control.inspect(timeout=2.0)
+        for fetch in (inspect.active, inspect.reserved, inspect.scheduled):
+            data = fetch() or {}
+            for _worker, tasks in data.items():
+                for task in tasks or []:
+                    name = str(task.get("name") or task.get("request", {}).get("name") or "")
+                    if name not in VIDEO_CELERY_TASKS:
+                        continue
+                    args = task.get("args") or task.get("request", {}).get("args") or []
+                    if name == "drama.episode_generate" and episode_id is not None:
+                        if not args or int(args[0]) != int(episode_id):
+                            continue
+                    tid = str(task.get("id") or task.get("request", {}).get("id") or "")
+                    if tid:
+                        ids.append(tid)
+    except Exception:  # noqa: BLE001
+        logger.exception("inspect active video tasks failed")
+    return ids
+
+
+async def _reset_fragment_video_generation(
+    db,
+    *,
+    episode_id: int | None = None,
+) -> int:
+    q = select(DramaEpisodeFragment)
+    if episode_id is not None:
+        q = q.where(DramaEpisodeFragment.episode_id == int(episode_id))
+    frags = (await db.execute(q)).scalars().all()
+    changed = 0
+    for frag in frags:
+        params = dict(frag.params or {})
+        gen = params.get("generation") if isinstance(params, dict) else None
+        status = str(gen.get("status") or "") if isinstance(gen, dict) else ""
+        if status not in ACTIVE_VIDEO_GEN_STATUSES:
+            continue
+        params["generation"] = {"status": "cancelled"}
+        frag.params = params
+        changed += 1
+    if changed:
+        await db.commit()
+    return changed
+
+
+async def cancel_episode_video_jobs(episode_id: int) -> dict[str, Any]:
+    """取消单集视频任务：revoke Celery、终止进程内任务、重置分镜状态。"""
+    _mark_episode_video_cancelled(episode_id)
+    cancelled_inprocess = _cancel_inprocess_episode_video(episode_id)
+    revoked_ids: list[str] = []
+    stored = _episode_video_celery_ids.pop(int(episode_id), None)
+    if stored:
+        revoked_ids.append(stored)
+    revoked_ids.extend(_collect_active_video_celery_ids(episode_id=episode_id))
+    purged, purged_ids = _purge_video_queue_messages(episode_id=episode_id)
+    revoked_ids.extend(purged_ids)
+    revoked = _revoke_celery_task_ids(list(dict.fromkeys(revoked_ids)))
+    async with AsyncSessionLocal() as db:
+        fragments = await _reset_fragment_video_generation(db, episode_id=episode_id)
+    logger.info(
+        "取消分集视频 episode_id=%s inprocess=%s purged=%s revoked=%s fragments=%s",
+        episode_id,
+        cancelled_inprocess,
+        purged,
+        revoked,
+        fragments,
+    )
+    return {
+        "ok": True,
+        "episode_id": episode_id,
+        "inprocess": cancelled_inprocess,
+        "purged": purged,
+        "revoked": revoked,
+        "fragments": fragments,
+    }
+
+
+async def cancel_all_episode_video_jobs() -> dict[str, Any]:
+    """取消全部漫剧分镜视频任务。"""
+    episode_ids = set(_episode_video_celery_ids.keys()) | set(_video_cancelled_episodes)
+    async with AsyncSessionLocal() as db:
+        frags = (await db.execute(select(DramaEpisodeFragment))).scalars().all()
+        for frag in frags:
+            params = frag.params or {}
+            gen = params.get("generation") if isinstance(params, dict) else None
+            status = str(gen.get("status") or "") if isinstance(gen, dict) else ""
+            if status in ACTIVE_VIDEO_GEN_STATUSES:
+                episode_ids.add(int(frag.episode_id))
+    for ep_id in list(episode_ids):
+        _mark_episode_video_cancelled(ep_id)
+        _cancel_inprocess_episode_video(ep_id)
+
+    revoked_ids = _collect_active_video_celery_ids()
+    revoked_ids.extend(_episode_video_celery_ids.values())
+    purged, purged_ids = _purge_video_queue_messages()
+    revoked_ids.extend(purged_ids)
+    revoked = _revoke_celery_task_ids(list(dict.fromkeys(revoked_ids)))
+    _episode_video_celery_ids.clear()
+
+    async with AsyncSessionLocal() as db:
+        fragments = await _reset_fragment_video_generation(db)
+    logger.info(
+        "取消全部视频任务 purged=%s revoked=%s fragments=%s episodes=%s",
+        purged,
+        revoked,
+        fragments,
+        len(episode_ids),
+    )
+    return {
+        "ok": True,
+        "purged": purged,
+        "revoked": revoked,
+        "fragments": fragments,
+        "episodes": len(episode_ids),
+    }
 
 
 def _redis_ok() -> bool:
@@ -304,6 +545,209 @@ async def run_episode_scripts_job(project_id: int, force: bool = False) -> dict[
             return {"ok": False, "error": str(exc)[:500]}
 
 
+# ---------- episode fragment plan (LLM) ----------
+
+
+def dispatch_episode_fragment_plan_job(episode_id: int, *, fallback_rules: bool = True) -> str:
+    # 入队单集 LLM 分镜；Celery 不可用时进程内跑
+    if _use_celery():
+        from app.workers.drama_tasks import drama_episode_fragment_plan_task
+
+        result = drama_episode_fragment_plan_task.apply_async(
+            args=[episode_id, fallback_rules],
+            queue="pipeline",
+        )
+        logger.info(
+            "dispatch 单集分镜 → Celery episode_id=%s task_id=%s",
+            episode_id,
+            result.id,
+        )
+        return str(result.id)
+
+    key = _job_key("fragplan", episode_id)
+    if key in _running and not _running[key].done():
+        logger.info("dispatch 单集分镜 → 进程内已在跑 episode_id=%s", episode_id)
+        return "in-process"
+    _running[key] = asyncio.create_task(
+        run_episode_fragment_plan_job(episode_id, fallback_rules=fallback_rules)
+    )
+    logger.info("dispatch 单集分镜 → 进程内新建 episode_id=%s", episode_id)
+    return "in-process"
+
+
+async def run_episode_fragment_plan_job(
+    episode_id: int,
+    *,
+    fallback_rules: bool = True,
+) -> dict[str, Any]:
+    # Worker：LLM 规划本集分镜并落库；失败可选回退规则切分
+    from app.services.drama.build_fragments import build_fragments_from_episode_body
+    from app.services.drama.fragment_plan import plan_fragments_with_llm
+    from app.services.drama.llm import DramaLlmUnavailableError
+    from app.services.drama.seed import (
+        _episode_bodies,
+        _fragment_is_protected,
+        replace_episode_fragments_with_drafts,
+        resolve_episode_script_body,
+    )
+
+    logger.info("开始单集 LLM 分镜 episode_id=%s", episode_id)
+    async with AsyncSessionLocal() as db:
+        episode = await db.get(
+            DramaEpisode,
+            episode_id,
+            options=[
+                selectinload(DramaEpisode.fragments).selectinload(
+                    DramaEpisodeFragment.asset_references
+                ),
+                selectinload(DramaEpisode.project).selectinload(DramaProject.script),
+            ],
+        )
+        if not episode or not episode.project:
+            logger.warning("单集分镜失败：缺少分集 episode_id=%s", episode_id)
+            return {"ok": False, "error": "missing_episode"}
+
+        project = episode.project
+        script = project.script
+        body = resolve_episode_script_body(script.episode_content if script else None, episode)
+        if not (body or "").strip():
+            params = dict(episode.params or {})
+            params["fragment_plan_status"] = "failed"
+            params["fragment_plan_error"] = "本集剧本正文为空，无法分镜"
+            episode.params = params
+            await db.commit()
+            return {"ok": False, "error": "empty_body"}
+
+        assets_result = await db.execute(
+            select(DramaAsset).where(DramaAsset.project_id == project.id)
+        )
+        assets = list(assets_result.scalars().all())
+
+        # 本剧更早分集已介绍角色（跨集去重）
+        from app.services.drama.build_fragments import collect_series_introduced_names
+
+        siblings_result = await db.execute(
+            select(DramaEpisode)
+            .where(DramaEpisode.project_id == project.id)
+            .options(selectinload(DramaEpisode.fragments))
+        )
+        siblings = list(siblings_result.scalars().all())
+        ep_params = episode.params if isinstance(episode.params, dict) else {}
+        ep_no = int(ep_params.get("episodeNumber") or 0) or None
+        already_introduced = collect_series_introduced_names(
+            siblings,
+            before_episode_number=ep_no,
+            exclude_episode_id=episode.id,
+        )
+
+        # 本集已有视频/手改分镜：续拆时锁定，并把已介绍角色并入去重集
+        from app.services.drama.build_fragments import extract_introduced_names_from_content
+
+        protected_frags = sorted(
+            [f for f in (episode.fragments or []) if _fragment_is_protected(f)],
+            key=lambda f: int(f.sort_order or 0),
+        )
+        locked_summaries: list[str] = []
+        for frag in protected_frags:
+            for name in extract_introduced_names_from_content(frag.content or ""):
+                already_introduced.add(name)
+            # 摘要：去掉 cue 行后取前几行画面/对白
+            narr: list[str] = []
+            for raw in (frag.content or "").replace("\r\n", "\n").split("\n"):
+                line = raw.strip()
+                if not line or line.startswith("@") or line.startswith("【"):
+                    continue
+                narr.append(line)
+                if len(narr) >= 3:
+                    break
+            locked_summaries.append("；".join(narr) if narr else f"分镜#{frag.sort_order}")
+
+        mode_used = "llm"
+        summary = script.summary if script and isinstance(script.summary, dict) else {}
+        from app.services.drama.character_intro_llm import prepare_character_intro_overrides
+
+        all_bodies = _episode_bodies(script.episode_content if script else None)
+        if body and body not in all_bodies:
+            all_bodies.append(body)
+        character_assets = [a for a in assets if getattr(a, "type", "") == "character"]
+        intro_overrides = await prepare_character_intro_overrides(
+            character_assets,
+            summary=summary,
+            episode_bodies=all_bodies,
+            story_type=str(summary.get("storyType") or "") or None,
+        )
+        continuation = bool(locked_summaries)
+        try:
+            drafts = await plan_fragments_with_llm(
+                episode_name=episode.name or "",
+                episode_body=body,
+                assets=assets,
+                episode_number=ep_no,
+                project_title=project.title or "",
+                story_type=str(summary.get("storyType") or "") or None,
+                one_line_story=str(summary.get("oneLineStory") or "") or None,
+                synopsis=str(summary.get("synopsis") or "") or None,
+                core_hook=str(summary.get("coreHook") or "") or None,
+                already_introduced=already_introduced,
+                summary=summary,
+                episode_bodies=all_bodies,
+                intro_overrides=intro_overrides,
+                locked_summaries=locked_summaries or None,
+            )
+        except (DramaLlmUnavailableError, RuntimeError, Exception) as exc:  # noqa: BLE001
+            logger.exception("LLM 分镜失败 episode_id=%s err=%s", episode_id, exc)
+            if not fallback_rules:
+                params = dict(episode.params or {})
+                params["fragment_plan_status"] = "failed"
+                params["fragment_plan_error"] = str(exc)[:500]
+                episode.params = params
+                await db.commit()
+                return {"ok": False, "error": str(exc)[:500]}
+            drafts = build_fragments_from_episode_body(
+                body,
+                assets,
+                already_introduced=already_introduced,
+                summary=summary,
+                episode_bodies=all_bodies,
+                intro_overrides=intro_overrides,
+            )
+            mode_used = "rules_fallback"
+            continuation = False
+
+        await replace_episode_fragments_with_drafts(
+            db,
+            episode,
+            body,
+            assets,
+            drafts,
+            preserve_protected=True,
+            continuation=continuation,
+        )
+        # 重新加载 params（replace 会写 fingerprint）
+        params = dict(episode.params or {})
+        params["fragment_plan_status"] = "completed"
+        params["fragment_plan_mode"] = mode_used
+        params.pop("fragment_plan_error", None)
+        params["fragment_plan_count"] = len(protected_frags) + len(drafts)
+        params["fragment_plan_preserved"] = len(protected_frags)
+        episode.params = params
+        await db.commit()
+        logger.info(
+            "单集分镜完成 episode_id=%s mode=%s new=%s preserved=%s continuation=%s",
+            episode_id,
+            mode_used,
+            len(drafts),
+            len(protected_frags),
+            continuation,
+        )
+        return {
+            "ok": True,
+            "mode": mode_used,
+            "count": len(protected_frags) + len(drafts),
+            "preserved": len(protected_frags),
+        }
+
+
 # ---------- episode video ----------
 
 
@@ -312,13 +756,15 @@ def dispatch_episode_generate_job(
     user_id: int,
     fragment_ids: list[int],
 ) -> str:
+    _clear_episode_video_cancelled(episode_id)
     if _use_celery():
         from app.workers.drama_tasks import drama_episode_generate_task
 
         result = drama_episode_generate_task.apply_async(
             args=[episode_id, user_id, fragment_ids],
-            queue="pipeline",
+            queue="video",
         )
+        _episode_video_celery_ids[int(episode_id)] = str(result.id)
         logger.info(
             "dispatch 分集视频 → Celery episode_id=%s fragments=%s task_id=%s",
             episode_id,
@@ -342,11 +788,102 @@ def dispatch_episode_generate_job(
     return "in-process"
 
 
+# 单个分镜视频（独立 DB session，供并发池调用）
+async def _generate_one_fragment_video(
+    *,
+    episode_id: int,
+    user_id: int,
+    fragment_id: int,
+    sem: asyncio.Semaphore,
+) -> bool:
+    async with sem:
+        async with AsyncSessionLocal() as db:
+            ep = await db.get(
+                DramaEpisode,
+                episode_id,
+                options=[
+                    selectinload(DramaEpisode.project).selectinload(DramaProject.script),
+                ],
+            )
+            if not ep or not ep.project:
+                logger.warning(
+                    "分镜视频跳过：分集/项目不存在 episode_id=%s fragment_id=%s",
+                    episode_id,
+                    fragment_id,
+                )
+                return False
+            project = ep.project
+            user = await db.get(User, user_id)
+            if not user:
+                return False
+            frag = await db.get(
+                DramaEpisodeFragment,
+                fragment_id,
+                options=[
+                    selectinload(DramaEpisodeFragment.asset_references).selectinload(
+                        DramaFragmentAssetRef.asset
+                    )
+                ],
+            )
+            if not frag or frag.episode_id != episode_id:
+                return False
+
+            if _is_episode_video_cancelled(episode_id):
+                params = dict(frag.params or {})
+                params["generation"] = {"status": "cancelled"}
+                frag.params = params
+                await db.commit()
+                logger.info(
+                    "分镜视频已取消 fragment_id=%s episode_id=%s",
+                    fragment_id,
+                    episode_id,
+                )
+                return False
+
+            params = dict(frag.params or {})
+            params["generation"] = {"status": "running"}
+            frag.params = params
+            await db.commit()
+            try:
+                logger.info(
+                    "生成分镜视频 fragment_id=%s episode_id=%s",
+                    fragment_id,
+                    episode_id,
+                )
+                await generate_fragment_video(db, user, project, frag)
+                await db.refresh(frag)
+                params = dict(frag.params or {})
+                last_frame = ""
+                if isinstance(frag.params, dict):
+                    raw = frag.params.get("lastFrameUrl") or frag.params.get("last_frame_url")
+                    if isinstance(raw, str):
+                        last_frame = raw
+                params["generation"] = {
+                    "status": "done",
+                    "video": frag.video,
+                    "cover": frag.cover,
+                    "lastFrameUrl": last_frame or None,
+                }
+                if last_frame:
+                    params["lastFrameUrl"] = last_frame
+                frag.params = params
+                await db.commit()
+                return True
+            except Exception as exc:  # noqa: BLE001
+                params = dict(frag.params or {})
+                params["generation"] = {"status": "failed", "error": str(exc)[:500]}
+                frag.params = params
+                await db.commit()
+                logger.exception("分镜视频失败 fragment_id=%s", fragment_id)
+                return False
+
+
 async def run_episode_generate_job(
     episode_id: int,
     user_id: int,
     fragment_ids: list[int],
 ) -> dict[str, Any]:
+    # 校验分集后，按 Seedance 并发上限并行生成各分镜
     logger.info(
         "开始生成分集视频 episode_id=%s fragments=%s",
         episode_id,
@@ -356,7 +893,9 @@ async def run_episode_generate_job(
         ep = await db.get(
             DramaEpisode,
             episode_id,
-            options=[selectinload(DramaEpisode.project)],
+            options=[
+                selectinload(DramaEpisode.project).selectinload(DramaProject.script),
+            ],
         )
         if not ep:
             logger.warning("分集视频失败：分集不存在 episode_id=%s", episode_id)
@@ -366,52 +905,44 @@ async def run_episode_generate_job(
         if not project or not user:
             return {"ok": False, "error": "missing_project_or_user"}
 
-        ok_count = 0
-        fail_count = 0
+        # valid_ids 属于本集且存在的分镜
+        valid_ids: list[int] = []
         for fid in fragment_ids:
-            frag = await db.get(
-                DramaEpisodeFragment,
-                fid,
-                options=[
-                    selectinload(DramaEpisodeFragment.asset_references).selectinload(
-                        DramaFragmentAssetRef.asset
-                    )
-                ],
+            frag = await db.get(DramaEpisodeFragment, fid)
+            if frag and frag.episode_id == episode_id:
+                valid_ids.append(fid)
+
+    # limit 对齐 Seedance 官方并发（默认 10）
+    limit = max(1, int(get_settings().pipeline_video_concurrency or 10))
+    sem = asyncio.Semaphore(limit)
+    logger.info(
+        "分集视频并发 episode_id=%s concurrency=%s fragments=%s",
+        episode_id,
+        limit,
+        len(valid_ids),
+    )
+    results = await asyncio.gather(
+        *[
+            _generate_one_fragment_video(
+                episode_id=episode_id,
+                user_id=user_id,
+                fragment_id=fid,
+                sem=sem,
             )
-            if not frag or frag.episode_id != episode_id:
-                continue
-            params = dict(frag.params or {})
-            params["generation"] = {"status": "running"}
-            frag.params = params
-            await db.commit()
-            try:
-                logger.info("生成分镜视频 fragment_id=%s episode_id=%s", fid, episode_id)
-                await generate_fragment_video(db, user, project, frag)
-                await db.refresh(frag)
-                params = dict(frag.params or {})
-                params["generation"] = {
-                    "status": "done",
-                    "video": frag.video,
-                    "cover": frag.cover,
-                }
-                frag.params = params
-                await db.commit()
-                ok_count += 1
-            except Exception as exc:  # noqa: BLE001
-                fail_count += 1
-                params = dict(frag.params or {})
-                params["generation"] = {"status": "failed", "error": str(exc)[:500]}
-                frag.params = params
-                await db.commit()
-                logger.exception("分镜视频失败 fragment_id=%s", fid)
-                continue
-        logger.info(
-            "分集视频结束 episode_id=%s ok=%s fail=%s",
-            episode_id,
-            ok_count,
-            fail_count,
-        )
-        return {"ok": True, "episode_id": episode_id}
+            for fid in valid_ids
+        ]
+    )
+    ok_count = sum(1 for ok in results if ok)
+    fail_count = len(results) - ok_count
+    _episode_video_celery_ids.pop(int(episode_id), None)
+    _clear_episode_video_cancelled(episode_id)
+    logger.info(
+        "分集视频结束 episode_id=%s ok=%s fail=%s",
+        episode_id,
+        ok_count,
+        fail_count,
+    )
+    return {"ok": True, "episode_id": episode_id}
 
 
 # ---------- asset image ----------
