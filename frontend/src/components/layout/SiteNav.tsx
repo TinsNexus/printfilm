@@ -53,14 +53,7 @@ export default function SiteNav({ active }: Props) {
         >
           创作台
         </NavLink>
-        <NavLink
-          to="/drama"
-          className={() =>
-            active === 'drama' || location.pathname.startsWith('/drama') ? 'active' : undefined
-          }
-        >
-          漫剧
-        </NavLink>
+        {/* 漫剧入口暂不对外展示；直链 /drama 仍可用 */}
         <NavLink to="/history" className={active === 'history' ? () => 'active' : linkClass}>
           历史
         </NavLink>
