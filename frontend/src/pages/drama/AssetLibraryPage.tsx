@@ -1,21 +1,42 @@
-/** 全局漫剧资产库：按媒体类型浏览（布局对齐 P7） */
-import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+/** 全局漫剧资产库：按角色 / 场景 / 道具 / 音色分类，音色可试听 */
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Pause, Play } from 'lucide-react'
 import AppShell from '../../components/layout/AppShell'
-import { dramaApi, resolveDramaMediaUrl, type DramaAsset } from '../../api/drama'
+import Button from '../../components/ui/Button'
+import FilterSelect from '../../components/ui/FilterSelect'
+import Pagination from '../../components/ui/Pagination'
+import PillFilter from '../../components/ui/PillFilter'
+import { CharacterVoicePreviewButton } from '../../components/drama/CharacterVoicePreviewButton'
+import {
+  dramaApi,
+  resolveDramaMediaUrl,
+  type DramaAsset,
+  type DramaProjectListItem,
+} from '../../api/drama'
+import { readAssetVoiceBinding } from './CharacterVoiceBindModal'
+import { DramaImageLightbox } from './DramaImageLightbox'
 import RequireAuth from './RequireAuth'
 import './drama.css'
 
-type AssetTabKey = 'all' | 'image' | 'video' | 'audio' | 'character' | 'font'
+type AssetTabKey = 'all' | 'character' | 'scene' | 'prop' | 'voice'
 
-const TABS: Array<{ key: AssetTabKey; label: string }> = [
-  { key: 'all', label: '全部' },
-  { key: 'image', label: '图片' },
-  { key: 'video', label: '视频' },
-  { key: 'audio', label: '音频' },
-  { key: 'character', label: '角色' },
-  { key: 'font', label: '字体' },
+const PAGE_SIZE = 12
+
+const TABS: Array<{ value: AssetTabKey; label: string }> = [
+  { value: 'all', label: '全部' },
+  { value: 'character', label: '角色' },
+  { value: 'scene', label: '场景' },
+  { value: 'prop', label: '道具' },
+  { value: 'voice', label: '音色' },
 ]
+
+const KIND_LABEL: Record<string, string> = {
+  character: '角色',
+  scene: '场景',
+  prop: '道具',
+  voice: '音色',
+  material: '素材',
+}
 
 export default function AssetLibraryPage() {
   return (
@@ -25,43 +46,113 @@ export default function AssetLibraryPage() {
   )
 }
 
-// 根据 URL / type 粗分媒体类别
-function mediaKind(asset: DramaAsset): AssetTabKey {
+// 按资产 type 归入角色 / 场景 / 道具 / 音色
+function assetKind(asset: DramaAsset): AssetTabKey | 'other' {
   const t = (asset.type || '').toLowerCase()
-  if (t === 'character') return 'character'
-  const url = `${asset.cover || ''} ${asset.url || ''}`.toLowerCase()
-  if (/\.(mp4|webm|mov)(\?|$)/.test(url) || t === 'video') return 'video'
-  if (/\.(mp3|wav|m4a|aac)(\?|$)/.test(url) || t === 'audio') return 'audio'
-  if (/\.(ttf|otf|woff2?)(\?|$)/.test(url) || t === 'font') return 'font'
-  return 'image'
+  if (t === 'character' || t === 'scene' || t === 'prop' || t === 'voice') return t
+  return 'other'
 }
 
 function matchTab(asset: DramaAsset, tab: AssetTabKey): boolean {
   if (tab === 'all') return true
-  return mediaKind(asset) === tab
+  return assetKind(asset) === tab
 }
 
 function fileMeta(asset: DramaAsset): string {
+  const kind = assetKind(asset)
+  if (kind !== 'other') return KIND_LABEL[kind]
   const url = (asset.cover || asset.url || '').toLowerCase()
   const ext = url.match(/\.([a-z0-9]{2,5})(\?|$)/)?.[1]
   if (ext) return `.${ext}`
-  if (asset.type === 'character') return '角色'
   return asset.type || '文件'
+}
+
+// 音色资产或角色已绑定音色的试听地址
+function voicePreviewUrl(asset: DramaAsset): string {
+  if (assetKind(asset) === 'voice') return asset.url || ''
+  return readAssetVoiceBinding(asset)?.url || ''
+}
+
+function isImageLike(asset: DramaAsset): boolean {
+  const kind = assetKind(asset)
+  return kind === 'character' || kind === 'scene' || kind === 'prop' || kind === 'other'
 }
 
 // 渲染资产库内容
 function AssetLibraryInner() {
+  /*
+   * assets 当前项目范围下的资产
+   * projects 项目列表（筛选用）
+   * projectId 选中的项目 id，空串表示全部
+   * tab 角色/场景/道具/音色
+   * query 搜索词
+   * page 当前页
+   * playingId 正在试听的资产 id
+   * error 错误文案
+   * loading 加载中
+   */
   const [assets, setAssets] = useState<DramaAsset[]>([])
+  const [projects, setProjects] = useState<DramaProjectListItem[]>([])
+  const [projectId, setProjectId] = useState('')
   const [tab, setTab] = useState<AssetTabKey>('all')
   const [query, setQuery] = useState('')
+  const [page, setPage] = useState(1)
+  const [playingId, setPlayingId] = useState<number | null>(null)
+  const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null)
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
 
   useEffect(() => {
     dramaApi
-      .listAssets()
-      .then(setAssets)
-      .catch((err) => setError(err instanceof Error ? err.message : '加载失败'))
+      .listProjects()
+      .then(setProjects)
+      .catch(() => undefined)
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setError('')
+    const pid = projectId ? Number(projectId) : undefined
+    dramaApi
+      .listAssets(Number.isFinite(pid) ? pid : undefined)
+      .then((rows) => {
+        if (!cancelled) setAssets(rows)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : '加载失败')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [projectId])
+
+  useEffect(() => {
+    return () => {
+      audioRef.current?.pause()
+    }
+  }, [])
+
+  const projectNameById = useMemo(() => {
+    const map = new Map<number, string>()
+    for (const p of projects) map.set(p.id, p.title || `项目 #${p.id}`)
+    return map
+  }, [projects])
+
+  const projectOptions = useMemo(
+    () => [
+      { value: '', label: '全部项目' },
+      ...projects.map((p) => ({
+        value: String(p.id),
+        label: p.title || `项目 #${p.id}`,
+      })),
+    ],
+    [projects],
+  )
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -70,9 +161,45 @@ function AssetLibraryInner() {
       if (!q) return true
       const name = (asset.name || '').toLowerCase()
       const type = (asset.type || '').toLowerCase()
-      return name.includes(q) || type.includes(q) || String(asset.project_id).includes(q)
+      const projectName = (projectNameById.get(asset.project_id) || '').toLowerCase()
+      return (
+        name.includes(q) ||
+        type.includes(q) ||
+        projectName.includes(q) ||
+        String(asset.project_id).includes(q)
+      )
     })
-  }, [assets, tab, query])
+  }, [assets, tab, query, projectNameById])
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(page, pageCount)
+  const pageItems = useMemo(() => {
+    const start = (safePage - 1) * PAGE_SIZE
+    return filtered.slice(start, start + PAGE_SIZE)
+  }, [filtered, safePage])
+
+  useEffect(() => {
+    setPage(1)
+  }, [tab, query, projectId])
+
+  // 卡片缩略图上试听 / 暂停音色
+  function toggleVoice(asset: DramaAsset) {
+    const src = resolveDramaMediaUrl(voicePreviewUrl(asset))
+    if (!src) {
+      setError('该音色尚未合成试听')
+      return
+    }
+    if (playingId === asset.id) {
+      audioRef.current?.pause()
+      setPlayingId(null)
+      return
+    }
+    if (!audioRef.current) audioRef.current = new Audio()
+    audioRef.current.src = src
+    audioRef.current.onended = () => setPlayingId(null)
+    void audioRef.current.play().catch(() => setError('播放失败'))
+    setPlayingId(asset.id)
+  }
 
   return (
     <AppShell active="assets">
@@ -82,89 +209,131 @@ function AssetLibraryInner() {
             <div>
               <h1>资产管理</h1>
               <p className="pf-muted" style={{ margin: '0.35rem 0 0' }}>
-                图片、视频、音频、角色与字体素材
+                按角色、场景、道具与音色浏览素材
               </p>
             </div>
             <div className="pf-drama-list-actions">
-              <Link className="pf-btn pf-btn-ghost pf-btn-sm" to="/history">
-                我的项目
-              </Link>
-              <Link className="pf-btn pf-btn-ghost pf-btn-sm" to="/settings">
+              <Button to="/drama" variant="ghost" size="sm">
+                漫剧项目
+              </Button>
+              <Button to="/history" variant="ghost" size="sm">
+                科普历史
+              </Button>
+              <Button to="/settings" variant="ghost" size="sm">
                 个人中心
-              </Link>
+              </Button>
             </div>
           </div>
 
           <div className="pf-drama-list-toolbar">
-            <div className="pf-pill-row" role="tablist" aria-label="资产分类">
-              {TABS.map((t) => (
-                <button
-                  key={t.key}
-                  type="button"
-                  role="tab"
-                  className={`pf-pill${tab === t.key ? ' active' : ''}`}
-                  aria-selected={tab === t.key}
-                  onClick={() => setTab(t.key)}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-            <label className="pf-drama-search">
-              <span className="sr-only">搜索资产</span>
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="搜索文件名或类型"
+            <PillFilter options={TABS} value={tab} onChange={setTab} ariaLabel="资产分类" />
+            <div className="pf-asset-toolbar-filters">
+              <FilterSelect
+                label="按项目筛选"
+                value={projectId}
+                options={projectOptions}
+                onChange={setProjectId}
               />
-            </label>
+              <label className="pf-drama-search">
+                <span className="sr-only">搜索资产</span>
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="搜索名称或项目"
+                />
+              </label>
+            </div>
           </div>
         </header>
 
         {error ? <p className="drama-error">{error}</p> : null}
 
-        <p className="pf-muted" style={{ marginBottom: '1rem' }}>
-          共 {assets.length} 项 · 当前 {filtered.length} 项
-        </p>
+        <div className="pf-asset-toolbar-meta">
+          <p className="pf-muted" style={{ margin: 0 }}>
+            {loading
+              ? '加载中…'
+              : `共 ${assets.length} 项 · 筛选后 ${filtered.length} 项 · 第 ${safePage}/${pageCount} 页`}
+          </p>
+        </div>
 
-        {filtered.length === 0 ? (
+        {!loading && filtered.length === 0 ? (
           <div className="pf-empty-state is-compact">
-            <p className="pf-muted">
-              {tab === 'font' || tab === 'audio'
-                ? '该分类暂无素材，后续将支持上传'
-                : '暂无匹配资产'}
-            </p>
+            <p className="pf-muted">该分类暂无资产</p>
           </div>
         ) : (
-          <div className="pf-asset-grid">
-            {filtered.map((asset) => {
-              const mediaSrc = resolveDramaMediaUrl(asset.cover || asset.url)
-              const kind = mediaKind(asset)
-              return (
-                <article key={asset.id} className="pf-asset-card">
-                  <div className={`pf-asset-thumb is-${kind}`}>
-                    {mediaSrc && (kind === 'image' || kind === 'character' || kind === 'video') ? (
-                      kind === 'video' ? (
-                        <video src={mediaSrc} muted playsInline />
+          <>
+            <div className="pf-asset-grid">
+              {pageItems.map((asset) => {
+                const kind = assetKind(asset)
+                const mediaSrc = resolveDramaMediaUrl(asset.cover || (kind === 'voice' ? '' : asset.url))
+                const projectLabel =
+                  projectNameById.get(asset.project_id) || `项目 #${asset.project_id}`
+                const previewUrl = voicePreviewUrl(asset)
+                const isVoice = kind === 'voice'
+                const playing = playingId === asset.id
+                return (
+                  <article key={asset.id} className="pf-asset-card">
+                    <div className={`pf-asset-thumb is-${kind}`}>
+                      {isVoice ? (
+                        <button
+                          type="button"
+                          className={`pf-asset-play${playing ? ' is-playing' : ''}`}
+                          onClick={() => toggleVoice(asset)}
+                          disabled={!previewUrl}
+                          title={previewUrl ? (playing ? '停止试听' : '试听音色') : '尚未合成试听'}
+                        >
+                          <span className="pf-asset-play-icon" aria-hidden>
+                            {playing ? <Pause size={20} strokeWidth={2} /> : <Play size={20} strokeWidth={2} />}
+                          </span>
+                        </button>
+                      ) : mediaSrc && isImageLike(asset) ? (
+                        <button
+                          type="button"
+                          className="pf-asset-thumb-btn"
+                          onClick={() =>
+                            setLightbox({ src: mediaSrc, alt: asset.name || fileMeta(asset) })
+                          }
+                          title="查看大图"
+                        >
+                          <img src={mediaSrc} alt={asset.name || ''} />
+                        </button>
                       ) : (
-                        <img src={mediaSrc} alt="" />
-                      )
-                    ) : (
-                      <span>{fileMeta(asset)}</span>
-                    )}
-                  </div>
-                  <h3>{asset.name || '未命名'}</h3>
-                  <p>
-                    {fileMeta(asset)} · 项目 #{asset.project_id}
-                  </p>
-                  <Link className="pf-link" to={`/drama/projects/${asset.project_id}`}>
-                    打开项目
-                  </Link>
-                </article>
-              )
-            })}
-          </div>
+                        <span>{fileMeta(asset)}</span>
+                      )}
+                    </div>
+                    <h3>{asset.name || '未命名'}</h3>
+                    <p>
+                      {fileMeta(asset)} · {projectLabel}
+                    </p>
+                    <div className="pf-asset-card-actions">
+                      {previewUrl && !isVoice ? (
+                        <CharacterVoicePreviewButton
+                          url={previewUrl}
+                          label={asset.name || undefined}
+                          onError={setError}
+                        />
+                      ) : isVoice && !previewUrl ? (
+                        <span className="pf-muted">尚未合成试听</span>
+                      ) : null}
+                      <Button to={`/drama/projects/${asset.project_id}`} variant="ghost" size="sm">
+                        打开项目
+                      </Button>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+            <Pagination page={safePage} pageCount={pageCount} onChange={setPage} />
+          </>
         )}
+
+        {lightbox ? (
+          <DramaImageLightbox
+            src={lightbox.src}
+            alt={lightbox.alt}
+            onClose={() => setLightbox(null)}
+          />
+        ) : null}
       </div>
     </AppShell>
   )

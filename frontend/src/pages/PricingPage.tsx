@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import AppShell from '../components/layout/AppShell'
+import MonthlyUsageCard from '../components/billing/MonthlyUsageCard'
 import PaymentModal, { type PayCheckout } from '../components/billing/PaymentModal'
 import TopupHistoryModal from '../components/billing/TopupHistoryModal'
 import { api, type BillingSku, type Wallet } from '../api'
@@ -36,6 +37,7 @@ function planLabel(wallet: Wallet | null) {
 }
 
 export default function PricingPage() {
+  const nav = useNavigate()
   const [params] = useSearchParams()
   const [wallet, setWallet] = useState<Wallet | null>(null)
   const [skus, setSkus] = useState<SkuView[]>([])
@@ -45,7 +47,6 @@ export default function PricingPage() {
   const [hint, setHint] = useState('')
   const [checkout, setCheckout] = useState<PayCheckout | null>(null)
   const [historyOpen, setHistoryOpen] = useState(false)
-  const [billingCycle, setBillingCycle] = useState<'month' | 'year'>('month')
   const loggedIn = Boolean(localStorage.getItem('token'))
 
   const displaySkus = useMemo(() => {
@@ -79,7 +80,7 @@ export default function PricingPage() {
 
   async function pay(sku: BillingSku) {
     if (!loggedIn) {
-      setError('请先登录后再充值')
+      nav(`/auth?next=${encodeURIComponent(`/pricing#sku-${sku.id}`)}`)
       return
     }
     setBusy(sku.id)
@@ -143,7 +144,7 @@ export default function PricingPage() {
             </div>
             <button
               type="button"
-              className="pf-pricing-history-btn"
+              className="pf-btn pf-btn-ghost pf-btn-sm"
               disabled={!loggedIn}
               title={loggedIn ? '查看充值记录' : '请先登录'}
               onClick={() => setHistoryOpen(true)}
@@ -153,96 +154,14 @@ export default function PricingPage() {
           </div>
         </section>
 
+        {loggedIn ? (
+          <section className="pf-pricing-usage" aria-label="本月使用情况">
+            <MonthlyUsageCard variant="compact" showTopup={false} />
+          </section>
+        ) : null}
+
         {hint ? <p className="pf-pricing-hint">{hint}</p> : null}
         {error ? <p className="pf-error pf-pricing-error">{error}</p> : null}
-
-        <div className="pf-billing-toggle" role="group" aria-label="计费周期">
-          <button
-            type="button"
-            className={billingCycle === 'month' ? 'is-active' : ''}
-            onClick={() => setBillingCycle('month')}
-          >
-            按月付费
-          </button>
-          <button
-            type="button"
-            className={billingCycle === 'year' ? 'is-active' : ''}
-            onClick={() => setBillingCycle('year')}
-          >
-            按年付费
-            <span className="pf-billing-save">省 20%</span>
-          </button>
-        </div>
-
-        <section className="pf-plan-grid" aria-label="套餐一览">
-          {[
-            {
-              id: 'free',
-              name: '免费版',
-              priceMonth: '0',
-              priceYear: '0',
-              desc: '体验创作流程',
-              features: ['基础额度试用', '科普分镜流水线', '漫剧项目创建'],
-              cta: '当前方案',
-              primary: false,
-            },
-            {
-              id: 'pro',
-              name: '专业版',
-              priceMonth: '79',
-              priceYear: '63',
-              desc: '个人创作者推荐',
-              features: ['按量充值叠加', 'AI 视频与配音', '优先队列（规划中）'],
-              cta: '立即订阅',
-              primary: true,
-            },
-            {
-              id: 'team',
-              name: '团队版',
-              priceMonth: '299',
-              priceYear: '239',
-              desc: '团队协作即将上线',
-              features: ['成员席位', '共享资产库', '对公结算'],
-              cta: '联系我们',
-              primary: false,
-              disabled: true,
-            },
-          ].map((plan) => {
-            const price = billingCycle === 'year' ? plan.priceYear : plan.priceMonth
-            return (
-              <article key={plan.id} className={`pf-plan-card${plan.primary ? ' is-primary' : ''}`}>
-                {plan.primary ? <span className="pf-pricing-rec-badge">推荐</span> : null}
-                <h3>{plan.name}</h3>
-                <p className="pf-plan-desc">{plan.desc}</p>
-                <div className="pf-plan-price">
-                  <span className="yen">¥</span>
-                  <strong>{price}</strong>
-                  <span className="unit">/{billingCycle === 'year' ? '月·年付' : '月'}</span>
-                </div>
-                <ul className="pf-plan-features">
-                  {plan.features.map((f) => (
-                    <li key={f}>
-                      <span aria-hidden>✓</span>
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <button
-                  type="button"
-                  className={`pf-btn ${plan.primary ? 'pf-btn-lime' : 'pf-btn-ghost'} pf-btn-sm`}
-                  disabled={plan.disabled}
-                  onClick={() => {
-                    if (plan.id === 'pro') {
-                      document.getElementById('pricing-skus')?.scrollIntoView({ behavior: 'smooth' })
-                    }
-                  }}
-                >
-                  {plan.cta}
-                </button>
-              </article>
-            )
-          })}
-        </section>
 
         <section className="pf-pricing-skus" id="pricing-skus">
           <header className="pf-pricing-section-head">
@@ -257,6 +176,7 @@ export default function PricingPage() {
               return (
                 <article
                   key={sku.id}
+                  id={`sku-${sku.id}`}
                   className={`pf-pricing-sku-card${recommended ? ' is-recommended' : ''}`}
                 >
                   {recommended ? <span className="pf-pricing-rec-badge">推荐</span> : null}

@@ -29,32 +29,44 @@ export function useCanvasAutoSave({
   const latestRef = useRef({ nodes, edges, projectId })
   latestRef.current = { nodes, edges, projectId }
 
-  const flush = useCallback(async () => {
-    if (savingRef.current) return
-    const payload = latestRef.current
-    savingRef.current = true
-    try {
-      await dramaApi.saveCanvas({
-        project_id: payload.projectId,
-        nodes: payload.nodes.map((n) => ({
-          id: n.id,
-          type: n.type,
-          position: n.position,
-          data: n.data,
-        })),
-        edges: payload.edges.map((e) => ({
-          id: e.id,
-          source: e.source,
-          target: e.target,
-        })),
-      })
-      onSaved()
-    } catch (err) {
-      onError(err instanceof Error ? err.message : '自动保存失败')
-    } finally {
-      savingRef.current = false
-    }
-  }, [onError, onSaved])
+  /** 立刻保存；可传入覆盖节点/边（删除后未等一轮渲染时用） */
+  const flush = useCallback(
+    async (override?: {
+      nodes: Node<CanvasAssetNodeData>[]
+      edges: Edge[]
+    }) => {
+      if (savingRef.current) return
+      const base = latestRef.current
+      const payload = {
+        projectId: base.projectId,
+        nodes: override?.nodes ?? base.nodes,
+        edges: override?.edges ?? base.edges,
+      }
+      savingRef.current = true
+      try {
+        await dramaApi.saveCanvas({
+          project_id: payload.projectId,
+          nodes: payload.nodes.map((n) => ({
+            id: n.id,
+            type: n.type,
+            position: n.position,
+            data: n.data,
+          })),
+          edges: payload.edges.map((e) => ({
+            id: e.id,
+            source: e.source,
+            target: e.target,
+          })),
+        })
+        onSaved()
+      } catch (err) {
+        onError(err instanceof Error ? err.message : '自动保存失败')
+      } finally {
+        savingRef.current = false
+      }
+    },
+    [onError, onSaved],
+  )
 
   useEffect(() => {
     if (!enabled || !dirty) return

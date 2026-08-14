@@ -17,6 +17,7 @@ const MIN_LEN: Record<string, number> = {
   scene: 100,
   prop: 70,
   material: 70,
+  video: 8,
 }
 
 // 是否模板化套话
@@ -28,6 +29,8 @@ function isGenericTemplate(text: string): boolean {
 // 判断提示词是否过短、占位或模板化
 function isWeakVisualPrompt(prompt: string, assetName: string, kind: string): boolean {
   const text = prompt.trim()
+  /* 含 @asset: 引用的是用户正文，不要当弱占位清掉 */
+  if (/@asset:\d+/.test(text)) return false
   const kindLower = kind.toLowerCase()
   const minLen = MIN_LEN[kindLower] ?? 60
   if (text.length < minLen) return true
@@ -83,7 +86,7 @@ export function readVisualPrompt(asset: DramaAsset): string {
 
   if (kind === 'character') {
     const composed = manjuJoinCharacterPrompt(params)
-    if (composed) return composed
+    if (composed && !isWeakVisualPrompt(composed, name, kind)) return composed
   }
 
   if (kind === 'scene' && name) {
@@ -92,4 +95,20 @@ export function readVisualPrompt(asset: DramaAsset): string {
 
   if (stored) return stored
   return `${kind} ${name}`.trim()
+}
+
+/**
+ * 画布/编辑用提示词：过滤「character 新角色」等弱占位，避免误填。
+ */
+export function readEditableVisualPrompt(asset: DramaAsset): string {
+  const kind = (asset.type || '').toLowerCase()
+  const name = asset.name || ''
+  const prompt = readVisualPrompt(asset).trim()
+  if (!prompt || isWeakVisualPrompt(prompt, name, kind)) return ''
+  return prompt
+}
+
+/** 文本是否为弱视觉提示词（占位/过短/模板） */
+export function isWeakEditablePrompt(prompt: string, name = '', kind = ''): boolean {
+  return isWeakVisualPrompt(prompt, name, kind)
 }

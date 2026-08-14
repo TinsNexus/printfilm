@@ -1,19 +1,28 @@
 /** 漫剧 Agent 首页：AI 生剧本 / 自由画布 + 我的项目（多选删除） */
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import {
   FolderOpen,
   LayoutGrid,
   Library,
   MoreHorizontal,
   PenLine,
+  Search,
   Sparkles,
   Trash2,
 } from 'lucide-react'
 import AppShell from '../../components/layout/AppShell'
-import { dramaApi, type DramaProjectListItem } from '../../api/drama'
+import Button from '../../components/ui/Button'
+import PillFilter, { type PillOption } from '../../components/ui/PillFilter'
+import { dramaApi, resolveDramaMediaUrl, type DramaProjectListItem } from '../../api/drama'
 import { dialog } from '../../lib/dialog'
 import { type ImageStyleId } from '../../lib/dramaImageStyles'
+import { formatDramaUsageBrief } from '../../lib/dramaUsage'
+import {
+  dramaProjectEntryPath,
+  formatDramaCardMeta,
+  isCanvasWorkflow,
+} from '../../lib/dramaWorkflow'
 import RequireAuth from './RequireAuth'
 import { DramaEpisodeCountPopover } from './DramaEpisodeCountPopover'
 import { DramaImageStyleModal } from './DramaImageStyleModal'
@@ -40,6 +49,15 @@ function verticalTitleLabel(name: string, max = 12): string {
   if (clean.length <= max) return clean
   return `${clean.slice(0, max - 1)}…`
 }
+
+type ProjectFilter = 'all' | 'running' | 'done' | 'draft'
+
+const FILTER_OPTIONS: PillOption<ProjectFilter>[] = [
+  { value: 'all', label: '全部' },
+  { value: 'running', label: '进行中' },
+  { value: 'done', label: '已完成' },
+  { value: 'draft', label: '草稿' },
+]
 
 export default function DramaListPage() {
   return (
@@ -77,7 +95,7 @@ function DramaListInner() {
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [deleting, setDeleting] = useState(false)
-  const [filter, setFilter] = useState<'all' | 'running' | 'done' | 'draft'>('all')
+  const [filter, setFilter] = useState<ProjectFilter>('all')
   const [query, setQuery] = useState('')
   const [showCreate, setShowCreate] = useState(false)
 
@@ -132,6 +150,7 @@ function DramaListInner() {
         source: CANVAS_PLACEHOLDER,
         episode_count: 1,
         title: '自由画布项目',
+        workflow: 'canvas',
       })
       navigate(`/drama/projects/${project.id}/canvas`)
     } catch (err) {
@@ -153,9 +172,19 @@ function DramaListInner() {
   const canGenerate = storyLen >= CREATIVE_MIN_LENGTH && !busy
 
   const filteredItems = items.filter((item) => {
-    if (filter === 'draft' && item.has_script) return false
-    if (filter === 'running' && !(item.has_script && (item.episode_count || 0) > 0)) return false
-    if (filter === 'done' && !(item.has_script && (item.episode_count || 0) >= 8)) return false
+    const canvas = isCanvasWorkflow(item)
+    if (filter === 'draft') {
+      if (canvas) return (item.asset_count || 0) === 0
+      if (item.has_script) return false
+    }
+    if (filter === 'running') {
+      if (canvas) return (item.asset_count || 0) > 0
+      if (!(item.has_script && (item.episode_count || 0) > 0)) return false
+    }
+    if (filter === 'done') {
+      if (canvas) return false
+      if (!(item.has_script && (item.episode_count || 0) >= 8)) return false
+    }
     const q = query.trim().toLowerCase()
     if (q && !(item.title || '').toLowerCase().includes(q)) return false
     return true
@@ -171,13 +200,13 @@ function DramaListInner() {
     })
   }, [])
 
-  // 打开项目（多选模式下改为勾选）
+  // 打开项目：自由画布进画布，普通项目进工作台
   function openProject(item: DramaProjectListItem) {
     if (selectionMode) {
       toggleSelect(item.id)
       return
     }
-    navigate(`/drama/projects/${item.id}`)
+    navigate(dramaProjectEntryPath(item))
   }
 
   // 重命名
@@ -249,55 +278,41 @@ function DramaListInner() {
           <div className="pf-drama-list-title-row">
             <h1>我的漫剧项目</h1>
             <div className="pf-drama-list-actions">
-              <Link className="pf-btn pf-btn-ghost pf-btn-sm" to="/drama/assets">
+              <Button variant="ghost" size="sm" to="/drama/assets">
                 <Library size={15} strokeWidth={1.75} aria-hidden />
                 资产库
-              </Link>
-              <button
-                type="button"
-                className="pf-btn pf-btn-ghost pf-btn-sm"
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
                 disabled={canvasBusy}
                 onClick={() => handleTabClick('canvas')}
               >
                 <LayoutGrid size={15} strokeWidth={1.75} aria-hidden />
                 {canvasBusy ? '创建中…' : '自由画布'}
-              </button>
-              <button
-                type="button"
-                className="pf-btn pf-btn-lime pf-btn-sm"
+              </Button>
+              <Button
+                variant="lime"
+                size="sm"
                 onClick={() => {
                   setShowCreate(true)
                   handleTabClick('ai')
                 }}
               >
                 新建项目
-              </button>
+              </Button>
             </div>
           </div>
 
           <div className="pf-drama-list-toolbar">
-            <div className="pf-pill-row" role="tablist" aria-label="项目筛选">
-              {(
-                [
-                  ['all', '全部'],
-                  ['running', '进行中'],
-                  ['done', '已完成'],
-                  ['draft', '草稿'],
-                ] as const
-              ).map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  role="tab"
-                  className={`pf-pill${filter === key ? ' active' : ''}`}
-                  aria-selected={filter === key}
-                  onClick={() => setFilter(key)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            <PillFilter<ProjectFilter>
+              options={FILTER_OPTIONS}
+              value={filter}
+              onChange={setFilter}
+              ariaLabel="项目筛选"
+            />
             <label className="pf-drama-search">
+              <Search size={16} strokeWidth={2} aria-hidden />
               <span className="sr-only">搜索项目</span>
               <input
                 value={query}
@@ -317,7 +332,7 @@ function DramaListInner() {
                   AI 生剧本
                 </button>
               </div>
-              <button type="button" className="pf-link" onClick={() => setShowCreate(false)}>
+              <button type="button" className="pf-link pf-drama-collapse" onClick={() => setShowCreate(false)}>
                 收起
               </button>
             </div>
@@ -353,15 +368,16 @@ function DramaListInner() {
                   <span className="drama-agent-opt-divider" aria-hidden />
                   <DramaEpisodeCountPopover value={episodeCount} onChange={setEpisodeCount} disabled={busy} />
                 </div>
-                <button
-                  type="button"
-                  className="drama-btn-primary drama-agent-generate-btn"
+                <Button
+                  variant="lime"
+                  size="md"
+                  className="drama-agent-generate-btn"
                   disabled={!canGenerate}
                   onClick={() => void handleGenerate()}
                 >
                   <Sparkles size={16} strokeWidth={1.75} aria-hidden />
                   {busy ? '创建中…' : '立即生成'}
-                </button>
+                </Button>
               </div>
             </div>
           </section>
@@ -382,23 +398,22 @@ function DramaListInner() {
             </div>
             <h2>还没有项目</h2>
             <p className="pf-muted">用 AI 生剧本或自由画布，创建你的第一部漫剧</p>
-            <button
-              type="button"
-              className="pf-btn pf-btn-lime"
+            <Button
+              variant="lime"
               onClick={() => {
                 setShowCreate(true)
                 handleTabClick('ai')
               }}
             >
               新建项目
-            </button>
+            </Button>
           </div>
         ) : filteredItems.length === 0 ? (
           <div className="pf-empty-state is-compact">
             <p className="pf-muted">没有符合筛选的项目</p>
-            <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" onClick={() => { setFilter('all'); setQuery('') }}>
+            <Button variant="ghost" size="sm" onClick={() => { setFilter('all'); setQuery('') }}>
               清除筛选
-            </button>
+            </Button>
           </div>
         ) : (
           <div className="pf-drama-card-grid">
@@ -417,15 +432,37 @@ function DramaListInner() {
             </button>
             {filteredItems.map((item) => {
               const isSelected = selected.has(item.id)
+              const coverSrc = item.cover_url ? resolveDramaMediaUrl(item.cover_url) : ''
+              const canvas = isCanvasWorkflow(item)
               return (
-                <article key={item.id} className={`pf-drama-card${isSelected ? ' is-selected' : ''}`}>
+                <article
+                  key={item.id}
+                  className={`pf-drama-card${isSelected ? ' is-selected' : ''}${canvas ? ' is-canvas' : ''}`}
+                >
                   <button
                     type="button"
                     className="pf-drama-card-cover"
                     onClick={() => openProject(item)}
                     aria-label={`打开 ${item.title}`}
                   >
-                    <span className="pf-drama-card-cover-fallback">{verticalTitleLabel(item.title)}</span>
+                    {coverSrc ? (
+                      <img
+                        src={coverSrc}
+                        alt=""
+                        className="pf-drama-card-cover-img"
+                        loading="lazy"
+                        decoding="async"
+                      />
+                    ) : (
+                      <span className="pf-drama-card-cover-fallback">{verticalTitleLabel(item.title)}</span>
+                    )}
+                    {canvas ? <span className="pf-drama-card-cover-badge is-canvas">自由画布</span> : null}
+                    {!canvas && item.cover_pending ? (
+                      <span className="pf-drama-card-cover-badge">封面生成中</span>
+                    ) : null}
+                    {!canvas && !coverSrc && !item.cover_pending && item.asset_count > 0 ? (
+                      <span className="pf-drama-card-cover-badge is-muted">待出图</span>
+                    ) : null}
                     <label
                       className={`drama-project-row-check${isSelected || selectionMode ? ' is-visible' : ''}`}
                       onClick={(e) => e.stopPropagation()}
@@ -452,10 +489,9 @@ function DramaListInner() {
                         </div>
                       </details>
                     </div>
-                    <p className="pf-drama-card-meta">
-                      {item.has_script ? `已写剧本 · ${item.episode_count || 0} 集` : '草稿 · 待写剧本'}
-                      {' · '}
-                      {item.asset_count || 0} 资产
+                    <p className="pf-drama-card-meta">{formatDramaCardMeta(item)}</p>
+                    <p className="pf-drama-card-usage" title="本剧累计费用与生成次数">
+                      {formatDramaUsageBrief(item.usage)}
                     </p>
                     <p className="pf-drama-card-time">{formatUpdatedAt(item.updated_at || item.created_at)}</p>
                   </div>

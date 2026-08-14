@@ -88,10 +88,10 @@ export function CanvasWorkspace({
   variant = 'fullscreen',
 }: CanvasWorkspaceProps) {
   return (
-    <ReactFlowProvider>
-      <CanvasStoreProvider projectId={projectId}>
+    <CanvasStoreProvider projectId={projectId}>
+      <ReactFlowProvider>
         <CanvasWorkspaceContent projectId={projectId} variant={variant} />
-      </CanvasStoreProvider>
-    </ReactFlowProvider>
+      </ReactFlowProvider>
+    </CanvasStoreProvider>
   )
 }

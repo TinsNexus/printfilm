@@ -759,6 +759,40 @@ class ArkGateway:
                 await asyncio.sleep(self.settings.ark_video_poll_interval)
         return TaskResult(status="failed", error="poll timeout")
 
+    async def fetch_task_once(self, task_id: str) -> TaskResult:
+        """单次查询 Seedance 任务，不阻塞等待。"""
+        if self.mock or task_id.startswith("mock-task-"):
+            return TaskResult(
+                status="succeeded",
+                url=f"/static/mock/video_{task_id[-8:]}.mp4",
+                last_frame_url=f"/static/mock/last_{task_id[-8:]}.jpg",
+            )
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                self._url(f"/contents/generations/tasks/{task_id}"),
+                headers=self._headers(),
+            )
+        if resp.status_code >= 400:
+            return TaskResult(status="failed", error=resp.text[:500])
+        data = resp.json()
+        status = str(data.get("status", "")).lower() or "running"
+        if status in {"succeeded", "success"}:
+            url = None
+            content = data.get("content")
+            if isinstance(content, dict):
+                url = content.get("video_url")
+            if not url:
+                url = data.get("video_url")
+            return TaskResult(
+                status="succeeded",
+                url=url,
+                last_frame_url=_extract_seedance_last_frame_url(data),
+            )
+        if status in {"failed", "cancelled", "canceled", "expired"}:
+            err = data.get("error") or data.get("message") or status
+            return TaskResult(status="failed", error=str(err))
+        return TaskResult(status="running")
+
     async def wait_video_assets(
         self,
         task_id: str,

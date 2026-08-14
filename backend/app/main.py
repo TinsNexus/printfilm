@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, text
 
-from app.api import auth, billing, projects, templates
+from app.api import auth, billing, projects, templates, tools
 from app.api.admin import router as admin_router
 from app.api.drama import router as drama_router
 from app.config import get_settings
@@ -58,6 +58,7 @@ async def log_requests(request: Request, call_next):
         or (request.method == "GET" and path.startswith("/api/drama/scripts/"))
         or (request.method == "GET" and path.startswith("/api/drama/assets"))
         or (request.method == "GET" and path.startswith("/api/projects/") and path.count("/") == 3)
+        or (request.method == "GET" and "/api/tools/tasks/" in path)
     )
     msg = f"{request.method} {path} → {response.status_code} ({elapsed_ms:.0f}ms)"
     if response.status_code >= 400:
@@ -79,6 +80,7 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(templates.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
 app.include_router(billing.router, prefix="/api")
+app.include_router(tools.router, prefix="/api")
 app.include_router(drama_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
 

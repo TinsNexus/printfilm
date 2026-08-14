@@ -128,3 +128,50 @@ def drama_asset_image_task(
         result,
     )
     return result
+
+
+@celery_app.task(name="drama.asset_video", bind=True, max_retries=1)
+def drama_asset_video_task(
+    self,
+    project_id: int,
+    user_id: int,
+    prompt: str,
+    asset_id: int,
+    model_id: str | None = None,
+    aspect_ratio: str | None = None,
+    resolution: str | None = None,
+    duration_sec: int | None = None,
+    image_style_id: str | None = None,
+    reference_asset_ids: list[int] | None = None,
+) -> dict:
+    # Celery：画布资产生视频
+    from app.services.drama.jobs import run_asset_video_job
+
+    logger.info(
+        "[Celery] 领取资产生视频任务 project_id=%s asset_id=%s model=%s task_id=%s",
+        project_id,
+        asset_id,
+        model_id,
+        self.request.id,
+    )
+    result = _run(
+        run_asset_video_job(
+            project_id,
+            user_id,
+            prompt,
+            asset_id,
+            model_id=model_id,
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            duration_sec=duration_sec,
+            image_style_id=image_style_id,
+            reference_asset_ids=reference_asset_ids or [],
+        )
+    )
+    logger.info(
+        "[Celery] 资产生视频任务结束 project_id=%s asset_id=%s result=%s",
+        project_id,
+        asset_id,
+        result,
+    )
+    return result

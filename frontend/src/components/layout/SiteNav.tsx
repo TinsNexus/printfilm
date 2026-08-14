@@ -4,6 +4,8 @@ import { api } from '../../api'
 import type { User } from '../../api'
 import BrandMark from '../BrandMark'
 import { IconHelp } from '../ui/Icons'
+import Button from '../ui/Button'
+import CreateChoiceModal from '../ui/CreateChoiceModal'
 
 export type NavActive = 'home' | 'drama' | 'kepu' | 'tools' | 'assets' | 'pricing' | 'templates' | 'studio' | 'history'
 
@@ -13,12 +15,17 @@ type Props = {
 
 // 将旧 active 别名归一到新 IA
 function normalizeActive(active: NavActive | undefined, pathname: string): NavActive | undefined {
-  if (active === 'studio' || active === 'templates') return 'kepu'
-  if (active === 'history') return undefined
+  if (active === 'studio' || active === 'templates' || active === 'history') return 'kepu'
   if (active) return active
   if (pathname.startsWith('/drama/assets') || pathname.startsWith('/assets')) return 'assets'
   if (pathname.startsWith('/drama')) return 'drama'
-  if (pathname.startsWith('/studio') || pathname.startsWith('/templates')) return 'kepu'
+  if (
+    pathname.startsWith('/studio') ||
+    pathname.startsWith('/templates') ||
+    pathname.startsWith('/history')
+  ) {
+    return 'kepu'
+  }
   if (pathname.startsWith('/tools')) return 'tools'
   if (pathname.startsWith('/pricing')) return 'pricing'
   if (pathname === '/') return 'home'
@@ -28,8 +35,14 @@ function normalizeActive(active: NavActive | undefined, pathname: string): NavAc
 export default function SiteNav({ active }: Props) {
   const nav = useNavigate()
   const location = useLocation()
+  /*
+   * user 当前用户
+   * menuOpen 移动端抽屉
+   * createOpen 开始创作选择弹层
+   */
   const [user, setUser] = useState<User | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [createOpen, setCreateOpen] = useState(false)
 
   const current = normalizeActive(active, location.pathname)
 
@@ -42,8 +55,13 @@ export default function SiteNav({ active }: Props) {
     setMenuOpen(false)
   }, [location.pathname])
 
+  // 未登录去登录；已登录弹出漫剧/科普选择
   function goCreate() {
-    nav(user ? '/drama' : '/auth')
+    if (!user && !localStorage.getItem('token')) {
+      nav('/auth?next=/')
+      return
+    }
+    setCreateOpen(true)
   }
 
   const isActive = (key: NavActive) => (current === key ? 'active' : undefined)
@@ -56,7 +74,7 @@ export default function SiteNav({ active }: Props) {
       <NavLink to="/drama" className={() => isActive('drama')}>
         漫剧
       </NavLink>
-      <NavLink to="/studio/new" className={() => isActive('kepu')}>
+      <NavLink to="/history" className={() => isActive('kepu')}>
         科普
       </NavLink>
       <NavLink to="/tools" className={() => isActive('tools')}>
@@ -94,13 +112,13 @@ export default function SiteNav({ active }: Props) {
             {user.nickname.slice(0, 1).toUpperCase()}
           </button>
         ) : (
-          <Link to="/auth" className="pf-link pf-nav-login">
+          <Link to="/auth?next=/" className="pf-link pf-nav-login">
             登录
           </Link>
         )}
-        <button type="button" className="pf-btn pf-btn-lime pf-btn-sm pf-btn-icon" onClick={goCreate}>
+        <Button variant="lime" size="sm" icon onClick={goCreate}>
           开始创作
-        </button>
+        </Button>
         <button
           type="button"
           className="pf-nav-burger"
@@ -118,6 +136,7 @@ export default function SiteNav({ active }: Props) {
           <nav className="pf-nav-drawer-links">{centerLinks}</nav>
         </div>
       ) : null}
+      <CreateChoiceModal open={createOpen} onClose={() => setCreateOpen(false)} />
     </header>
   )
 }

@@ -14,6 +14,8 @@ class DramaProjectCreate(BaseModel):
     source: str = Field(default="", description="原始创意文案")
     episode_count: int = Field(default=12, ge=1, le=120)
     image_style_id: str = Field(default="")
+    # script=大纲分集流程；canvas=自由画布
+    workflow: str = Field(default="script", description="script | canvas")
     params: dict[str, Any] | None = None
 
 
@@ -48,6 +50,19 @@ class DramaAssetOut(BaseModel):
     project_id: int
 
     model_config = {"from_attributes": True}
+
+
+class DramaProjectUsageStats(BaseModel):
+    """单部漫剧累计用量：费用与生图/生视频次数。"""
+
+    charge_fen: int = 0
+    charge_yuan: float = 0.0
+    cost_fen: int = 0
+    cost_yuan: float = 0.0
+    tokens: int = 0
+    calls: int = 0
+    image_gens: int = 0
+    video_gens: int = 0
 
 
 class SeedAssetsFromScriptOut(BaseModel):
@@ -96,6 +111,9 @@ class DramaProjectOut(BaseModel):
     script: DramaScriptOut | None = None
     asset_count: int = 0
     episode_count: int = 0
+    # script | canvas
+    workflow: str = "script"
+    usage: DramaProjectUsageStats = Field(default_factory=lambda: DramaProjectUsageStats())
 
     model_config = {"from_attributes": True}
 
@@ -109,6 +127,11 @@ class DramaProjectListItem(BaseModel):
     episode_count: int = 0
     asset_count: int = 0
     has_script: bool = False
+    cover_url: str | None = None
+    cover_pending: bool = False
+    # script | canvas
+    workflow: str = "script"
+    usage: DramaProjectUsageStats = Field(default_factory=lambda: DramaProjectUsageStats())
 
     model_config = {"from_attributes": True}
 
@@ -161,6 +184,20 @@ class DramaImageGenerateRequest(BaseModel):
     aspect_ratio: str | None = None
     # 清晰度 3K / 4K
     resolution: str | None = None
+
+
+class DramaVideoGenerateRequest(BaseModel):
+    project_id: int
+    asset_id: int
+    prompt: str
+    # 前端短名 seedance-2.5 / seedance-1.5，或完整接入点
+    model_id: str | None = None
+    aspect_ratio: str | None = None
+    resolution: str | None = None
+    duration_sec: int | None = None
+    image_style_id: str | None = None
+    # 画布连线带入的参考资产（与正文 @asset:id 合并）
+    reference_asset_ids: list[int] = Field(default_factory=list)
 
 
 class DramaVoicePromptRequest(BaseModel):

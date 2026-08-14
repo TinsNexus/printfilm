@@ -365,7 +365,18 @@ def build_seedance_content_items(
 
 
 def resolve_seedance_model_endpoint(model_id: str | None) -> str:
-    return (model_id or "").strip() or get_settings().model_video
+    # alias 前端短名；空或未知短名回退默认接入点
+    settings = get_settings()
+    raw = (model_id or "").strip()
+    aliases = {
+        "seedance-2.5": settings.model_video,
+        "seedance-2": settings.model_video,
+        "seedance-1.5": settings.model_video,
+        "seedance-1": settings.model_video,
+    }
+    if not raw:
+        return settings.model_video
+    return aliases.get(raw.lower(), raw)
 
 
 def resolve_seedance_ratio(aspect_ratio: str | None) -> str:

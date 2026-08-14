@@ -218,6 +218,51 @@ export function renderPromptEditorContent(
   }
 }
 
+// 已落盘的 @asset:id / @duration:n 不算正在输入的 @ 触发
+function isCompletedContentToken(token: string) {
+  return /^@(asset|duration):\d+$/.test(token)
+}
+
+// 序列化「从编辑器开头到光标」的正文（chip 仍是 @asset:id）
+export function serializePromptEditorContentBeforeCaret(root: HTMLElement) {
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0) return null
+  const anchorNode = selection.anchorNode
+  if (!anchorNode || !root.contains(anchorNode) || isInsideMentionChip(anchorNode)) {
+    return null
+  }
+  try {
+    const range = document.createRange()
+    range.setStart(root, 0)
+    range.setEnd(anchorNode, selection.anchorOffset)
+    const holder = document.createElement('div')
+    holder.appendChild(range.cloneContents())
+    return serializePromptEditorContent(holder)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 解析当前是否在输入 @ 引用。
+ * 优先用光标所在文本节点；否则用光标前序列化结果（去掉末尾空白，避免 chip 后的换行把匹配打掉）。
+ */
+export function detectActiveMentionTrigger(root: HTMLElement): {
+  query: string
+  range: Range | null
+} | null {
+  const fromSel = detectMentionTriggerFromSelection(root)
+  if (fromSel) {
+    if (/^(asset|duration):\d+$/.test(fromSel.query)) return null
+    return { query: fromSel.query, range: fromSel.range }
+  }
+  const before = serializePromptEditorContentBeforeCaret(root)
+  const text = (before ?? serializePromptEditorContent(root)).replace(/\s+$/u, '')
+  const match = text.match(/@([^\s@]*)$/)
+  if (!match || isCompletedContentToken(match[0])) return null
+  return { query: match[1] || '', range: null }
+}
+
 // 从 selection 解析 @ 触发
 export function detectMentionTriggerFromSelection(root: HTMLElement) {
   const selection = window.getSelection()

@@ -177,6 +177,37 @@ export function syncImageJobToUnified(input: {
   })
 }
 
+// 画布视频资产任务 id（与分镜 video:{fragmentId} 区分）
+export function assetVideoJobId(assetId: number): string {
+  return `video-asset:${assetId}`
+}
+
+// 同步画布资产生视频到统一队列
+export function syncAssetVideoJobToUnified(input: {
+  assetId: number
+  projectId: number
+  assetName: string
+  status: DramaGenJobStatus
+  error?: string
+}): void {
+  upsertDramaGenJob({
+    id: assetVideoJobId(input.assetId),
+    kind: 'video',
+    projectId: input.projectId,
+    targetId: input.assetId,
+    title: input.assetName || `视频 ${input.assetId}`,
+    subtype: '画布视频',
+    status: input.status,
+    error: input.error,
+    message:
+      input.status === 'running'
+        ? '生视频中'
+        : input.status === 'queued'
+          ? '排队中'
+          : undefined,
+  })
+}
+
 type FragmentStatusItem = {
   fragment_id: number
   status: string

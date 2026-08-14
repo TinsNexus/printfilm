@@ -1,11 +1,20 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import BrandMark from '../components/BrandMark'
 
+// 仅允许站内相对路径回跳，防止开放重定向
+function safeNextPath(raw: string | null, fallback = '/') {
+  if (!raw) return fallback
+  if (!raw.startsWith('/') || raw.startsWith('//') || raw.includes('://')) return fallback
+  return raw
+}
+
 export default function AuthPage() {
   const nav = useNavigate()
+  const [params] = useSearchParams()
+  const nextPath = safeNextPath(params.get('next'), '/')
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [email, setEmail] = useState('demo@example.com')
   const [password, setPassword] = useState('demo1234')
@@ -23,7 +32,7 @@ export default function AuthPage() {
           ? await api.login(email, password)
           : await api.register(email, password, nickname)
       localStorage.setItem('token', res.access_token)
-      nav('/studio/new')
+      nav(nextPath)
     } catch (err) {
       setError(err instanceof Error ? err.message : '失败')
     } finally {
@@ -36,7 +45,7 @@ export default function AuthPage() {
       <div className="auth-panel">
         <BrandMark />
         <h1>{mode === 'login' ? '回到工作台' : '创建创作者账号'}</h1>
-        <p className="lede">PRINTFILM 科普视频平台 · 主题进，成片出</p>
+        <p className="lede">PRINTFILM · AI 漫剧与科普视频创作平台</p>
         <form onSubmit={onSubmit} className="stack">
           {mode === 'register' && (
             <label>

@@ -5,6 +5,7 @@ import AuthPage from './pages/AuthPage'
 import HistoryPage from './pages/HistoryPage'
 import HomePage from './pages/HomePage'
 import ToolsPage from './pages/ToolsPage'
+import ToolDetailPage from './pages/ToolDetailPage'
 import HelpPage from './pages/HelpPage'
 import SettingsPage from './pages/SettingsPage'
 import PricingPage from './pages/PricingPage'
@@ -31,6 +32,7 @@ export default function App() {
         <Route path="/auth" element={<AuthPage />} />
         <Route path="/templates" element={<TemplatesPage />} />
         <Route path="/tools" element={<ToolsPage />} />
+        <Route path="/tools/:toolId" element={<ToolDetailPage />} />
         <Route path="/assets" element={<AssetLibraryPage />} />
         <Route path="/help" element={<HelpPage />} />
         <Route path="/settings" element={<SettingsPage />} />

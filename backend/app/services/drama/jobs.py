@@ -29,6 +29,7 @@ from app.services.drama.agents import (
     run_episode_script_batch,
     run_script_summary,
 )
+from app.services.drama.asset_video import generate_asset_video
 from app.services.drama.generation import generate_asset_image, generate_fragment_video
 from app.services.drama.visual_prompt import resolve_visual_prompt_for_asset
 
@@ -1107,6 +1108,153 @@ async def run_asset_image_job(
                     await db.commit()
             logger.exception(
                 "资产生图失败 project_id=%s asset_id=%s err=%s",
+                project_id,
+                asset_id,
+                exc,
+            )
+            return {"ok": False, "error": str(exc)[:500]}
+
+
+# ---------- asset video ----------
+
+
+def dispatch_asset_video_job(
+    project_id: int,
+    user_id: int,
+    prompt: str,
+    asset_id: int,
+    *,
+    model_id: str | None = None,
+    aspect_ratio: str | None = None,
+    resolution: str | None = None,
+    duration_sec: int | None = None,
+    image_style_id: str | None = None,
+    reference_asset_ids: list[int] | None = None,
+) -> str:
+    """Enqueue canvas asset video generation. Caller marks asset generating."""
+    if _use_celery():
+        from app.workers.drama_tasks import drama_asset_video_task
+
+        result = drama_asset_video_task.apply_async(
+            kwargs={
+                "project_id": project_id,
+                "user_id": user_id,
+                "prompt": prompt,
+                "asset_id": asset_id,
+                "model_id": model_id,
+                "aspect_ratio": aspect_ratio,
+                "resolution": resolution,
+                "duration_sec": duration_sec,
+                "image_style_id": image_style_id,
+                "reference_asset_ids": reference_asset_ids or [],
+            },
+            queue="video",
+        )
+        logger.info(
+            "dispatch 资产生视频 → Celery project_id=%s asset_id=%s task_id=%s",
+            project_id,
+            asset_id,
+            result.id,
+        )
+        return str(result.id)
+
+    key = _job_key("vid", asset_id)
+    if key in _running and not _running[key].done():
+        logger.info("dispatch 资产生视频 → 进程内已在跑 asset_id=%s", asset_id)
+        return "in-process"
+    _running[key] = asyncio.create_task(
+        run_asset_video_job(
+            project_id,
+            user_id,
+            prompt,
+            asset_id,
+            model_id=model_id,
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            duration_sec=duration_sec,
+            image_style_id=image_style_id,
+            reference_asset_ids=reference_asset_ids or [],
+        )
+    )
+    logger.info(
+        "dispatch 资产生视频 → 进程内新建 project_id=%s asset_id=%s",
+        project_id,
+        asset_id,
+    )
+    return "in-process"
+
+
+async def run_asset_video_job(
+    project_id: int,
+    user_id: int,
+    prompt: str,
+    asset_id: int,
+    *,
+    model_id: str | None = None,
+    aspect_ratio: str | None = None,
+    resolution: str | None = None,
+    duration_sec: int | None = None,
+    image_style_id: str | None = None,
+    reference_asset_ids: list[int] | None = None,
+) -> dict[str, Any]:
+    logger.info(
+        "开始资产生视频 project_id=%s asset_id=%s model=%s duration=%s",
+        project_id,
+        asset_id,
+        model_id,
+        duration_sec,
+    )
+    async with AsyncSessionLocal() as db:
+        project = (
+            await db.execute(
+                select(DramaProject)
+                .where(DramaProject.id == project_id)
+                .options(selectinload(DramaProject.script))
+            )
+        ).scalar_one_or_none()
+        user = await db.get(User, user_id)
+        asset = await db.get(DramaAsset, asset_id)
+        if not project or not user:
+            return {"ok": False, "error": "missing"}
+        if not asset or asset.project_id != project_id:
+            return {"ok": False, "error": "asset_not_found"}
+        try:
+            params = dict(asset.params or {})
+            params["visualPrompt"] = (prompt or "").strip()
+            asset.params = params
+            await db.commit()
+            await db.refresh(asset)
+            asset = await generate_asset_video(
+                db,
+                user,
+                project,
+                asset,
+                prompt,
+                model_id=model_id,
+                aspect_ratio=aspect_ratio,
+                resolution=resolution,
+                duration_sec=duration_sec,
+                image_style_id=image_style_id,
+                reference_asset_ids=reference_asset_ids,
+            )
+            logger.info(
+                "资产生视频完成 project_id=%s asset_id=%s url=%s",
+                project_id,
+                asset.id,
+                (asset.url or "")[:80],
+            )
+            return {"ok": True, "asset_id": asset.id}
+        except Exception as exc:  # noqa: BLE001
+            asset = await db.get(DramaAsset, asset_id)
+            if asset:
+                params = dict(asset.params or {})
+                params["generation"] = {"status": "failed", "error": str(exc)[:400]}
+                if (prompt or "").strip():
+                    params["visualPrompt"] = prompt.strip()
+                asset.params = params
+                await db.commit()
+            logger.exception(
+                "资产生视频失败 project_id=%s asset_id=%s err=%s",
                 project_id,
                 asset_id,
                 exc,

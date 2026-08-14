@@ -1,5 +1,5 @@
 /** React Flow 无限画布核心 */
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import {
   Background,
   MiniMap,
@@ -13,14 +13,13 @@ import { CanvasAssetNode } from './CanvasAssetNode'
 import { useCanvasStore } from './CanvasStore'
 import { CANVAS_SNAP_GRID } from './canvasTypes'
 
-const nodeTypes = { asset: CanvasAssetNode }
-
 type FreeCanvasFlowProps = {
   projectId: number
 }
 
 /** 渲染 React Flow 无限画布 */
 export function FreeCanvasFlow({ projectId }: FreeCanvasFlowProps) {
+  const nodeTypes = useMemo(() => ({ asset: CanvasAssetNode }), [])
   const {
     nodes,
     edges,

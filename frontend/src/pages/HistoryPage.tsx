@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { api, type UsageSummary } from '../api'
+import { api } from '../api'
 import type { Project } from '../api'
 import AppShell from '../components/layout/AppShell'
 import PillTabs from '../components/ui/PillTabs'
@@ -51,13 +51,6 @@ const TYPE_OPTIONS: Array<{ value: '' | 'full' | 'image_text'; label: string }> 
   { value: 'image_text', label: '图文视频' },
 ]
 
-/** 格式化 token 数量，过大时用 k/M 缩写 */
-function formatTokens(n: number) {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`
-  if (n >= 10_000) return `${(n / 1000).toFixed(n >= 100_000 ? 0 : 1)}k`
-  return n.toLocaleString('zh-CN')
-}
-
 function canDownload(p: HistoryItem) {
   return p.status === 'DONE' && Boolean(p.final_video_url)
 }
@@ -89,7 +82,6 @@ export default function HistoryPage() {
    * q 搜索框
    * debouncedQ 防抖后的搜索词
    * page 页码
-   * usage 本月用量
    * preview 预览弹层
    */
   const [items, setItems] = useState<HistoryItem[]>([])
@@ -107,7 +99,6 @@ export default function HistoryPage() {
   const [q, setQ] = useState('')
   const [debouncedQ, setDebouncedQ] = useState('')
   const [page, setPage] = useState(1)
-  const [usage, setUsage] = useState<UsageSummary | null>(null)
   const [preview, setPreview] = useState<{
     url: string
     title: string
@@ -159,10 +150,6 @@ export default function HistoryPage() {
       for (const t of list) map[t.id] = t.name
       setTemplates(map)
     })
-    api
-      .usageSummary()
-      .then(setUsage)
-      .catch(() => setUsage(null))
   }, [nav])
 
   useEffect(() => {
@@ -304,22 +291,21 @@ export default function HistoryPage() {
   }
 
   return (
-    <AppShell active="history" wide>
+    <AppShell active="kepu" wide>
       <div className="pf-history-head">
         <div>
-          <h1>我的项目</h1>
-          <p>管理你的 AI 视频创作项目，继续编辑或发布你的作品。</p>
+          <h1>科普历史</h1>
+          <p>管理你的科普视频项目，继续编辑或下载成片。</p>
         </div>
-        <button type="button" className="pf-btn pf-btn-lime pf-btn-icon" onClick={() => nav('/studio/new')}>
-          <IconPlus size={16} />
-          新建项目
-        </button>
-        <Link to="/studio/new" className="pf-btn pf-btn-sm" style={{ marginLeft: 8 }}>
-          新建科普
-        </Link>
-        <Link to="/drama" className="pf-btn pf-btn-sm" style={{ marginLeft: 8 }}>
-          新建漫剧
-        </Link>
+        <div className="pf-history-head-actions">
+          <button type="button" className="pf-btn pf-btn-lime pf-btn-icon" onClick={() => nav('/studio/new')}>
+            <IconPlus size={16} />
+            新建科普
+          </button>
+          <Link to="/drama" className="pf-btn pf-btn-ghost pf-btn-sm">
+            去漫剧
+          </Link>
+        </div>
       </div>
 
       <div className="pf-stats">
@@ -399,7 +385,7 @@ export default function HistoryPage() {
           {error ? <p className="pf-error">{error}</p> : null}
           {loading ? <p className="pf-muted">加载中…</p> : null}
           {!loading && total === 0 ? (
-            <div className="pf-history-empty">暂无项目，点击「新建项目」开始创作</div>
+            <div className="pf-history-empty">暂无科普项目，点击「新建科普」开始创作</div>
           ) : null}
 
           <div className="pf-project-list">
@@ -540,55 +526,6 @@ export default function HistoryPage() {
             </div>
           ) : null}
         </section>
-
-        <aside className="pf-history-side">
-          <div className="pf-side-box">
-            <h3>本月使用情况</h3>
-            <p className="pf-side-desc">按上游 token 实际用量计费</p>
-
-            <div className="pf-usage-row">
-              <span>Token 用量</span>
-              <span className="pf-usage-val">{formatTokens(usage?.tokens ?? 0)}</span>
-            </div>
-            <div className="pf-meter">
-              <i
-                style={{
-                  width: `${Math.min(100, Math.log10((usage?.tokens || 0) + 1) * 18)}%`,
-                }}
-              />
-            </div>
-
-            <div className="pf-usage-row">
-              <span>本月费用</span>
-              <span className="pf-usage-val">¥{(usage?.charge_yuan ?? 0).toFixed(2)}</span>
-            </div>
-            <div className="pf-meter">
-              <i
-                style={{
-                  width: `${Math.min(100, (usage?.charge_fen || 0) / 20)}%`,
-                }}
-              />
-            </div>
-
-            <div className="pf-usage-row">
-              <span>可用余额</span>
-              <span className="pf-usage-val">¥{(usage?.balance_yuan ?? 0).toFixed(2)}</span>
-            </div>
-            {(usage?.frozen_fen ?? 0) > 0 ? (
-              <div className="pf-usage-row">
-                <span>冻结中</span>
-                <span className="pf-muted">¥{(usage?.frozen_yuan ?? 0).toFixed(2)}</span>
-              </div>
-            ) : null}
-
-            <div className="pf-usage-foot">
-              <span className="pf-muted">调用 {usage?.calls ?? 0} 次</span>
-              <Link to="/pricing" className="pf-link">
-                去充值 →
-              </Link>
-            </div>
-          </div>
-        </aside>
       </div>
 
       {preview ? (

@@ -175,25 +175,25 @@
   width: 100%;
   box-sizing: border-box;
   min-height: 156px;
-  border: 1px solid var(--drama-line);
+  border: 1px solid rgba(17, 19, 24, 0.1);
   border-radius: 14px;
   padding: 14px 16px 32px;
   font: inherit;
   font-size: 15px;
   line-height: 1.55;
   resize: vertical;
-  background: #fafafa;
+  background: #fff;
   transition:
     border-color 0.15s ease,
-    background 0.15s ease,
-    box-shadow 0.15s ease;
+    box-shadow 0.15s ease,
+    background 0.15s ease;
 }
 
 .drama-agent-ai textarea:focus {
   outline: none;
-  background: #fff;
-  border-color: color-mix(in srgb, var(--drama-lime) 55%, #cbd5e1);
+  border-color: color-mix(in srgb, var(--drama-lime) 65%, var(--drama-ink));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--drama-lime) 28%, transparent);
+  background: #fff;
 }
 
 .drama-agent-char-count {
@@ -245,16 +245,30 @@
   height: 36px;
   max-width: 160px;
   padding: 0 12px;
-  border: none;
-  background: transparent;
+  border: 1px solid rgba(17, 19, 24, 0.1);
+  border-radius: 999px;
+  background: #fff;
   color: #334155;
   font: inherit;
   font-size: 13px;
+  font-weight: 550;
   cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.drama-agent-opt-trigger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--drama-lime) 55%, var(--drama-line));
+  background: #f4fce8;
 }
 
 .drama-agent-opt-trigger.is-active {
-  color: #6d28d9;
+  color: #3d5c1f;
+  border-color: color-mix(in srgb, var(--drama-lime) 70%, var(--drama-ink));
+  background: #f4fce8;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--drama-lime) 22%, transparent);
 }
 
 .drama-agent-opt-trigger:disabled {
@@ -1501,6 +1515,23 @@
   justify-content: flex-end;
 }
 
+.drama-usage-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: min(100%, 280px);
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgba(17, 19, 24, 0.1);
+  background: #fff;
+  color: #4b5563;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .drama-icon-btn {
   width: 36px;
   height: 36px;
@@ -2412,6 +2443,8 @@
 }
 
 .drama-ep-header {
+  position: relative;
+  z-index: 200;
   height: 56px;
   flex-shrink: 0;
   display: flex;
@@ -2422,6 +2455,7 @@
   border-bottom: 1px solid var(--ep-line);
   background: rgba(245, 245, 245, 0.95);
   backdrop-filter: blur(8px);
+  overflow: visible;
 }
 
 .drama-ep-header-left {
@@ -2447,6 +2481,7 @@
   gap: 8px;
   justify-content: flex-end;
   min-width: 0;
+  overflow: visible;
 }
 
 .drama-ep-header-gen-all {
@@ -2458,6 +2493,7 @@
 
 .drama-ep-header-gen-opts {
   margin-top: 0;
+  overflow: visible;
 }
 
 .drama-ep-header-gen-opts .fc-gen-opt-btn {
@@ -2799,10 +2835,27 @@
 
 .drama-ep-duration input {
   width: 56px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 4px 8px;
+  height: 32px;
+  border: 1px solid rgba(17, 19, 24, 0.1);
+  border-radius: 999px;
+  padding: 0 10px;
   font: inherit;
+  font-size: 13px;
+  text-align: center;
+  background: #fff;
+  -moz-appearance: textfield;
+}
+
+.drama-ep-duration input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--ep-lime, #b6ff00) 65%, var(--ep-ink, #111));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ep-lime, #b6ff00) 28%, transparent);
+}
+
+.drama-ep-duration input::-webkit-outer-spin-button,
+.drama-ep-duration input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .drama-ep-editor-box {
@@ -3259,6 +3312,11 @@
   gap: 4px;
 }
 
+.drama-voice-preview-btn.is-playing {
+  background: var(--pf-lime-soft, #eefcc8);
+  border-color: var(--pf-lime, #b6ff00);
+}
+
 .drama-ep-content-view {
   min-height: 280px;
   height: 100%;
@@ -3433,6 +3491,43 @@
   background: #efeff4;
   color: #111;
   font-weight: 600;
+}
+
+.drama-ep-mention-pop-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 10px 0;
+  padding: 0 10px;
+  height: 32px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #94a3b8;
+}
+
+.drama-ep-mention-pop-search:focus-within {
+  border-color: #cbd5e1;
+  background: #fff;
+  box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.2);
+}
+
+.drama-ep-mention-pop-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+  color: #0f172a;
+  outline: none;
+}
+
+.drama-ep-mention-pop-search input::placeholder {
+  color: #94a3b8;
+}
+
+.drama-ep-mention-pop-search input::-webkit-search-cancel-button {
+  cursor: pointer;
 }
 
 .drama-ep-mention-pop-list {

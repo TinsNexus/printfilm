@@ -69,6 +69,17 @@ export type DramaEpisodeBody = {
   body?: string
 }
 
+export type DramaProjectUsageStats = {
+  charge_fen: number
+  charge_yuan: number
+  cost_fen: number
+  cost_yuan: number
+  tokens: number
+  calls: number
+  image_gens: number
+  video_gens: number
+}
+
 export type DramaProject = {
   id: number
   user_id: number
@@ -81,6 +92,8 @@ export type DramaProject = {
   script?: DramaScript | null
   asset_count: number
   episode_count: number
+  workflow?: 'script' | 'canvas'
+  usage?: DramaProjectUsageStats
 }
 
 export type DramaProjectListItem = {
@@ -92,6 +105,10 @@ export type DramaProjectListItem = {
   episode_count: number
   asset_count: number
   has_script: boolean
+  cover_url?: string | null
+  cover_pending?: boolean
+  workflow?: 'script' | 'canvas'
+  usage?: DramaProjectUsageStats
 }
 
 export type DramaAsset = {
@@ -165,6 +182,8 @@ export type DramaImageGenerateResult = {
   asset?: DramaAsset | null
 }
 
+export type DramaVideoGenerateResult = DramaImageGenerateResult
+
 export type DramaVoicePromptResult = {
   ok: boolean
   voice_prompt: string
@@ -186,6 +205,7 @@ export const dramaApi = {
     source?: string
     episode_count?: number
     image_style_id?: string
+    workflow?: 'script' | 'canvas'
   }) =>
     request<DramaProject>('/api/drama/projects', { method: 'POST', body: JSON.stringify(body) }),
   getProject: (id: number) => request<DramaProject>(`/api/drama/projects/${id}`),
@@ -356,6 +376,22 @@ export const dramaApi = {
     resolution?: string
   }) =>
     request<DramaImageGenerateResult>('/api/drama/generation/image', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  generateVideo: (body: {
+    project_id: number
+    asset_id: number
+    prompt: string
+    model_id?: string
+    aspect_ratio?: string
+    resolution?: string
+    duration_sec?: number
+    image_style_id?: string
+    reference_asset_ids?: number[]
+  }) =>
+    request<DramaVideoGenerateResult>('/api/drama/generation/video', {
       method: 'POST',
       body: JSON.stringify(body),
     }),

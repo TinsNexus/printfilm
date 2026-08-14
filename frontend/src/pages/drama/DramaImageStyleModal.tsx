@@ -1,16 +1,13 @@
 /** 画面风格选择：触发按钮 + 全局 Modal 缩略图网格 */
 import { useState } from 'react'
 import { BookOpen, Check, ChevronDown } from 'lucide-react'
+import { DramaImageStylePreviewImg } from '../../components/drama/DramaImageStylePreviewImg'
 import Modal from '../../components/ui/Modal'
 import {
   getImageStyleLabel,
   IMAGE_STYLE_OPTIONS,
   type ImageStyleId,
 } from '../../lib/dramaImageStyles'
-import {
-  getDramaImageStylePreviewFallbackUrl,
-  getDramaImageStylePreviewUrl,
-} from '../../lib/dramaImageStylePreviews'
 
 type Props = {
   value: ImageStyleId | ''
@@ -63,16 +60,7 @@ export function DramaImageStyleModal({ value, onChange, disabled = false }: Prop
                 className={`drama-style-modal-card${selected ? ' is-selected' : ''}`}
                 onClick={() => select(opt.id)}
               >
-                <img
-                  src={getDramaImageStylePreviewUrl(opt.id)}
-                  alt={opt.label}
-                  loading="lazy"
-                  onError={(e) => {
-                    const img = e.currentTarget
-                    const fallback = getDramaImageStylePreviewFallbackUrl(opt.id)
-                    if (!img.src.endsWith('.svg')) img.src = fallback
-                  }}
-                />
+                <DramaImageStylePreviewImg styleId={opt.id} alt={opt.label} />
                 <span>{opt.label}</span>
                 {selected ? (
                   <Check className="drama-style-modal-check on-media" size={12} strokeWidth={2.5} />

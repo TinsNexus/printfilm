@@ -1,47 +1,23 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import AppShell from '../components/layout/AppShell'
+import {
+  HELP_CATS,
+  HELP_FAQ_ITEMS,
+  HELP_GUIDE_STEPS,
+  filterHelpFaq,
+} from '../lib/helpContent'
 
-const FAQ_ITEMS = [
-  {
-    q: '第一次使用从哪开始？',
-    a: '打开工作台，选择「AI 漫剧」或「科普视频」。漫剧适合分集叙事，科普适合短视频流水线。',
-  },
-  {
-    q: '「AI 视频」和「静图成片」有什么区别？',
-    a: 'AI 视频动态更强、成本更高；静图成片更快更稳，适合图文科普。',
-  },
-  {
-    q: '生成中可以离开页面吗？',
-    a: '可以。任务在后台继续，回到资产或对应项目即可查看进度。',
-  },
-  {
-    q: '成片在哪里下载？',
-    a: '项目完成后，在「我的项目」或资产相关入口可下载成片。',
-  },
-  {
-    q: '如何充值？',
-    a: '打开「定价」页选择充值档位，支持支付宝与微信支付。',
-  },
-]
-
-const CATS = [
-  { id: 'start', title: '快速开始', desc: '四步上手创作', href: '#faq' },
-  { id: 'flow', title: '创作流程', desc: '漫剧与科普怎么走', href: '/drama' },
-  { id: 'tools', title: '工具说明', desc: '文生图等即将开放', href: '/tools' },
-]
-
+/** 帮助中心整页：分类入口、上手步骤、可搜索 FAQ */
 export default function HelpPage() {
+  /*
+   * q 搜索关键词
+   * openFaq 当前展开的 FAQ 下标
+   */
   const [q, setQ] = useState('')
   const [openFaq, setOpenFaq] = useState<number | null>(0)
 
-  const faqFiltered = useMemo(() => {
-    const needle = q.trim().toLowerCase()
-    if (!needle) return FAQ_ITEMS
-    return FAQ_ITEMS.filter(
-      (item) => item.q.toLowerCase().includes(needle) || item.a.toLowerCase().includes(needle),
-    )
-  }, [q])
+  const faqFiltered = useMemo(() => filterHelpFaq(HELP_FAQ_ITEMS, q), [q])
 
   return (
     <AppShell>
@@ -54,19 +30,36 @@ export default function HelpPage() {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="搜索您遇到的问题"
+              placeholder="搜索：下载、工具、充值、漫剧…"
             />
           </label>
         </header>
 
         <div className="pf-help-cats pf-help-cats-lg">
-          {CATS.map((c) => (
+          {HELP_CATS.map((c) => (
             <Link key={c.id} to={c.href} className="pf-help-cat">
               <strong>{c.title}</strong>
               <span>{c.desc}</span>
             </Link>
           ))}
         </div>
+
+        <section className="pf-help-guide-block" aria-labelledby="pf-help-guide-title">
+          <h2 id="pf-help-guide-title">上手四步</h2>
+          <ol className="pf-help-steps pf-help-steps-page">
+            {HELP_GUIDE_STEPS.map((s) => (
+              <li key={s.n}>
+                <span className="pf-help-step-n" aria-hidden>
+                  {s.n}
+                </span>
+                <div>
+                  <strong>{s.title}</strong>
+                  <p>{s.body}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </section>
 
         <section id="faq" className="pf-help-faq-block">
           <h2>常见问题</h2>
@@ -82,16 +75,22 @@ export default function HelpPage() {
                     onClick={() => setOpenFaq(expanded ? null : i)}
                   >
                     <span>{item.q}</span>
-                    <span className="pf-help-faq-chev" aria-hidden>
-                      {expanded ? '−' : '∨'}
-                    </span>
+                    <span className="pf-help-faq-chev" aria-hidden />
                   </button>
                   {expanded ? <p className="pf-help-faq-a">{item.a}</p> : null}
                 </div>
               )
             })}
-            {faqFiltered.length === 0 ? <p className="pf-muted">没有匹配的问题</p> : null}
+            {faqFiltered.length === 0 ? <p className="pf-muted">没有匹配的问题，试试「下载」「工具」「充值」</p> : null}
           </div>
+        </section>
+
+        <section className="pf-help-more">
+          <p className="pf-muted">
+            更多操作可在{' '}
+            <Link to="/settings">个人中心</Link> 查看项目与创作记录，或前往{' '}
+            <Link to="/pricing">定价</Link> 充值后继续创作。
+          </p>
         </section>
       </div>
     </AppShell>
