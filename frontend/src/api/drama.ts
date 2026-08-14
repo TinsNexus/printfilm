@@ -247,9 +247,13 @@ export const dramaApi = {
       body: JSON.stringify({ message, project_id }),
     }),
 
-  listAssets: async (projectId?: number) => {
+  listAssets: async (projectId?: number, options?: { libraryOnly?: boolean }) => {
+    const params = new URLSearchParams()
+    if (projectId != null) params.set('project_id', String(projectId))
+    if (options?.libraryOnly) params.set('library_only', 'true')
+    const query = params.toString()
     const list = await request<DramaAsset[]>(
-      projectId != null ? `/api/drama/assets?project_id=${projectId}` : '/api/drama/assets',
+      query ? `/api/drama/assets?${query}` : '/api/drama/assets',
     )
     return Array.isArray(list) ? list : []
   },
@@ -310,15 +314,16 @@ export const dramaApi = {
       { method: 'POST' },
     ),
   /** 单集 AI（LLM）重新分镜；轮询 episode.params.fragment_plan_status */
-  planEpisodeFragments: (
+    planEpisodeFragments: (
     episodeId: number,
-    body?: { force?: boolean; fallback_rules?: boolean },
+    body?: { force?: boolean; fallback_rules?: boolean; skill_ids?: number[] },
   ) =>
     request<DramaEpisode>(`/api/drama/episodes/${episodeId}/plan_fragments`, {
       method: 'POST',
       body: JSON.stringify({
         force: body?.force ?? true,
         fallback_rules: body?.fallback_rules ?? true,
+        skill_ids: body?.skill_ids,
       }),
     }),
   saveFragments: (

@@ -168,10 +168,4 @@ def drama_asset_video_task(
             reference_asset_ids=reference_asset_ids or [],
         )
     )
-    logger.info(
-        "[Celery] 资产生视频任务结束 project_id=%s asset_id=%s result=%s",
-        project_id,
-        asset_id,
-        result,
-    )
     return result

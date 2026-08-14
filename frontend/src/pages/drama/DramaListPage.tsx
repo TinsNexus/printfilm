@@ -5,7 +5,6 @@ import {
   FolderOpen,
   LayoutGrid,
   Library,
-  MoreHorizontal,
   PenLine,
   Search,
   Sparkles,
@@ -26,6 +25,7 @@ import {
 import RequireAuth from './RequireAuth'
 import { DramaEpisodeCountPopover } from './DramaEpisodeCountPopover'
 import { DramaImageStyleModal } from './DramaImageStyleModal'
+import { DramaProjectCardMenu } from './DramaProjectCardMenu'
 import './drama.css'
 
 const CREATIVE_MIN_LENGTH = 20
@@ -475,19 +475,10 @@ function DramaListInner() {
                       <button type="button" className="pf-drama-card-title" onClick={() => openProject(item)}>
                         {item.title}
                       </button>
-                      <details className="drama-project-row-more" onClick={(e) => e.stopPropagation()}>
-                        <summary aria-label="更多操作">
-                          <MoreHorizontal size={16} strokeWidth={1.8} />
-                        </summary>
-                        <div className="drama-project-row-menu">
-                          <button type="button" onClick={() => void handleRename(item)}>
-                            重命名
-                          </button>
-                          <button type="button" className="is-danger" onClick={() => void handleDeleteOne(item)}>
-                            删除
-                          </button>
-                        </div>
-                      </details>
+                      <DramaProjectCardMenu
+                        onRename={() => void handleRename(item)}
+                        onDelete={() => void handleDeleteOne(item)}
+                      />
                     </div>
                     <p className="pf-drama-card-meta">{formatDramaCardMeta(item)}</p>
                     <p className="pf-drama-card-usage" title="本剧累计费用与生成次数">

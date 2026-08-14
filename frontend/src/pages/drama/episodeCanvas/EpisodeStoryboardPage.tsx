@@ -355,7 +355,7 @@ function EpisodeStoryboardInner() {
           minZoom={0.35}
           maxZoom={1.6}
           proOptions={{ hideAttribution: true }}
-          defaultEdgeOptions={{ type: 'smoothstep' }}
+          defaultEdgeOptions={{ type: 'default' }}
         >
           <Background gap={20} size={1} color="#dbe2ea" />
           <Controls showInteractive={false} />

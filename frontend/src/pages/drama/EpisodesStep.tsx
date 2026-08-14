@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { Clapperboard, Film, Layers, Sparkles, Wand2 } from 'lucide-react'
 import { dramaApi, resolveDramaMediaUrl, type DramaEpisode } from '../../api/drama'
 import { dialog } from '../../lib/dialog'
+import { FragmentPlanSkillModal } from '../../components/drama/FragmentPlanSkillModal'
 import { readFragmentGenerationStatus } from './dramaEpisodeEditUtils'
 
 type EpisodesStepProps = {
@@ -74,6 +75,8 @@ export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
   const [loading, setLoading] = useState(true)
   const [reseeding, setReseeding] = useState(false)
   const [planningId, setPlanningId] = useState<number | null>(null)
+  // planTarget 待确认 AI 分镜的分集
+  const [planTarget, setPlanTarget] = useState<DramaEpisode | null>(null)
   const seeded = useRef(false)
 
   useEffect(() => {
@@ -135,18 +138,22 @@ export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
     }
   }
 
-  async function handlePlanEpisode(ep: DramaEpisode) {
+  // 打开 AI 分镜确认弹窗（勾选 Skill）
+  function handlePlanEpisode(ep: DramaEpisode) {
     if (reseeding || planningId != null) return
-    const ok = await dialog.confirm({
-      title: 'AI 重新分镜',
-      message: `将调用大模型重新规划「${ep.name}」的分镜（覆盖本集现有分镜与视频），通常需要数十秒，是否继续？`,
-      confirmText: '开始分镜',
-      tone: 'danger',
-    })
-    if (!ok) return
+    setPlanTarget(ep)
+  }
+
+  // 入队单集 LLM 分镜并轮询
+  async function startPlanEpisode(ep: DramaEpisode, skillIds: number[]) {
+    setPlanTarget(null)
     setPlanningId(ep.id)
     try {
-      await dramaApi.planEpisodeFragments(ep.id, { force: true, fallback_rules: true })
+      await dramaApi.planEpisodeFragments(ep.id, {
+        force: true,
+        fallback_rules: true,
+        skill_ids: skillIds,
+      })
       const started = Date.now()
       while (Date.now() - started < 10 * 60 * 1000) {
         await new Promise((r) => setTimeout(r, 2500))
@@ -332,6 +339,14 @@ export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
           })}
         </div>
       )}
+      <FragmentPlanSkillModal
+        open={planTarget != null}
+        message={`将调用大模型重新规划「${planTarget?.name || ''}」的分镜（覆盖本集现有分镜与视频），通常需要数十秒。可勾选本次使用的 Skill。`}
+        onCancel={() => setPlanTarget(null)}
+        onConfirm={(skillIds) => {
+          if (planTarget) void startPlanEpisode(planTarget, skillIds)
+        }}
+      />
     </div>
   )
 }

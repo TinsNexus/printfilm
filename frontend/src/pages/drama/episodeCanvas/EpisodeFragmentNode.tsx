@@ -83,9 +83,23 @@ function EpisodeFragmentNodeComponent({
         )}
       </div>
 
-      <Handle className="ep-frag-handle" type="target" position={Position.Left} id="assets" />
-      <Handle className="ep-frag-handle" type="target" position={Position.Top} id="prev" />
-      <Handle className="ep-frag-handle" type="source" position={Position.Right} id="next" />
+      <Handle
+        className="ep-frag-handle"
+        type="target"
+        position={Position.Left}
+        id="assets"
+        style={{ top: '62%' }}
+      />
+      <Handle
+        className="ep-frag-handle"
+        type="target"
+        position={Position.Left}
+        id="seq-in-l"
+        style={{ top: '38%' }}
+      />
+      <Handle className="ep-frag-handle" type="source" position={Position.Right} id="seq-out-r" />
+      <Handle className="ep-frag-handle" type="target" position={Position.Top} id="seq-in-t" />
+      <Handle className="ep-frag-handle" type="source" position={Position.Bottom} id="seq-out-b" />
     </div>
   )
 }

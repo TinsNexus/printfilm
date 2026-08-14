@@ -119,6 +119,7 @@ export function DramaAssetDetailModal({
         title={asset.name || '资产详情'}
         size="lg"
         className="drama-asset-detail-modal"
+        dismissible={!lightboxSrc}
         footer={
           <div className="drama-modal-actions">
             <button type="button" className="pf-btn" onClick={onClose}>

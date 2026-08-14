@@ -23,6 +23,7 @@ router = APIRouter()
 @router.get("/assets", response_model=list[DramaAssetOut])
 async def list_assets(
     project_id: int | None = None,
+    library_only: bool = False,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[DramaAssetOut]:
@@ -38,6 +39,14 @@ async def list_assets(
     if project_id is not None:
         q = q.where(DramaAsset.project_id == project_id)
     rows = list((await db.execute(q)).scalars().all())
+    if library_only:
+        canvas_only_types = {"video", "audio", "text"}
+        rows = [
+            asset
+            for asset in rows
+            if (asset.type or "").lower() not in canvas_only_types
+            and (asset.asset_type or "").lower() != "video"
+        ]
     return [DramaAssetOut.model_validate(a) for a in rows]
 
 

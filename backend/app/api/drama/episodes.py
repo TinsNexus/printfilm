@@ -20,6 +20,7 @@ from app.schemas_drama import (
     DramaPlanFragmentsRequest,
     DramaSaveFragmentsRequest,
 )
+from app.services.agent.compose import parse_skill_ids
 from app.services.drama.access import get_owned_drama_project, get_owned_episode
 from app.services.drama.generation import fragment_generation_status
 from app.services.drama.jobs import (
@@ -125,6 +126,10 @@ async def plan_episode_fragments(
     params["fragment_plan_status"] = "generating"
     params.pop("fragment_plan_error", None)
     params["fragment_plan_mode"] = "llm"
+    if req.skill_ids is None:
+        params.pop("fragment_plan_skill_ids", None)
+    else:
+        params["fragment_plan_skill_ids"] = parse_skill_ids(req.skill_ids) or []
     ep.params = params
     await db.commit()
     await db.refresh(ep)

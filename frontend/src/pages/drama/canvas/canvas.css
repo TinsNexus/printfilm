@@ -768,6 +768,40 @@
   margin-top: 8px;
 }
 
+.fc-generate-action-btns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.fc-generate-optimize {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #fff;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.fc-generate-optimize:hover:not(:disabled) {
+  border-color: rgba(182, 255, 0, 0.9);
+  background: rgba(182, 255, 0, 0.22);
+  color: #3d6500;
+}
+
+.fc-generate-optimize:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .fc-generate-hint {
   color: #94a3b8;
   font-size: 11px;

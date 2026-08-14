@@ -1,6 +1,6 @@
 /** 选中节点底部：AI 提示词浮动面板（生图 / 生视频） */
 import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from 'react'
-import { ArrowUp, CircleHelp, Loader2, Sparkles } from 'lucide-react'
+import { ArrowUp, CircleHelp, Loader2, Sparkles, Wand2 } from 'lucide-react'
 import { SeedanceRulesModal } from '../../../../components/drama/SeedanceRulesModal'
 import { useCanvasStore } from '../CanvasStore'
 import { CANVAS_GENERATABLE_KINDS, type CanvasNodeKind } from '../canvasTypes'
@@ -13,7 +13,10 @@ import {
   readVideoGenerationOptions,
   type VideoGenerationOptions,
 } from '../../../../lib/dramaVideoGenerationOptions'
+import { optimizePromptWithSkills } from '../../../../api/agentSkills'
+import { useAgentSkillSelection } from '../../../../hooks/useAgentSkillSelection'
 import { DramaImageGenOptionsBar } from './DramaImageGenOptionsBar'
+import { DramaSkillOptionsBar } from './DramaSkillOptionsBar'
 import { DramaVideoGenOptionsBar } from './DramaVideoGenOptionsBar'
 import { CanvasPromptEditor } from './CanvasPromptEditor'
 
@@ -91,8 +94,16 @@ export function CanvasNodeGeneratePanel({
     mentionableNodes,
   } = useCanvasStore()
   const [prompt, setPrompt] = useState(() => sanitizePrompt(defaultPrompt, kind, label))
+  /*
+   * busy 正在提交生成
+   * rulesOpen Seedance 规则弹窗
+   * optimizing Skill 改写进行中
+   */
   const [busy, setBusy] = useState(false)
   const [rulesOpen, setRulesOpen] = useState(false)
+  const [optimizing, setOptimizing] = useState(false)
+  const { skills, selectedIds, toggleSkill, selectAll, selectNone, uploadSkill, uploading, uploadError } =
+    useAgentSkillSelection()
   // imageOptions 生图风格/模型/画幅
   const [imageOptions, setImageOptions] = useState<ImageGenerationOptions>(() => ({
     ...defaultOptionsForAssetKind(kind),
@@ -151,8 +162,9 @@ export function CanvasNodeGeneratePanel({
     // 仅切换节点时恢复已保存参数，避免编辑选项时被回写覆盖
   }, [nodeId, projectImageStyleId])
 
-  const isBusy = busy || generating
+  const isBusy = busy || generating || optimizing
   const canSubmit = prompt.trim().length > 0 && !isBusy
+  const canOptimize = prompt.trim().length > 0 && selectedIds.length > 0 && !isBusy
 
   if (!CANVAS_GENERATABLE_KINDS.has(kind)) return null
 
@@ -183,6 +195,28 @@ export function CanvasNodeGeneratePanel({
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault()
     void submit()
+  }
+
+  // 按勾选 Skill 改写当前提示词，保留 @asset 引用
+  const optimizePrompt = async () => {
+    if (!canOptimize) return
+    setOptimizing(true)
+    try {
+      const result = await optimizePromptWithSkills({
+        prompt,
+        skill_ids: selectedIds,
+        task: isVideo ? 'video_prompt' : 'image_prompt',
+      })
+      const next = (result.prompt || '').trim()
+      if (next) {
+        setPrompt(next)
+        updateNodePrompt(nodeId, next)
+      }
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Skill 优化失败')
+    } finally {
+      setOptimizing(false)
+    }
   }
 
   return (
@@ -238,11 +272,38 @@ export function CanvasNodeGeneratePanel({
       ) : (
         <DramaImageGenOptionsBar value={imageOptions} onChange={setImageOptions} disabled={isBusy} />
       )}
+      <DramaSkillOptionsBar
+        skills={skills}
+        selectedIds={selectedIds}
+        disabled={isBusy}
+        onToggle={toggleSkill}
+        onSelectAll={selectAll}
+        onSelectNone={selectNone}
+        onUpload={(file) => void uploadSkill(file)}
+        uploading={uploading}
+        uploadError={uploadError}
+      />
       <div className="fc-generate-actions">
         <span className="fc-generate-hint">{copy.hint}</span>
-        <button type="submit" className="fc-generate-submit" disabled={!canSubmit} aria-label="生成">
-          {isBusy ? <Loader2 size={16} className="fc-spin" /> : <ArrowUp size={16} strokeWidth={2} />}
-        </button>
+        <div className="fc-generate-action-btns">
+          <button
+            type="button"
+            className="fc-generate-optimize"
+            disabled={!canOptimize}
+            title={selectedIds.length ? '按所选 Skill 改写提示词' : '请先选择 Skill'}
+            onClick={() => void optimizePrompt()}
+          >
+            {optimizing ? <Loader2 size={14} className="fc-spin" /> : <Wand2 size={14} strokeWidth={1.8} />}
+            Skill 优化
+          </button>
+          <button type="submit" className="fc-generate-submit" disabled={!canSubmit} aria-label="生成">
+            {isBusy && !optimizing ? (
+              <Loader2 size={16} className="fc-spin" />
+            ) : (
+              <ArrowUp size={16} strokeWidth={2} />
+            )}
+          </button>
+        </div>
       </div>
       {isVideo ? <SeedanceRulesModal open={rulesOpen} onClose={() => setRulesOpen(false)} /> : null}
     </form>

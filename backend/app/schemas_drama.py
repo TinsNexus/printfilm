@@ -242,6 +242,8 @@ class DramaPlanFragmentsRequest(BaseModel):
     force: bool = True
     # fallback_rules LLM 失败时是否回退规则切分
     fallback_rules: bool = True
+    # skill_ids 本次注入的 Agent Skill；None 表示全部启用，[] 表示不注入
+    skill_ids: list[int] | None = None
 
 
 class DramaCanvasSaveRequest(BaseModel):

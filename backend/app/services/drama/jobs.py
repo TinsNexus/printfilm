@@ -635,6 +635,13 @@ async def run_episode_fragment_plan_job(
         siblings = list(siblings_result.scalars().all())
         ep_params = episode.params if isinstance(episode.params, dict) else {}
         ep_no = int(ep_params.get("episodeNumber") or 0) or None
+        from app.services.agent.compose import parse_skill_ids
+
+        skill_ids = (
+            parse_skill_ids(ep_params.get("fragment_plan_skill_ids"))
+            if "fragment_plan_skill_ids" in ep_params
+            else None
+        )
         already_introduced = collect_series_introduced_names(
             siblings,
             before_episode_number=ep_no,
@@ -694,6 +701,9 @@ async def run_episode_fragment_plan_job(
                 episode_bodies=all_bodies,
                 intro_overrides=intro_overrides,
                 locked_summaries=locked_summaries or None,
+                db=db,
+                user_id=project.user_id,
+                skill_ids=skill_ids,
             )
         except (DramaLlmUnavailableError, RuntimeError, Exception) as exc:  # noqa: BLE001
             logger.exception("LLM 分镜失败 episode_id=%s err=%s", episode_id, exc)

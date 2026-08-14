@@ -15,6 +15,7 @@ import {
 } from '../../api/drama'
 import { readAssetVoiceBinding } from './CharacterVoiceBindModal'
 import { DramaImageLightbox } from './DramaImageLightbox'
+import { filterDramaLibraryAssets, isDramaLibraryAsset } from '../../lib/dramaLibraryAssets'
 import RequireAuth from './RequireAuth'
 import './drama.css'
 
@@ -48,12 +49,14 @@ export default function AssetLibraryPage() {
 
 // 按资产 type 归入角色 / 场景 / 道具 / 音色
 function assetKind(asset: DramaAsset): AssetTabKey | 'other' {
+  if (!isDramaLibraryAsset(asset)) return 'other'
   const t = (asset.type || '').toLowerCase()
   if (t === 'character' || t === 'scene' || t === 'prop' || t === 'voice') return t
   return 'other'
 }
 
 function matchTab(asset: DramaAsset, tab: AssetTabKey): boolean {
+  if (!isDramaLibraryAsset(asset)) return false
   if (tab === 'all') return true
   return assetKind(asset) === tab
 }
@@ -116,9 +119,9 @@ function AssetLibraryInner() {
     setError('')
     const pid = projectId ? Number(projectId) : undefined
     dramaApi
-      .listAssets(Number.isFinite(pid) ? pid : undefined)
+      .listAssets(Number.isFinite(pid) ? pid : undefined, { libraryOnly: true })
       .then((rows) => {
-        if (!cancelled) setAssets(rows)
+        if (!cancelled) setAssets(filterDramaLibraryAssets(rows))
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : '加载失败')

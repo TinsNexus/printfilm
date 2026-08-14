@@ -30,6 +30,7 @@ import {
 } from '../../lib/dramaEpisodeScriptValidate'
 import { dialog } from '../../lib/dialog'
 import { StoryboardGridImportModal } from '../../components/drama/StoryboardGridImportModal'
+import { FragmentPlanSkillModal } from '../../components/drama/FragmentPlanSkillModal'
 import { getImageStyleId } from './dramaWorkspaceUtils'
 import { EpisodeEditAssetPanel } from './EpisodeEditAssetPanel'
 import { EpisodeEditHeaderControls } from './EpisodeEditHeaderControls'
@@ -88,6 +89,8 @@ function EpisodeEditInner() {
   const [projectParams, setProjectParams] = useState<Record<string, unknown>>({})
   // storyboardImportOpen 分镜板多宫格导入弹窗
   const [storyboardImportOpen, setStoryboardImportOpen] = useState(false)
+  // planModalOpen AI 重新分镜确认（含 Skill 勾选）
+  const [planModalOpen, setPlanModalOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
@@ -606,26 +609,27 @@ function EpisodeEditInner() {
     navigate(`/drama/projects/${pid}`, { state: { returnStep: 'episodes' } })
   }
 
-  // 单集 LLM 重新分镜：入队后轮询至完成
-  async function planFragmentsWithLlm() {
+  // 单集 LLM 重新分镜：确认并勾选 Skill 后入队
+  function planFragmentsWithLlm() {
     if (planFragmentsLocked) {
       setError('当前有视频生成任务进行中，请稍候再重新分镜')
       return
     }
-    const ok = await dialog.confirm({
-      title: 'AI 重新分镜',
-      message:
-        '将调用大模型按本集剧本重新规划分镜（覆盖现有分镜与已生成视频），通常需要数十秒，是否继续？',
-      confirmText: '开始分镜',
-      tone: 'danger',
-    })
-    if (!ok) return
+    setPlanModalOpen(true)
+  }
 
+  // 入队后轮询至完成
+  async function startPlanFragments(skillIds: number[]) {
+    setPlanModalOpen(false)
     setBusy(true)
     setError('')
     setStatus('AI 分镜规划中…')
     try {
-      await dramaApi.planEpisodeFragments(eid, { force: true, fallback_rules: true })
+      await dramaApi.planEpisodeFragments(eid, {
+        force: true,
+        fallback_rules: true,
+        skill_ids: skillIds,
+      })
       const started = Date.now()
       while (Date.now() - started < 10 * 60 * 1000) {
         await new Promise((r) => setTimeout(r, 2500))
@@ -916,6 +920,7 @@ function EpisodeEditInner() {
           playingFragmentId={playingFragmentId}
           onPlayingFragmentChange={handlePlayingFragmentChange}
           aspectRatio={aspectRatio}
+          episodeName={episode?.name || '本集'}
           onOpenStoryboard={openEpisodeStoryboard}
         />
       </div>
@@ -977,6 +982,12 @@ function EpisodeEditInner() {
         </div>
       </footer>
 
+      <FragmentPlanSkillModal
+        open={planModalOpen}
+        message="将调用大模型按本集剧本重新规划分镜（覆盖现有分镜与已生成视频），通常需要数十秒。可勾选本次使用的 Skill。"
+        onCancel={() => setPlanModalOpen(false)}
+        onConfirm={(skillIds) => void startPlanFragments(skillIds)}
+      />
       <StoryboardGridImportModal
         open={storyboardImportOpen}
         onClose={() => setStoryboardImportOpen(false)}

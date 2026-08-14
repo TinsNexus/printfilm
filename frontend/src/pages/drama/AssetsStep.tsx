@@ -22,8 +22,10 @@ import { NarratorVoiceBindModal } from './NarratorVoiceBindModal'
 import { DramaAssetDetailModal } from './DramaAssetDetailModal'
 import { DramaImageLightbox } from './DramaImageLightbox'
 import { GlobalAssetPickerModal, importGlobalAssetToProject } from './GlobalAssetPickerModal'
+import { DramaVoiceAssetCard } from './DramaVoiceAssetCard'
 import { dialog } from '../../lib/dialog'
 import { readVisualPrompt } from '../../lib/dramaVisualPrompt'
+import { filterDramaLibraryAssets } from '../../lib/dramaLibraryAssets'
 
 type AssetTabKey = 'character' | 'scene' | 'prop' | 'material' | 'voice'
 
@@ -42,7 +44,7 @@ type AssetsStepProps = {
 
 // 将接口返回规范为资产数组，避免 undefined.filter 崩溃
 function normalizeAssetList(value: unknown): DramaAsset[] {
-  return Array.isArray(value) ? (value as DramaAsset[]) : []
+  return filterDramaLibraryAssets(Array.isArray(value) ? (value as DramaAsset[]) : [])
 }
 
 // 判断资产是否尚未出图（无有效封面/主图）
@@ -111,14 +113,14 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
           setAssets(list)
           resumeDramaImageGensFromAssets(projectId, list)
         } else {
-          const list = normalizeAssetList(await dramaApi.listAssets(projectId))
+          const list = normalizeAssetList(await dramaApi.listAssets(projectId, { libraryOnly: true }))
           setAssets(list)
           resumeDramaImageGensFromAssets(projectId, list)
         }
       } catch (err) {
         onError(err instanceof Error ? err.message : '资产加载失败')
         try {
-          const list = normalizeAssetList(await dramaApi.listAssets(projectId))
+          const list = normalizeAssetList(await dramaApi.listAssets(projectId, { libraryOnly: true }))
           setAssets(list)
           resumeDramaImageGensFromAssets(projectId, list)
         } catch {
@@ -155,7 +157,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
     if (doneIds.size === 0) return
     let cancelled = false
     dramaApi
-      .listAssets(projectId)
+      .listAssets(projectId, { libraryOnly: true })
       .then((list) => {
         if (cancelled) return
         const next = normalizeAssetList(list)
@@ -661,63 +663,35 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
 
       {loading ? <p className="drama-muted">正在从剧本抽取资产（含道具/素材）…</p> : null}
 
-      <div className="drama-asset-grid">
+      <div className={`drama-asset-grid${tab === 'voice' ? ' is-voice' : ''}`}>
         {filtered.map((asset) => {
           if (tab === 'voice') {
-            const audioSrc = resolveDramaMediaUrl(asset.url)
-            const promptValue =
-              voicePromptDrafts[asset.id] ?? readVoicePrompt(asset)
+            const promptValue = voicePromptDrafts[asset.id] ?? readVoicePrompt(asset)
             const synthBusy = voiceSynthBusyId === asset.id
             return (
-              <article key={asset.id} className="drama-asset-card drama-voice-card">
-                <div className="drama-voice-card-icon">VO</div>
-                <h3>{asset.name || '未命名音色'}</h3>
-                <label className="drama-field">
-                  <span>音色描述</span>
-                  <textarea
-                    rows={3}
-                    value={promptValue}
-                    onChange={(e) =>
-                      setVoicePromptDrafts((prev) => ({
-                        ...prev,
-                        [asset.id]: e.target.value,
-                      }))
-                    }
-                    onBlur={() => {
-                      const draft = (voicePromptDrafts[asset.id] ?? '').trim()
-                      if (draft && draft !== readVoicePrompt(asset)) {
-                        void persistVoicePrompt(asset, draft).catch((err) =>
-                          onError(err instanceof Error ? err.message : '保存失败'),
-                        )
-                      }
-                    }}
-                    placeholder="描述音色：年龄、性别、语气、语速…"
-                  />
-                </label>
-                {audioSrc ? (
-                  <audio className="drama-voice-audio" controls src={audioSrc} />
-                ) : (
-                  <p className="drama-muted">尚未合成试听</p>
-                )}
-                <div className="drama-asset-card-actions">
-                  <button
-                    type="button"
-                    className="pf-btn pf-btn-sm drama-btn-primary"
-                    disabled={synthBusy || !promptValue.trim()}
-                    onClick={() => void handleSynthVoice(asset)}
-                  >
-                    {synthBusy ? '合成中…' : asset.url ? '重新合成' : '按提示词合成'}
-                  </button>
-                  <button
-                    type="button"
-                    className="pf-btn pf-btn-sm drama-btn-danger-text"
-                    disabled={synthBusy}
-                    onClick={() => void handleDeleteVoice(asset)}
-                  >
-                    删除
-                  </button>
-                </div>
-              </article>
+              <DramaVoiceAssetCard
+                key={asset.id}
+                asset={asset}
+                promptValue={promptValue}
+                synthBusy={synthBusy}
+                onPromptChange={(value) =>
+                  setVoicePromptDrafts((prev) => ({
+                    ...prev,
+                    [asset.id]: value,
+                  }))
+                }
+                onPromptBlur={() => {
+                  const draft = (voicePromptDrafts[asset.id] ?? '').trim()
+                  if (draft && draft !== readVoicePrompt(asset)) {
+                    void persistVoicePrompt(asset, draft).catch((err) =>
+                      onError(err instanceof Error ? err.message : '保存失败'),
+                    )
+                  }
+                }}
+                onSynth={() => void handleSynthVoice(asset)}
+                onDelete={() => void handleDeleteVoice(asset)}
+                onError={onError}
+              />
             )
           }
 

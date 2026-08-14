@@ -838,6 +838,15 @@
   min-height: 260px;
 }
 
+.pf-drama-card:has(.drama-project-row-menu) {
+  overflow: visible;
+  z-index: 4;
+}
+
+.pf-drama-card:has(.drama-project-row-menu) .pf-drama-card-cover {
+  border-radius: 17px 17px 0 0;
+}
+
 .pf-drama-card.is-selected {
   border-color: rgba(182, 255, 0, 0.85);
   box-shadow: 0 0 0 2px rgba(182, 255, 0, 0.35);
@@ -5355,6 +5364,24 @@ button.pf-shot-editable:disabled {
 .pf-dialog-input:focus {
   border-color: rgba(182, 255, 0, 0.85);
   box-shadow: 0 0 0 3px rgba(182, 255, 0, 0.22);
+}
+
+.pf-dialog--skills {
+  width: min(480px, 100%);
+}
+
+.pf-dialog-skill-block {
+  position: relative;
+  z-index: 1;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.pf-dialog-skill-label {
+  margin: 0 0 8px;
+  color: var(--pf-ink);
+  font-size: 0.82rem;
+  font-weight: 650;
 }
 
 .pf-dialog-actions {

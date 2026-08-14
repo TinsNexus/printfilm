@@ -91,6 +91,7 @@ async def on_startup() -> None:
     await _migrate_sqlite()
     await seed_templates()
     await bootstrap_admins()
+    await seed_agent_skills()
     try:
         from app.services import oss as oss_svc
 
@@ -212,6 +213,14 @@ async def bootstrap_admins() -> None:
                 changed = True
         if changed:
             await db.commit()
+
+
+async def seed_agent_skills() -> None:
+    """启动时把内置导演 Skill 同步进数据库。"""
+    from app.services.agent.store import seed_builtin_skills
+
+    async with AsyncSessionLocal() as db:
+        await seed_builtin_skills(db)
 
 
 async def seed_templates() -> None:

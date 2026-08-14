@@ -24,7 +24,7 @@ from app.services.drama.fragment_plan_prompt import (
     FRAGMENT_PLAN_SYSTEM_PROMPT,
     build_fragment_plan_user_prompt,
 )
-from app.services.drama.llm import drama_chat_json
+from app.services.agent.runner import run_task_json
 
 logger = logging.getLogger(__name__)
 
@@ -431,12 +431,17 @@ async def plan_fragments_with_llm(
     episode_bodies: list[str] | None = None,
     intro_overrides: dict[str, str] | None = None,
     locked_summaries: list[str] | None = None,
+    db: Any | None = None,
+    user_id: int | None = None,
+    skill_ids: list[int] | None = None,
 ) -> list[dict[str, Any]]:
     """
     调用 LLM 规划分镜并规范化。
     若模型结果为空则抛错，由上层决定是否回退规则切分。
     already_introduced：本剧更早分集已介绍角色。
     locked_summaries：本集已拍分镜摘要；非空时续拆（不开幕）。
+    db / user_id：注入 Agent Skill（如 CINEDANCE 导演手册）。
+    skill_ids：本次勾选；None 表示全部启用，[] 表示不注入。
     """
     catalog = build_asset_catalog(assets)
     locked = [str(s).strip() for s in (locked_summaries or []) if str(s).strip()]
@@ -452,10 +457,14 @@ async def plan_fragments_with_llm(
         core_hook=core_hook,
         locked_summaries=locked,
     )
-    raw = await drama_chat_json(
-        FRAGMENT_PLAN_SYSTEM_PROMPT,
-        user_prompt,
+    raw = await run_task_json(
+        db,
+        user_id,
+        task="shot_plan",
+        system=FRAGMENT_PLAN_SYSTEM_PROMPT,
+        user=user_prompt,
         temperature=0.4,
+        skill_ids=skill_ids,
     )
     items: list[Any] = []
     if isinstance(raw, dict):

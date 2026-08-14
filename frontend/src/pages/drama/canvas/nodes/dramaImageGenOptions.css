@@ -222,3 +222,111 @@
 .drama-assets-gen-opts .fc-gen-opts {
   margin-top: 0;
 }
+
+.fc-gen-skill-opts {
+  margin-top: 6px;
+}
+
+.fc-skill-picker-toolbar,
+.pf-skill-picker-toolbar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.fc-skill-picker-link,
+.pf-skill-picker-link {
+  border: none;
+  padding: 0;
+  background: none;
+  color: #64748b;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.fc-skill-picker-link:hover,
+.pf-skill-picker-link:hover {
+  color: #3d6500;
+}
+
+.fc-skill-picker-list,
+.pf-skill-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fc-skill-picker-item,
+.pf-skill-picker-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  cursor: pointer;
+  color: #0f172a;
+}
+
+.fc-skill-picker-item input,
+.pf-skill-picker-item input {
+  margin-top: 2px;
+  accent-color: #65a30d;
+}
+
+.fc-skill-picker-item span,
+.pf-skill-picker-item span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fc-skill-picker-item strong,
+.pf-skill-picker-item strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.fc-skill-picker-item em,
+.pf-skill-picker-item em {
+  color: #94a3b8;
+  font-style: normal;
+  font-size: 11px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.fc-skill-picker-item.is-checked,
+.pf-skill-picker-item.is-checked {
+  border-color: rgba(182, 255, 0, 0.9);
+  background: rgba(182, 255, 0, 0.18);
+}
+
+.fc-skill-picker-empty,
+.pf-skill-picker-empty {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.fc-skill-picker-hint,
+.pf-skill-picker-hint {
+  margin: 8px 0 0;
+  color: #94a3b8;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.fc-skill-picker-error,
+.pf-skill-picker-error {
+  margin: 6px 0 0;
+  color: #b91c1c;
+  font-size: 11px;
+}

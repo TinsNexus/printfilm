@@ -1,6 +1,7 @@
 /** 全局资产库选择弹窗：跨项目挑选图片资产（导入或应用到节点） */
 import { useEffect, useMemo, useState } from 'react'
 import { dramaApi, resolveDramaMediaUrl, type DramaAsset } from '../../api/drama'
+import { filterDramaLibraryAssets, isDramaLibraryAsset } from '../../lib/dramaLibraryAssets'
 import Modal from '../../components/ui/Modal'
 import './drama.css'
 
@@ -32,6 +33,7 @@ const TABS: Array<{ key: GlobalAssetTabKey; label: string }> = [
 
 // 资产是否匹配 Tab
 function matchAssetTab(asset: DramaAsset, tab: GlobalAssetTabKey): boolean {
+  if (!isDramaLibraryAsset(asset)) return false
   if (tab === 'all') return true
   const t = (asset.type || '').toLowerCase()
   if (tab === 'voice') return t === 'voice'
@@ -81,8 +83,8 @@ export function GlobalAssetPickerModal({
     setError('')
     setLoading(true)
     dramaApi
-      .listAssets()
-      .then(setAllAssets)
+      .listAssets(undefined, { libraryOnly: true })
+      .then((rows) => setAllAssets(filterDramaLibraryAssets(rows)))
       .catch((err) => setError(err instanceof Error ? err.message : '加载资产库失败'))
       .finally(() => setLoading(false))
   }, [open, defaultTab])

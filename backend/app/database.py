@@ -26,6 +26,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 async def init_db() -> None:
     from app import models  # noqa: F401
+    from app import models_agent  # noqa: F401
     from app import models_drama  # noqa: F401
 
     async with engine.begin() as conn:
