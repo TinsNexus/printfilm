@@ -14,9 +14,13 @@ SEGMENT_DURATION_MIN = 3
 SEGMENT_DURATION_MAX = 12
 SHOT_DURATION_MIN = 4
 SHOT_DURATION_MAX = 30
+# 科普 AI 视频单镜上限：避免 16–20s 一镜到底导致拖沓
+KEPU_FULL_SHOT_DURATION_MAX = 12
 
 DURATION_TOKEN_RE = re.compile(r"@duration:(\d+)")
-NARRATION_PREFIX = "【旁白·慢速清晰·同步字幕】"
+# 科普旁白：自然偏快；漫剧仍用慢速前缀（见 drama/build_fragments）
+NARRATION_PREFIX = "【旁白·自然语速·同步字幕】"
+LEGACY_NARRATION_PREFIX = "【旁白·慢速清晰·同步字幕】"
 DIALOGUE_PREFIX = "【对白·慢速清晰·同步字幕】"
 VISUAL_PREFIX = "【画面·无配音仅环境音】"
 EMPTY_SHOT_PREFIX = "【空镜·可仅环境音与 BGM】"
@@ -191,6 +195,23 @@ class SegmentBeat:
     text: str
 
 
+def suggested_kepu_shot_range(source_text: str, *, pipeline_mode: str = "full") -> tuple[int, int]:
+    """按文案字数给出科普分镜数量区间（完整模式偏多镜、短镜）。"""
+    # n 去掉空白后的字数，用于短/中/长文分档
+    n = len(re.sub(r"\s+", "", source_text or ""))
+    if pipeline_mode == "image_text":
+        if n < 180:
+            return 5, 8
+        if n < 400:
+            return 6, 10
+        return 8, 10
+    if n < 180:
+        return 6, 8
+    if n < 400:
+        return 7, 10
+    return 8, 10
+
+
 def clamp_segment_duration(seconds: float | int) -> int:
     return int(max(SEGMENT_DURATION_MIN, min(int(round(float(seconds))), SEGMENT_DURATION_MAX)))
 
@@ -202,12 +223,13 @@ def clamp_shot_total(
 
 
 def estimate_narration_duration(text: str) -> int:
-    """~3 Chinese chars per second for slow clear VO; clamp to segment range."""
+    """约 4.5–5 字/秒（科普自然偏快口播）；钳到单段时长范围。"""
     clean = re.sub(r"\s+", "", (text or "").strip())
     clean = re.sub(r"^【[^】]*】", "", clean).strip()
     if not clean:
         return SEGMENT_DURATION_MIN
-    secs = max(SEGMENT_DURATION_MIN, int((len(clean) + 2) // 3) + 1)
+    # (n + 4) // 5 ≈ 5 字/秒，略留半拍呼吸
+    secs = max(SEGMENT_DURATION_MIN, int((len(clean) + 4) // 5) + 1)
     return clamp_segment_duration(secs)
 
 
@@ -239,8 +261,25 @@ def build_production_cues(bgm_mood: str) -> list[str]:
     return [SUBTITLE_CUE, f"【BGM：{mood}】"]
 
 
-def build_seedance_production_section(segment_script: str) -> str:
-    """组装 Seedance 音频/字幕/BGM 强制约束（科普旁白 / 漫剧画面+对白混排）。"""
+def build_seedance_production_section(
+    segment_script: str,
+    *,
+    ambient_only: bool = False,
+) -> str:
+    """组装 Seedance 音频/字幕/BGM 强制约束（科普旁白 / 漫剧画面+对白混排）。
+
+    ambient_only：科普后期 TTS 模式——模型只出操作环境音，禁止口播与 BGM。
+    """
+    if ambient_only:
+        lines = [
+            "1. 配音：本镜口播由后期外部 TTS 完成；视频内禁止任何旁白、对白、解说、哼唱、人声。",
+            "2. 字幕：禁止在画面内烧录字幕、标题、水印或口播文字。",
+            "3. 背景音乐：禁止任何 BGM、配乐、旋律、哼唱垫乐。",
+            "4. 音效：必须生成与画面同步的操作环境音（键盘敲击、鼠标点击、界面切换、轻微办公底噪）；"
+            "音量克制，不要盖过人声（人声后期再叠）。",
+        ]
+        return f"{SEEDANCE_PRODUCTION_SECTION_HEADER}\n" + "\n".join(lines)
+
     has_vo = script_has_narration_cue(segment_script)
     has_dialogue = script_has_dialogue_cue(segment_script)
     drama_mixed = script_is_drama_mixed(segment_script)
@@ -299,19 +338,20 @@ def build_seedance_production_section(segment_script: str) -> str:
             )
         return f"{SEEDANCE_PRODUCTION_SECTION_HEADER}\n" + "\n".join(lines)
 
-    # 科普旁白模式：整镜以旁白段为主
+    # 科普旁白模式：整镜以旁白段为主（语速自然偏快，避免拖沓）
     lines = [
-        "1. 语速：旁白语速自然偏慢，吐字清晰，留有呼吸与停顿；严禁加速赶词、压缩台词或提高播放倍速。",
+        "1. 语速：旁白语速自然偏快、吐字清晰，节奏紧凑有呼吸感；"
+        "避免刻意放慢、拖腔或长时间停顿；不要压缩到含糊赶词，也不要提高播放倍速。",
         "2. 字幕：全程烧录简体中文字幕，位置底部居中，字号清晰可读；旁白须逐句同步显示，字幕与口播一致。",
     ]
     if has_vo:
         lines.append(
-            "3. 旁白：脚本含旁白段落时以第三人称旁白配音，沉稳清晰、语速偏慢；"
+            "3. 旁白：脚本含旁白段落时以第三人称旁白配音，沉稳清晰、语速自然偏快；"
             "视频内不要自行添加嘈杂对白；旁白出现时字幕同步显示全文。"
         )
     else:
         lines.append(
-            "3. 旁白：若脚本含旁白标记，按第三人称旁白慢速清晰配音，并同步烧录字幕；"
+            "3. 旁白：若脚本含旁白标记，按第三人称旁白自然偏快清晰配音，并同步烧录字幕；"
             "视频内不要自行添加嘈杂对白。"
         )
     lines.append(
@@ -410,6 +450,73 @@ def first_visual_prompt(content: str) -> str:
     return ""
 
 
+def _is_narration_script_line(line: str) -> bool:
+    """判断脚本行是否为旁白口播（含新旧前缀）；字幕 cue 里虽含「旁白」二字但不算。"""
+    stripped = (line or "").strip()
+    if not stripped or stripped.startswith("【字幕") or stripped.startswith("【BGM"):
+        return False
+    return stripped.startswith("【旁白") or NARRATION_PREFIX in stripped or LEGACY_NARRATION_PREFIX in stripped
+
+
+def replace_narration_in_script(content: str, narration: str) -> str:
+    """把编辑弹窗里的旁白写回脚本旁白段，配音与视频以脚本为准。"""
+    text = (narration or "").strip()
+    lines = (content or "").replace("\r\n", "\n").split("\n")
+    out: list[str] = []
+    replaced = False
+    for raw in lines:
+        stripped = raw.strip()
+        if text and _is_narration_script_line(stripped) and not replaced:
+            prefix_m = re.match(r"^(【[^】]*】)\s*", stripped)
+            prefix = prefix_m.group(1) if prefix_m else NARRATION_PREFIX
+            out.append(f"{prefix}{text}")
+            replaced = True
+            continue
+        out.append(raw.rstrip())
+    if text and not replaced:
+        dur = estimate_narration_duration(text)
+        out.append(f"@duration:{dur}")
+        out.append(f"{NARRATION_PREFIX}{text}")
+    return "\n".join(out).strip()
+
+
+def replace_first_visual_in_script(content: str, visual: str) -> str:
+    """把编辑弹窗里的首帧画面写回脚本第一段 visual。"""
+    text = (visual or "").strip()
+    if not text:
+        return (content or "").strip()
+    lines = (content or "").replace("\r\n", "\n").split("\n")
+    out: list[str] = []
+    replaced = False
+    # cue_end 字幕/BGM 行之后的插入点
+    cue_end = 0
+    for i, raw in enumerate(lines):
+        stripped = raw.strip()
+        if stripped.startswith("【字幕") or stripped.startswith("【BGM") or not stripped:
+            cue_end = i + 1
+            continue
+        break
+    for i, raw in enumerate(lines):
+        stripped = raw.strip()
+        if (
+            not replaced
+            and stripped
+            and not stripped.startswith("@duration:")
+            and not stripped.startswith("【字幕")
+            and not stripped.startswith("【BGM")
+            and not _is_narration_script_line(stripped)
+        ):
+            out.append(text)
+            replaced = True
+            continue
+        out.append(raw.rstrip())
+    if not replaced:
+        insert_at = min(cue_end, len(out))
+        extra = [f"@duration:{SEGMENT_DURATION_MIN}", text]
+        out = out[:insert_at] + extra + out[insert_at:]
+    return "\n".join(out).strip()
+
+
 def build_segment_script(
     beats: list[SegmentBeat],
     *,
@@ -455,10 +562,13 @@ def parse_beats_from_llm_shot(item: dict[str, Any], narration_fallback: str = ""
                 continue
             raw_dur = seg.get("duration")
             if kind in {"narration", "vo", "旁白"}:
-                dur = int(raw_dur) if raw_dur else estimate_narration_duration(text)
+                # est 按字数估时；LLM 值钳在 [est, est+1]，禁止把短句撑满镜长
+                est = estimate_narration_duration(text)
                 if raw_dur:
-                    # 旁白时长再按字数下限钳制，避免 LLM 给过短 duration
-                    dur = max(dur, estimate_narration_duration(text))
+                    given = int(raw_dur)
+                    dur = max(est, min(given, est + 1))
+                else:
+                    dur = est
             else:
                 dur = int(raw_dur) if raw_dur else estimate_visual_duration(text)
             beats.append(
@@ -485,12 +595,35 @@ def parse_beats_from_llm_shot(item: dict[str, Any], narration_fallback: str = ""
     return beats
 
 
+def seedance_timeline_without_voice(segment_script: str) -> str:
+    """时间轴保留画面；旁白/字幕/BGM 行改成无口播的操作环境音，避免模型念稿。"""
+    last_visual = "工位操作，手部点击界面，保持主体稳定"
+    out: list[str] = []
+    for raw in (segment_script or "").replace("\r\n", "\n").split("\n"):
+        stripped = raw.strip()
+        if stripped.startswith("【字幕") or stripped.startswith("【BGM"):
+            continue
+        if _is_narration_script_line(stripped):
+            out.append(
+                f"【画面·无配音仅环境音】{last_visual}；"
+                "持续键盘、点击、界面操作音效，禁止人声禁止配乐禁止字幕"
+            )
+            continue
+        if stripped and not stripped.startswith("@"):
+            visual = re.sub(r"^【[^】]*】", "", stripped).strip()
+            if visual:
+                last_visual = visual
+        out.append(raw.rstrip())
+    return "\n".join(out).strip()
+
+
 def build_seedance_prompt(
     segment_script: str,
     *,
     style_prefix: str = "",
     motion_bias: str = "",
     camera: str = "",
+    ambient_only: bool = False,
 ) -> str:
     """Assemble final Seedance text: style lock + production constraints + timed body."""
     parts: list[str] = []
@@ -500,7 +633,9 @@ def build_seedance_prompt(
             "【强制约束：视频画面风格】全片画面必须严格遵循以下风格描述，"
             f"严禁偏离或混用其他画风：{style}"
         )
-    parts.append(build_seedance_production_section(segment_script))
+    parts.append(
+        build_seedance_production_section(segment_script, ambient_only=ambient_only)
+    )
     parts.append(
         "【强制约束：节奏与画面】严格按时间轴段落演绎画面；"
         "保持主体外形与首帧一致，动作自然。"
@@ -508,7 +643,12 @@ def build_seedance_prompt(
     if motion_bias or camera:
         bits = [b for b in (motion_bias.strip(), camera.strip()) if b]
         parts.append("【运镜】" + "；".join(bits))
-    body = replace_duration_with_time_ranges(segment_script or "")
+    body_src = (
+        seedance_timeline_without_voice(segment_script)
+        if ambient_only
+        else (segment_script or "")
+    )
+    body = replace_duration_with_time_ranges(body_src)
     parts.append(body.strip())
     return "\n".join(p for p in parts if p).strip()
 

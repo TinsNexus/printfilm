@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -30,8 +31,16 @@ class UserOut(BaseModel):
     plan: str = "free"
     billing_unlimited: bool = False
     role: str = "user"
+    avatar_url: str = ""
+    phone: str = ""
 
     model_config = {"from_attributes": True}
+
+
+class ProfileUpdateRequest(BaseModel):
+    nickname: str = Field(max_length=64)
+    email: str = Field(max_length=255)
+    phone: str = Field(default="", max_length=32)
 
 
 # ---- Templates ----
@@ -254,6 +263,104 @@ class AdminStatsOut(BaseModel):
     project_status_counts: dict[str, int]
 
 
+class AdminQueueTaskOut(BaseModel):
+    task_id: str
+    task_name: str
+    label: str
+    args_repr: str
+    queue: str
+    state: str
+    worker: str | None = None
+    started_at: float | None = None
+    ref_id: int | None = None
+    position: int | None = None
+
+
+class AdminQueueSummaryOut(BaseModel):
+    name: str
+    label: str
+    pending: int
+    sample: list[AdminQueueTaskOut]
+
+
+class AdminWorkerOut(BaseModel):
+    name: str
+    status: str
+    active_count: int
+    processed: int | None = None
+    pool: str | None = None
+
+
+class AdminWorkerPoolOut(BaseModel):
+    name: str
+    pool_implementation: str = ""
+    max_concurrency: int | None = None
+    process_count: int | None = None
+    writes: dict[str, Any] | None = None
+
+
+class AdminWorkerControlOut(BaseModel):
+    mode: str
+    systemd_unit: str | None = None
+    systemd_active: bool | None = None
+    pools: list[AdminWorkerPoolOut] = []
+    total_processes: int = 0
+    max_concurrency: int | None = None
+    pool_max_limit: int = 8
+    can_pool_grow: bool = False
+    can_pool_shrink: bool = False
+    can_restart: bool = False
+    autoscale_running: bool = False
+    autoscale_enabled: bool = False
+    autoscale_pid: int | None = None
+    autoscale_workers: int = 0
+    bounds_min: int = 1
+    bounds_max: int = 3
+    bounds_source: str = "env"
+
+
+class AdminAutoscalePatch(BaseModel):
+    min_workers: int | None = None
+    max_workers: int | None = None
+    enabled: bool | None = None
+
+
+class AdminWorkerActionOut(BaseModel):
+    ok: bool
+    action: str | None = None
+    n: int | None = None
+    unit: str | None = None
+    message: str | None = None
+    pid: int | None = None
+    stopped: bool | None = None
+    already_running: bool | None = None
+    bounds_min: int | None = None
+    bounds_max: int | None = None
+    bounds_source: str | None = None
+    autoscale_enabled: bool | None = None
+    control: AdminWorkerControlOut | None = None
+
+
+class AdminQueuesOut(BaseModel):
+    ok: bool
+    redis_ok: bool
+    use_celery: bool
+    worker_queues: str
+    unacked: int
+    total_pending: int
+    active_count: int
+    reserved_count: int
+    workers_online: int
+    queues: list[AdminQueueSummaryOut]
+    pending_tasks: list[AdminQueueTaskOut]
+    active_tasks: list[AdminQueueTaskOut]
+    reserved_tasks: list[AdminQueueTaskOut]
+    workers: list[AdminWorkerOut]
+    worker_control: AdminWorkerControlOut | None = None
+    autoscale: dict[str, float | int]
+    fetched_at: str
+
+
 class AdminUserOut(BaseModel):
     id: int
     email: EmailStr
@@ -264,6 +371,7 @@ class AdminUserOut(BaseModel):
     plan: str
     billing_unlimited: bool
     role: str
+    phone: str = ""
     created_at: datetime | None = None
 
     model_config = {"from_attributes": True}

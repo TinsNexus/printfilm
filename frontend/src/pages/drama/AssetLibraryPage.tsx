@@ -16,12 +16,14 @@ import {
 import { readAssetVoiceBinding } from './CharacterVoiceBindModal'
 import { DramaImageLightbox } from './DramaImageLightbox'
 import { filterDramaLibraryAssets, isDramaLibraryAsset } from '../../lib/dramaLibraryAssets'
+import { pageCountOf } from '../../lib/pagination'
 import RequireAuth from './RequireAuth'
 import './drama.css'
 
 type AssetTabKey = 'all' | 'character' | 'scene' | 'prop' | 'voice'
 
-const PAGE_SIZE = 12
+const PAGE_SIZE_DEFAULT = 12
+const PAGE_SIZE_OPTIONS = [12, 24, 36] as const
 
 const TABS: Array<{ value: AssetTabKey; label: string }> = [
   { value: 'all', label: '全部' },
@@ -100,6 +102,7 @@ function AssetLibraryInner() {
   const [tab, setTab] = useState<AssetTabKey>('all')
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(PAGE_SIZE_DEFAULT)
   const [playingId, setPlayingId] = useState<number | null>(null)
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null)
   const [error, setError] = useState('')
@@ -174,16 +177,16 @@ function AssetLibraryInner() {
     })
   }, [assets, tab, query, projectNameById])
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const pageCount = pageCountOf(filtered.length, pageSize)
   const safePage = Math.min(page, pageCount)
   const pageItems = useMemo(() => {
-    const start = (safePage - 1) * PAGE_SIZE
-    return filtered.slice(start, start + PAGE_SIZE)
-  }, [filtered, safePage])
+    const start = (safePage - 1) * pageSize
+    return filtered.slice(start, start + pageSize)
+  }, [filtered, safePage, pageSize])
 
   useEffect(() => {
     setPage(1)
-  }, [tab, query, projectId])
+  }, [tab, query, projectId, pageSize])
 
   // 卡片缩略图上试听 / 暂停音色
   function toggleVoice(asset: DramaAsset) {
@@ -326,7 +329,19 @@ function AssetLibraryInner() {
                 )
               })}
             </div>
-            <Pagination page={safePage} pageCount={pageCount} onChange={setPage} />
+            <Pagination
+              page={safePage}
+              pageCount={pageCount}
+              total={filtered.length}
+              pageSize={pageSize}
+              pageSizeOptions={PAGE_SIZE_OPTIONS}
+              onPageSizeChange={(size) => {
+                setPageSize(size)
+                setPage(1)
+              }}
+              onChange={setPage}
+              ariaLabel="资产库分页"
+            />
           </>
         )}
 

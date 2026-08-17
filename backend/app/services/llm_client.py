@@ -71,6 +71,7 @@ async def chat_completions(
     temperature: float = 0.6,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     timeout: float = 300.0,
+    response_format: dict[str, Any] | None = None,
 ) -> str:
     settings = get_settings()
     api_key = resolve_llm_api_key()
@@ -91,6 +92,8 @@ async def chat_completions(
     extra = _llm_extra_body(model)
     if extra:
         payload.update(extra)
+    if response_format:
+        payload["response_format"] = response_format
 
     logger.info(
         "调用文字 LLM model=%s base=%s user_len=%s max_tokens=%s",

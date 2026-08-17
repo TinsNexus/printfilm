@@ -162,6 +162,13 @@ async def upload_asset_media(
     asset.cover = url
     if not asset.asset_type or asset.asset_type == "none":
         asset.asset_type = "image"
+    params = dict(asset.params or {})
+    gen = params.get("generation")
+    if isinstance(gen, dict):
+        params["generation"] = {**gen, "status": "done", "source": "upload"}
+    else:
+        params["generation"] = {"status": "done", "source": "upload"}
+    asset.params = params
     await db.commit()
     await db.refresh(asset)
     return DramaAssetOut.model_validate(asset)

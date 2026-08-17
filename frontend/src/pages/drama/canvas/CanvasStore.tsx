@@ -514,7 +514,6 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
       const node = nodesRef.current.find((n) => n.id === nodeId)
       if (!node) throw new Error('节点不存在')
       if (node.data.kind === 'video') throw new Error('视频节点请使用视频生成')
-      if (node.data.kind === 'video') throw new Error('视频节点请使用视频生成')
 
       setNodes((current) =>
         current.map((n) =>

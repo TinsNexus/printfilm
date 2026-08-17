@@ -4,6 +4,7 @@ import { api } from '../api'
 import type { Project } from '../api'
 import AppShell from '../components/layout/AppShell'
 import PillTabs from '../components/ui/PillTabs'
+import Pagination from '../components/ui/Pagination'
 import StatCard from '../components/ui/StatCard'
 import {
   IconClapper,
@@ -25,6 +26,7 @@ import {
   zipVideosClient,
 } from '../lib/clientDownload'
 import { isRunning, STATUS_CN, statusTone } from '../lib/status'
+import { pageCountOf } from '../lib/pagination'
 
 type HistoryItem = Omit<Project, 'shots'> & {
   published?: boolean
@@ -35,7 +37,7 @@ type HistoryItem = Omit<Project, 'shots'> & {
   updated_at?: string
 }
 
-const PAGE_SIZE = 8
+const PAGE_SIZE_DEFAULT = 8
 
 const TAB_STATUS: Record<string, 'all' | 'draft' | 'running' | 'done' | 'published'> = {
   全部: 'all',
@@ -82,6 +84,7 @@ export default function HistoryPage() {
    * q 搜索框
    * debouncedQ 防抖后的搜索词
    * page 页码
+   * pageSize 每页条数
    * preview 预览弹层
    */
   const [items, setItems] = useState<HistoryItem[]>([])
@@ -99,6 +102,7 @@ export default function HistoryPage() {
   const [q, setQ] = useState('')
   const [debouncedQ, setDebouncedQ] = useState('')
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(PAGE_SIZE_DEFAULT)
   const [preview, setPreview] = useState<{
     url: string
     title: string
@@ -120,7 +124,7 @@ export default function HistoryPage() {
     try {
       const res = await api.listProjects({
         page,
-        page_size: PAGE_SIZE,
+        page_size: pageSize,
         status: TAB_STATUS[tab] || 'all',
         q: debouncedQ,
         pipeline_mode: typeMode,
@@ -156,7 +160,7 @@ export default function HistoryPage() {
     setLoading(true)
     load().catch(() => undefined)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional reload keys
-  }, [page, tab, typeMode, debouncedQ])
+  }, [page, pageSize, tab, typeMode, debouncedQ])
 
   useEffect(() => {
     if (!hasRunning) return
@@ -165,13 +169,13 @@ export default function HistoryPage() {
     }, 2000)
     return () => clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasRunning, page, tab, typeMode, debouncedQ])
+  }, [hasRunning, page, pageSize, tab, typeMode, debouncedQ])
 
   useEffect(() => {
     setPage(1)
-  }, [tab, debouncedQ, typeMode])
+  }, [tab, debouncedQ, typeMode, pageSize])
 
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const pageCount = pageCountOf(total, pageSize)
   const pageItems = items
 
   // 筛选后若当前页超出范围则回退
@@ -274,20 +278,6 @@ export default function HistoryPage() {
   function continueEdit(p: HistoryItem) {
     if (p.status === 'DRAFT') nav(`/studio/${p.id}/style`)
     else nav(`/studio/${p.id}`)
-  }
-
-  function pageButtons() {
-    const buttons: (number | '…')[] = []
-    if (pageCount <= 7) {
-      for (let i = 1; i <= pageCount; i++) buttons.push(i)
-      return buttons
-    }
-    buttons.push(1)
-    if (page > 3) buttons.push('…')
-    for (let i = Math.max(2, page - 1); i <= Math.min(pageCount - 1, page + 1); i++) buttons.push(i)
-    if (page < pageCount - 2) buttons.push('…')
-    buttons.push(pageCount)
-    return buttons
   }
 
   return (
@@ -490,40 +480,18 @@ export default function HistoryPage() {
           </div>
 
           {total > 0 ? (
-            <div className="pf-pagination">
-              <button
-                type="button"
-                className="pf-page-btn"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-              >
-                ‹
-              </button>
-              {pageButtons().map((b, i) =>
-                b === '…' ? (
-                  <span key={`e-${i}`} className="pf-page-ellipsis">
-                    …
-                  </span>
-                ) : (
-                  <button
-                    key={b}
-                    type="button"
-                    className={page === b ? 'pf-page-btn active' : 'pf-page-btn'}
-                    onClick={() => setPage(b)}
-                  >
-                    {b}
-                  </button>
-                ),
-              )}
-              <button
-                type="button"
-                className="pf-page-btn"
-                disabled={page >= pageCount}
-                onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-              >
-                ›
-              </button>
-            </div>
+            <Pagination
+              page={page}
+              pageCount={pageCount}
+              total={total}
+              pageSize={pageSize}
+              onPageSizeChange={(size) => {
+                setPageSize(size)
+                setPage(1)
+              }}
+              onChange={setPage}
+              ariaLabel="科普历史分页"
+            />
           ) : null}
         </section>
       </div>

@@ -73,6 +73,13 @@ def ensure_browser_cors() -> None:
     for extra in (
         "https://kepu.printfilm.com",
         "http://kepu.printfilm.com",
+        "https://www.printfilm.com",
+        "http://www.printfilm.com",
+        "https://printfilm.com",
+        "http://printfilm.com",
+        "https://admin.kepu.printfilm.com",
+        "https://admin.printfilm.com",
+        "http://admin.printfilm.com",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:4173",

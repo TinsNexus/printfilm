@@ -1,8 +1,9 @@
-/** 资产详情操作框：预览图、生图提示词编辑、生成/音色等操作 */
-import { useEffect, useState } from 'react'
+/** 资产详情操作框：预览图、上传/生图提示词编辑、生成/音色等操作 */
+import { useEffect, useRef, useState } from 'react'
 import { dramaApi, resolveDramaMediaUrl, type DramaAsset } from '../../api/drama'
 import Modal from '../../components/ui/Modal'
 import { readVisualPrompt } from '../../lib/dramaVisualPrompt'
+import { dramaAssetHasImage } from '../../lib/dramaAssetImage'
 import { readAssetVoiceBinding } from './CharacterVoiceBindModal'
 import { DramaImageLightbox } from './DramaImageLightbox'
 
@@ -49,13 +50,17 @@ export function DramaAssetDetailModal({
   /*
    * promptDraft 提示词草稿
    * saving 保存中
+   * uploading 上传图片中
    * lightboxSrc 放大预览图 URL
    */
   const [promptDraft, setPromptDraft] = useState('')
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
+  const uploadInputRef = useRef<HTMLInputElement>(null)
 
   const mediaSrc = resolveDramaMediaUrl(asset.cover || asset.url)
+  const hasImage = dramaAssetHasImage(asset)
   const voice = readAssetVoiceBinding(asset)
   const isCharacter = (asset.type || '').toLowerCase() === 'character'
   const dirty = promptDraft.trim() !== readVisualPrompt(asset).trim()
@@ -111,6 +116,20 @@ export function DramaAssetDetailModal({
     onGenerate(asset)
   }
 
+  // 本地上传图片，视为已出图
+  async function handleUpload(file: File) {
+    setUploading(true)
+    try {
+      const updated = await dramaApi.uploadAssetMedia(asset.id, file)
+      onUpdated(updated)
+    } catch (err) {
+      onError(err instanceof Error ? err.message : '上传失败')
+    } finally {
+      setUploading(false)
+      if (uploadInputRef.current) uploadInputRef.current.value = ''
+    }
+  }
+
   return (
     <>
       <Modal
@@ -136,7 +155,7 @@ export function DramaAssetDetailModal({
             <button
               type="button"
               className="pf-btn drama-btn-primary"
-              disabled={busy || saving || !promptDraft.trim()}
+              disabled={busy || saving || uploading || !promptDraft.trim()}
               onClick={() => void handleGenerate()}
             >
               {busy ? '生成中…' : genLabel}
@@ -161,21 +180,31 @@ export function DramaAssetDetailModal({
 
           <p className="drama-muted drama-asset-detail-meta">
             {asset.type}
+            {hasImage ? ' · 已出图' : ' · 未出图'}
             {isCharacter && voice ? ` · 已绑音色：${voice.label}` : ''}
             {mediaSrc ? ' · 点击图片可放大' : ''}
           </p>
 
-          <label className="drama-field">
-            <span>生图提示词</span>
-            <textarea
-              rows={8}
-              value={promptDraft}
-              onChange={(e) => setPromptDraft(e.target.value)}
-              placeholder="描述外观、构图、光影与风格…"
-            />
-          </label>
-
           <div className="drama-asset-detail-extra">
+            <input
+              ref={uploadInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="sr-only"
+              disabled={uploading || busy}
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) void handleUpload(file)
+              }}
+            />
+            <button
+              type="button"
+              className="pf-btn pf-btn-sm"
+              disabled={uploading || busy || saving}
+              onClick={() => uploadInputRef.current?.click()}
+            >
+              {uploading ? '上传中…' : hasImage ? '更换图片' : '上传图片'}
+            </button>
             {isCharacter && onBindVoice ? (
               <button
                 type="button"
@@ -189,13 +218,23 @@ export function DramaAssetDetailModal({
               <button
                 type="button"
                 className="pf-btn pf-btn-sm drama-btn-danger-text"
-                disabled={busy || saving}
+                disabled={busy || saving || uploading}
                 onClick={() => onDelete(asset)}
               >
                 删除角色
               </button>
             ) : null}
           </div>
+
+          <label className="drama-field">
+            <span>生图提示词</span>
+            <textarea
+              rows={8}
+              value={promptDraft}
+              onChange={(e) => setPromptDraft(e.target.value)}
+              placeholder="描述外观、构图、光影与风格…"
+            />
+          </label>
         </div>
       </Modal>
 

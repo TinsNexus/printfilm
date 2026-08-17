@@ -1,17 +1,21 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from pathlib import Path
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import User, WalletLedger
-from app.schemas import LoginRequest, RegisterRequest, TokenResponse, UserOut
+from app.schemas import LoginRequest, ProfileUpdateRequest, RegisterRequest, TokenResponse, UserOut
+from app.services import storage
 from app.services.auth import (
     create_access_token,
     get_user_by_email,
     hash_password,
     verify_password,
 )
+from app.services.profile import ProfileError, prepare_profile_update
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
@@ -60,4 +64,70 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> Token
 
 @router.get("/me", response_model=UserOut)
 async def me(user: User = Depends(get_current_user)) -> User:
+    return user
+
+
+@router.patch("/me", response_model=UserOut)
+async def update_me(
+    body: ProfileUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> User:
+    """更新当前用户的用户名、登录邮箱与联系手机号（仅记录，无验证码）。"""
+    try:
+        fields = prepare_profile_update(
+            nickname=body.nickname,
+            email=body.email,
+            phone=body.phone,
+        )
+    except ProfileError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if fields["email"] != user.email:
+        taken = await get_user_by_email(db, fields["email"])
+        if taken and taken.id != user.id:
+            raise HTTPException(status_code=400, detail="该邮箱已被使用")
+
+    user.nickname = fields["nickname"]
+    user.email = fields["email"]
+    user.phone = fields["phone"]
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+@router.post("/avatar", response_model=UserOut)
+async def upload_avatar(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> User:
+    """Upload or replace the current user's profile avatar."""
+    content_type = (file.content_type or "").lower()
+    allowed = {
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+        "image/gif": ".gif",
+    }
+    ext = allowed.get(content_type)
+    if not ext:
+        suffix = Path(file.filename or "").suffix.lower()
+        if suffix in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+            ext = ".jpg" if suffix == ".jpeg" else suffix
+        else:
+            raise HTTPException(status_code=400, detail="仅支持 JPG / PNG / WebP / GIF")
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="空文件")
+    if len(raw) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="头像不能超过 5MB")
+
+    dest = storage.user_dir(user.id) / f"avatar{ext}"
+    dest.write_bytes(raw)
+    user.avatar_url = storage.publish_local(dest)
+    await db.commit()
+    await db.refresh(user)
     return user

@@ -4,7 +4,6 @@ import { api, defaultsFromTemplate } from '../../api'
 import type { Project, Shot, Template } from '../../api'
 import AppShell from '../../components/layout/AppShell'
 import Stepper from '../../components/ui/Stepper'
-import ComingSoon from '../../components/ui/ComingSoon'
 import {
   IconChevronLeft,
   IconDownload,
@@ -31,7 +30,11 @@ import {
 import {
   SEGMENT_SCRIPT_PLACEHOLDER,
   SHOT_DURATION_MAX,
+  firstVisualFromScript,
+  narrationFromScript,
   parseSegmentScript,
+  replaceFirstVisualInScript,
+  replaceNarrationInScript,
   validateSegmentScriptDuration,
 } from '../../lib/segmentDuration'
 
@@ -247,6 +250,7 @@ export default function StoryboardPage() {
         ? '继续生成视频'
         : '继续生成'
 
+  // 工作台进度：完整模式要镜头视频 + 外部 TTS，静图模式只配音合成
   const progressItems = useMemo(() => {
     if (!project) return []
     const list = project.shots || []
@@ -266,7 +270,7 @@ export default function StoryboardPage() {
     ]
     if (full) {
       items.push({
-        label: `视频模型配音 (${vids}/${list.length || 0})`,
+        label: `镜头视频 (${vids}/${list.length || 0})`,
         done:
           list.length > 0 &&
           (vids === list.length ||
@@ -274,12 +278,13 @@ export default function StoryboardPage() {
         run: stage === 'VIDEOING',
         pct: stage === 'VIDEOING' ? project.progress : undefined,
       })
-    } else {
-      items.push({
-        label: `配音合成 (${auds}/${list.length || 0})`,
-        done: list.length > 0 && auds === list.length,
-      })
     }
+    items.push({
+      label: `配音合成 (${auds}/${list.length || 0})`,
+      done: list.length > 0 && auds === list.length,
+      run: stage === 'AUDIOING',
+      pct: stage === 'AUDIOING' ? project.progress : undefined,
+    })
     items.push({
       label: full ? '镜头拼接' : '成片渲染',
       done: Boolean(project.final_video_url) || project.status === 'DONE',
@@ -504,6 +509,44 @@ export default function StoryboardPage() {
     setEditFocus(focus)
     setEditing({ ...shot })
     setMenuShotId(null)
+  }
+
+  // 改旁白时同步写入脚本旁白段
+  function patchEditingNarration(value: string) {
+    if (!editing) return
+    const script = editing.segment_script || editing.video_prompt || ''
+    const next = replaceNarrationInScript(script, value)
+    setEditing({
+      ...editing,
+      narration: value,
+      segment_script: next,
+      video_prompt: next,
+    })
+  }
+
+  // 改首帧画面时同步写入脚本第一段 visual
+  function patchEditingVisual(value: string) {
+    if (!editing) return
+    const script = editing.segment_script || editing.video_prompt || ''
+    const next = replaceFirstVisualInScript(script, value)
+    setEditing({
+      ...editing,
+      img_prompt: value,
+      segment_script: next,
+      video_prompt: next,
+    })
+  }
+
+  // 改脚本时回填旁白与首帧画面
+  function patchEditingScript(value: string) {
+    if (!editing) return
+    setEditing({
+      ...editing,
+      segment_script: value,
+      video_prompt: value,
+      narration: narrationFromScript(value),
+      img_prompt: firstVisualFromScript(value) || editing.img_prompt,
+    })
   }
 
   async function saveShot() {
@@ -836,9 +879,7 @@ title="用当前镜头重新拼接"
               </div>
             </article>
             <article className="pf-create-col">
-              <h3>
-                结构摘要 <ComingSoon label="示例聚合" />
-              </h3>
+              <h3>结构摘要</h3>
               <ul className="pf-meta-list">
                 {structure.length ? (
                   structure.map((s) => (
@@ -1131,36 +1172,6 @@ title="用当前镜头重新拼接"
         </div>
 
         <aside className="pf-create-col pf-board-settings">
-          <h3>分镜设置</h3>
-          <label className="pf-board-field">
-            <span>时长（秒）</span>
-            <input
-              type="number"
-              min={1}
-              step={0.5}
-              value={shots[0] ? Number(shots[0].duration) || '' : ''}
-              readOnly
-              title="选中镜头后可在表格中编辑；此处为布局预览"
-            />
-          </label>
-          <label className="pf-board-field">
-            <span>运镜</span>
-            <select disabled defaultValue="auto">
-              <option value="auto">自动</option>
-              <option value="push">推进</option>
-              <option value="pan">横移</option>
-            </select>
-          </label>
-          <label className="pf-board-field">
-            <span>转场</span>
-            <select disabled defaultValue="cut">
-              <option value="cut">硬切</option>
-              <option value="fade">淡入淡出</option>
-            </select>
-          </label>
-          <p className="pf-muted" style={{ fontSize: '0.75rem', margin: '0.35rem 0 1rem' }}>
-            运镜 / 转场能力即将接入，当前可先在分镜表中改时长与旁白。
-          </p>
           <h3>生成进度</h3>
           <ul className="pf-progress-list">
             {progressItems.map((item) => (
@@ -1293,6 +1304,9 @@ title="用当前镜头重新拼接"
                 value={editing.overlay_title || ''}
                 onChange={(e) => setEditing({ ...editing, overlay_title: e.target.value })}
               />
+              <span className="pf-muted" style={{ fontSize: '0.75rem', marginTop: 4, display: 'block' }}>
+                分镜列表名称；图文成片会叠到画面顶部
+              </span>
             </label>
             <label>
               副标题
@@ -1300,17 +1314,20 @@ title="用当前镜头重新拼接"
                 value={editing.overlay_subtitle || ''}
                 onChange={(e) => setEditing({ ...editing, overlay_subtitle: e.target.value })}
               />
+              <span className="pf-muted" style={{ fontSize: '0.75rem', marginTop: 4, display: 'block' }}>
+                图文成片叠字；AI 视频成片不烧这行，只作分镜说明
+              </span>
             </label>
             <label>
               旁白
               <textarea
                 autoFocus={editFocus === 'narration'}
                 value={editing.narration}
-                onChange={(e) => setEditing({ ...editing, narration: e.target.value })}
+                onChange={(e) => patchEditingNarration(e.target.value)}
                 rows={3}
               />
               <span className="pf-muted" style={{ fontSize: '0.75rem', marginTop: 4, display: 'block' }}>
-                保存后将按脚本中旁白段回写
+                会同步到下方脚本旁白段，配音与视频按脚本生成
               </span>
             </label>
             <label>
@@ -1318,11 +1335,11 @@ title="用当前镜头重新拼接"
               <textarea
                 autoFocus={editFocus === 'img_prompt'}
                 value={editing.img_prompt}
-                onChange={(e) => setEditing({ ...editing, img_prompt: e.target.value })}
+                onChange={(e) => patchEditingVisual(e.target.value)}
                 rows={3}
               />
               <span className="pf-muted" style={{ fontSize: '0.75rem', marginTop: 4, display: 'block' }}>
-                保存后将按脚本首段画面回写
+                会同步到脚本首段画面，出图与视频都用这一段
               </span>
             </label>
             <label>
@@ -1330,13 +1347,7 @@ title="用当前镜头重新拼接"
               <textarea
                 autoFocus={editFocus === 'segment_script' || editFocus === ''}
                 value={editing.segment_script || editing.video_prompt || ''}
-                onChange={(e) =>
-                  setEditing({
-                    ...editing,
-                    segment_script: e.target.value,
-                    video_prompt: e.target.value,
-                  })
-                }
+                onChange={(e) => patchEditingScript(e.target.value)}
                 rows={10}
                 placeholder={SEGMENT_SCRIPT_PLACEHOLDER}
               />

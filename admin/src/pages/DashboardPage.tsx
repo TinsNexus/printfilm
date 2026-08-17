@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import {
   Banknote,
   Clapperboard,
+  Layers,
   Receipt,
   Shapes,
   Users,
@@ -176,6 +177,10 @@ export function DashboardPage() {
             <Link to="/projects" className="admin-quick-btn">
               <Clapperboard className="h-4 w-4 text-[#67c23a]" />
               项目管理
+            </Link>
+            <Link to="/queues" className="admin-quick-btn">
+              <Layers className="h-4 w-4 text-[#67c23a]" />
+              队列任务
             </Link>
           </div>
           <div className="mt-5 rounded-xl border border-[#ebeef5] bg-[#fafbfc] p-4">

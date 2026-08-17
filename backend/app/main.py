@@ -8,6 +8,8 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, text
 
 from app.api import auth, billing, projects, templates, tools
+from app.api import api_keys as user_api_keys
+from app.api.v1 import router as v1_router
 from app.api.admin import router as admin_router
 from app.api.drama import router as drama_router
 from app.config import get_settings
@@ -81,6 +83,8 @@ app.include_router(templates.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
 app.include_router(billing.router, prefix="/api")
 app.include_router(tools.router, prefix="/api")
+app.include_router(user_api_keys.router, prefix="/api")
+app.include_router(v1_router, prefix="/api")
 app.include_router(drama_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
 
@@ -178,6 +182,10 @@ async def _migrate_sqlite() -> None:
             )
         if "role" not in ucols:
             await conn.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR(16) DEFAULT 'user'"))
+        if "avatar_url" not in ucols:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(512) DEFAULT ''"))
+        if "phone" not in ucols:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN phone VARCHAR(32) DEFAULT ''"))
 
         # UsageEvent.drama_project_id for drama module billing
         if is_sqlite:
@@ -269,16 +277,26 @@ async def health() -> dict:
     redis_ok = False
     queue_pending = None
     queue_unacked = None
+    queues_detail: dict[str, int] = {}
     try:
         import redis
+
+        from app.workers.queues import parse_worker_queues
 
         r = redis.Redis.from_url(
             s.redis_url, decode_responses=True, socket_connect_timeout=2, socket_timeout=2
         )
         redis_ok = bool(r.ping())
         if redis_ok:
-            q = (s.celery_autoscale_queue or "pipeline").strip() or "pipeline"
-            queue_pending = int(r.llen(q) or 0)
+            monitor = parse_worker_queues(
+                (s.celery_worker_queues or s.celery_autoscale_queue or "").strip() or None
+            )
+            for qname in monitor:
+                try:
+                    queues_detail[qname] = int(r.llen(qname) or 0)
+                except Exception:  # noqa: BLE001
+                    queues_detail[qname] = 0
+            queue_pending = sum(queues_detail.values())
             try:
                 queue_unacked = int(r.hlen("unacked") or 0)
             except Exception:  # noqa: BLE001
@@ -290,7 +308,12 @@ async def health() -> dict:
         "ark_mock": s.ark_mock,
         "use_celery": s.use_celery,
         "redis_ok": redis_ok,
-        "queue": {"name": s.celery_autoscale_queue, "pending": queue_pending, "unacked": queue_unacked},
+        "queue": {
+            "name": s.celery_worker_queues or s.celery_autoscale_queue,
+            "pending": queue_pending,
+            "unacked": queue_unacked,
+            "by_name": queues_detail,
+        },
         "autoscale": {
             "min": s.celery_autoscale_min,
             "max": s.celery_autoscale_max,

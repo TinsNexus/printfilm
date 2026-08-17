@@ -216,6 +216,9 @@ export default function HomePage() {
           <Link to="/tools">工具</Link>
           <Link to="/pricing">定价</Link>
           <Link to="/help">帮助</Link>
+          <Link to="/terms">用户协议</Link>
+          <Link to="/privacy">隐私政策</Link>
+          <Link to="/contact">联系我们</Link>
         </nav>
         <p className="pf-land-copy">© {new Date().getFullYear()} PRINTFILM. All rights reserved.</p>
       </footer>

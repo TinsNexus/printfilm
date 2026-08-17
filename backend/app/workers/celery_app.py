@@ -1,6 +1,12 @@
 from celery import Celery
 
 from app.config import reload_settings
+from app.workers.queues import (
+    DRAMA_QUEUE,
+    OSS_QUEUE,
+    PIPELINE_QUEUE,
+    VIDEO_QUEUE,
+)
 
 settings = reload_settings()
 
@@ -30,14 +36,15 @@ celery_app.conf.update(
     },
     worker_cancel_long_running_tasks_on_connection_loss=True,
     task_routes={
-        "app.workers.tasks.run_pipeline_task": {"queue": "pipeline"},
-        "app.workers.tasks.regen_image_task": {"queue": "pipeline"},
-        "app.workers.tasks.regen_video_task": {"queue": "pipeline"},
-        "app.workers.tasks.upload_media_task": {"queue": "oss"},
-        "drama.script_summary": {"queue": "pipeline"},
-        "drama.episode_scripts": {"queue": "pipeline"},
-        # 分镜视频独立队列，避免被资产生图堵在 pipeline 后面
-        "drama.episode_generate": {"queue": "video"},
-        "drama.asset_image": {"queue": "pipeline"},
+        "app.workers.tasks.run_pipeline_task": {"queue": PIPELINE_QUEUE},
+        "app.workers.tasks.regen_image_task": {"queue": PIPELINE_QUEUE},
+        "app.workers.tasks.regen_video_task": {"queue": VIDEO_QUEUE},
+        "app.workers.tasks.upload_media_task": {"queue": OSS_QUEUE},
+        "drama.script_summary": {"queue": DRAMA_QUEUE},
+        "drama.episode_scripts": {"queue": DRAMA_QUEUE},
+        "drama.episode_fragment_plan": {"queue": DRAMA_QUEUE},
+        "drama.episode_generate": {"queue": VIDEO_QUEUE},
+        "drama.asset_image": {"queue": DRAMA_QUEUE},
+        "drama.asset_video": {"queue": VIDEO_QUEUE},
     },
 )

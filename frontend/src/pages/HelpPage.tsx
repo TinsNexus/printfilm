@@ -89,7 +89,9 @@ export default function HelpPage() {
           <p className="pf-muted">
             更多操作可在{' '}
             <Link to="/settings">个人中心</Link> 查看项目与创作记录，或前往{' '}
-            <Link to="/pricing">定价</Link> 充值后继续创作。
+            <Link to="/pricing">定价</Link> 充值后继续创作。也可查阅{' '}
+            <Link to="/terms">用户协议</Link>、<Link to="/privacy">隐私政策</Link>，或{' '}
+            <Link to="/contact">联系我们</Link>。
           </p>
         </section>
       </div>

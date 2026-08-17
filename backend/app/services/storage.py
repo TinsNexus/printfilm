@@ -29,6 +29,12 @@ def project_dir(project_id: int) -> Path:
     return path
 
 
+def user_dir(user_id: int) -> Path:
+    path = GENERATED_ROOT / "users" / f"u{user_id}"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def to_public_url(rel_or_abs: str) -> str:
     """Convert /static/... path to absolute URL for frontend."""
     if rel_or_abs.startswith("http://") or rel_or_abs.startswith("https://"):

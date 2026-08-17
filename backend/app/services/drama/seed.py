@@ -519,6 +519,19 @@ async def seed_episodes_from_script(
     return await _reload_episodes(db, project.id)
 
 
+async def _list_episode_fragments(
+    db: AsyncSession,
+    episode_id: int,
+) -> list[DramaEpisodeFragment]:
+    # 显式查询分镜，避免 async 会话下 lazy load episode.fragments 触发 MissingGreenlet
+    result = await db.execute(
+        select(DramaEpisodeFragment)
+        .where(DramaEpisodeFragment.episode_id == episode_id)
+        .order_by(DramaEpisodeFragment.sort_order.asc())
+    )
+    return list(result.scalars().all())
+
+
 async def _replace_episode_fragments(
     db: AsyncSession,
     episode: DramaEpisode,
@@ -532,7 +545,7 @@ async def _replace_episode_fragments(
     continuation: bool = False,
 ) -> list[dict[str, Any]]:
     # 删除旧分镜并重建；preserve_protected 时保留已有视频/手改分镜
-    existing = list(episode.fragments or [])
+    existing = await _list_episode_fragments(db, episode.id)
     protected = (
         sorted(
             [f for f in existing if _fragment_is_protected(f)],

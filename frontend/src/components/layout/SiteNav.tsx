@@ -2,10 +2,12 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { api } from '../../api'
 import type { User } from '../../api'
+import UserAvatar from '../UserAvatar'
 import BrandMark from '../BrandMark'
 import { IconHelp } from '../ui/Icons'
 import Button from '../ui/Button'
 import CreateChoiceModal from '../ui/CreateChoiceModal'
+import { USER_UPDATED_EVENT } from '../../lib/userEvents'
 
 export type NavActive = 'home' | 'drama' | 'kepu' | 'tools' | 'assets' | 'pricing' | 'templates' | 'studio' | 'history'
 
@@ -49,6 +51,15 @@ export default function SiteNav({ active }: Props) {
   useEffect(() => {
     if (!localStorage.getItem('token')) return
     api.me().then(setUser).catch(() => localStorage.removeItem('token'))
+  }, [])
+
+  useEffect(() => {
+    const onUserUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<User>).detail
+      if (detail) setUser(detail)
+    }
+    window.addEventListener(USER_UPDATED_EVENT, onUserUpdated)
+    return () => window.removeEventListener(USER_UPDATED_EVENT, onUserUpdated)
   }, [])
 
   useEffect(() => {
@@ -109,7 +120,7 @@ export default function SiteNav({ active }: Props) {
             title={`${user.nickname} · 个人中心`}
             onClick={() => nav('/settings')}
           >
-            {user.nickname.slice(0, 1).toUpperCase()}
+            <UserAvatar user={user} size="sm" />
           </button>
         ) : (
           <Link to="/auth?next=/" className="pf-link pf-nav-login">

@@ -59,7 +59,7 @@ export async function composeEpisodeVideoClient(
 
   if (clips.length === 1) {
     const single = buffers[0]
-    return new Blob([single], { type: 'video/mp4' })
+    return new Blob([copyToArrayBuffer(single)], { type: 'video/mp4' })
   }
 
   onProgress?.({ phase: 'concat', done: 0, total: clips.length })
@@ -80,5 +80,12 @@ export async function composeEpisodeVideoClient(
   }
   const merged = concatMp4(buffers)
   onProgress?.({ phase: 'concat', done: clips.length, total: clips.length })
-  return new Blob([merged], { type: 'video/mp4' })
+  return new Blob([copyToArrayBuffer(merged)], { type: 'video/mp4' })
+}
+
+// 拷成独立 ArrayBuffer，避免 Uint8Array 视图在 TS 里不能当 BlobPart
+function copyToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new ArrayBuffer(bytes.byteLength)
+  new Uint8Array(copy).set(bytes)
+  return copy
 }

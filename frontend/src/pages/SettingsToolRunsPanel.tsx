@@ -11,8 +11,9 @@ import {
   type ToolRunRecord,
 } from '../api/tools'
 import { getToolDef } from '../lib/toolsCatalog'
+import { pageCountOf } from '../lib/pagination'
 
-const PAGE_SIZE = 8
+const PAGE_SIZE_DEFAULT = 8
 
 const STATUS_CN: Record<string, string> = {
   queued: '生成中',
@@ -58,6 +59,7 @@ function downloadName(item: ToolRunRecord, url: string): string {
 export default function SettingsToolRunsPanel() {
   /*
    * page 页码
+   * pageSize 每页条数
    * items 当前页记录
    * total 总数
    * loading 加载中
@@ -68,6 +70,7 @@ export default function SettingsToolRunsPanel() {
    * actionError 下载/详情错误
    */
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(PAGE_SIZE_DEFAULT)
   const [items, setItems] = useState<ToolRunRecord[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -81,7 +84,7 @@ export default function SettingsToolRunsPanel() {
     let cancelled = false
     setLoading(true)
     setError('')
-    listToolRuns(page, PAGE_SIZE)
+    listToolRuns(page, pageSize)
       .then((res) => {
         if (cancelled) return
         setItems(res.items)
@@ -96,9 +99,9 @@ export default function SettingsToolRunsPanel() {
     return () => {
       cancelled = true
     }
-  }, [page])
+  }, [page, pageSize])
 
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const pageCount = pageCountOf(total, pageSize)
 
   // 打开详情：再拉一次接口，确保 OSS 地址最新
   async function openDetail(item: ToolRunRecord) {
@@ -211,7 +214,18 @@ export default function SettingsToolRunsPanel() {
           })}
         </ul>
       ) : null}
-      <Pagination page={page} pageCount={pageCount} onChange={setPage} ariaLabel="工具创作分页" />
+      <Pagination
+        page={page}
+        pageCount={pageCount}
+        total={total}
+        pageSize={pageSize}
+        onPageSizeChange={(size) => {
+          setPageSize(size)
+          setPage(1)
+        }}
+        onChange={setPage}
+        ariaLabel="工具创作分页"
+      />
 
       <Modal
         open={Boolean(detail)}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,6 +30,23 @@ from app.services.drama.llm import DramaLlmUnavailableError, drama_chat_text
 
 router = APIRouter()
 logger = logging.getLogger("app.drama.agents")
+
+# summary_generating_at 超过该时长仍无结果，允许重新入队
+SUMMARY_GENERATING_STALE_MINUTES = 25
+
+
+def _summary_generating_is_stale(params: dict) -> bool:
+    # 判断 generating 是否已超时（避免 Celery 失败/丢任务后前端永久转圈）
+    started_raw = params.get("summary_generating_at")
+    if not started_raw:
+        return True
+    try:
+        started = datetime.fromisoformat(str(started_raw).replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - started > timedelta(minutes=SUMMARY_GENERATING_STALE_MINUTES)
 
 
 @router.post("/agents/script_summary")
@@ -58,7 +76,7 @@ async def script_summary(
         proj_params["image_style_id"] = str(body.image_style_id)
         project.params = proj_params
     existing_status = str(params.get("summary_status") or "")
-    if existing_status == "generating":
+    if existing_status == "generating" and not _summary_generating_is_stale(params):
         logger.info(
             "剧本摘要已在生成中，跳过重复入队 project_id=%s user_id=%s",
             project.id,
@@ -72,7 +90,15 @@ async def script_summary(
             "task_id": None,
             "script": DramaScriptOut.model_validate(project.script).model_dump(),
         }
+    if existing_status == "generating":
+        logger.warning(
+            "剧本摘要 generating 超时，允许重新入队 project_id=%s user_id=%s started=%s",
+            project.id,
+            user.id,
+            params.get("summary_generating_at"),
+        )
     params["summary_status"] = "generating"
+    params["summary_generating_at"] = datetime.now(timezone.utc).isoformat()
     params.pop("summary_error", None)
     project.script.params = params
     await db.commit()

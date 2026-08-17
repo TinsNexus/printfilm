@@ -238,10 +238,22 @@ class ArkGateway:
             mode = "character"
 
         if mode == "diverse":
+            if (character_hint or "").strip():
+                person_rule = (
+                    "character_bible：概括用户人物设定（可换具体个人，但须同类）。"
+                    "【人物硬性】每镜必须出现符合用户人物设定的真人，面容清晰可见"
+                    "（三分之四侧脸或浅景深半身），禁止只拍手部、后脑勺、过肩无脸或空界面无人。"
+                    "img_prompt 须写清该镜人物族裔/发型/服装与可见面容角度，以及面前界面类型；各镜可换人。"
+                )
+            else:
+                person_rule = (
+                    "character_bible：填「无固定人物，各镜为独立系统/场景界面」。"
+                    "每镜 img_prompt 必须写清该镜独特的界面类型、布局分区、主色与信息层级，不要粘贴人物锁定。"
+                )
             consistency = (
                 "必须输出严格 JSON 对象（不要数组、不要 markdown、不要代码围栏）："
                 '{"character_bible":"...","shots":[...]}。'
-                "character_bible：填「无固定人物，各镜为独立系统/场景界面」。"
+                f"{person_rule}"
                 f"视觉气质仅作底线参考（不要被其颜色绑架）：{style_prefix}。"
                 f"{user_constraints}"
                 "【动态规划】先分析用户内容的领域、产品形态与使用场景，再决定色板与界面类型，"
@@ -249,7 +261,6 @@ class ArkGateway:
                 "配色与材质必须贴合内容（浅色SaaS、文档站、深色IDE、终端、架构图、白板均可），"
                 "禁止默认霓虹蓝/赛博大屏/蓝紫渐变HUD，禁止各镜画面雷同，禁止待办任务清单，"
                 "禁止同一仪表盘复制粘贴换字。"
-                "每镜 img_prompt 必须写清该镜独特的界面类型、布局分区、主色与信息层级，不要粘贴人物锁定。"
             )
         elif mode == "style":
             consistency = (
@@ -273,16 +284,19 @@ class ArkGateway:
                 "每镜 img_prompt 只写本镜场景与构图（景物、动作、光影），不要重复粘贴大段画风/人物锁定原文；"
                 "出现人物时用短句点出与 character_bible 一致的关键特征即可。"
             )
-        # shot_cap 单镜 duration 上限（秒），写入 prompt 与校验说明
+        # shot_cap 单镜 duration 上限（秒）；shot_lo/shot_hi 按文案字数动态拆镜数
         shot_cap = min(duration_max, max_shot_duration)
+        shot_lo, shot_hi = segplan.suggested_kepu_shot_range(source_text, pipeline_mode=pipeline_mode)
+        shot_range = f"{shot_lo}-{shot_hi}"
         # segment_rules 科普逐段脚本生产约束（对齐漫剧 cue，无 @asset）
         segment_rules = (
             "【segments 生产规范】"
-            "segments 必填；系统会落成 @duration +【字幕】/【BGM】/【旁白·慢速清晰·同步字幕】生产脚本，"
+            "segments 必填；系统会落成 @duration +【字幕】/【BGM】/【旁白·自然语速·同步字幕】生产脚本，"
             "因此 kind/text/duration 必须可直接消费。"
             "段序优先「画面→旁白」交替，首段尽量 kind=visual（保证首帧有料）；"
             "visual/action 的 text 必须含景别+主体动作+场景/界面类型，禁止空镜与模糊氛围词堆砌；"
-            "narration 的 text 为一句一事、可朗读口播，按约 3 字/秒估 duration；"
+            "narration 的 text 为一句一事、可朗读口播，按约 5 字/秒估 duration（语速自然偏快）；"
+            "旁白 duration 严格跟字数，最多多 1 秒呼吸，禁止把短句拉满到镜长上限或拖腔注水；"
             "单段 duration 3-12 秒，镜内各段之和约等于本镜 duration，且不超过 "
             f"{shot_cap} 秒。"
             "禁止真实商标/公司名/人名（改用泛称）。"
@@ -290,7 +304,7 @@ class ArkGateway:
         )
         if pipeline_mode == "image_text":
             diversity_note = (
-                "拆成 5-10 个分镜，每镜一个独立视觉场景；"
+                f"拆成 {shot_range} 个分镜，每镜一个独立视觉场景；"
                 + (
                     "画风气质可统一，但界面/场景构图必须明显不同。"
                     if mode != "character"
@@ -322,15 +336,15 @@ class ArkGateway:
             )
         else:
             diversity_note = (
-                "拆成 4-6 个分镜；各镜场景随内容变化，禁止雷同空镜。"
+                f"拆成 {shot_range} 个分镜，短镜快切，各镜场景随内容变化，禁止雷同空镜。"
                 if mode != "character"
-                else "画风与人物必须全片一致；倾向 4-6 镜。"
+                else f"画风与人物必须全片一致；拆成 {shot_range} 镜，短镜快切。"
             )
             system = (
                 "你是短视频分镜编剧。所有字段必须使用简体中文"
                 "（包括 title、text、img_prompt、video_prompt、camera、bgm、segments）。"
                 f"{consistency}{llm_system_addon}"
-                f"每镜 duration 在 {duration_min}-{shot_cap} 秒。"
+                f"每镜 duration 在 {duration_min}-{shot_cap} 秒，不要为凑满上限而注水。"
                 "shots 字段说明："
                 "shot(序号)、duration(秒)、"
                 "title(对本镜旁白的概括短标题，2-8字，语义完整；"
@@ -348,7 +362,7 @@ class ArkGateway:
             )
         user = (
             f"输入类型：{source_type}。请先理解内容与应用场景，再拆成精确到每一段的分镜"
-            f"（4-6 镜为佳，完整模式）：\n{source_text}"
+            f"（{shot_range} 镜，短镜快切，禁止拖腔注水）：\n{source_text}"
         )
         content = await chat_completions(system, user, temperature=0.6, timeout=120.0)
         return self._parse_storyboard(
@@ -1212,7 +1226,11 @@ class ArkGateway:
             ]
         if len(chunks) < 3:
             chunks = chunks + ["补充画面过渡", "收尾总结"]
-        chunks = chunks[:10]
+        # shot_lo/shot_hi 与正式拆镜区间一致，避免 mock 仍只出 5 镜
+        shot_lo, shot_hi = segplan.suggested_kepu_shot_range(source_text, pipeline_mode=pipeline_mode)
+        chunks = chunks[:shot_hi]
+        while len(chunks) < shot_lo:
+            chunks.append("补充画面过渡")
         mid = (duration_min + duration_max) // 2
         if pipeline_mode == "image_text":
             mid = min(mid, max(duration_min, 3))

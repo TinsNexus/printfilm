@@ -1112,6 +1112,15 @@
   margin-top: 14px;
 }
 
+.drama-assets-page-meta {
+  margin: 12px 0 0;
+  font-size: 0.875rem;
+}
+
+.drama-assets-pagination {
+  margin-top: 20px;
+}
+
 .drama-asset-card {
   background: #fafafa;
   border: 1px solid var(--drama-line);

@@ -145,6 +145,79 @@ export type AdminWork = {
   published_at: string;
 };
 
+export type AdminQueueTask = {
+  task_id: string;
+  task_name: string;
+  label: string;
+  args_repr: string;
+  queue: string;
+  state: string;
+  worker?: string | null;
+  started_at?: number | null;
+  ref_id?: number | null;
+  position?: number | null;
+};
+
+export type AdminQueueSummary = {
+  name: string;
+  label: string;
+  pending: number;
+  sample: AdminQueueTask[];
+};
+
+export type AdminWorkerRow = {
+  name: string;
+  status: string;
+  active_count: number;
+  processed?: number | null;
+  pool?: string | null;
+};
+
+export type AdminWorkerControl = {
+  mode: string;
+  systemd_unit?: string | null;
+  systemd_active?: boolean | null;
+  pools: Array<{
+    name: string;
+    pool_implementation?: string;
+    max_concurrency?: number | null;
+    process_count?: number | null;
+  }>;
+  total_processes: number;
+  max_concurrency?: number | null;
+  pool_max_limit: number;
+  can_pool_grow: boolean;
+  can_pool_shrink: boolean;
+  can_restart: boolean;
+  autoscale_running: boolean;
+  autoscale_enabled: boolean;
+  autoscale_pid?: number | null;
+  autoscale_workers: number;
+  bounds_min: number;
+  bounds_max: number;
+  bounds_source: string;
+};
+
+export type AdminQueuesSnapshot = {
+  ok: boolean;
+  redis_ok: boolean;
+  use_celery: boolean;
+  worker_queues: string;
+  unacked: number;
+  total_pending: number;
+  active_count: number;
+  reserved_count: number;
+  workers_online: number;
+  queues: AdminQueueSummary[];
+  pending_tasks: AdminQueueTask[];
+  active_tasks: AdminQueueTask[];
+  reserved_tasks: AdminQueueTask[];
+  workers: AdminWorkerRow[];
+  worker_control?: AdminWorkerControl | null;
+  autoscale: Record<string, number>;
+  fetched_at: string;
+};
+
 export type AdminTemplate = {
   id: string;
   name: string;

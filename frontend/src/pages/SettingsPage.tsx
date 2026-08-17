@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import AppShell from '../components/layout/AppShell'
+import UserAvatar from '../components/UserAvatar'
 import { api, type User, type Wallet } from '../api'
 import { dramaApi, type DramaProjectListItem } from '../api/drama'
 import MonthlyUsageCard from '../components/billing/MonthlyUsageCard'
+import UsageChargeRecords from '../components/billing/UsageChargeRecords'
+import ApiKeysPanel from './settings/ApiKeysPanel'
+import AccountProfileCard from './settings/AccountProfileCard'
 import ComingSoon from '../components/ui/ComingSoon'
 import { dramaProjectEntryPath, formatDramaCardMeta } from '../lib/dramaWorkflow'
 import { STATUS_CN } from '../lib/status'
@@ -41,7 +45,7 @@ const SIDE_ITEMS: { id: SettingsTab; label: string; soon?: boolean; group?: 'wor
   { id: 'assets', label: '资产管理', group: 'work' },
   { id: 'subscription', label: '订阅与余额', group: 'account' },
   { id: 'team', label: '团队管理', soon: true, group: 'account' },
-  { id: 'api', label: 'API', soon: true, group: 'account' },
+  { id: 'api', label: 'API', group: 'account' },
   { id: 'notify', label: '通知偏好', soon: true, group: 'account' },
   { id: 'security', label: '安全', group: 'account' },
 ]
@@ -158,9 +162,7 @@ export default function SettingsPage() {
       <div className="pf-settings">
         <aside className="pf-settings-side">
           <div className="pf-settings-profile">
-            <div className="pf-settings-avatar" aria-hidden>
-              {(user?.nickname || 'P').slice(0, 1).toUpperCase()}
-            </div>
+            <UserAvatar user={user} size="lg" className="pf-settings-avatar" />
             <div>
               <strong>{user?.nickname || '创作者'}</strong>
               <p className="pf-muted">ID: {user?.id ?? '—'}</p>
@@ -186,29 +188,7 @@ export default function SettingsPage() {
         </aside>
 
         <main className="pf-settings-main">
-          {tab === 'account' ? (
-            <section className="pf-settings-card">
-              <h1>账号信息</h1>
-              <p className="pf-muted">管理你的资料与联系方式</p>
-              <div className="pf-settings-fields">
-                <label>
-                  <span>用户名</span>
-                  <input value={user?.nickname || ''} readOnly />
-                </label>
-                <label>
-                  <span>邮箱</span>
-                  <input value={user?.email || ''} readOnly />
-                </label>
-                <label>
-                  <span>手机号</span>
-                  <input value="" placeholder="未绑定" readOnly />
-                </label>
-              </div>
-              <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" disabled>
-                申请注销 <ComingSoon />
-              </button>
-            </section>
-          ) : null}
+          {tab === 'account' ? <AccountProfileCard user={user} onUserChange={setUser} /> : null}
 
           {tab === 'projects' ? (
             <section className="pf-settings-card">
@@ -339,6 +319,7 @@ export default function SettingsPage() {
                 </div>
               </div>
               <MonthlyUsageCard variant="compact" showTopup={false} />
+              <UsageChargeRecords variant="compact" />
               <div className="pf-settings-actions">
                 <Link className="pf-btn pf-btn-lime pf-btn-sm" to="/pricing">
                   去充值
@@ -363,7 +344,9 @@ export default function SettingsPage() {
             </section>
           ) : null}
 
-          {tab === 'team' || tab === 'api' || tab === 'notify' ? (
+          {tab === 'api' ? <ApiKeysPanel /> : null}
+
+          {tab === 'team' || tab === 'notify' ? (
             <section className="pf-settings-card">
               <h1>{SIDE_ITEMS.find((s) => s.id === tab)?.label}</h1>
               <p className="pf-muted">该模块即将上线，敬请期待。</p>

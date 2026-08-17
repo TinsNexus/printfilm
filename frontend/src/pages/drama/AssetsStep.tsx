@@ -1,5 +1,5 @@
 /** 资产库步骤：进入时 seed，分类 Tab + 生图队列 + 角色音色绑定 */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Boxes, Sparkles } from 'lucide-react'
 import { dramaApi, resolveDramaMediaUrl, type DramaAsset, type DramaProject } from '../../api/drama'
@@ -23,9 +23,15 @@ import { DramaAssetDetailModal } from './DramaAssetDetailModal'
 import { DramaImageLightbox } from './DramaImageLightbox'
 import { GlobalAssetPickerModal, importGlobalAssetToProject } from './GlobalAssetPickerModal'
 import { DramaVoiceAssetCard } from './DramaVoiceAssetCard'
+import Pagination from '../../components/ui/Pagination'
 import { dialog } from '../../lib/dialog'
+import { pageCountOf } from '../../lib/pagination'
 import { readVisualPrompt } from '../../lib/dramaVisualPrompt'
 import { filterDramaLibraryAssets } from '../../lib/dramaLibraryAssets'
+import {
+  dramaAssetImageGenButtonLabel,
+  dramaAssetNeedsImageGeneration,
+} from '../../lib/dramaAssetImage'
 
 type AssetTabKey = 'character' | 'scene' | 'prop' | 'material' | 'voice'
 
@@ -37,6 +43,9 @@ const ASSET_TABS: Array<{ key: AssetTabKey; label: string }> = [
   { key: 'voice', label: '音色' },
 ]
 
+const PAGE_SIZE_DEFAULT = 12
+const PAGE_SIZE_OPTIONS = [12, 24, 36] as const
+
 type AssetsStepProps = {
   projectId: number
   onError: (m: string) => void
@@ -47,11 +56,9 @@ function normalizeAssetList(value: unknown): DramaAsset[] {
   return filterDramaLibraryAssets(Array.isArray(value) ? (value as DramaAsset[]) : [])
 }
 
-// 判断资产是否尚未出图（无有效封面/主图）
+// 判断资产是否尚未出图（无有效封面/主图，上传或 AI 生成均视为已出图）
 function needsImageGeneration(asset: DramaAsset): boolean {
-  const cover = (asset.cover || '').trim()
-  const url = (asset.url || '').trim()
-  return !cover && !url
+  return dramaAssetNeedsImageGeneration(asset)
 }
 
 // 渲染资产库步骤
@@ -65,12 +72,17 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
    * voiceAsset 打开音色弹窗的角色
    * detailAsset 打开详情操作框的资产
    * lightbox 图片放大预览
+   * batchVoiceBusy 批量生成音色中
+   * page 当前页码
+   * pageSize 每页条数
    * genQueue 全局生图队列
    */
   const [assets, setAssets] = useState<DramaAsset[]>([])
   const [tab, setTab] = useState<AssetTabKey>('character')
   const [loading, setLoading] = useState(true)
   const [batchBusy, setBatchBusy] = useState(false)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(PAGE_SIZE_DEFAULT)
   const [genOptions, setGenOptions] = useState<ImageGenerationOptions>(() =>
     defaultOptionsForAssetKind('character'),
   )
@@ -146,7 +158,12 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
     if (tab !== 'character') {
       setSelectedCharacterIds([])
     }
+    setPage(1)
   }, [tab])
+
+  useEffect(() => {
+    setPage(1)
+  }, [pageSize])
 
   // 队列完成时把最新封面写回卡片
   useEffect(() => {
@@ -200,6 +217,12 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
   // 未出图：无有效 cover/url，且当前未在队列中
   const pending = filtered.filter((a) => needsImageGeneration(a) && !busyAssetIds.has(a.id))
   const queueBusy = busyAssetIds.size > 0
+  const pageCount = pageCountOf(filtered.length, pageSize)
+  const safePage = Math.min(page, pageCount)
+  const pageItems = useMemo(() => {
+    const start = (safePage - 1) * pageSize
+    return filtered.slice(start, start + pageSize)
+  }, [filtered, safePage, pageSize])
 
   // 持久化项目画面风格
   async function persistStyle(styleId: string) {
@@ -520,17 +543,22 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
     }
   }
 
-  // 卡片按钮文案
-  function genButtonLabel(assetId: number): string {
+  // 卡片按钮文案（已有图时显示「重新生成形象」）
+  function genButtonLabel(asset: DramaAsset): string {
     const job = genQueue.find(
       (j) =>
-        j.assetId === assetId && (j.status === 'queued' || j.status === 'running'),
+        j.assetId === asset.id && (j.status === 'queued' || j.status === 'running'),
     )
-    if (!job) return '生成形象'
-    if (job.status === 'running') return '生成中…'
-    const queuedOnly = genQueue.filter((j) => j.status === 'queued' || j.status === 'running')
-    const pos = queuedOnly.findIndex((j) => j.id === job.id) + 1
-    return pos > 1 ? `排队 #${pos}` : '排队中…'
+    let queueLabel: string | null = null
+    if (job) {
+      if (job.status === 'running') queueLabel = '生成中…'
+      else {
+        const queuedOnly = genQueue.filter((j) => j.status === 'queued' || j.status === 'running')
+        const pos = queuedOnly.findIndex((j) => j.id === job.id) + 1
+        queueLabel = pos > 1 ? `排队 #${pos}` : '排队中…'
+      }
+    }
+    return dramaAssetImageGenButtonLabel(asset, queueLabel)
   }
 
   const imageAssetCount = assetList.filter((a) => {
@@ -548,8 +576,8 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
           <div>
             <h2>资产库</h2>
             <p className="drama-step-hero-sub">
-              共 <strong>{assetList.length}</strong> 项资产 · 待生图{' '}
-              <strong>{pending.length}</strong>
+              共 <strong>{assetList.length}</strong> 项资产 · 当前分类{' '}
+              <strong>{filtered.length}</strong> 项 · 待生图 <strong>{pending.length}</strong>
             </p>
           </div>
         </div>
@@ -663,8 +691,14 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
 
       {loading ? <p className="drama-muted">正在从剧本抽取资产（含道具/素材）…</p> : null}
 
+      {!loading && filtered.length > 0 ? (
+        <p className="drama-muted drama-assets-page-meta">
+          第 {safePage} / {pageCount} 页 · 本分类共 {filtered.length} 项
+        </p>
+      ) : null}
+
       <div className={`drama-asset-grid${tab === 'voice' ? ' is-voice' : ''}`}>
-        {filtered.map((asset) => {
+        {pageItems.map((asset) => {
           if (tab === 'voice') {
             const promptValue = voicePromptDrafts[asset.id] ?? readVoicePrompt(asset)
             const synthBusy = voiceSynthBusyId === asset.id
@@ -764,7 +798,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
                   disabled={busy || batchBusy}
                   onClick={() => enqueueOne(asset)}
                 >
-                  {genButtonLabel(asset.id)}
+                  {genButtonLabel(asset)}
                 </button>
                 {isCharacter ? (
                   <>
@@ -805,12 +839,29 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
       </div>
       {!loading && filtered.length === 0 ? <p className="drama-muted">该分类暂无资产</p> : null}
 
+      {!loading && filtered.length > 0 ? (
+        <Pagination
+          page={safePage}
+          pageCount={pageCount}
+          total={filtered.length}
+          pageSize={pageSize}
+          pageSizeOptions={PAGE_SIZE_OPTIONS}
+          onPageSizeChange={(size) => {
+            setPageSize(size)
+            setPage(1)
+          }}
+          onChange={setPage}
+          ariaLabel="资产库分页"
+          className="drama-assets-pagination"
+        />
+      ) : null}
+
       {detailAsset && (detailAsset.type || '').toLowerCase() !== 'voice' ? (
         <DramaAssetDetailModal
           asset={detailAsset}
           open
           busy={busyAssetIds.has(detailAsset.id)}
-          genLabel={genButtonLabel(detailAsset.id)}
+          genLabel={genButtonLabel(detailAsset)}
           onClose={() => setDetailAsset(null)}
           onUpdated={(updated) => {
             setAssets((prev) => (prev ?? []).map((a) => (a.id === updated.id ? updated : a)))

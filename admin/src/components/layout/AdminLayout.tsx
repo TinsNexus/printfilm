@@ -5,12 +5,12 @@ import {
   Clapperboard,
   FileVideo,
   Film,
+  Layers,
   LayoutDashboard,
   LogOut,
   Maximize2,
   Menu,
   Receipt,
-  Settings,
   Shapes,
   Users,
 } from "lucide-react";
@@ -25,6 +25,7 @@ const navItems = [
   { to: "/drama-projects", label: "漫剧项目", icon: Film },
   { to: "/works", label: "作品审核", icon: FileVideo },
   { to: "/templates", label: "模板管理", icon: Shapes },
+  { to: "/queues", label: "队列任务", icon: Layers },
 ];
 
 const titles: Record<string, string> = {
@@ -35,6 +36,7 @@ const titles: Record<string, string> = {
   "/drama-projects": "漫剧项目",
   "/works": "作品审核",
   "/templates": "模板管理",
+  "/queues": "队列任务",
 };
 
 // Admin shell: sidebar + top bar matching ops console design
@@ -81,10 +83,6 @@ export function AdminLayout() {
               {!collapsed && <span>{item.label}</span>}
             </NavLink>
           ))}
-          <div className="admin-nav-item is-disabled" title="系统设置（即将开放）">
-            <Settings className="h-[18px] w-[18px] shrink-0" />
-            {!collapsed && <span>系统设置</span>}
-          </div>
         </nav>
         <div className="admin-user-card">
           <div className="admin-avatar">{initial}</div>

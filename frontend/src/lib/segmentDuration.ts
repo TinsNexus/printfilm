@@ -18,8 +18,8 @@ export const SEGMENT_DURATION_PRESETS = [4, 6, 8, 10, 12] as const
 /** 与后端一致的字幕 cue */
 export const SUBTITLE_CUE = '【字幕：全程简体中文字幕，旁白逐句同步烧录】'
 
-/** 与后端一致的旁白前缀 */
-export const NARRATION_PREFIX = '【旁白·慢速清晰·同步字幕】'
+/** 与后端一致的旁白前缀（科普自然偏快；旧稿「慢速清晰」仍可识别） */
+export const NARRATION_PREFIX = '【旁白·自然语速·同步字幕】'
 
 /** 脚本编辑区 placeholder */
 export const SEGMENT_SCRIPT_PLACEHOLDER = `${SUBTITLE_CUE}\n【BGM：轻快专业，音量低于人声】\n@duration:4\n过肩工位操作画面…\n@duration:8\n${NARRATION_PREFIX}口播内容…`
@@ -143,4 +143,110 @@ export function parseSegmentScript(script: string | undefined | null): {
   }
 
   return { cues, beats }
+}
+
+const NARRATION_LINE_PREFIX = /^【旁白[^】]*】/
+
+/** 脚本行是否为旁白口播（字幕 cue 含「旁白」二字但不算） */
+export function isNarrationScriptLine(line: string): boolean {
+  const stripped = line.trim()
+  if (stripped.startsWith('【字幕') || stripped.startsWith('【BGM')) return false
+  return NARRATION_LINE_PREFIX.test(stripped)
+}
+
+/** 去掉旁白前缀，得到可朗读正文 */
+export function stripNarrationPrefix(line: string): string {
+  return line.trim().replace(NARRATION_LINE_PREFIX, '').trim()
+}
+
+/** 从脚本提取旁白正文（多段拼接） */
+export function narrationFromScript(script: string | undefined | null): string {
+  const parts: string[] = []
+  for (const line of String(script || '').replace(/\r\n/g, '\n').split('\n')) {
+    if (isNarrationScriptLine(line)) {
+      const text = stripNarrationPrefix(line)
+      if (text) parts.push(text)
+    }
+  }
+  return parts.join('')
+}
+
+/** 从脚本提取首段画面（非旁白、非 cue） */
+export function firstVisualFromScript(script: string | undefined | null): string {
+  for (const line of String(script || '').replace(/\r\n/g, '\n').split('\n')) {
+    const stripped = line.trim()
+    if (
+      !stripped ||
+      stripped.startsWith('@duration:') ||
+      stripped.startsWith('【字幕') ||
+      stripped.startsWith('【BGM') ||
+      isNarrationScriptLine(stripped)
+    ) {
+      continue
+    }
+    return stripped.replace(/^【[^】]*】/, '').trim() || stripped
+  }
+  return ''
+}
+
+/** 把弹窗旁白写回脚本中的旁白段 */
+export function replaceNarrationInScript(script: string, narration: string): string {
+  const text = narration.trim()
+  const lines = String(script || '').replace(/\r\n/g, '\n').split('\n')
+  const out: string[] = []
+  let replaced = false
+  for (const raw of lines) {
+    const stripped = raw.trim()
+    if (text && isNarrationScriptLine(stripped) && !replaced) {
+      const prefix = stripped.match(NARRATION_LINE_PREFIX)?.[0] || NARRATION_PREFIX
+      out.push(`${prefix}${text}`)
+      replaced = true
+      continue
+    }
+    out.push(raw.replace(/\s+$/, ''))
+  }
+  if (text && !replaced) {
+    out.push('@duration:6')
+    out.push(`${NARRATION_PREFIX}${text}`)
+  }
+  return out.join('\n').trim()
+}
+
+/** 把弹窗首帧画面写回脚本第一段 visual */
+export function replaceFirstVisualInScript(script: string, visual: string): string {
+  const text = visual.trim()
+  if (!text) return String(script || '').trim()
+  const lines = String(script || '').replace(/\r\n/g, '\n').split('\n')
+  const out: string[] = []
+  let replaced = false
+  let cueEnd = 0
+  for (let i = 0; i < lines.length; i += 1) {
+    const stripped = lines[i].trim()
+    if (stripped.startsWith('【字幕') || stripped.startsWith('【BGM') || !stripped) {
+      cueEnd = i + 1
+      continue
+    }
+    break
+  }
+  for (const raw of lines) {
+    const stripped = raw.trim()
+    if (
+      !replaced &&
+      stripped &&
+      !stripped.startsWith('@duration:') &&
+      !stripped.startsWith('【字幕') &&
+      !stripped.startsWith('【BGM') &&
+      !isNarrationScriptLine(stripped)
+    ) {
+      out.push(text)
+      replaced = true
+      continue
+    }
+    out.push(raw.replace(/\s+$/, ''))
+  }
+  if (!replaced) {
+    const extra = [`@duration:${SEGMENT_DURATION_MIN}`, text]
+    return [...out.slice(0, cueEnd), ...extra, ...out.slice(cueEnd)].join('\n').trim()
+  }
+  return out.join('\n').trim()
 }

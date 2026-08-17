@@ -5,7 +5,9 @@
 | 站点 | 地址 | 静态根目录 |
 |------|------|------------|
 | 用户前台 | https://kepu.printfilm.com/ | `/opt/ai_movie/frontend/dist` |
+| 用户前台（别名） | https://www.printfilm.com/ 、 https://printfilm.com/ | 同上 |
 | 管理后台 | https://admin.kepu.printfilm.com/ | `/opt/ai_movie/admin/dist` |
+| 管理后台（别名） | https://admin.printfilm.com/ | 同上 |
 | API | 同源 `/api` → `127.0.0.1:8000` | uvicorn `ai-movie-api` |
 
 服务器路径约定：`/opt/ai_movie`。Postgres/Redis 走本机 Docker（端口 `15432` / `16379`，与旧 kepu 隔离）。
@@ -17,7 +19,7 @@
 1. 本地改动已提交（或明确要打进本次包的未提交文件）。
 2. 确认 **不要**用 `deploy/scripts/upload_oss_web.py` 代替站点发布。
 3. 生产前端构建必须 `VITE_API_BASE=`（空，同源）；禁止把本地 API 地址打进 dist。
-4. Celery 需监听队列：`pipeline,oss`。
+4. Celery 需监听队列：`drama,oss,video,pipeline`（漫剧 LLM 独立 `drama` 队列，避免被科普成片 `pipeline` 堵住）。
 
 ---
 
@@ -40,14 +42,14 @@ python deploy/scripts/deploy_kepu.py
 
 1. 打包源码（排除 `.venv` / `node_modules` / `dist` / 生成媒体等）
 2. SSH 上传并解压到 `/opt/ai_movie`（保留远端 venv / node_modules）
-3. 写入 compose env、`backend/.env`、systemd、nginx（含前台 + admin）
+3. 写入 compose env、`backend/.env`、systemd、nginx（含前台 + admin + `www.printfilm.com` / `admin.printfilm.com` 别名）
 4. `docker compose up -d`（Postgres/Redis）
 5. `pip install -r requirements.txt`
 6. `frontend`：`npm ci && VITE_API_BASE= npm run build`
 7. `admin`：`npm ci && npm run build`
 8. 重启 `ai-movie-api` / `ai-movie-worker`，reload nginx
-9. 为 `admin.kepu.printfilm.com` 申请/续签证书（certbot，幂等）
-10. 健康检查：`/api/health`、前台与后台首页
+9. 为 `admin.kepu.printfilm.com`、`www.printfilm.com`、`admin.printfilm.com` 申请/续签证书（certbot，幂等）
+10. 健康检查：`/api/health`、前台与后台首页（含别名域名）
 
 **注意**：全量脚本会覆盖远端 `backend/.env` 为脚本内嵌模板。若线上临时改过密钥/回调，发布后核对 EPAY / CORS / OSS 等项。
 
@@ -85,7 +87,7 @@ cd /opt/ai_movie/admin && npm ci && npm run build
 | 单元 | 说明 |
 |------|------|
 | `ai-movie-api.service` | uvicorn `127.0.0.1:8000` |
-| `ai-movie-worker.service` | celery `-Q pipeline,oss` |
+| `ai-movie-worker.service` | celery `-Q drama,oss,video,pipeline` |
 | `ai-movie-pg` / `ai-movie-redis` | Docker |
 
 常用命令：
@@ -95,7 +97,9 @@ systemctl status ai-movie-api ai-movie-worker
 journalctl -u ai-movie-api -n 80 --no-pager
 curl -fsS http://127.0.0.1:8000/api/health
 curl -fsSI https://kepu.printfilm.com/ | head
+curl -fsSI https://www.printfilm.com/ | head
 curl -fsSI https://admin.kepu.printfilm.com/ | head
+curl -fsSI https://admin.printfilm.com/ | head
 ```
 
 API 起不来时优先看：启动 seed 是否卡在 OSS、双 worker `create_all` 竞态、`.env` 是否被覆盖。

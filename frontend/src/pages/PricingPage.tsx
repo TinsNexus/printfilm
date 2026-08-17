@@ -1,14 +1,43 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import {
+  Building2,
+  Check,
+  CreditCard,
+  Infinity,
+  ShieldCheck,
+  Zap,
+} from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
-import MonthlyUsageCard from '../components/billing/MonthlyUsageCard'
+import PaymentBrandIcon from '../components/billing/PaymentBrandIcon'
 import PaymentModal, { type PayCheckout } from '../components/billing/PaymentModal'
+import PricingWalletCard from '../components/billing/PricingWalletCard'
 import TopupHistoryModal from '../components/billing/TopupHistoryModal'
-import { api, type BillingSku, type Wallet } from '../api'
+import { api, type BillingSku, type UsageSummary, type Wallet } from '../api'
 
 type PayType = 'alipay' | 'wxpay'
 
 type SkuView = BillingSku & { recommended?: boolean }
+
+const HERO_FEATURES = [
+  { icon: Zap, text: '充值即时到账，马上可用' },
+  { icon: ShieldCheck, text: '支付安全保障' },
+  { icon: Infinity, text: '余额永久有效' },
+] as const
+
+const SKU_LABELS: Record<string, string> = {
+  topup_10: '体验充值',
+  topup_49: '基础充值',
+  topup_99: '进阶充值',
+  topup_199: '专业充值',
+}
+
+const SKU_HINTS: Record<string, string> = {
+  topup_10: '适合初次体验',
+  topup_49: '日常创作够用',
+  topup_99: '高频创作推荐',
+  topup_199: '团队 / 批量生产',
+}
 
 function yuan(fen: number) {
   return (fen / 100).toFixed(2)
@@ -19,32 +48,19 @@ function yuanShort(fen: number) {
   return Number.isInteger(v) ? String(v) : v.toFixed(2)
 }
 
-/** Prefer design labels even if API still returns legacy names. */
-const SKU_LABELS: Record<string, string> = {
-  topup_10: '体验充值',
-  topup_49: '基础充值',
-  topup_99: '进阶充值',
-  topup_199: '专业充值',
-}
-
-function planLabel(wallet: Wallet | null) {
-  if (!wallet) return 'Free'
-  if (wallet.billing_unlimited) return 'Unlimited'
-  const p = (wallet.plan || 'free').toLowerCase()
-  if (p === 'free') return 'Free'
-  if (p === 'pro') return 'Pro'
-  return wallet.plan
-}
-
+/** 定价与充值页 */
 export default function PricingPage() {
   const nav = useNavigate()
   const [params] = useSearchParams()
   const [wallet, setWallet] = useState<Wallet | null>(null)
+  const [usage, setUsage] = useState<UsageSummary | null>(null)
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
   const [skus, setSkus] = useState<SkuView[]>([])
   const [payType, setPayType] = useState<PayType>('alipay')
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [hint, setHint] = useState('')
+  const [payTip, setPayTip] = useState('')
   const [checkout, setCheckout] = useState<PayCheckout | null>(null)
   const [historyOpen, setHistoryOpen] = useState(false)
   const loggedIn = Boolean(localStorage.getItem('token'))
@@ -59,10 +75,15 @@ export default function PricingPage() {
   async function refresh() {
     if (!loggedIn) {
       setWallet(null)
+      setUsage(null)
+      setUpdatedAt(null)
       return
     }
     try {
-      setWallet(await api.wallet())
+      const [w, u] = await Promise.all([api.wallet(), api.usageSummary()])
+      setWallet(w)
+      setUsage(u)
+      setUpdatedAt(new Date())
     } catch {
       /* ignore */
     }
@@ -106,8 +127,13 @@ export default function PricingPage() {
     }
   }
 
-  function closeCheckout() {
-    setCheckout(null)
+  function pickPay(type: PayType) {
+    setPayType(type)
+    setPayTip('')
+  }
+
+  function pickUnavailable(label: string) {
+    setPayTip(`${label}即将上线，请先使用支付宝或微信支付`)
   }
 
   async function onPaid() {
@@ -116,152 +142,207 @@ export default function PricingPage() {
     await refresh()
   }
 
-  const balanceYuan = wallet?.balance_yuan ?? 0
-  const frozenYuan = wallet?.frozen_yuan ?? 0
-
   return (
-    <AppShell active="pricing">
+    <AppShell active="pricing" hideFooter wide>
       <div className="pf-pricing-page">
-        <section className="pf-pricing-hero">
-          <div className="pf-pricing-hero-copy">
-            <span className="pf-pricing-pill">简单透明 · 按量计费</span>
-            <h1>按需充值，用多少算多少</h1>
-            <p>按上游模型 token 实际用量计费，余额永久有效，无订阅、无隐藏费用。</p>
-          </div>
-
-          <div className="pf-pricing-balance-card">
-            <div className="pf-pricing-balance-main">
-              <span className="pf-pricing-balance-label">可用余额</span>
-              <strong>¥{balanceYuan.toFixed(2)}</strong>
+        <section className="pf-pricing-hero-band">
+          <div className="pf-pricing-hero-inner">
+            <div className="pf-pricing-hero-copy">
+              <h1>按需充值，灵活使用</h1>
+              <p>按实际消耗 token 计费，余量永久有效，不设过期</p>
+              <ul className="pf-pricing-hero-features">
+                {HERO_FEATURES.map(({ icon: Icon, text }) => (
+                  <li key={text}>
+                    <span className="pf-pricing-hero-feature-icon" aria-hidden>
+                      <Icon size={15} strokeWidth={2.2} />
+                    </span>
+                    {text}
+                  </li>
+                ))}
+              </ul>
+              {!loggedIn ? (
+                <p className="pf-pricing-guest-tip">
+                  <Link to="/auth?next=%2Fpricing">登录</Link> 后查看余额与本月用量
+                </p>
+              ) : null}
             </div>
-            <div className="pf-pricing-balance-side">
-              <span className="pf-pricing-balance-label">冻结中</span>
-              <em>¥{frozenYuan.toFixed(2)}</em>
-            </div>
-            <div className="pf-pricing-balance-side">
-              <span className="pf-pricing-balance-label">当前套餐</span>
-              <em>{planLabel(wallet)}</em>
-            </div>
-            <button
-              type="button"
-              className="pf-btn pf-btn-ghost pf-btn-sm"
-              disabled={!loggedIn}
-              title={loggedIn ? '查看充值记录' : '请先登录'}
-              onClick={() => setHistoryOpen(true)}
-            >
-              充值记录
-            </button>
+            <PricingWalletCard
+              wallet={wallet}
+              usage={usage}
+              loggedIn={loggedIn}
+              updatedAt={updatedAt}
+              onHistory={() => setHistoryOpen(true)}
+            />
           </div>
         </section>
 
-        {loggedIn ? (
-          <section className="pf-pricing-usage" aria-label="本月使用情况">
-            <MonthlyUsageCard variant="compact" showTopup={false} />
+        <div className="pf-pricing-body">
+          {hint ? <p className="pf-pricing-hint">{hint}</p> : null}
+          {error ? <p className="pf-error pf-pricing-error">{error}</p> : null}
+
+          <section className="pf-pricing-pay-section" aria-label="支付方式">
+            <header className="pf-pricing-section-head is-row">
+              <h2>支付方式</h2>
+              <div className="pf-pricing-pay-trust">
+                <ShieldCheck size={16} aria-hidden />
+                <span>支付安全保障</span>
+              </div>
+            </header>
+
+            {payTip ? <p className="pf-pricing-pay-tip">{payTip}</p> : null}
+
+            <div className="pf-pricing-pay-grid">
+              <button
+                type="button"
+                className={`pf-pricing-pay-tile${payType === 'alipay' ? ' is-active' : ''}`}
+                onClick={() => pickPay('alipay')}
+                aria-pressed={payType === 'alipay'}
+              >
+                <PaymentBrandIcon brand="alipay" size="md" />
+                <span className="pf-pricing-pay-tile-label">支付宝</span>
+                <span className="pf-pricing-pay-tile-badge">推荐</span>
+                {payType === 'alipay' ? (
+                  <span className="pf-pricing-pay-tile-check" aria-hidden>
+                    <Check size={14} strokeWidth={3} />
+                  </span>
+                ) : null}
+              </button>
+
+              <button
+                type="button"
+                className={`pf-pricing-pay-tile${payType === 'wxpay' ? ' is-active' : ''}`}
+                onClick={() => pickPay('wxpay')}
+                aria-pressed={payType === 'wxpay'}
+              >
+                <PaymentBrandIcon brand="wxpay" size="md" />
+                <span className="pf-pricing-pay-tile-label">微信支付</span>
+                {payType === 'wxpay' ? (
+                  <span className="pf-pricing-pay-tile-check" aria-hidden>
+                    <Check size={14} strokeWidth={3} />
+                  </span>
+                ) : null}
+              </button>
+
+              <button
+                type="button"
+                className="pf-pricing-pay-tile is-disabled"
+                title="即将上线"
+                onClick={() => pickUnavailable('银联支付')}
+              >
+                <PaymentBrandIcon brand="unionpay" size="md" />
+                <span className="pf-pricing-pay-tile-label">银联支付</span>
+                <span className="pf-pricing-pay-tile-soon">即将上线</span>
+              </button>
+
+              <button
+                type="button"
+                className="pf-pricing-pay-tile is-disabled"
+                title="企业用户请联系客服"
+                onClick={() => pickUnavailable('对公转账')}
+              >
+                <span className="pf-pricing-pay-tile-icon" aria-hidden>
+                  <Building2 size={22} strokeWidth={1.8} />
+                </span>
+                <span className="pf-pricing-pay-tile-label">对公转账</span>
+                <span className="pf-pricing-pay-tile-sub">企业用户</span>
+              </button>
+            </div>
           </section>
-        ) : null}
 
-        {hint ? <p className="pf-pricing-hint">{hint}</p> : null}
-        {error ? <p className="pf-error pf-pricing-error">{error}</p> : null}
+          <section className="pf-pricing-skus" id="pricing-skus">
+            <header className="pf-pricing-section-head">
+              <h2>选择充值金额</h2>
+            </header>
 
-        <section className="pf-pricing-skus" id="pricing-skus">
-          <header className="pf-pricing-section-head">
-            <h2>选择充值金额</h2>
-            <p>充值即时到账，赠送金额自动计入余额</p>
-          </header>
-
-          <div className="pf-pricing-sku-grid">
-            {displaySkus.map((sku) => {
-              const bonus = sku.credit_fen - sku.amount_fen
-              const recommended = Boolean(sku.recommended)
-              return (
-                <article
-                  key={sku.id}
-                  id={`sku-${sku.id}`}
-                  className={`pf-pricing-sku-card${recommended ? ' is-recommended' : ''}`}
-                >
-                  {recommended ? <span className="pf-pricing-rec-badge">推荐</span> : null}
-                  <h3>{SKU_LABELS[sku.id] || sku.name}</h3>
-                  <div className="pf-pricing-sku-price">
-                    <span className="yen">¥</span>
-                    <strong>{(sku.amount_fen / 100).toFixed(0)}</strong>
-                  </div>
-                  <p className="pf-pricing-sku-credit">到账 ¥{yuan(sku.credit_fen)}</p>
-                  {bonus > 0 ? (
-                    <p className="pf-pricing-sku-bonus">额外赠送 ¥{yuanShort(bonus)}</p>
-                  ) : (
-                    <p className="pf-pricing-sku-bonus is-empty">&nbsp;</p>
-                  )}
-                  <button
-                    type="button"
-                    className={`pf-pricing-sku-cta${recommended ? ' is-primary' : ''}`}
-                    disabled={Boolean(busy)}
-                    onClick={() => pay(sku)}
+            <div className="pf-pricing-sku-grid">
+              {displaySkus.map((sku) => {
+                const bonus = sku.credit_fen - sku.amount_fen
+                const recommended = Boolean(sku.recommended)
+                const label = SKU_LABELS[sku.id] || sku.name
+                const tierHint = SKU_HINTS[sku.id] || '余额永久有效'
+                return (
+                  <article
+                    key={sku.id}
+                    id={`sku-${sku.id}`}
+                    className={`pf-pricing-sku-card${recommended ? ' is-recommended' : ''}`}
                   >
-                    {busy === sku.id ? '下单中…' : '立即充值'}
-                  </button>
-                </article>
-              )
-            })}
-          </div>
-        </section>
+                    {recommended ? <span className="pf-pricing-rec-badge">推荐</span> : null}
+                    <p className="pf-pricing-sku-tier">{label}</p>
+                    <p className="pf-pricing-sku-hint">{tierHint}</p>
+                    <div className="pf-pricing-sku-price">
+                      <span className="yen">¥</span>
+                      <strong>{(sku.amount_fen / 100).toFixed(0)}</strong>
+                    </div>
+                    <p className="pf-pricing-sku-credit">
+                      到账 <em>¥{yuan(sku.credit_fen)}</em>
+                    </p>
+                    {bonus > 0 ? (
+                      <p className="pf-pricing-sku-bonus">额外赠送 ¥{yuanShort(bonus)}</p>
+                    ) : (
+                      <p className="pf-pricing-sku-bonus is-empty">&nbsp;</p>
+                    )}
+                    <button
+                      type="button"
+                      className={`pf-pricing-sku-cta${recommended ? ' is-primary' : ''}`}
+                      disabled={Boolean(busy)}
+                      onClick={() => pay(sku)}
+                    >
+                      {busy === sku.id ? '下单中…' : '立即充值'}
+                    </button>
+                  </article>
+                )
+              })}
+            </div>
+          </section>
 
-        <section className="pf-pricing-paybar">
-          <div className="pf-pricing-pay-left">
-            <span className="pf-pricing-pay-label">支付方式</span>
-            <button
-              type="button"
-              className={`pf-pricing-pay-opt${payType === 'alipay' ? ' is-active' : ''}`}
-              onClick={() => setPayType('alipay')}
-            >
-              <span className="pf-pay-logo alipay" aria-hidden />
-              支付宝
-              {payType === 'alipay' ? <span className="pf-pay-check" aria-hidden>✓</span> : null}
-            </button>
-            <button
-              type="button"
-              className={`pf-pricing-pay-opt${payType === 'wxpay' ? ' is-active' : ''}`}
-              onClick={() => setPayType('wxpay')}
-            >
-              <span className="pf-pay-logo wxpay" aria-hidden />
-              微信支付
-              {payType === 'wxpay' ? <span className="pf-pay-check" aria-hidden>✓</span> : null}
-            </button>
-          </div>
-          <div className="pf-pricing-pay-secure">
-            <span className="pf-pay-shield" aria-hidden />
-            支付安全保障
-          </div>
-        </section>
+          <section className="pf-pricing-info">
+            <article className="pf-pricing-info-card">
+              <div className="pf-pricing-info-visual is-billing" aria-hidden>
+                <CreditCard size={28} strokeWidth={1.6} />
+              </div>
+              <div>
+                <h3>计费说明</h3>
+                <ul>
+                  <li>拆分镜、出图、配音、AI 视频分别按上游 token 用量计费</li>
+                  <li>开始生成时预扣估算金额，结束后按实际用量结算（多退少补）</li>
+                  <li>图文模式成本更低；开启 AI 动态视频时消耗更高</li>
+                </ul>
+              </div>
+            </article>
+            <article className="pf-pricing-info-card">
+              <div className="pf-pricing-info-visual is-value" aria-hidden>
+                <Check size={28} strokeWidth={2.5} />
+              </div>
+              <div>
+                <h3>为什么按量计费</h3>
+                <ul className="pf-pricing-checks">
+                  <li>无需订阅，用多少充多少</li>
+                  <li>余额永久有效，不设过期</li>
+                  <li>账单清晰可查，每次调用可追溯</li>
+                </ul>
+              </div>
+            </article>
+          </section>
 
-        <section className="pf-pricing-info">
-          <div>
-            <h3>计费说明</h3>
-            <ul>
-              <li>拆分镜、出图、配音、AI 视频分别按上游 token 用量计费</li>
-              <li>开始生成时预扣估算金额，结束后按实际用量结算（多退少补）</li>
-              <li>图文模式成本更低；开启 AI 动态视频时消耗更高</li>
-            </ul>
-          </div>
-          <div>
-            <h3>为什么按量计费</h3>
-            <ul className="pf-pricing-checks">
-              <li>无需订阅，用多少充多少</li>
-              <li>余额永久有效，不设过期</li>
-              <li>账单清晰可查，每次调用可追溯</li>
-            </ul>
-          </div>
-        </section>
-
-        <p className="pf-pricing-foot">
-          <Link to="/">PRINTFILM</Link>
-          <span> · AI 知识视频创作伙伴</span>
-        </p>
+          <footer className="pf-pricing-site-foot">
+            <p className="pf-pricing-site-brand">
+              <Link to="/">PRINTFILM</Link>
+              <span> · AI 短视频创作伙伴</span>
+            </p>
+            <nav className="pf-pricing-site-links" aria-label="页脚链接">
+              <Link to="/terms">用户协议</Link>
+              <Link to="/privacy">隐私政策</Link>
+              <Link to="/contact">联系我们</Link>
+            </nav>
+            <p className="pf-pricing-site-copy">© {new Date().getFullYear()} PRINTFILM. All rights reserved.</p>
+          </footer>
+        </div>
       </div>
 
       <PaymentModal
         open={Boolean(checkout)}
         checkout={checkout}
-        onClose={closeCheckout}
+        onClose={() => setCheckout(null)}
         onPaid={() => void onPaid()}
       />
       <TopupHistoryModal open={historyOpen} onClose={() => setHistoryOpen(false)} />

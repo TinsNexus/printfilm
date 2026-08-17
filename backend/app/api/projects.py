@@ -499,11 +499,8 @@ async def generate_project(
     else:
         # Continue: label the real next stage so UI never shows「拆分镜中」
         image_text = (project.pipeline_mode or "full") == "image_text"
-        from app.config import get_settings
-
-        native_audio = (not image_text) and bool(get_settings().kepu_seedance_generate_audio)
         has_images = all(bool(s.image_url or s.image_ark_url) for s in shots)
-        has_audio = True if native_audio else all(bool(s.audio_url) for s in shots)
+        has_audio = all(bool(s.audio_url) for s in shots)
         has_videos = all(bool(s.video_url) for s in shots)
         if not has_images or not has_audio:
             project.status = ProjectStatus.IMAGING
@@ -624,16 +621,26 @@ async def update_shot(
         raise HTTPException(status_code=404, detail="分镜不存在")
     data = body.model_dump(exclude_unset=True)
     if "segment_script" in data and data["segment_script"] is not None:
-        from app.services.seedance_segments import apply_segment_script_edit
+        from app.services.seedance_segments import (
+            apply_segment_script_edit,
+            replace_first_visual_in_script,
+            replace_narration_in_script,
+        )
 
         bgm = (getattr(project, "bgm_lock", None) or shot.bgm_mood or "").strip()
-        normalized = apply_segment_script_edit(str(data["segment_script"]), bgm_mood=bgm)
+        script = str(data["segment_script"])
+        # 弹窗旁白/首帧优先写回脚本，避免保存时被旧脚本盖掉
+        if "narration" in data and data["narration"] is not None:
+            script = replace_narration_in_script(script, str(data["narration"]))
+        if "img_prompt" in data and data["img_prompt"] is not None:
+            script = replace_first_visual_in_script(script, str(data["img_prompt"]))
+        normalized = apply_segment_script_edit(script, bgm_mood=bgm)
         data["segment_script"] = normalized["segment_script"]
         data["duration"] = normalized["duration"]
         data["video_prompt"] = normalized["video_prompt"]
         if normalized.get("narration"):
             data["narration"] = normalized["narration"]
-        if normalized.get("img_prompt") and "img_prompt" not in data:
+        if normalized.get("img_prompt"):
             data["img_prompt"] = normalized["img_prompt"]
     if "duration" in data and data["duration"] is not None:
         tpl = await db.get(Template, project.template_id)
@@ -778,15 +785,10 @@ async def compose_only(
         ProjectStatus.AUDITING,
     }:
         raise HTTPException(status_code=409, detail="生成进行中，请稍后")
-    image_text = (project.pipeline_mode or "full") == "image_text"
-    from app.config import get_settings
-
-    native_audio = (not image_text) and bool(get_settings().kepu_seedance_generate_audio)
-    if native_audio:
-        if not project.shots or not any(s.video_url for s in project.shots):
-            raise HTTPException(status_code=400, detail="缺少镜头视频，无法拼接成片")
-    elif not project.shots or not any(s.image_url for s in project.shots):
-        raise HTTPException(status_code=400, detail="缺少分镜图，无法合成")
+    if not project.shots or not (
+        any(s.image_url for s in project.shots) or any(s.video_url for s in project.shots)
+    ):
+        raise HTTPException(status_code=400, detail="缺少分镜图或镜头视频，无法合成")
     project.status = ProjectStatus.COMPOSING
     project.progress = 90
     project.error_msg = None

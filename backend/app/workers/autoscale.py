@@ -25,6 +25,7 @@ import redis
 
 from app.config import get_settings, reload_settings
 from app.logging_setup import configure_logging
+from app.workers.queues import parse_worker_queues, worker_queues_csv
 
 _settings = get_settings()
 configure_logging(level="INFO", sql_echo=_settings.sql_echo)
@@ -34,7 +35,6 @@ logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 STATE_DIR = BACKEND_ROOT / ".celery_autoscale"
-QUEUE_NAME = "pipeline"
 
 
 @dataclass
@@ -52,13 +52,20 @@ class CeleryAutoscaler:
         self.max_workers = max(self.min_workers, int(self.settings.celery_autoscale_max))
         self.poll_sec = max(2.0, float(self.settings.celery_autoscale_poll_sec))
         self.scale_down_sec = max(5.0, float(self.settings.celery_autoscale_idle_sec))
-        self.queue = (self.settings.celery_autoscale_queue or QUEUE_NAME).strip() or QUEUE_NAME
-        # Always also consume OSS + 漫剧视频队列，避免被资产生图堵住
-        queues = [q.strip() for q in self.queue.split(",") if q.strip()]
-        for extra in ("oss", "video"):
-            if extra not in queues:
-                queues.append(extra)
-        self.worker_queues = ",".join(queues)
+        raw_queues = (
+            (self.settings.celery_worker_queues or "").strip()
+            or (self.settings.celery_autoscale_queue or "").strip()
+        )
+        self.monitor_queues = parse_worker_queues(raw_queues or None)
+        self.worker_queues = worker_queues_csv(raw_queues or None)
+        try:
+            from app.services.worker_manager import read_autoscale_bounds
+
+            rmin, rmax, _ = read_autoscale_bounds()
+            self.min_workers = rmin
+            self.max_workers = rmax
+        except Exception:  # noqa: BLE001
+            pass
         self.host = socket.gethostname().split(".")[0]
         self.workers: dict[int, WorkerProc] = {}
         self._idle_since: float | None = None
@@ -85,10 +92,10 @@ class CeleryAutoscaler:
 
     def queue_load(self) -> tuple[int, int, int]:
         """Return (pending, unacked, load)."""
-        pending = int(self._redis.llen(self.queue) or 0)
-        for extra_q in ("oss", "video"):
+        pending = 0
+        for queue_name in self.monitor_queues:
             try:
-                pending += int(self._redis.llen(extra_q) or 0)
+                pending += int(self._redis.llen(queue_name) or 0)
             except Exception:  # noqa: BLE001
                 pass
         try:
@@ -228,8 +235,8 @@ class CeleryAutoscaler:
 
     def run_forever(self) -> None:
         logger.info(
-            "start queue=%s min=%s max=%s poll=%.1fs idle_down=%.1fs redis=%s",
-            self.queue,
+            "start queues=%s min=%s max=%s poll=%.1fs idle_down=%.1fs redis=%s",
+            self.worker_queues,
             self.min_workers,
             self.max_workers,
             self.poll_sec,
@@ -266,6 +273,14 @@ class CeleryAutoscaler:
                 self.max_workers = max(self.min_workers, int(self.settings.celery_autoscale_max))
                 self.poll_sec = max(2.0, float(self.settings.celery_autoscale_poll_sec))
                 self.scale_down_sec = max(5.0, float(self.settings.celery_autoscale_idle_sec))
+                try:
+                    from app.services.worker_manager import read_autoscale_bounds
+
+                    rmin, rmax, _ = read_autoscale_bounds()
+                    self.min_workers = rmin
+                    self.max_workers = rmax
+                except Exception:  # noqa: BLE001
+                    pass
                 self.reconcile()
                 loops += 1
                 # Every ~2 min: redispatch projects with no progress

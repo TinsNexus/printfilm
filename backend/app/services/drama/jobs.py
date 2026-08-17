@@ -32,6 +32,7 @@ from app.services.drama.agents import (
 from app.services.drama.asset_video import generate_asset_video
 from app.services.drama.generation import generate_asset_image, generate_fragment_video
 from app.services.drama.visual_prompt import resolve_visual_prompt_for_asset
+from app.workers.queues import DRAMA_QUEUE, PIPELINE_QUEUE, VIDEO_QUEUE
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ VIDEO_CELERY_TASKS = frozenset(
         "app.workers.tasks.regen_video_task",
     }
 )
-VIDEO_QUEUES = ("video", "pipeline")
+VIDEO_QUEUES = (VIDEO_QUEUE,)
 ACTIVE_VIDEO_GEN_STATUSES = frozenset({"queued", "running", "generating"})
 
 
@@ -310,7 +311,7 @@ def dispatch_script_summary_job(project_id: int) -> str:
     if _use_celery():
         from app.workers.drama_tasks import drama_script_summary_task
 
-        result = drama_script_summary_task.apply_async(args=[project_id], queue="pipeline")
+        result = drama_script_summary_task.apply_async(args=[project_id], queue=DRAMA_QUEUE)
         logger.info("dispatch 剧本摘要 → Celery project_id=%s task_id=%s", project_id, result.id)
         return str(result.id)
 
@@ -349,6 +350,7 @@ async def run_script_summary_job(project_id: int) -> dict[str, Any]:
             params = dict(script.params or {})
             params["summary_status"] = "failed"
             params["summary_error"] = str(exc)[:500]
+            params.pop("summary_generating_at", None)
             script.params = params
             await db.commit()
             logger.exception("剧本摘要失败 project_id=%s err=%s", project_id, exc)
@@ -359,6 +361,7 @@ async def run_script_summary_job(project_id: int) -> dict[str, Any]:
         params["summary_text"] = format_summary_text(summary)
         params["summary_status"] = "completed"
         params["summary_error"] = None
+        params.pop("summary_generating_at", None)
         params["episode_content_status"] = params.get("episode_content_status") or "pending"
         script.params = params
         one_line = str(summary.get("oneLineStory") or "").strip()
@@ -401,7 +404,7 @@ def dispatch_episode_scripts_job(project_id: int, force: bool = False) -> str:
 
         result = drama_episode_scripts_task.apply_async(
             args=[project_id, force],
-            queue="pipeline",
+            queue=DRAMA_QUEUE,
         )
         logger.info(
             "dispatch 分集剧本 → Celery project_id=%s force=%s task_id=%s",
@@ -556,7 +559,7 @@ def dispatch_episode_fragment_plan_job(episode_id: int, *, fallback_rules: bool 
 
         result = drama_episode_fragment_plan_task.apply_async(
             args=[episode_id, fallback_rules],
-            queue="pipeline",
+            queue=DRAMA_QUEUE,
         )
         logger.info(
             "dispatch 单集分镜 → Celery episode_id=%s task_id=%s",
@@ -773,7 +776,7 @@ def dispatch_episode_generate_job(
 
         result = drama_episode_generate_task.apply_async(
             args=[episode_id, user_id, fragment_ids],
-            queue="video",
+            queue=VIDEO_QUEUE,
         )
         _episode_video_celery_ids[int(episode_id)] = str(result.id)
         logger.info(
@@ -989,7 +992,7 @@ def dispatch_asset_image_job(
                 "aspect_ratio": aspect_ratio,
                 "resolution": resolution,
             },
-            queue="pipeline",
+            queue=DRAMA_QUEUE,
         )
         logger.info(
             "dispatch 资产生图 → Celery project_id=%s asset_id=%s kind=%s task_id=%s",
@@ -1158,7 +1161,7 @@ def dispatch_asset_video_job(
                 "image_style_id": image_style_id,
                 "reference_asset_ids": reference_asset_ids or [],
             },
-            queue="video",
+            queue=VIDEO_QUEUE,
         )
         logger.info(
             "dispatch 资产生视频 → Celery project_id=%s asset_id=%s task_id=%s",

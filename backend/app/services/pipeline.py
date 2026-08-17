@@ -23,6 +23,7 @@ from app.services.ffmpeg_compose import (
     is_near_silent_audio,
     probe_duration,
 )
+from app.workers.queues import PIPELINE_QUEUE
 from app.services.progress import publish_progress
 from app.services import storage
 from app.services.style_lock import (
@@ -120,7 +121,7 @@ def start_pipeline(project_id: int) -> str:
         purge_pipeline_queue_for_project(project_id)
         clear_pipeline_run_lock(project_id)
 
-        async_result = run_pipeline_task.apply_async(args=[project_id], queue="pipeline")
+        async_result = run_pipeline_task.apply_async(args=[project_id], queue=PIPELINE_QUEUE)
         task_id = str(async_result.id)
         _celery_task_ids[project_id] = task_id
         return task_id
@@ -187,10 +188,15 @@ def _is_image_text(project: Project) -> bool:
 
 
 def _use_native_video_audio(project: Project | None = None) -> bool:
-    """科普 full 管线：用 Seedance generate_audio，跳过 TTS 与重合成。"""
+    """是否跳过 TTS、直拼 Seedance 口播。科普已改回外部合成，恒为 False。"""
+    return False
+
+
+def _kepu_seedance_sfx_audio(project: Project | None = None) -> bool:
+    """科普 full：向 Seedance 要操作/环境音效（不含口播与 BGM）。"""
     if project is not None and _is_image_text(project):
         return False
-    return bool(get_settings().kepu_seedance_generate_audio)
+    return bool(get_settings().kepu_seedance_sfx_audio)
 
 
 def _project_output_ratio(project: Project) -> str:
@@ -213,13 +219,14 @@ def _project_voice(project: Project) -> str:
 
 
 def clamp_shot_duration(duration: float, *, pipeline_mode: str, tpl_min: int, tpl_max: int) -> float:
+    """将单镜时长钳到模板区间；完整模式再压到科普节奏上限。"""
     settings = get_settings()
     if pipeline_mode == "image_text":
         lo = IMAGE_TEXT_DURATION_MIN
         hi = IMAGE_TEXT_DURATION_MAX
     else:
-        lo = max(1, tpl_min)
-        hi = min(max(tpl_max, lo), settings.max_shot_duration)
+        hi = min(max(tpl_max, 1), settings.max_shot_duration, segplan.KEPU_FULL_SHOT_DURATION_MAX)
+        lo = max(1, min(tpl_min, hi))
     return float(max(lo, min(float(duration), hi)))
 
 
@@ -341,7 +348,7 @@ async def _resume_plan(project_id: int) -> tuple[bool, bool, bool, bool]:
                 return False
             return not is_near_silent_audio(path)
 
-        # 模型配音模式不依赖 TTS；静图成片仍要整片配音
+        # 科普改回外部 TTS，成片前必须有旁白音轨
         has_audio = (
             True
             if native_audio
@@ -421,9 +428,7 @@ async def run_pipeline(project_id: int) -> None:
                         "沿用已有分镜图与配音，开始合成"
                         if image_text
                         else (
-                            "沿用已有分镜图，继续生成带配音的 AI 视频"
-                            if _use_native_video_audio(project)
-                            else "沿用已有分镜图与配音，继续生成 AI 视频"
+                            "沿用已有分镜图与配音，继续生成 AI 视频"
                         )
                     ),
                 },
@@ -558,7 +563,11 @@ async def _script_stage(project_id: int) -> None:
             d_min, d_max = IMAGE_TEXT_DURATION_MIN, IMAGE_TEXT_DURATION_MAX
         else:
             d_min = tpl.shot_duration_min
-            d_max = min(tpl.shot_duration_max, get_settings().max_shot_duration)
+            d_max = min(
+                tpl.shot_duration_max,
+                get_settings().max_shot_duration,
+                segplan.KEPU_FULL_SHOT_DURATION_MAX,
+            )
 
         style = _effective_style(project)
         extra = _effective_extra(project)
@@ -571,9 +580,10 @@ async def _script_stage(project_id: int) -> None:
             llm_system_addon=tpl.llm_system_addon,
             duration_min=d_min,
             duration_max=d_max,
-            max_shot_duration=d_max if image_text else get_settings().max_shot_duration,
+            max_shot_duration=d_max,
             pipeline_mode=mode,
-            character_hint=char_hint if consist == "character" else "",
+            # 用户角色限制在 diverse/style 下也必须进分镜，否则出镜人物会被模板默认成「过肩无脸」
+            character_hint=char_hint,
             extra_requirements=extra,
             consistency_mode=consist,
             output_ratio=_project_output_ratio(project),
@@ -581,6 +591,9 @@ async def _script_stage(project_id: int) -> None:
         plans = plans_result.shots
         if consist == "character":
             project.character_bible = _effective_character_bible(project, plans_result.character_bible)
+        elif char_hint:
+            # 多样人物：保留用户角色限制，不锁成同一张脸
+            project.character_bible = char_hint
         else:
             project.character_bible = "无固定人物，各镜独立场景"
         tpl_bgm = ""
@@ -735,7 +748,7 @@ def _db_write_lock() -> asyncio.Lock:
 
 
 async def _parallel_image_and_audio(project_id: int) -> None:
-    """Generate storyboard images; TTS only for image_text (full 用视频模型配音)。"""
+    """Generate storyboard images and continuous TTS (full 再并行图生视频)。"""
     await _set_status(project_id, ProjectStatus.IMAGING, 18, "PARALLEL_ASSETS")
     cfg = get_settings()
     ark = get_ark()
@@ -787,7 +800,7 @@ async def _parallel_image_and_audio(project_id: int) -> None:
     img_sem = asyncio.Semaphore(max(1, cfg.pipeline_image_concurrency))
     done_img = 0
     progress_lock = asyncio.Lock()
-    # 模型配音：跳过整片 TTS；静图成片仍合成连贯旁白
+    # 静图成片与完整模式都合成连贯旁白；已有音轨则跳过
     need_audio = (not native_audio) and (not _continuous_audio_ok(project_id))
 
     async def bump_images() -> None:
@@ -982,9 +995,7 @@ async def _parallel_image_and_audio(project_id: int) -> None:
             "stage": "ASSETS_READY",
             "percent": 70 if image_text else 50,
             "message": (
-                "分镜图已完成，准备视频模型配音"
-                if native_audio
-                else "分镜图与整片配音已完成"
+                "分镜图与整片配音已完成"
             ),
         },
     )
@@ -1004,8 +1015,9 @@ async def _parallel_videos(project_id: int) -> None:
         )
         project = result.scalar_one()
         tpl = project.template
-        # 科普 full：以 KEPU_SEEDANCE_GENERATE_AUDIO 为准（忽略库内旧模板 False）
-        generate_audio = _use_native_video_audio(project)
+        # 科普 full：Seedance 出操作音效，口播改后期 TTS
+        generate_audio = _kepu_seedance_sfx_audio(project)
+        ambient_only = generate_audio
         consistency = template_consistency_mode(tpl) == "character" and bool(
             tpl.seedance_config.get("character_consistency", True)
         )
@@ -1063,6 +1075,7 @@ async def _parallel_videos(project_id: int) -> None:
                 style_prefix=style_prefix,
                 motion_bias=motion,
                 camera=str(meta.get("camera") or ""),
+                ambient_only=ambient_only,
             )
             dur = segplan.resolve_api_duration(
                 script,
@@ -1153,7 +1166,7 @@ async def _parallel_videos(project_id: int) -> None:
                     "total": total,
                     "percent": pct,
                     "message": (
-                        f"AI 视频+配音 {done}/{total}"
+                        f"AI 视频（含操作音效）{done}/{total}"
                         if generate_audio
                         else f"AI 视频 {done}/{total}"
                     ),
@@ -1266,7 +1279,8 @@ async def _video_stage(project_id: int) -> None:
         )
         project = result.scalar_one()
         tpl = project.template
-        generate_audio = _use_native_video_audio(project)
+        generate_audio = _kepu_seedance_sfx_audio(project)
+        ambient_only = generate_audio
         consistency = template_consistency_mode(tpl) == "character" and bool(
             tpl.seedance_config.get("character_consistency", True)
         )
@@ -1286,6 +1300,7 @@ async def _video_stage(project_id: int) -> None:
                 style_prefix=style_prefix,
                 motion_bias=motion,
                 camera=shot.camera or "",
+                ambient_only=ambient_only,
             )
             dur = segplan.resolve_api_duration(
                 script,
@@ -1449,7 +1464,9 @@ async def _compose_stage(project_id: int) -> None:
                 bgm_mood = (project.shots[0].bgm_mood or "").strip()
             if not bgm_mood and project.template and isinstance(project.template.audio_config, dict):
                 bgm_mood = str(project.template.audio_config.get("bgm_mood") or "").strip()
-            bgm_path = resolve_bgm_path(bgm_mood)
+            # 科普 full：不要后期 BGM；静图成片仍可叠配乐
+            bgm_path = None if mode != "image_text" else resolve_bgm_path(bgm_mood)
+            keep_video_sfx = _kepu_seedance_sfx_audio(project)
 
             await asyncio.to_thread(
                 compose_project,
@@ -1466,6 +1483,8 @@ async def _compose_stage(project_id: int) -> None:
                     caption_scale=_f("caption_scale", 1.25),
                     bgm_path=bgm_path,
                     bgm_volume=0.22,
+                    keep_video_sfx=keep_video_sfx,
+                    sfx_volume=0.22,
                 ),
             )
             project.final_video_url = storage.publish_local(out)
@@ -1537,7 +1556,7 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
         shot = next((s for s in project.shots if s.id == shot_id), None)
         if not shot or not (shot.image_url or shot.image_ark_url):
             raise ValueError("shot image required")
-        generate_audio = _use_native_video_audio(project)
+        generate_audio = _kepu_seedance_sfx_audio(project)
         motion = str(project.template.seedance_config.get("motion_bias", ""))
         consistency = template_consistency_mode(project.template) == "character" and bool(
             project.template.seedance_config.get("character_consistency", True)
@@ -1552,6 +1571,7 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
             style_prefix=_effective_style(project),
             motion_bias=motion,
             camera=shot.camera or "",
+            ambient_only=generate_audio,
         )
         dur = segplan.resolve_api_duration(
             script,

@@ -47,6 +47,9 @@ class User(Base):
     billing_unlimited: Mapped[bool] = mapped_column(Boolean, default=False)
     # user | admin
     role: Mapped[str] = mapped_column(String(16), default="user")
+    avatar_url: Mapped[str] = mapped_column(String(512), default="")
+    # 联系手机，仅记录，不走短信验证
+    phone: Mapped[str] = mapped_column(String(32), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     projects: Mapped[list["Project"]] = relationship(back_populates="owner")

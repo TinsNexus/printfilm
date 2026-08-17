@@ -14,7 +14,7 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-PIPELINE_QUEUE = "pipeline"
+from app.workers.queues import PIPELINE_QUEUE
 _ARGS_RE = re.compile(r"\[(\d+)\]|\((\d+),?\)")
 
 

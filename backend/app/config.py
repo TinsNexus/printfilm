@@ -53,8 +53,10 @@ class Settings(BaseSettings):
     # Seedance 2.5 官方并发上限约 10
     pipeline_video_concurrency: int = 10
     pipeline_audio_concurrency: int = 4
-    # 科普 full：Seedance generate_audio 配音，跳过 TTS + 重合成，仅拼接镜头
-    kepu_seedance_generate_audio: bool = True
+    # 已废弃：科普不再直出口播（即使 .env 为 true 也会被管线忽略）
+    kepu_seedance_generate_audio: bool = False
+    # 科普 Seedance 仍出音轨：只要操作/环境音效，不要口播与 BGM
+    kepu_seedance_sfx_audio: bool = True
 
     ark_mock: bool = False
     use_celery: bool = True
@@ -65,7 +67,12 @@ class Settings(BaseSettings):
     celery_autoscale_max: int = 3
     celery_autoscale_poll_sec: float = 5.0
     celery_autoscale_idle_sec: float = 45.0
+    # 主监控队列（历史字段；未设 celery_worker_queues 时作 fallback）
     celery_autoscale_queue: str = "pipeline"
+    # Worker 消费与 autoscale 监控的全部队列（逗号分隔）
+    celery_worker_queues: str = "drama,oss,video,pipeline"
+    # Admin pool_grow 上限
+    celery_pool_max: int = 8
     # Prevent zombie tasks: hard kill hung workers; Redis redelivers after visibility_timeout
     # 视频阶段包含多镜头/多重试（Seedance/合成/OSS回填），线上曾触发 soft time limit 导致 project 进度停在中间。
     # 这里适当放大，确保在“可预期的失败重试窗口”内有足够时间完成状态回写/标记失败。
