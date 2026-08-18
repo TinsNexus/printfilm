@@ -164,22 +164,28 @@ async def backfill_media_url(old_url: str, new_url: str) -> int:
     return changed
 
 
+def collect_pending_column_targets() -> list[tuple[type, list[str]]]:
+    """补传扫描列：科普只扫成片，不含分镜图/配音/镜头视频。"""
+    from app.models import Project, Template, Work
+    from app.models_drama import DramaAsset, DramaEpisodeFragment
+
+    return [
+        (Project, ["final_video_url"]),
+        (Template, ["preview_cover"]),
+        (Work, ["cover_url", "video_url"]),
+        (DramaAsset, ["cover", "url"]),
+        (DramaEpisodeFragment, ["cover", "video"]),
+    ]
+
+
 async def collect_pending_local_media_urls(*, limit: int = 2000) -> list[str]:
     """扫描库中仍指向本地 /static 的媒体 URL（含漫剧）。"""
     from app.database import AsyncSessionLocal
-    from app.models import Project, Shot, Template, Work
-    from app.models_drama import DramaAsset, DramaEpisodeFragment
+    from app.models_drama import DramaAsset
 
     found: set[str] = set()
     async with AsyncSessionLocal() as db:
-        column_targets: list[tuple[type, list[str]]] = [
-            (Shot, ["image_url", "video_url", "audio_url"]),
-            (Project, ["cover_url", "final_video_url", "ref_image_url"]),
-            (Template, ["preview_cover"]),
-            (Work, ["cover_url", "video_url"]),
-            (DramaAsset, ["cover", "url"]),
-            (DramaEpisodeFragment, ["cover", "video"]),
-        ]
+        column_targets = collect_pending_column_targets()
         for model, fields in column_targets:
             clauses = []
             for field in fields:

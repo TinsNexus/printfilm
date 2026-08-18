@@ -70,3 +70,29 @@ async def get_owned_episode(
     if not episode:
         raise HTTPException(status_code=404, detail="分集不存在")
     return episode
+
+
+async def load_episode_fragments(
+    db: AsyncSession,
+    episode_id: int,
+) -> list[DramaEpisodeFragment]:
+    """显式查询分集下全部分镜（含资产引用），避免 expire_on_commit=False 会话缓存旧集合。"""
+    result = await db.execute(
+        select(DramaEpisodeFragment)
+        .where(DramaEpisodeFragment.episode_id == episode_id)
+        .options(selectinload(DramaEpisodeFragment.asset_references))
+        .order_by(DramaEpisodeFragment.sort_order.asc(), DramaEpisodeFragment.id.asc())
+    )
+    return list(result.scalars().all())
+
+
+def match_fragments_for_generate(
+    all_frags: list[DramaEpisodeFragment],
+    fragment_ids: list[int] | None,
+) -> list[DramaEpisodeFragment]:
+    """按请求的分镜 id 筛选；未传 id 则生成全部。"""
+    ordered = list(all_frags)
+    if not fragment_ids:
+        return ordered
+    id_set = set(fragment_ids)
+    return [f for f in ordered if f.id in id_set]

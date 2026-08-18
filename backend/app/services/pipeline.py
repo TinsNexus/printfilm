@@ -362,6 +362,7 @@ async def _resume_plan(project_id: int) -> tuple[bool, bool, bool, bool]:
         return image_text, skip_script, skip_assets, skip_videos
 
 
+@storage.without_intermediate_oss
 async def run_pipeline(project_id: int) -> None:
     try:
         await _ensure_not_cancelled(project_id)
@@ -1502,6 +1503,7 @@ async def _compose_stage(project_id: int) -> None:
     await _settle_billing(project_id)
 
 
+@storage.without_intermediate_oss
 async def regen_shot_image(project_id: int, shot_id: int) -> None:
     """重绘单镜首帧图，并清掉该镜视频以便后续重生。"""
     ark = get_ark()
@@ -1542,6 +1544,7 @@ async def regen_shot_image(project_id: int, shot_id: int) -> None:
         await db.commit()
 
 
+@storage.without_intermediate_oss
 async def regen_shot_video(project_id: int, shot_id: int) -> None:
     ark = get_ark()
     async with AsyncSessionLocal() as db:
@@ -1599,6 +1602,7 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
         await db.commit()
 
 
+@storage.without_intermediate_oss
 async def regen_shot_audio(project_id: int, shot_id: int) -> None:
     """Re-TTS uses continuous full-film narration (editing one shot re-voices the whole track)."""
     async with AsyncSessionLocal() as db:
@@ -1632,6 +1636,7 @@ async def regen_shot_audio(project_id: int, shot_id: int) -> None:
             await db.commit()
 
 
+@storage.without_intermediate_oss
 async def regen_project_audio_and_compose(project_id: int) -> None:
     """Force continuous re-TTS with current voice, then compose."""
     async with AsyncSessionLocal() as db:
@@ -1687,6 +1692,7 @@ async def regen_project_audio_and_compose(project_id: int) -> None:
     )
 
 
+@storage.without_intermediate_oss
 async def compose_only(project_id: int) -> None:
     await _compose_stage(project_id)
     async with AsyncSessionLocal() as db:

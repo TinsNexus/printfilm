@@ -21,7 +21,12 @@ from app.schemas_drama import (
     DramaSaveFragmentsRequest,
 )
 from app.services.agent.compose import parse_skill_ids
-from app.services.drama.access import get_owned_drama_project, get_owned_episode
+from app.services.drama.access import (
+    get_owned_drama_project,
+    get_owned_episode,
+    load_episode_fragments,
+    match_fragments_for_generate,
+)
 from app.services.drama.generation import fragment_generation_status
 from app.services.drama.jobs import (
     cancel_all_episode_video_jobs,
@@ -195,8 +200,8 @@ async def save_fragments(
     user: User = Depends(get_current_user),
 ) -> DramaEpisodeOut:
     ep = await get_owned_episode(db, episode_id, user)
-    for old in list(ep.fragments or []):
-        await db.delete(old)
+    # 用 relationship 清空，保证会话内集合与库一致（delete 旧行但不从 ep.fragments 移除会导致返回旧 id）
+    ep.fragments.clear()
     await db.flush()
     for item in body.fragments:
         frag = DramaEpisodeFragment(
@@ -208,18 +213,26 @@ async def save_fragments(
             duration_sec=item.duration_sec,
             params=item.params,
         )
-        db.add(frag)
+        ep.fragments.append(frag)
         await db.flush()
-        for aid in item.asset_ids:
+        for aid in item.asset_ids or []:
             db.add(DramaFragmentAssetRef(fragment_id=frag.id, asset_id=aid))
     await db.commit()
-    ep = await get_owned_episode(db, episode_id, user)
+    # expire_on_commit=False：必须重查，不能用会话里可能过期的 ep.fragments
+    frags = await load_episode_fragments(db, episode_id)
     logger.info(
-        "已保存分镜 episode_id=%s count=%s",
+        "已保存分镜 episode_id=%s count=%s ids=%s",
         episode_id,
-        len(body.fragments),
+        len(frags),
+        [f.id for f in frags],
     )
-    return _episode_out(ep)
+    return DramaEpisodeOut(
+        id=ep.id,
+        name=ep.name,
+        params=ep.params,
+        project_id=ep.project_id,
+        fragments=[_fragment_out(f) for f in frags],
+    )
 
 
 @router.post("/episodes/{episode_id}/generate")
@@ -232,14 +245,19 @@ async def generate_episode(
     # 入队 Celery / 进程内任务，前端用 generate_status 轮询
     ep = await get_owned_episode(db, episode_id, user)
     await get_owned_drama_project(db, ep.project_id, user)
-    all_frags = sorted(ep.fragments or [], key=lambda f: f.sort_order)
-    if body.fragment_ids:
-        id_set = set(body.fragment_ids)
-        frags = [f for f in all_frags if f.id in id_set]
-    else:
-        frags = list(all_frags)
+    all_frags = await load_episode_fragments(db, episode_id)
+    frags = match_fragments_for_generate(all_frags, body.fragment_ids)
     if not frags:
-        raise HTTPException(status_code=400, detail="没有可生成的分镜")
+        logger.warning(
+            "没有可生成的分镜 episode_id=%s requested=%s available=%s",
+            episode_id,
+            body.fragment_ids,
+            [f.id for f in all_frags],
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="没有可生成的分镜（保存后分镜已更新，请再点一次生成）",
+        )
 
     # 已有分镜在排队/生成时，仅禁止重复提交同一分镜
     busy_same = [
