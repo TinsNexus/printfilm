@@ -2,19 +2,20 @@ import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { HelpCircle, Mail, Building2 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
-import { CONTACT_CHANNELS, CONTACT_TOPICS } from '../lib/legalContent'
+import { useI18n } from '../i18n'
 
 const CHANNEL_ICONS = [Mail, HelpCircle, Building2] as const
 
 /** 联系我们：渠道说明 + 本地反馈表单（引导发邮件） */
 export default function ContactPage() {
+  const { t, m } = useI18n()
   /*
    * topic 反馈主题
    * email 联系邮箱
    * message 问题描述
    * sent 是否已生成邮件草稿提示
    */
-  const [topic, setTopic] = useState<string>(CONTACT_TOPICS[0])
+  const [topic, setTopic] = useState<string>(m.contact.topics[0])
   const [email, setEmail] = useState('')
   const [message, setMessage] = useState('')
   const [sent, setSent] = useState(false)
@@ -22,10 +23,10 @@ export default function ContactPage() {
   function onSubmit(e: FormEvent) {
     e.preventDefault()
     const body = [
-      `主题：${topic}`,
-      `联系邮箱：${email.trim() || '（未填写）'}`,
+      t('contact.mailSubject', { topic }),
+      t('contact.mailEmail', { email: email.trim() || t('contact.mailEmailEmpty') }),
       '',
-      message.trim() || '（无详细描述）',
+      message.trim() || t('contact.mailEmpty'),
     ].join('\n')
     const href = `mailto:support@printfilm.com?subject=${encodeURIComponent(
       `[PRINTFILM] ${topic}`,
@@ -39,19 +40,19 @@ export default function ContactPage() {
       <div className="pf-legal-page pf-contact-page">
         <header className="pf-legal-hero">
           <p className="pf-legal-crumb">
-            <Link to="/">首页</Link>
+            <Link to="/">{t('common.home')}</Link>
             <span aria-hidden> / </span>
-            <span>联系我们</span>
+            <span>{t('contact.crumb')}</span>
           </p>
-          <h1>联系我们</h1>
+          <h1>{t('contact.title')}</h1>
           <p className="pf-legal-intro">
-            充值、账号、创作任务或合作咨询，欢迎通过以下方式联系。提交前也可先查看{' '}
-            <Link to="/help">帮助中心</Link>。
+            {t('contact.introPrefix')} <Link to="/help">{t('contact.introLink')}</Link>
+            {t('contact.introSuffix')}
           </p>
         </header>
 
         <div className="pf-contact-channels">
-          {CONTACT_CHANNELS.map((ch, i) => {
+          {m.contact.channels.map((ch, i) => {
             const Icon = CHANNEL_ICONS[i] || Mail
             const isExternal = ch.href?.startsWith('mailto:')
             return (
@@ -64,11 +65,11 @@ export default function ContactPage() {
                 {ch.href ? (
                   isExternal ? (
                     <a className="pf-contact-card-link" href={ch.href}>
-                      {ch.actionLabel || '联系'}
+                      {ch.actionLabel || t('contact.contactAction')}
                     </a>
                   ) : (
                     <Link className="pf-contact-card-link" to={ch.href}>
-                      {ch.actionLabel || '前往'}
+                      {ch.actionLabel || t('contact.goAction')}
                     </Link>
                   )
                 ) : null}
@@ -78,59 +79,57 @@ export default function ContactPage() {
         </div>
 
         <section className="pf-contact-form-block" aria-labelledby="pf-contact-form-title">
-          <h2 id="pf-contact-form-title">留言反馈</h2>
-          <p className="pf-muted">
-            填写后将打开您的邮件客户端，预填发往 support@printfilm.com 的草稿，请确认后发送。
-          </p>
+          <h2 id="pf-contact-form-title">{t('contact.formTitle')}</h2>
+          <p className="pf-muted">{t('contact.formLead')}</p>
 
           <form className="pf-contact-form" onSubmit={onSubmit}>
             <label>
-              <span>问题类型</span>
+              <span>{t('contact.topic')}</span>
               <select value={topic} onChange={(e) => setTopic(e.target.value)}>
-                {CONTACT_TOPICS.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
+                {m.contact.topics.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
                   </option>
                 ))}
               </select>
             </label>
             <label>
-              <span>联系邮箱</span>
+              <span>{t('contact.email')}</span>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="便于我们回复"
+                placeholder={t('contact.emailPlaceholder')}
                 autoComplete="email"
               />
             </label>
             <label>
-              <span>问题描述</span>
+              <span>{t('contact.message')}</span>
               <textarea
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 rows={5}
-                placeholder="请尽量说明账号邮箱、订单号、发生时间与报错信息"
+                placeholder={t('contact.messagePlaceholder')}
                 required
               />
             </label>
             <button type="submit" className="pf-btn pf-btn-lime">
-              打开邮件草稿
+              {t('contact.submit')}
             </button>
             {sent ? (
               <p className="pf-contact-sent pf-muted">
-                若未自动打开邮件客户端，请直接发送至{' '}
+                {t('contact.sentPrefix')}{' '}
                 <a href="mailto:support@printfilm.com">support@printfilm.com</a>
               </p>
             ) : null}
           </form>
         </section>
 
-        <nav className="pf-legal-foot-nav" aria-label="相关页面">
-          <Link to="/terms">用户协议</Link>
-          <Link to="/privacy">隐私政策</Link>
-          <Link to="/help">帮助中心</Link>
-          <Link to="/pricing">定价充值</Link>
+        <nav className="pf-legal-foot-nav" aria-label={t('contact.related')}>
+          <Link to="/terms">{t('footer.terms')}</Link>
+          <Link to="/privacy">{t('footer.privacy')}</Link>
+          <Link to="/help">{t('footer.help')}</Link>
+          <Link to="/pricing">{t('contact.pricing')}</Link>
         </nav>
       </div>
     </AppShell>

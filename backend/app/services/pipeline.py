@@ -23,7 +23,7 @@ from app.services.ffmpeg_compose import (
     is_near_silent_audio,
     probe_duration,
 )
-from app.workers.queues import PIPELINE_QUEUE
+from app.workers.queues import PIPELINE_QUEUE, VIDEO_QUEUE
 from app.services.progress import publish_progress
 from app.services import storage
 from app.services.style_lock import (
@@ -181,6 +181,124 @@ def _redis_ok() -> bool:
         return bool(r.ping())
     except Exception:  # noqa: BLE001
         return False
+
+
+# 单镜重生 / 合成等短任务的进程内 fallback（Celery 不可用时）
+_regen_tasks: dict[str, asyncio.Task] = {}
+
+
+def _dispatch_side_task(
+    key: str,
+    *,
+    celery_task_name: str,
+    celery_args: list,
+    queue: str,
+    coro_factory,
+) -> str:
+    """投递 Celery 侧任务；Redis 不可用时在 API 进程内 asyncio 执行。"""
+    settings = get_settings()
+    if settings.use_celery and _redis_ok():
+        from app.workers.celery_app import celery_app
+
+        async_result = celery_app.send_task(
+            celery_task_name,
+            args=celery_args,
+            queue=queue,
+        )
+        return str(async_result.id)
+
+    existing = _regen_tasks.get(key)
+    if existing and not existing.done():
+        return "in-process"
+
+    async def _runner() -> None:
+        try:
+            await coro_factory()
+        except Exception:  # noqa: BLE001
+            logger.exception("in-process side task failed key=%s", key)
+
+    _regen_tasks[key] = asyncio.create_task(_runner())
+    return "in-process"
+
+
+def dispatch_regen_image(project_id: int, shot_id: int) -> str:
+    """异步重绘单镜首帧图。"""
+    key = f"regen-image:{project_id}:{shot_id}"
+
+    async def _coro() -> None:
+        await regen_shot_image(project_id, shot_id)
+
+    return _dispatch_side_task(
+        key,
+        celery_task_name="app.workers.tasks.regen_image_task",
+        celery_args=[project_id, shot_id],
+        queue=PIPELINE_QUEUE,
+        coro_factory=_coro,
+    )
+
+
+def dispatch_regen_video(project_id: int, shot_id: int) -> str:
+    """异步重生单镜 Seedance 视频。"""
+    key = f"regen-video:{project_id}:{shot_id}"
+
+    async def _coro() -> None:
+        await regen_shot_video(project_id, shot_id)
+
+    return _dispatch_side_task(
+        key,
+        celery_task_name="app.workers.tasks.regen_video_task",
+        celery_args=[project_id, shot_id],
+        queue=VIDEO_QUEUE,
+        coro_factory=_coro,
+    )
+
+
+def dispatch_regen_audio(project_id: int, shot_id: int) -> str:
+    """异步重配单镜旁白（整片连贯 TTS）。"""
+    key = f"regen-audio:{project_id}:{shot_id}"
+
+    async def _coro() -> None:
+        await regen_shot_audio(project_id, shot_id)
+
+    return _dispatch_side_task(
+        key,
+        celery_task_name="app.workers.tasks.regen_audio_task",
+        celery_args=[project_id, shot_id],
+        queue=PIPELINE_QUEUE,
+        coro_factory=_coro,
+    )
+
+
+def dispatch_regen_project_audio_and_compose(project_id: int) -> str:
+    """异步整片重配音并合成成片。"""
+    key = f"regen-all-audio:{project_id}"
+
+    async def _coro() -> None:
+        await regen_project_audio_and_compose(project_id)
+
+    return _dispatch_side_task(
+        key,
+        celery_task_name="app.workers.tasks.regen_audio_compose_task",
+        celery_args=[project_id],
+        queue=PIPELINE_QUEUE,
+        coro_factory=_coro,
+    )
+
+
+def dispatch_compose_only(project_id: int) -> str:
+    """异步仅合成成片（不重跑 AI 阶段）。"""
+    key = f"compose:{project_id}"
+
+    async def _coro() -> None:
+        await compose_only(project_id)
+
+    return _dispatch_side_task(
+        key,
+        celery_task_name="app.workers.tasks.compose_only_task",
+        celery_args=[project_id],
+        queue=PIPELINE_QUEUE,
+        coro_factory=_coro,
+    )
 
 
 def _is_image_text(project: Project) -> bool:
@@ -1627,12 +1745,24 @@ async def regen_shot_audio(project_id: int, shot_id: int) -> None:
         project_id, voice=voice, shot_rows=shots, force=True
     )
     async with AsyncSessionLocal() as db:
-        project = await db.get(Project, project_id)
+        result = await db.execute(
+            select(Project)
+            .where(Project.id == project_id)
+            .options(selectinload(Project.shots))
+        )
+        project = result.scalar_one_or_none()
         shot = await db.get(Shot, shot_id)
         if shot:
             shot.version += 1
         if project:
             project.final_video_url = None
+            shots = list(project.shots or [])
+            if _is_image_text(project):
+                project.status = ProjectStatus.IMAGE_READY
+            elif shots and all(s.video_url for s in shots):
+                project.status = ProjectStatus.VIDEO_READY
+            else:
+                project.status = ProjectStatus.IMAGE_READY
             await db.commit()
 
 

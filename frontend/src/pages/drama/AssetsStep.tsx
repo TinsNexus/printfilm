@@ -513,6 +513,51 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
         refreshPrompts: true,
         reextractProps: true,
       })
+      if (result.status === 'generating') {
+        let seedStatus = 'generating'
+        for (let i = 0; i < 90; i += 1) {
+          await new Promise((r) => window.setTimeout(r, 2000))
+          const p = await dramaApi.getProject(projectId)
+          seedStatus = String(
+            (p.params as Record<string, unknown> | undefined)?.assets_seed_status || '',
+          )
+          if (seedStatus === 'done' || seedStatus === 'failed') break
+        }
+        const list = normalizeAssetList(
+          await dramaApi.listAssets(projectId, { libraryOnly: true }),
+        )
+        setAssets(list)
+        const p = await dramaApi.getProject(projectId)
+        const params = (p.params || {}) as Record<string, unknown>
+        const created = Number(params.assets_seed_created ?? 0)
+        const refreshed = Number(params.assets_seed_refreshed ?? 0)
+        const propsUpdated = Number(params.assets_seed_props_updated ?? 0)
+        const llmErrors = Array.isArray(params.assets_seed_llm_errors)
+          ? (params.assets_seed_llm_errors as string[])
+          : []
+        const failed = seedStatus === 'failed'
+        const parts = [`新建 ${created} 项`, `AI 刷新提示词 ${refreshed} 项`]
+        if (propsUpdated > 0) {
+          parts.push(`更新道具/素材 ${propsUpdated} 项`)
+        }
+        let detail = failed
+          ? String(params.assets_seed_error || '抽取失败')
+          : `${parts.join('，')}。`
+        if (!failed && created === 0 && refreshed === 0 && llmErrors.length === 0) {
+          detail +=
+            '角色/场景若已存在则不会重复新建；本次也没有刷新到提示词。请确认剧本摘要与分集正文已生成后重试。'
+        } else if (!failed && llmErrors.length > 0) {
+          detail += `\n\n以下资产 AI 刷新失败：\n${llmErrors.slice(0, 5).join('\n')}${llmErrors.length > 5 ? `\n…共 ${llmErrors.length} 项` : ''}`
+        } else if (!failed) {
+          detail += '可在画布查看 prompt 或点击「生成形象」验证。'
+        }
+        await dialog.alert({
+          title: failed || llmErrors.length > 0 ? '抽取完成（部分失败）' : '抽取完成',
+          message: detail,
+          tone: failed || llmErrors.length > 0 ? 'danger' : 'success',
+        })
+        return
+      }
       setAssets(normalizeAssetList(result?.assets))
       const created = result.created_count ?? 0
       const refreshed = result.prompts_refreshed ?? 0

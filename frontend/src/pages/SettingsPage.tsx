@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import AppShell from '../components/layout/AppShell'
 import UserAvatar from '../components/UserAvatar'
@@ -12,6 +12,7 @@ import ComingSoon from '../components/ui/ComingSoon'
 import { dramaProjectEntryPath, formatDramaCardMeta } from '../lib/dramaWorkflow'
 import { STATUS_CN } from '../lib/status'
 import SettingsToolRunsPanel from './SettingsToolRunsPanel'
+import { formatDateTime, useI18n } from '../i18n'
 
 type SettingsTab =
   | 'account'
@@ -37,17 +38,17 @@ type KepuItem = {
  * SIDE_ITEMS 侧栏导航项
  * TAB_IDS 合法 tab 集合（用于 URL 校验）
  */
-const SIDE_ITEMS: { id: SettingsTab; label: string; soon?: boolean; group?: 'work' | 'account' }[] = [
-  { id: 'account', label: '账号信息', group: 'account' },
-  { id: 'projects', label: '漫剧项目', group: 'work' },
-  { id: 'kepu', label: '科普历史', group: 'work' },
-  { id: 'tools', label: '工具创作', group: 'work' },
-  { id: 'assets', label: '资产管理', group: 'work' },
-  { id: 'subscription', label: '订阅与余额', group: 'account' },
-  { id: 'team', label: '团队管理', soon: true, group: 'account' },
-  { id: 'api', label: 'API', group: 'account' },
-  { id: 'notify', label: '通知偏好', soon: true, group: 'account' },
-  { id: 'security', label: '安全', group: 'account' },
+const SIDE_ITEMS: { id: SettingsTab; soon?: boolean; group?: 'work' | 'account' }[] = [
+  { id: 'account', group: 'account' },
+  { id: 'projects', group: 'work' },
+  { id: 'kepu', group: 'work' },
+  { id: 'tools', group: 'work' },
+  { id: 'assets', group: 'work' },
+  { id: 'subscription', group: 'account' },
+  { id: 'team', soon: true, group: 'account' },
+  { id: 'api', group: 'account' },
+  { id: 'notify', soon: true, group: 'account' },
+  { id: 'security', group: 'account' },
 ]
 
 const TAB_IDS = new Set(SIDE_ITEMS.map((i) => i.id))
@@ -59,20 +60,13 @@ function parseTab(raw: string | null): SettingsTab {
 }
 
 // 格式化相对时间展示
-function formatWhen(iso?: string) {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleString('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+function formatWhen(iso: string | undefined, locale: 'zh' | 'en') {
+  return formatDateTime(iso, locale)
 }
 
 export default function SettingsPage() {
   const nav = useNavigate()
+  const { t, locale } = useI18n()
   const [params, setParams] = useSearchParams()
   /*
    * tab 当前侧栏分区
@@ -126,7 +120,7 @@ export default function SettingsPage() {
           if (!cancelled) setKepuItems(res.items)
         }
       } catch (e) {
-        if (!cancelled) setListError(e instanceof Error ? e.message : '加载失败')
+        if (!cancelled) setListError(e instanceof Error ? e.message : t('common.loadFailed'))
       } finally {
         if (!cancelled) setListLoading(false)
       }
@@ -164,12 +158,12 @@ export default function SettingsPage() {
           <div className="pf-settings-profile">
             <UserAvatar user={user} size="lg" className="pf-settings-avatar" />
             <div>
-              <strong>{user?.nickname || '创作者'}</strong>
+              <strong>{user?.nickname || t('common.creator')}</strong>
               <p className="pf-muted">ID: {user?.id ?? '—'}</p>
-              <span className="pf-settings-plan">{planLabel} 方案</span>
+              <span className="pf-settings-plan">{t('settings.planScheme', { plan: planLabel })}</span>
             </div>
           </div>
-          <nav className="pf-settings-nav" aria-label="设置导航">
+          <nav className="pf-settings-nav" aria-label={t('settings.nav')}>
             {SIDE_ITEMS.map((item) => (
               <button
                 key={item.id}
@@ -177,13 +171,13 @@ export default function SettingsPage() {
                 className={tab === item.id ? 'active' : ''}
                 onClick={() => selectTab(item.id)}
               >
-                {item.label}
+                {t(`settings.tabs.${item.id}`)}
                 {item.soon ? <ComingSoon /> : null}
               </button>
             ))}
           </nav>
           <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm pf-settings-logout" onClick={logout}>
-            退出登录
+            {t('settings.logout')}
           </button>
         </aside>
 
@@ -194,25 +188,25 @@ export default function SettingsPage() {
             <section className="pf-settings-card">
               <div className="pf-settings-card-head">
                 <div>
-                  <h1>漫剧项目</h1>
-                  <p className="pf-muted">你的 AI 漫剧创作与分集进度</p>
+                  <h1>{t('settings.tabs.projects')}</h1>
+                  <p className="pf-muted">{t('settings.dramaLead')}</p>
                 </div>
                 <div className="pf-settings-actions">
                   <Link className="pf-btn pf-btn-lime pf-btn-sm" to="/drama">
-                    全部项目
+                    {t('settings.allProjects')}
                   </Link>
                   <Link className="pf-btn pf-btn-ghost pf-btn-sm" to="/drama">
-                    新建漫剧
+                    {t('settings.newDrama')}
                   </Link>
                 </div>
               </div>
-              {listLoading ? <p className="pf-muted">加载中…</p> : null}
+              {listLoading ? <p className="pf-muted">{t('common.loading')}</p> : null}
               {listError ? <p className="pf-error">{listError}</p> : null}
               {!listLoading && !listError && dramaItems.length === 0 ? (
                 <div className="pf-settings-empty">
-                  <p>还没有漫剧项目</p>
+                  <p>{t('settings.noDrama')}</p>
                   <Link className="pf-btn pf-btn-lime pf-btn-sm" to="/drama">
-                    去创建
+                    {t('settings.goCreate')}
                   </Link>
                 </div>
               ) : null}
@@ -222,10 +216,12 @@ export default function SettingsPage() {
                     <li key={item.id}>
                       <Link to={dramaProjectEntryPath(item)} className="pf-settings-list-row">
                         <span className="pf-settings-list-main">
-                          <strong>{item.title || `项目 #${item.id}`}</strong>
+                          <strong>{item.title || t('settings.projectFallback', { id: item.id })}</strong>
                           <em className="pf-muted">{formatDramaCardMeta(item)}</em>
                         </span>
-                        <span className="pf-settings-list-meta pf-muted">{formatWhen(item.updated_at || item.created_at)}</span>
+                        <span className="pf-settings-list-meta pf-muted">
+                          {formatWhen(item.updated_at || item.created_at, locale)}
+                        </span>
                       </Link>
                     </li>
                   ))}
@@ -238,25 +234,25 @@ export default function SettingsPage() {
             <section className="pf-settings-card">
               <div className="pf-settings-card-head">
                 <div>
-                  <h1>科普历史</h1>
-                  <p className="pf-muted">科普视频项目与成片记录</p>
+                  <h1>{t('settings.tabs.kepu')}</h1>
+                  <p className="pf-muted">{t('settings.kepuLead')}</p>
                 </div>
                 <div className="pf-settings-actions">
                   <Link className="pf-btn pf-btn-lime pf-btn-sm" to="/history">
-                    全部历史
+                    {t('settings.allHistory')}
                   </Link>
                   <Link className="pf-btn pf-btn-ghost pf-btn-sm" to="/studio/new">
-                    新建科普
+                    {t('settings.newKepu')}
                   </Link>
                 </div>
               </div>
-              {listLoading ? <p className="pf-muted">加载中…</p> : null}
+              {listLoading ? <p className="pf-muted">{t('common.loading')}</p> : null}
               {listError ? <p className="pf-error">{listError}</p> : null}
               {!listLoading && !listError && kepuItems.length === 0 ? (
                 <div className="pf-settings-empty">
-                  <p>还没有科普项目</p>
+                  <p>{t('settings.noKepu')}</p>
                   <Link className="pf-btn pf-btn-lime pf-btn-sm" to="/studio/new">
-                    去创建
+                    {t('settings.goCreate')}
                   </Link>
                 </div>
               ) : null}
@@ -266,11 +262,11 @@ export default function SettingsPage() {
                     <li key={item.id}>
                       <Link to={`/studio/${item.id}`} className="pf-settings-list-row">
                         <span className="pf-settings-list-main">
-                          <strong>{item.title || `项目 #${item.id}`}</strong>
+                          <strong>{item.title || t('settings.projectFallback', { id: item.id })}</strong>
                           <em className="pf-muted">{STATUS_CN[item.status] || item.status}</em>
                         </span>
                         <span className="pf-settings-list-meta pf-muted">
-                          {formatWhen(item.updated_at || item.created_at)}
+                          {formatWhen(item.updated_at || item.created_at, locale)}
                         </span>
                       </Link>
                     </li>
@@ -284,17 +280,17 @@ export default function SettingsPage() {
 
           {tab === 'assets' ? (
             <section className="pf-settings-card">
-              <h1>资产管理</h1>
-              <p className="pf-muted">角色、场景、道具与成片素材统一存放在资产库</p>
+              <h1>{t('settings.tabs.assets')}</h1>
+              <p className="pf-muted">{t('settings.assetsLead')}</p>
               <div className="pf-settings-actions">
                 <Link className="pf-btn pf-btn-lime pf-btn-sm" to="/assets">
-                  打开资产库
+                  {t('settings.openAssets')}
                 </Link>
                 <Link className="pf-btn pf-btn-ghost pf-btn-sm" to="/drama">
-                  漫剧项目
+                  {t('settings.tabs.projects')}
                 </Link>
                 <Link className="pf-btn pf-btn-ghost pf-btn-sm" to="/history">
-                  科普历史
+                  {t('settings.tabs.kepu')}
                 </Link>
               </div>
             </section>
@@ -302,19 +298,19 @@ export default function SettingsPage() {
 
           {tab === 'subscription' ? (
             <section className="pf-settings-card">
-              <h1>订阅与余额</h1>
-              <p className="pf-muted">按量充值，余额永久有效</p>
+              <h1>{t('settings.tabs.subscription')}</h1>
+              <p className="pf-muted">{t('settings.subLead')}</p>
               <div className="pf-settings-balance">
                 <div>
-                  <span className="pf-muted">可用余额</span>
+                  <span className="pf-muted">{t('settings.balance')}</span>
                   <strong>¥{(wallet?.balance_yuan ?? 0).toFixed(2)}</strong>
                 </div>
                 <div>
-                  <span className="pf-muted">冻结中</span>
+                  <span className="pf-muted">{t('settings.frozen')}</span>
                   <em>¥{(wallet?.frozen_yuan ?? 0).toFixed(2)}</em>
                 </div>
                 <div>
-                  <span className="pf-muted">当前方案</span>
+                  <span className="pf-muted">{t('settings.currentPlan')}</span>
                   <em>{planLabel}</em>
                 </div>
               </div>
@@ -322,7 +318,7 @@ export default function SettingsPage() {
               <UsageChargeRecords variant="compact" />
               <div className="pf-settings-actions">
                 <Link className="pf-btn pf-btn-lime pf-btn-sm" to="/pricing">
-                  去充值
+                  {t('settings.goTopup')}
                 </Link>
               </div>
             </section>
@@ -330,16 +326,16 @@ export default function SettingsPage() {
 
           {tab === 'security' ? (
             <section className="pf-settings-card">
-              <h1>安全</h1>
-              <p className="pf-muted">登录与账号安全设置</p>
+              <h1>{t('settings.tabs.security')}</h1>
+              <p className="pf-muted">{t('settings.securityLead')}</p>
               <div className="pf-settings-fields">
                 <label>
-                  <span>登录邮箱</span>
+                  <span>{t('settings.loginEmail')}</span>
                   <input value={user?.email || ''} readOnly />
                 </label>
               </div>
               <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" disabled>
-                修改密码 <ComingSoon />
+                {t('settings.changePassword')} <ComingSoon />
               </button>
             </section>
           ) : null}
@@ -348,8 +344,8 @@ export default function SettingsPage() {
 
           {tab === 'team' || tab === 'notify' ? (
             <section className="pf-settings-card">
-              <h1>{SIDE_ITEMS.find((s) => s.id === tab)?.label}</h1>
-              <p className="pf-muted">该模块即将上线，敬请期待。</p>
+              <h1>{t(`settings.tabs.${tab}`)}</h1>
+              <p className="pf-muted">{t('settings.soonModule')}</p>
               <ComingSoon />
             </section>
           ) : null}

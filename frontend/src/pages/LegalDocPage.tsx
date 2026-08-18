@@ -1,19 +1,21 @@
 import { Link } from 'react-router-dom'
 import AppShell from '../components/layout/AppShell'
-import { LEGAL_DOCS, type LegalDoc } from '../lib/legalContent'
+import { useI18n } from '../i18n'
+import { getLegalDoc, type LegalDoc } from '../lib/legalContent'
 
 /** 渲染单份法律文档正文 */
 function LegalBody({ doc }: { doc: LegalDoc }) {
+  const { t } = useI18n()
   return (
     <article className="pf-legal-doc">
       <header className="pf-legal-hero">
         <p className="pf-legal-crumb">
-          <Link to="/">首页</Link>
+          <Link to="/">{t('common.home')}</Link>
           <span aria-hidden> / </span>
           <span>{doc.title}</span>
         </p>
         <h1>{doc.title}</h1>
-        <p className="pf-legal-meta">更新日期：{doc.updatedAt}</p>
+        <p className="pf-legal-meta">{t('legal.updatedAt', { date: doc.updatedAt })}</p>
         <p className="pf-legal-intro">{doc.intro}</p>
       </header>
 
@@ -35,11 +37,11 @@ function LegalBody({ doc }: { doc: LegalDoc }) {
         ))}
       </div>
 
-      <nav className="pf-legal-foot-nav" aria-label="相关页面">
-        <Link to="/terms">用户协议</Link>
-        <Link to="/privacy">隐私政策</Link>
-        <Link to="/contact">联系我们</Link>
-        <Link to="/help">帮助中心</Link>
+      <nav className="pf-legal-foot-nav" aria-label={t('legal.related')}>
+        <Link to="/terms">{t('footer.terms')}</Link>
+        <Link to="/privacy">{t('footer.privacy')}</Link>
+        <Link to="/contact">{t('footer.contact')}</Link>
+        <Link to="/help">{t('footer.help')}</Link>
       </nav>
     </article>
   )
@@ -47,10 +49,12 @@ function LegalBody({ doc }: { doc: LegalDoc }) {
 
 /** 用户协议页 */
 export function TermsPage() {
+  const { locale } = useI18n()
+  const doc = getLegalDoc('terms', locale)
   return (
     <AppShell>
       <div className="pf-legal-page">
-        <LegalBody doc={LEGAL_DOCS.terms} />
+        <LegalBody doc={doc} />
       </div>
     </AppShell>
   )
@@ -58,10 +62,12 @@ export function TermsPage() {
 
 /** 隐私政策页 */
 export function PrivacyPage() {
+  const { locale } = useI18n()
+  const doc = getLegalDoc('privacy', locale)
   return (
     <AppShell>
       <div className="pf-legal-page">
-        <LegalBody doc={LEGAL_DOCS.privacy} />
+        <LegalBody doc={doc} />
       </div>
     </AppShell>
   )

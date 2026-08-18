@@ -1,5 +1,6 @@
 import { cn } from '../../lib/cn'
 import { DEFAULT_PAGE_SIZE_OPTIONS } from '../../lib/pagination'
+import { useI18n } from '../../i18n'
 
 type Props = {
   page: number
@@ -43,9 +44,11 @@ export default function Pagination({
   pageSizeOptions = DEFAULT_PAGE_SIZE_OPTIONS,
   onPageSizeChange,
   className,
-  ariaLabel = '分页',
+  ariaLabel,
   showSummary = true,
 }: Props) {
+  const { t } = useI18n()
+  const navLabel = ariaLabel || t('common.pagination')
   const sizeOptions = onPageSizeChange ? pageSizeOptions : undefined
   const canPickSize = Boolean(sizeOptions?.length && pageSize && onPageSizeChange)
   const showNav = pageCount > 1
@@ -54,12 +57,14 @@ export default function Pagination({
   if (!showNav && !canPickSize && !summaryVisible) return null
 
   const items = buildPageItems(page, pageCount)
+  const pageSizeBefore = t('common.pageSizeBefore')
+  const pageSizeAfter = t('common.pageSizeAfter')
 
   return (
     <div className={cn('pf-list-pagination', className)}>
       {summaryVisible ? (
         <p className="pf-list-pagination-summary">
-          第 {page} / {pageCount} 页 · 共 {total} 条
+          {t('common.pageSummary', { page, pageCount, total: total ?? 0 })}
         </p>
       ) : null}
 
@@ -67,10 +72,10 @@ export default function Pagination({
         <div className="pf-list-pagination-bar">
           {canPickSize ? (
             <label className="pf-page-size">
-              <span>每页</span>
+              {pageSizeBefore ? <span>{pageSizeBefore}</span> : null}
               <select
                 value={pageSize}
-                aria-label="每页条数"
+                aria-label={t('common.pageSize')}
                 onChange={(e) => onPageSizeChange?.(Number(e.target.value))}
               >
                 {sizeOptions!.map((n) => (
@@ -79,17 +84,17 @@ export default function Pagination({
                   </option>
                 ))}
               </select>
-              <span>条</span>
+              {pageSizeAfter ? <span>{pageSizeAfter}</span> : null}
             </label>
           ) : null}
 
           {showNav ? (
-            <nav className="pf-pagination" aria-label={ariaLabel}>
+            <nav className="pf-pagination" aria-label={navLabel}>
               <button
                 type="button"
                 className="pf-page-btn"
                 disabled={page <= 1}
-                aria-label="上一页"
+                aria-label={t('common.prevPage')}
                 onClick={() => onChange(Math.max(1, page - 1))}
               >
                 ‹
@@ -115,7 +120,7 @@ export default function Pagination({
                 type="button"
                 className="pf-page-btn"
                 disabled={page >= pageCount}
-                aria-label="下一页"
+                aria-label={t('common.nextPage')}
                 onClick={() => onChange(Math.min(pageCount, page + 1))}
               >
                 ›

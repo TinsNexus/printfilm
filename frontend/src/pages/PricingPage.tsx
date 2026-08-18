@@ -14,30 +14,13 @@ import PaymentModal, { type PayCheckout } from '../components/billing/PaymentMod
 import PricingWalletCard from '../components/billing/PricingWalletCard'
 import TopupHistoryModal from '../components/billing/TopupHistoryModal'
 import { api, type BillingSku, type UsageSummary, type Wallet } from '../api'
+import { useI18n } from '../i18n'
 
 type PayType = 'alipay' | 'wxpay'
 
 type SkuView = BillingSku & { recommended?: boolean }
 
-const HERO_FEATURES = [
-  { icon: Zap, text: '充值即时到账，马上可用' },
-  { icon: ShieldCheck, text: '支付安全保障' },
-  { icon: Infinity, text: '余额永久有效' },
-] as const
-
-const SKU_LABELS: Record<string, string> = {
-  topup_10: '体验充值',
-  topup_49: '基础充值',
-  topup_99: '进阶充值',
-  topup_199: '专业充值',
-}
-
-const SKU_HINTS: Record<string, string> = {
-  topup_10: '适合初次体验',
-  topup_49: '日常创作够用',
-  topup_99: '高频创作推荐',
-  topup_199: '团队 / 批量生产',
-}
+const HERO_FEATURE_KEYS = ['featInstant', 'featSafe', 'featForever'] as const
 
 function yuan(fen: number) {
   return (fen / 100).toFixed(2)
@@ -51,6 +34,7 @@ function yuanShort(fen: number) {
 /** 定价与充值页 */
 export default function PricingPage() {
   const nav = useNavigate()
+  const { t, m } = useI18n()
   const [params] = useSearchParams()
   const [wallet, setWallet] = useState<Wallet | null>(null)
   const [usage, setUsage] = useState<UsageSummary | null>(null)
@@ -93,9 +77,9 @@ export default function PricingPage() {
     api.billingSkus().then((r) => setSkus((r.skus || []) as SkuView[]))
     refresh()
     if (params.get('paid') === '1') {
-      setHint('支付完成。若余额未更新，请稍候刷新本页。')
-      const t = window.setInterval(() => refresh(), 2500)
-      return () => window.clearInterval(t)
+      setHint(t('pricing.paidHint'))
+      const timerId = window.setInterval(() => refresh(), 2500)
+      return () => window.clearInterval(timerId)
     }
   }, [])
 
@@ -108,7 +92,7 @@ export default function PricingPage() {
     setError('')
     try {
       const order = await api.createBillingOrder(sku.id, payType)
-      const label = SKU_LABELS[sku.id] || order.sku_name || sku.name
+      const label = m.pricing.skus[sku.id as keyof typeof m.pricing.skus] || sku.name
       setCheckout({
         out_trade_no: order.out_trade_no,
         sku_id: order.sku_id || sku.id,
@@ -121,7 +105,7 @@ export default function PricingPage() {
         expire_seconds: order.expire_seconds ?? 300,
       })
     } catch (e) {
-      setError(e instanceof Error ? e.message : '下单失败')
+      setError(e instanceof Error ? e.message : t('pricing.orderFailed'))
     } finally {
       setBusy(null)
     }
@@ -133,11 +117,11 @@ export default function PricingPage() {
   }
 
   function pickUnavailable(label: string) {
-    setPayTip(`${label}即将上线，请先使用支付宝或微信支付`)
+    setPayTip(t('pricing.unavailable', { label }))
   }
 
   async function onPaid() {
-    setHint('支付成功，余额已更新')
+    setHint(t('pricing.paidOk'))
     setCheckout(null)
     await refresh()
   }
@@ -148,21 +132,27 @@ export default function PricingPage() {
         <section className="pf-pricing-hero-band">
           <div className="pf-pricing-hero-inner">
             <div className="pf-pricing-hero-copy">
-              <h1>按需充值，灵活使用</h1>
-              <p>按实际消耗 token 计费，余量永久有效，不设过期</p>
+              <h1>{t('pricing.title')}</h1>
+              <p>{t('pricing.lead')}</p>
               <ul className="pf-pricing-hero-features">
-                {HERO_FEATURES.map(({ icon: Icon, text }) => (
-                  <li key={text}>
+                {HERO_FEATURE_KEYS.map((key, i) => {
+                  const icons = [Zap, ShieldCheck, Infinity] as const
+                  const Icon = icons[i]
+                  return (
+                  <li key={key}>
                     <span className="pf-pricing-hero-feature-icon" aria-hidden>
                       <Icon size={15} strokeWidth={2.2} />
                     </span>
-                    {text}
+                    {t(`pricing.${key}`)}
                   </li>
-                ))}
+                  )
+                })}
               </ul>
               {!loggedIn ? (
                 <p className="pf-pricing-guest-tip">
-                  <Link to="/auth?next=%2Fpricing">登录</Link> 后查看余额与本月用量
+                  {t('pricing.guestPrefix')}
+                  <Link to="/auth?next=%2Fpricing">{t('pricing.guestLogin')}</Link>
+                  {t('pricing.guestSuffix')}
                 </p>
               ) : null}
             </div>
@@ -180,12 +170,12 @@ export default function PricingPage() {
           {hint ? <p className="pf-pricing-hint">{hint}</p> : null}
           {error ? <p className="pf-error pf-pricing-error">{error}</p> : null}
 
-          <section className="pf-pricing-pay-section" aria-label="支付方式">
+          <section className="pf-pricing-pay-section" aria-label={t('pricing.payMethods')}>
             <header className="pf-pricing-section-head is-row">
-              <h2>支付方式</h2>
+              <h2>{t('pricing.payMethods')}</h2>
               <div className="pf-pricing-pay-trust">
                 <ShieldCheck size={16} aria-hidden />
-                <span>支付安全保障</span>
+                <span>{t('pricing.paySafe')}</span>
               </div>
             </header>
 
@@ -199,8 +189,8 @@ export default function PricingPage() {
                 aria-pressed={payType === 'alipay'}
               >
                 <PaymentBrandIcon brand="alipay" size="md" />
-                <span className="pf-pricing-pay-tile-label">支付宝</span>
-                <span className="pf-pricing-pay-tile-badge">推荐</span>
+                <span className="pf-pricing-pay-tile-label">{t('pricing.alipay')}</span>
+                <span className="pf-pricing-pay-tile-badge">{t('pricing.recommended')}</span>
                 {payType === 'alipay' ? (
                   <span className="pf-pricing-pay-tile-check" aria-hidden>
                     <Check size={14} strokeWidth={3} />
@@ -215,7 +205,7 @@ export default function PricingPage() {
                 aria-pressed={payType === 'wxpay'}
               >
                 <PaymentBrandIcon brand="wxpay" size="md" />
-                <span className="pf-pricing-pay-tile-label">微信支付</span>
+                <span className="pf-pricing-pay-tile-label">{t('pricing.wechat')}</span>
                 {payType === 'wxpay' ? (
                   <span className="pf-pricing-pay-tile-check" aria-hidden>
                     <Check size={14} strokeWidth={3} />
@@ -226,47 +216,48 @@ export default function PricingPage() {
               <button
                 type="button"
                 className="pf-pricing-pay-tile is-disabled"
-                title="即将上线"
-                onClick={() => pickUnavailable('银联支付')}
+                title={t('pricing.soonTitle')}
+                onClick={() => pickUnavailable(t('pricing.unionpay'))}
               >
                 <PaymentBrandIcon brand="unionpay" size="md" />
-                <span className="pf-pricing-pay-tile-label">银联支付</span>
-                <span className="pf-pricing-pay-tile-soon">即将上线</span>
+                <span className="pf-pricing-pay-tile-label">{t('pricing.unionpay')}</span>
+                <span className="pf-pricing-pay-tile-soon">{t('common.comingSoon')}</span>
               </button>
 
               <button
                 type="button"
                 className="pf-pricing-pay-tile is-disabled"
-                title="企业用户请联系客服"
-                onClick={() => pickUnavailable('对公转账')}
+                title={t('pricing.transferTitle')}
+                onClick={() => pickUnavailable(t('pricing.transfer'))}
               >
                 <span className="pf-pricing-pay-tile-icon" aria-hidden>
                   <Building2 size={22} strokeWidth={1.8} />
                 </span>
-                <span className="pf-pricing-pay-tile-label">对公转账</span>
-                <span className="pf-pricing-pay-tile-sub">企业用户</span>
+                <span className="pf-pricing-pay-tile-label">{t('pricing.transfer')}</span>
+                <span className="pf-pricing-pay-tile-sub">{t('pricing.enterprise')}</span>
               </button>
             </div>
           </section>
 
           <section className="pf-pricing-skus" id="pricing-skus">
             <header className="pf-pricing-section-head">
-              <h2>选择充值金额</h2>
+              <h2>{t('pricing.chooseAmount')}</h2>
             </header>
 
             <div className="pf-pricing-sku-grid">
               {displaySkus.map((sku) => {
                 const bonus = sku.credit_fen - sku.amount_fen
                 const recommended = Boolean(sku.recommended)
-                const label = SKU_LABELS[sku.id] || sku.name
-                const tierHint = SKU_HINTS[sku.id] || '余额永久有效'
+                const label = m.pricing.skus[sku.id as keyof typeof m.pricing.skus] || sku.name
+                const tierHint =
+                  m.pricing.skuHints[sku.id as keyof typeof m.pricing.skuHints] || t('pricing.foreverHint')
                 return (
                   <article
                     key={sku.id}
                     id={`sku-${sku.id}`}
                     className={`pf-pricing-sku-card${recommended ? ' is-recommended' : ''}`}
                   >
-                    {recommended ? <span className="pf-pricing-rec-badge">推荐</span> : null}
+                    {recommended ? <span className="pf-pricing-rec-badge">{t('pricing.recommended')}</span> : null}
                     <p className="pf-pricing-sku-tier">{label}</p>
                     <p className="pf-pricing-sku-hint">{tierHint}</p>
                     <div className="pf-pricing-sku-price">
@@ -274,10 +265,10 @@ export default function PricingPage() {
                       <strong>{(sku.amount_fen / 100).toFixed(0)}</strong>
                     </div>
                     <p className="pf-pricing-sku-credit">
-                      到账 <em>¥{yuan(sku.credit_fen)}</em>
+                      {t('pricing.credit')} <em>¥{yuan(sku.credit_fen)}</em>
                     </p>
                     {bonus > 0 ? (
-                      <p className="pf-pricing-sku-bonus">额外赠送 ¥{yuanShort(bonus)}</p>
+                      <p className="pf-pricing-sku-bonus">{t('pricing.bonus', { amount: yuanShort(bonus) })}</p>
                     ) : (
                       <p className="pf-pricing-sku-bonus is-empty">&nbsp;</p>
                     )}
@@ -287,7 +278,7 @@ export default function PricingPage() {
                       disabled={Boolean(busy)}
                       onClick={() => pay(sku)}
                     >
-                      {busy === sku.id ? '下单中…' : '立即充值'}
+                      {busy === sku.id ? t('pricing.ordering') : t('pricing.payNow')}
                     </button>
                   </article>
                 )
@@ -301,11 +292,11 @@ export default function PricingPage() {
                 <CreditCard size={28} strokeWidth={1.6} />
               </div>
               <div>
-                <h3>计费说明</h3>
+                <h3>{t('pricing.billingTitle')}</h3>
                 <ul>
-                  <li>拆分镜、出图、配音、AI 视频分别按上游 token 用量计费</li>
-                  <li>开始生成时预扣估算金额，结束后按实际用量结算（多退少补）</li>
-                  <li>图文模式成本更低；开启 AI 动态视频时消耗更高</li>
+                  <li>{t('pricing.billing1')}</li>
+                  <li>{t('pricing.billing2')}</li>
+                  <li>{t('pricing.billing3')}</li>
                 </ul>
               </div>
             </article>
@@ -314,11 +305,11 @@ export default function PricingPage() {
                 <Check size={28} strokeWidth={2.5} />
               </div>
               <div>
-                <h3>为什么按量计费</h3>
+                <h3>{t('pricing.whyTitle')}</h3>
                 <ul className="pf-pricing-checks">
-                  <li>无需订阅，用多少充多少</li>
-                  <li>余额永久有效，不设过期</li>
-                  <li>账单清晰可查，每次调用可追溯</li>
+                  <li>{t('pricing.why1')}</li>
+                  <li>{t('pricing.why2')}</li>
+                  <li>{t('pricing.why3')}</li>
                 </ul>
               </div>
             </article>
@@ -327,12 +318,12 @@ export default function PricingPage() {
           <footer className="pf-pricing-site-foot">
             <p className="pf-pricing-site-brand">
               <Link to="/">PRINTFILM</Link>
-              <span> · AI 短视频创作伙伴</span>
+              <span> · {t('pricing.footBrand')}</span>
             </p>
-            <nav className="pf-pricing-site-links" aria-label="页脚链接">
-              <Link to="/terms">用户协议</Link>
-              <Link to="/privacy">隐私政策</Link>
-              <Link to="/contact">联系我们</Link>
+            <nav className="pf-pricing-site-links" aria-label={t('footer.links')}>
+              <Link to="/terms">{t('footer.terms')}</Link>
+              <Link to="/privacy">{t('footer.privacy')}</Link>
+              <Link to="/contact">{t('footer.contact')}</Link>
             </nav>
             <p className="pf-pricing-site-copy">© {new Date().getFullYear()} PRINTFILM. All rights reserved.</p>
           </footer>

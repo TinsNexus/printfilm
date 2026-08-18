@@ -14,6 +14,7 @@ import {
   type DialogRequest,
   type DialogTone,
 } from '../../lib/dialog'
+import { useI18n } from '../../i18n'
 
 // 按弹窗类型与语气返回图标
 function dialogIcon(kind: DialogRequest['kind'], tone: DialogTone | undefined): LucideIcon {
@@ -45,6 +46,7 @@ function acceptRequest(active: DialogRequest, promptValue: string) {
 }
 
 export default function DialogHost() {
+  const { t } = useI18n()
   const req = useSyncExternalStore(subscribeDialog, getDialogRequest, getDialogRequest)
   const [promptValue, setPromptValue] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -82,14 +84,18 @@ export default function DialogHost() {
   const Icon = dialogIcon(active.kind, tone)
   const title =
     active.options.title ||
-    (active.kind === 'confirm' ? '请确认' : active.kind === 'prompt' ? '请输入' : '提示')
+    (active.kind === 'confirm'
+      ? t('dialog.confirmTitle')
+      : active.kind === 'prompt'
+        ? t('dialog.promptTitle')
+        : t('dialog.alertTitle'))
   const message =
     active.kind === 'prompt' ? active.options.message || '' : active.options.message
   const confirmText =
     active.kind === 'alert'
-      ? active.options.confirmText || '知道了'
-      : active.options.confirmText || '确定'
-  const cancelText = active.kind === 'alert' ? '' : active.options.cancelText || '取消'
+      ? active.options.confirmText || t('dialog.ok')
+      : active.options.confirmText || t('dialog.confirm')
+  const cancelText = active.kind === 'alert' ? '' : active.options.cancelText || t('dialog.cancel')
 
   function onSubmit(e: FormEvent) {
     e.preventDefault()

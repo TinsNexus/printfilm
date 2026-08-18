@@ -28,6 +28,10 @@ TASK_LABELS: dict[str, str] = {
     "app.workers.tasks.run_pipeline_task": "科普成片 Pipeline",
     "app.workers.tasks.regen_image_task": "重生成图片",
     "app.workers.tasks.regen_video_task": "重生成视频",
+    "app.workers.tasks.regen_audio_task": "重生成配音",
+    "app.workers.tasks.regen_audio_compose_task": "重配音并合成",
+    "app.workers.tasks.compose_only_task": "拼接成片",
+    "app.workers.tasks.tool_image_task": "工具·生图",
     "app.workers.tasks.upload_media_task": "OSS 上传",
     "drama.script_summary": "漫剧·剧本摘要",
     "drama.episode_scripts": "漫剧·分集剧本",
@@ -35,6 +39,7 @@ TASK_LABELS: dict[str, str] = {
     "drama.episode_generate": "漫剧·分集视频",
     "drama.asset_image": "漫剧·资产生图",
     "drama.asset_video": "漫剧·资产视频",
+    "drama.seed_assets": "漫剧·抽取资产",
 }
 
 PENDING_SAMPLE_LIMIT = 30

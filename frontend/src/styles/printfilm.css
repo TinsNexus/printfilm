@@ -105,6 +105,33 @@
   color: var(--pf-ink);
 }
 
+.pf-nav-lang {
+  display: inline-flex;
+  align-items: stretch;
+  height: 28px;
+  border: 1px solid var(--pf-line);
+  border-radius: 999px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.pf-nav-lang button {
+  border: none;
+  background: transparent;
+  color: var(--pf-muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  padding: 0 0.55rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.pf-nav-lang button.is-active {
+  background: var(--pf-ink);
+  color: #fff;
+}
+
 .pf-nav-burger {
   display: none;
   width: 40px;
@@ -1581,6 +1608,13 @@
 .pf-settings-fields em {
   font-style: normal;
   font-size: 0.8rem;
+}
+
+.pf-settings-lang {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .pf-settings-actions {

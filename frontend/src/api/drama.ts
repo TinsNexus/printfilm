@@ -128,6 +128,8 @@ export type SeedAssetsResult = {
   prompts_refreshed: number
   props_updated: number
   llm_errors: string[]
+  status?: string
+  message?: string | null
 }
 
 export type DramaFragment = {
@@ -302,6 +304,8 @@ export const dramaApi = {
       prompts_refreshed: result?.prompts_refreshed ?? 0,
       props_updated: result?.props_updated ?? 0,
       llm_errors: Array.isArray(result?.llm_errors) ? result.llm_errors : [],
+      status: result?.status ?? 'done',
+      message: result?.message ?? null,
     }
   },
 

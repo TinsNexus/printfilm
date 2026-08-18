@@ -39,6 +39,10 @@ celery_app.conf.update(
         "app.workers.tasks.run_pipeline_task": {"queue": PIPELINE_QUEUE},
         "app.workers.tasks.regen_image_task": {"queue": PIPELINE_QUEUE},
         "app.workers.tasks.regen_video_task": {"queue": VIDEO_QUEUE},
+        "app.workers.tasks.regen_audio_task": {"queue": PIPELINE_QUEUE},
+        "app.workers.tasks.regen_audio_compose_task": {"queue": PIPELINE_QUEUE},
+        "app.workers.tasks.compose_only_task": {"queue": PIPELINE_QUEUE},
+        "app.workers.tasks.tool_image_task": {"queue": PIPELINE_QUEUE},
         "app.workers.tasks.upload_media_task": {"queue": OSS_QUEUE},
         "drama.script_summary": {"queue": DRAMA_QUEUE},
         "drama.episode_scripts": {"queue": DRAMA_QUEUE},
@@ -46,5 +50,6 @@ celery_app.conf.update(
         "drama.episode_generate": {"queue": VIDEO_QUEUE},
         "drama.asset_image": {"queue": DRAMA_QUEUE},
         "drama.asset_video": {"queue": VIDEO_QUEUE},
+        "drama.seed_assets": {"queue": DRAMA_QUEUE},
     },
 )

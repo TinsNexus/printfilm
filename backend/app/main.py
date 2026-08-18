@@ -65,6 +65,8 @@ async def log_requests(request: Request, call_next):
     msg = f"{request.method} {path} → {response.status_code} ({elapsed_ms:.0f}ms)"
     if response.status_code >= 400:
         logger.warning(msg)
+    elif elapsed_ms >= 3000:
+        logger.warning("SLOW %s", msg)
     elif is_poll and elapsed_ms < 800:
         return response
     else:

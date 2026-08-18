@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { useI18n } from '../../i18n'
 import SiteNav, { type NavActive } from './SiteNav'
 
 type Props = {
@@ -12,6 +13,8 @@ type Props = {
 }
 
 export default function AppShell({ children, active, wide, flush, hideFooter }: Props) {
+  const { t } = useI18n()
+
   return (
     <div className="pf-shell">
       <SiteNav active={active} />
@@ -20,11 +23,11 @@ export default function AppShell({ children, active, wide, flush, hideFooter }: 
       </main>
       {!hideFooter && !flush ? (
         <footer className="pf-shell-footer">
-          <nav className="pf-shell-footer-links" aria-label="页脚链接">
-            <Link to="/terms">用户协议</Link>
-            <Link to="/privacy">隐私政策</Link>
-            <Link to="/contact">联系我们</Link>
-            <Link to="/help">帮助中心</Link>
+          <nav className="pf-shell-footer-links" aria-label={t('footer.links')}>
+            <Link to="/terms">{t('footer.terms')}</Link>
+            <Link to="/privacy">{t('footer.privacy')}</Link>
+            <Link to="/contact">{t('footer.contact')}</Link>
+            <Link to="/help">{t('footer.help')}</Link>
           </nav>
           <p>© {new Date().getFullYear()} PRINTFILM. All rights reserved.</p>
         </footer>

@@ -5,7 +5,8 @@ import { ArrowLeft, Download, Loader2 } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import Button from '../components/ui/Button'
 import { pollStudioToolTask, resolveToolMediaUrl, runStudioTool } from '../api/tools'
-import { defaultToolChips, getToolDef, type ToolDef } from '../lib/toolsCatalog'
+import { defaultToolChips, getToolDef, localizeToolDef, chipDisplayLabel, type ToolDef } from '../lib/toolsCatalog'
+import { useI18n } from '../i18n'
 
 const VIDEO_POLL_MS = 3000
 
@@ -23,7 +24,9 @@ export default function ToolDetailPage() {
 }
 
 /** 已登录后的工具表单与结果区 */
-function ToolWorkspace({ tool }: { tool: ToolDef }) {
+function ToolWorkspace({ tool: baseTool }: { tool: ToolDef }) {
+  const { t, m } = useI18n()
+  const tool = useMemo(() => localizeToolDef(baseTool, m), [baseTool, m])
   /*
    * text 文本框
    * chips 画幅/时长等选项
@@ -81,12 +84,12 @@ function ToolWorkspace({ tool }: { tool: ToolDef }) {
           setResultUrls(data.urls)
           setBusy(false)
         } else if (data.status === 'failed') {
-          setError(data.error || '视频生成失败')
+          setError(data.error || t('tools.errors.videoFailed'))
           setBusy(false)
         }
       } catch (err) {
         if (cancelled) return
-        setError(err instanceof Error ? err.message : '查询失败')
+        setError(err instanceof Error ? err.message : t('tools.errors.pollFailed'))
         setBusy(false)
       }
     }
@@ -129,27 +132,27 @@ function ToolWorkspace({ tool }: { tool: ToolDef }) {
     if (busy) return
     const prompt = (text.prompt || text.script || '').trim()
     if (tool.id === 't2i' && prompt.length < 4) {
-      setError('请填写提示词')
+      setError(t('tools.errors.fillPrompt'))
       return
     }
     if ((tool.id === 'i2i' || tool.id === 'i2p') && !files.length) {
-      setError('请上传参考图')
+      setError(t('tools.errors.uploadRef'))
       return
     }
     if (tool.id === 't2v' && prompt.length < 4) {
-      setError('请填写视频脚本')
+      setError(t('tools.errors.fillScript'))
       return
     }
     if (tool.id === 'v2v' && !files.length) {
-      setError('请上传源视频或首帧图')
+      setError(t('tools.errors.uploadSource'))
       return
     }
     if (tool.id === 'ecom' && chips.pack === '卖点海报' && !files.length) {
-      setError('请上传商品图')
+      setError(t('tools.errors.uploadProduct'))
       return
     }
     if (tool.id === 'ecom' && chips.pack !== '卖点海报' && files.length < 2) {
-      setError('拼接至少上传 2 张图片')
+      setError(t('tools.errors.uploadTwoImages'))
       return
     }
     setError('')
@@ -185,8 +188,8 @@ function ToolWorkspace({ tool }: { tool: ToolDef }) {
       }
       setBusy(false)
     } catch (err) {
-      const message = err instanceof Error ? err.message : '生成失败'
-      if (message === '未登录') {
+      const message = err instanceof Error ? err.message : t('tools.errors.generateFailed')
+      if (message === t('tools.errors.notLoggedIn') || message === '未登录') {
         nav(`/auth?next=/tools/${tool.id}`, { replace: true })
         return
       }
@@ -204,7 +207,7 @@ function ToolWorkspace({ tool }: { tool: ToolDef }) {
       <div className="pf-tool-detail">
         <Link to="/tools" className="pf-tool-back">
           <ArrowLeft size={16} strokeWidth={2} aria-hidden />
-          全部工具
+          {t('tools.allTools')}
         </Link>
         <header className="pf-tool-detail-head">
           <span className="pf-ws-tool-icon" aria-hidden>
@@ -225,7 +228,7 @@ function ToolWorkspace({ tool }: { tool: ToolDef }) {
                 {field.kind === 'textarea' ? (
                   <textarea
                     rows={4}
-                    placeholder={field.placeholder || `输入${field.label}…`}
+                    placeholder={field.placeholder || t('tools.inputPlaceholder', { label: field.label })}
                     value={text[field.key] || ''}
                     onChange={(e) => setText((prev) => ({ ...prev, [field.key]: e.target.value }))}
                   />
@@ -244,11 +247,11 @@ function ToolWorkspace({ tool }: { tool: ToolDef }) {
                   >
                     {files.length ? (
                       <span>
-                        已选 {files.length} 个文件
+                        {t('tools.filesSelected', { count: files.length })}
                         {files[0] ? ` · ${files[0].name}` : ''}
                       </span>
                     ) : (
-                      '点击或拖拽上传'
+                      t('tools.uploadHint')
                     )}
                     {previews.length ? (
                       <div className="pf-tool-upload-thumbs">
@@ -272,7 +275,7 @@ function ToolWorkspace({ tool }: { tool: ToolDef }) {
                         className={chips[field.key] === opt ? 'active' : ''}
                         onClick={() => setChips((prev) => ({ ...prev, [field.key]: opt }))}
                       >
-                        {opt}
+                        {chipDisplayLabel(opt, m)}
                       </button>
                     ))}
                   </div>
@@ -294,7 +297,7 @@ function ToolWorkspace({ tool }: { tool: ToolDef }) {
               {busy ? (
                 <>
                   <Loader2 size={16} className="pf-tool-spin" aria-hidden />
-                  {waitingVideo ? '视频生成中…' : '生成中…'}
+                  {waitingVideo ? t('tools.generatingVideo') : t('tools.generating')}
                 </>
               ) : (
                 tool.cta
@@ -304,25 +307,25 @@ function ToolWorkspace({ tool }: { tool: ToolDef }) {
 
           <section
             className={`pf-tool-result${hasMedia ? ' has-media' : ''}`}
-            aria-label="生成结果"
+            aria-label={t('tools.resultArea')}
           >
             {!hasMedia && !busy ? (
               <div className="pf-tool-result-empty">
-                <p>结果预览区</p>
-                <span className="pf-muted">生成完成后将在此展示</span>
+                <p>{t('tools.resultEmpty')}</p>
+                <span className="pf-muted">{t('tools.resultEmptyHint')}</span>
               </div>
             ) : null}
             {busy && !hasMedia ? (
               <div className="pf-tool-result-empty">
                 <Loader2 size={28} className="pf-tool-spin" aria-hidden />
-                <p>{waitingVideo ? '视频生成中' : '正在生成'}</p>
+                <p>{waitingVideo ? t('tools.generatingVideoShort') : t('tools.generatingShort')}</p>
                 <span className="pf-muted">
-                  {waitingVideo ? '通常需要 1–3 分钟，可停留在本页等待' : '画面生成大约 20–40 秒'}
+                  {waitingVideo ? t('tools.videoWaitHint') : t('tools.imageWaitHint')}
                 </span>
               </div>
             ) : null}
             {previewUrl && !resultUrls.length ? (
-              <img src={resolveToolMediaUrl(previewUrl)} alt="静帧预览" />
+              <img src={resolveToolMediaUrl(previewUrl)} alt={t('tools.previewAlt')} />
             ) : null}
             {resultUrls.map((url) => {
               const abs = resolveToolMediaUrl(url)
@@ -333,24 +336,26 @@ function ToolWorkspace({ tool }: { tool: ToolDef }) {
                     <video src={abs} controls playsInline />
                     <a className="pf-tool-download" href={abs} download>
                       <Download size={14} aria-hidden />
-                      下载视频
+                      {t('tools.downloadVideo')}
                     </a>
                   </div>
                 )
               }
               return (
                 <div key={url} className="pf-tool-result-item">
-                  <img src={abs} alt="生成结果" />
+                  <img src={abs} alt={t('tools.resultAlt')} />
                   <a className="pf-tool-download" href={abs} download>
                     <Download size={14} aria-hidden />
-                    下载图片
+                    {t('tools.downloadImage')}
                   </a>
                 </div>
               )
             })}
             {resultUrls.length ? (
               <p className="pf-muted pf-tool-saved">
-                已保存，可在 <Link to="/settings?tab=tools">个人中心 · 工具创作</Link> 查看
+                {t('tools.savedPrefix')}{' '}
+                <Link to="/settings?tab=tools">{t('tools.savedLink')}</Link>
+                {m.tools.savedSuffix ? ` ${t('tools.savedSuffix')}` : null}
               </p>
             ) : null}
           </section>

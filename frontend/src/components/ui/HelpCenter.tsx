@@ -1,11 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Modal from './Modal'
-import {
-  HELP_FAQ_ITEMS,
-  HELP_GUIDE_STEPS,
-  filterHelpFaq,
-} from '../../lib/helpContent'
+import { useI18n } from '../../i18n'
+import { filterHelpFaq } from '../../lib/helpContent'
 
 type Tab = 'guide' | 'faq' | 'tools'
 
@@ -14,14 +11,9 @@ type Props = {
   onClose: () => void
 }
 
-const CATEGORIES = [
-  { id: 'guide' as const, title: '快速开始', desc: '四步上手创作' },
-  { id: 'faq' as const, title: '常见问题', desc: '下载 · 生成 · 充值' },
-  { id: 'tools' as const, title: '工具说明', desc: '文生图与短视频' },
-]
-
 /** 帮助中心抽屉（与 /help 页共用文案） */
 export default function HelpCenter({ open, onClose }: Props) {
+  const { t, m } = useI18n()
   /*
    * tab 当前分区
    * openFaq 展开的 FAQ
@@ -31,43 +23,43 @@ export default function HelpCenter({ open, onClose }: Props) {
   const [openFaq, setOpenFaq] = useState<number | null>(0)
   const [q, setQ] = useState('')
 
-  const faqFiltered = useMemo(() => filterHelpFaq(HELP_FAQ_ITEMS, q), [q])
+  const faqFiltered = useMemo(() => filterHelpFaq([...m.help.faq], q), [m.help.faq, q])
 
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title="帮助中心"
+      title={t('help.title')}
       variant="drawer"
       className="pf-help-modal"
       footer={
         <>
           <Link to="/help" className="pf-btn pf-btn-ghost pf-btn-sm" onClick={onClose}>
-            完整帮助页
+            {t('help.fullPage')}
           </Link>
           <button type="button" className="pf-btn pf-btn-lime pf-btn-sm" onClick={onClose}>
-            知道了
+            {t('help.gotIt')}
           </button>
         </>
       }
     >
       <div className="pf-help">
         <label className="pf-help-search">
-          <span className="sr-only">搜索帮助</span>
+          <span className="sr-only">{t('help.search')}</span>
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="搜索指南或常见问题"
+            placeholder={t('help.drawerSearch')}
           />
         </label>
 
         <div className="pf-help-cats">
-          {CATEGORIES.map((c) => (
+          {m.help.drawerCats.map((c) => (
             <button
               key={c.id}
               type="button"
               className={`pf-help-cat${tab === c.id ? ' is-active' : ''}`}
-              onClick={() => setTab(c.id)}
+              onClick={() => setTab(c.id as Tab)}
             >
               <strong>{c.title}</strong>
               <span>{c.desc}</span>
@@ -77,7 +69,7 @@ export default function HelpCenter({ open, onClose }: Props) {
 
         {tab === 'guide' ? (
           <ol className="pf-help-steps">
-            {HELP_GUIDE_STEPS.map((s) => (
+            {m.help.steps.map((s) => (
               <li key={s.n}>
                 <span className="pf-help-step-n" aria-hidden>
                   {s.n}
@@ -110,21 +102,19 @@ export default function HelpCenter({ open, onClose }: Props) {
                 </div>
               )
             })}
-            {faqFiltered.length === 0 ? <p className="pf-muted">没有匹配的问题</p> : null}
+            {faqFiltered.length === 0 ? <p className="pf-muted">{t('help.noFaq')}</p> : null}
           </div>
         ) : null}
 
         {tab === 'tools' ? (
           <div className="pf-help-tools-note">
-            <p>
-              工具中心已开放文生图、图生图、图生产品、文生视频、视频生视频与电商拼图。生成结果会保存到云端，并在个人中心「工具创作」中支持查看与下载。
-            </p>
+            <p>{t('help.toolsNote')}</p>
             <div className="pf-help-tools-actions">
               <Link to="/tools" className="pf-btn pf-btn-lime pf-btn-sm" onClick={onClose}>
-                打开工具
+                {t('help.openTools')}
               </Link>
               <Link to="/settings?tab=tools" className="pf-btn pf-btn-ghost pf-btn-sm" onClick={onClose}>
-                创作记录
+                {t('help.toolRecords')}
               </Link>
             </div>
           </div>

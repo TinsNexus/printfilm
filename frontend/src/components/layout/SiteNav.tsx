@@ -8,6 +8,8 @@ import { IconHelp } from '../ui/Icons'
 import Button from '../ui/Button'
 import CreateChoiceModal from '../ui/CreateChoiceModal'
 import { USER_UPDATED_EVENT } from '../../lib/userEvents'
+import { useI18n } from '../../i18n'
+import LanguageSwitch from './LanguageSwitch'
 
 export type NavActive = 'home' | 'drama' | 'kepu' | 'tools' | 'assets' | 'pricing' | 'templates' | 'studio' | 'history'
 
@@ -37,6 +39,7 @@ function normalizeActive(active: NavActive | undefined, pathname: string): NavAc
 export default function SiteNav({ active }: Props) {
   const nav = useNavigate()
   const location = useLocation()
+  const { t } = useI18n()
   /*
    * user 当前用户
    * menuOpen 移动端抽屉
@@ -80,22 +83,22 @@ export default function SiteNav({ active }: Props) {
   const centerLinks = (
     <>
       <NavLink to="/" end className={() => isActive('home')}>
-        工作台
+        {t('nav.workbench')}
       </NavLink>
       <NavLink to="/drama" className={() => isActive('drama')}>
-        漫剧
+        {t('nav.drama')}
       </NavLink>
       <NavLink to="/history" className={() => isActive('kepu')}>
-        科普
+        {t('nav.kepu')}
       </NavLink>
       <NavLink to="/tools" className={() => isActive('tools')}>
-        工具
+        {t('nav.tools')}
       </NavLink>
       <NavLink to="/assets" className={() => isActive('assets')}>
-        资产
+        {t('nav.assets')}
       </NavLink>
       <NavLink to="/pricing" className={() => isActive('pricing')}>
-        定价
+        {t('nav.pricing')}
       </NavLink>
     </>
   )
@@ -105,35 +108,36 @@ export default function SiteNav({ active }: Props) {
       <div className="pf-nav-left">
         <BrandMark />
       </div>
-      <nav className="pf-nav-center" aria-label="主导航">
+      <nav className="pf-nav-center" aria-label={t('nav.main')}>
         {centerLinks}
       </nav>
       <div className="pf-nav-right">
-        <button type="button" className="pf-nav-help-btn" title="帮助中心" onClick={() => nav('/help')}>
+        <LanguageSwitch />
+        <button type="button" className="pf-nav-help-btn" title={t('nav.helpCenter')} onClick={() => nav('/help')}>
           <IconHelp size={18} className="pf-nav-help-icon" />
-          <span>帮助</span>
+          <span>{t('nav.help')}</span>
         </button>
         {user ? (
           <button
             type="button"
             className="pf-avatar"
-            title={`${user.nickname} · 个人中心`}
+            title={`${user.nickname} · ${t('nav.profile')}`}
             onClick={() => nav('/settings')}
           >
             <UserAvatar user={user} size="sm" />
           </button>
         ) : (
           <Link to="/auth?next=/" className="pf-link pf-nav-login">
-            登录
+            {t('nav.login')}
           </Link>
         )}
         <Button variant="lime" size="sm" icon onClick={goCreate}>
-          开始创作
+          {t('nav.startCreate')}
         </Button>
         <button
           type="button"
           className="pf-nav-burger"
-          aria-label={menuOpen ? '关闭菜单' : '打开菜单'}
+          aria-label={menuOpen ? t('nav.closeMenu') : t('nav.openMenu')}
           aria-expanded={menuOpen}
           onClick={() => setMenuOpen((v) => !v)}
         >
@@ -143,7 +147,7 @@ export default function SiteNav({ active }: Props) {
         </button>
       </div>
       {menuOpen ? (
-        <div className="pf-nav-drawer" role="dialog" aria-label="移动导航">
+        <div className="pf-nav-drawer" role="dialog" aria-label={t('nav.mobileNav')}>
           <nav className="pf-nav-drawer-links">{centerLinks}</nav>
         </div>
       ) : null}

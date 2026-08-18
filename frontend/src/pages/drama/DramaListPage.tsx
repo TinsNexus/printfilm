@@ -1,5 +1,5 @@
 /** 漫剧 Agent 首页：AI 生剧本 / 自由画布 + 我的项目（多选删除） */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   FolderOpen,
@@ -23,6 +23,7 @@ import {
   isCanvasWorkflow,
 } from '../../lib/dramaWorkflow'
 import RequireAuth from './RequireAuth'
+import { useI18n } from '../../i18n'
 import { DramaEpisodeCountPopover } from './DramaEpisodeCountPopover'
 import { DramaImageStyleModal } from './DramaImageStyleModal'
 import { DramaProjectCardMenu } from './DramaProjectCardMenu'
@@ -52,12 +53,7 @@ function verticalTitleLabel(name: string, max = 12): string {
 
 type ProjectFilter = 'all' | 'running' | 'done' | 'draft'
 
-const FILTER_OPTIONS: PillOption<ProjectFilter>[] = [
-  { value: 'all', label: '全部' },
-  { value: 'running', label: '进行中' },
-  { value: 'done', label: '已完成' },
-  { value: 'draft', label: '草稿' },
-]
+const FILTER_KEYS: ProjectFilter[] = ['all', 'running', 'done', 'draft']
 
 export default function DramaListPage() {
   return (
@@ -70,6 +66,15 @@ export default function DramaListPage() {
 // 渲染 Agent 首页内容
 function DramaListInner() {
   const navigate = useNavigate()
+  const { t, m } = useI18n()
+  const filterOptions = useMemo<PillOption<ProjectFilter>[]>(
+    () =>
+      FILTER_KEYS.map((value) => ({
+        value,
+        label: m.dramaList.filters[value],
+      })),
+    [m],
+  )
   /*
    * storyText AI 创意输入
    * episodeCount 目标集数
@@ -212,26 +217,26 @@ function DramaListInner() {
   // 重命名
   async function handleRename(item: DramaProjectListItem) {
     const name = await dialog.prompt({
-      title: '重命名项目',
-      message: '输入新的项目名称',
+      title: t('dramaList.renameTitle'),
+      message: t('dramaList.renameMessage'),
       defaultValue: item.title,
-      confirmText: '保存',
+      confirmText: t('common.save'),
     })
     if (!name?.trim() || name.trim() === item.title) return
     try {
       await dramaApi.updateProject(item.id, { title: name.trim() })
       await loadProjects()
     } catch (err) {
-      setError(err instanceof Error ? err.message : '重命名失败')
+      setError(err instanceof Error ? err.message : t('dramaList.renameFailed'))
     }
   }
 
   // 删除单个
   async function handleDeleteOne(item: DramaProjectListItem) {
     const ok = await dialog.confirm({
-      title: '删除项目',
-      message: `确定删除「${item.title}」？分集、剧本与资产将一并删除，且无法恢复。`,
-      confirmText: '删除',
+      title: t('dramaList.deleteTitle'),
+      message: t('dramaList.deleteOne', { title: item.title }),
+      confirmText: t('common.delete'),
       tone: 'danger',
     })
     if (!ok) return
@@ -244,7 +249,7 @@ function DramaListInner() {
       })
       await loadProjects()
     } catch (err) {
-      setError(err instanceof Error ? err.message : '删除失败')
+      setError(err instanceof Error ? err.message : t('dramaList.deleteFailed'))
     }
   }
 
@@ -253,9 +258,9 @@ function DramaListInner() {
     const ids = [...selected]
     if (ids.length === 0) return
     const ok = await dialog.confirm({
-      title: '删除项目',
-      message: `将删除已选择的 ${ids.length} 个项目，包含分集、剧本与资产等数据，删除后无法恢复。`,
-      confirmText: '删除',
+      title: t('dramaList.deleteTitle'),
+      message: t('dramaList.deleteMany', { count: ids.length }),
+      confirmText: t('common.delete'),
       tone: 'danger',
     })
     if (!ok) return
@@ -265,7 +270,7 @@ function DramaListInner() {
       setSelected(new Set())
       await loadProjects()
     } catch (err) {
-      setError(err instanceof Error ? err.message : '删除失败')
+      setError(err instanceof Error ? err.message : t('dramaList.deleteFailed'))
     } finally {
       setDeleting(false)
     }
@@ -276,11 +281,11 @@ function DramaListInner() {
       <div className="drama-page drama-agent-page pf-drama-list">
         <header className="pf-drama-list-head">
           <div className="pf-drama-list-title-row">
-            <h1>我的漫剧项目</h1>
+            <h1>{t('dramaList.title')}</h1>
             <div className="pf-drama-list-actions">
               <Button variant="ghost" size="sm" to="/drama/assets">
                 <Library size={15} strokeWidth={1.75} aria-hidden />
-                资产库
+                {t('dramaList.assets')}
               </Button>
               <Button
                 variant="ghost"
@@ -289,7 +294,7 @@ function DramaListInner() {
                 onClick={() => handleTabClick('canvas')}
               >
                 <LayoutGrid size={15} strokeWidth={1.75} aria-hidden />
-                {canvasBusy ? '创建中…' : '自由画布'}
+                {canvasBusy ? t('dramaList.creating') : t('dramaList.canvas')}
               </Button>
               <Button
                 variant="lime"
@@ -299,52 +304,56 @@ function DramaListInner() {
                   handleTabClick('ai')
                 }}
               >
-                新建项目
+                {t('dramaList.newProject')}
               </Button>
             </div>
           </div>
 
           <div className="pf-drama-list-toolbar">
             <PillFilter<ProjectFilter>
-              options={FILTER_OPTIONS}
+              options={filterOptions}
               value={filter}
               onChange={setFilter}
-              ariaLabel="项目筛选"
+              ariaLabel={t('dramaList.filterAria')}
             />
             <label className="pf-drama-search">
               <Search size={16} strokeWidth={2} aria-hidden />
-              <span className="sr-only">搜索项目</span>
+              <span className="sr-only">{t('dramaList.searchAria')}</span>
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="搜索项目名称"
+                placeholder={t('dramaList.searchPlaceholder')}
               />
             </label>
           </div>
         </header>
 
         {showCreate ? (
-          <section className="drama-agent-panel pf-drama-create-panel" aria-label="创作入口">
+          <section className="drama-agent-panel pf-drama-create-panel" aria-label={t('dramaList.createAria')}>
             <div className="drama-agent-panel-head">
               <div className="drama-agent-tabs" role="tablist">
                 <button type="button" role="tab" aria-selected className="active">
                   <PenLine size={15} strokeWidth={1.75} aria-hidden />
-                  AI 生剧本
+                  {t('dramaList.aiScript')}
                 </button>
               </div>
               <button type="button" className="pf-link pf-drama-collapse" onClick={() => setShowCreate(false)}>
-                收起
+                {t('dramaList.collapse')}
               </button>
             </div>
             <div className="drama-agent-tips" role="note">
               <Sparkles size={15} strokeWidth={1.75} aria-hidden />
               <span>
-                建议写明 <strong>故事设定</strong>、<strong>人物特征</strong>、<strong>剧情脉络</strong> 与结局走向。
+                {t('dramaList.tipRest', {
+                  a: t('dramaList.tipStrong1'),
+                  b: t('dramaList.tipStrong2'),
+                  c: t('dramaList.tipStrong3'),
+                })}
               </span>
             </div>
             <div className="drama-agent-ai">
               <label className="drama-agent-ai-label" htmlFor="drama-agent-story">
-                故事创意
+                {t('dramaList.storyLabel')}
               </label>
               <div className="drama-agent-ai-field">
                 <textarea

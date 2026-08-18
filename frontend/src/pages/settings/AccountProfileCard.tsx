@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import UserAvatar from '../../components/UserAvatar'
 import ComingSoon from '../../components/ui/ComingSoon'
+import LanguageSwitch from '../../components/layout/LanguageSwitch'
 import { api, type User } from '../../api'
 import { dispatchUserUpdated } from '../../lib/userEvents'
+import { useI18n } from '../../i18n'
 
 type AccountProfileCardProps = {
   user: User | null
@@ -11,6 +13,7 @@ type AccountProfileCardProps = {
 
 /** 账号资料：头像、用户名、邮箱、手机号（手机号仅记录） */
 export default function AccountProfileCard({ user, onUserChange }: AccountProfileCardProps) {
+  const { t } = useI18n()
   /*
    * nickname / email / phone 表单值
    * saveBusy 保存中
@@ -52,7 +55,7 @@ export default function AccountProfileCard({ user, onUserChange }: AccountProfil
       onUserChange(updated)
       dispatchUserUpdated(updated)
     } catch (e) {
-      setAvatarError(e instanceof Error ? e.message : '头像上传失败')
+      setAvatarError(e instanceof Error ? e.message : t('settings.avatarFailed'))
     } finally {
       setAvatarBusy(false)
       if (avatarInputRef.current) avatarInputRef.current.value = ''
@@ -75,7 +78,7 @@ export default function AccountProfileCard({ user, onUserChange }: AccountProfil
       dispatchUserUpdated(updated)
       setSaveOk(true)
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : '保存失败')
+      setSaveError(e instanceof Error ? e.message : t('settings.saveFailed'))
     } finally {
       setSaveBusy(false)
     }
@@ -83,12 +86,12 @@ export default function AccountProfileCard({ user, onUserChange }: AccountProfil
 
   return (
     <section className="pf-settings-card">
-      <h1>账号信息</h1>
-      <p className="pf-muted">管理你的资料与联系方式</p>
+      <h1>{t('settings.tabs.account')}</h1>
+      <p className="pf-muted">{t('settings.accountLead')}</p>
       <div className="pf-settings-avatar-row">
         <UserAvatar user={user} size="xl" />
         <div className="pf-settings-avatar-actions">
-          <p className="pf-muted">支持 JPG / PNG / WebP，不超过 5MB</p>
+          <p className="pf-muted">{t('settings.avatarHint')}</p>
           <div className="pf-settings-actions">
             <button
               type="button"
@@ -96,7 +99,7 @@ export default function AccountProfileCard({ user, onUserChange }: AccountProfil
               disabled={avatarBusy}
               onClick={() => avatarInputRef.current?.click()}
             >
-              {avatarBusy ? '上传中…' : user?.avatar_url ? '更换头像' : '上传头像'}
+              {avatarBusy ? t('settings.uploading') : user?.avatar_url ? t('settings.changeAvatar') : t('settings.uploadAvatar')}
             </button>
           </div>
           {avatarError ? <p className="pf-error">{avatarError}</p> : null}
@@ -111,7 +114,7 @@ export default function AccountProfileCard({ user, onUserChange }: AccountProfil
       </div>
       <div className="pf-settings-fields">
         <label>
-          <span>用户名</span>
+          <span>{t('settings.nickname')}</span>
           <input
             value={nickname}
             maxLength={64}
@@ -123,7 +126,7 @@ export default function AccountProfileCard({ user, onUserChange }: AccountProfil
           />
         </label>
         <label>
-          <span>邮箱</span>
+          <span>{t('settings.email')}</span>
           <input
             type="email"
             value={email}
@@ -135,23 +138,30 @@ export default function AccountProfileCard({ user, onUserChange }: AccountProfil
           />
         </label>
         <label>
-          <span>手机号</span>
+          <span>{t('settings.phone')}</span>
           <input
             type="tel"
             value={phone}
             inputMode="numeric"
             autoComplete="tel"
-            placeholder="未绑定"
+            placeholder={t('settings.phonePlaceholder')}
             onChange={(e) => {
               setPhone(e.target.value)
               setSaveOk(false)
             }}
           />
-          <em className="pf-muted">仅记录联系方式，无需验证码</em>
+          <em className="pf-muted">{t('settings.phoneHint')}</em>
+        </label>
+        <label>
+          <span>{t('settings.language')}</span>
+          <div className="pf-settings-lang">
+            <LanguageSwitch />
+            <em className="pf-muted">{t('settings.languageHint')}</em>
+          </div>
         </label>
       </div>
       {saveError ? <p className="pf-error">{saveError}</p> : null}
-      {saveOk ? <p className="pf-muted">已保存</p> : null}
+      {saveOk ? <p className="pf-muted">{t('common.saved')}</p> : null}
       <div className="pf-settings-actions">
         <button
           type="button"
@@ -159,10 +169,10 @@ export default function AccountProfileCard({ user, onUserChange }: AccountProfil
           disabled={!user || saveBusy || !dirty}
           onClick={() => void handleSave()}
         >
-          {saveBusy ? '保存中…' : '保存资料'}
+          {saveBusy ? t('common.saving') : t('settings.saveProfile')}
         </button>
         <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" disabled>
-          申请注销 <ComingSoon />
+          {t('settings.requestDelete')} <ComingSoon />
         </button>
       </div>
     </section>

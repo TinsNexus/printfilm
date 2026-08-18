@@ -1,5 +1,6 @@
 import { Clapperboard, Image, Images, Play, ShoppingBag, Sparkles, Video } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import type { Messages } from '../i18n'
 
 export type ToolId = 't2i' | 'i2i' | 'i2p' | 't2v' | 'v2v' | 'ecom'
 
@@ -124,11 +125,43 @@ export function getToolDef(id: string | undefined): ToolDef | undefined {
 
 export const PRODUCT_ICONS = { drama: Clapperboard, kepu: Video }
 
-// 芯片字段的默认选中项（取 options 第一项）
+// 芯片字段的默认选中项（取 options 第一项；值为中文枚举，给后端）
 export function defaultToolChips(tool: ToolDef): Record<string, string> {
   const chips: Record<string, string> = {}
   for (const field of tool.fields) {
     if (field.kind === 'chips' && field.options?.[0]) chips[field.key] = field.options[0]
   }
   return chips
+}
+
+// 用当前语言覆盖工具标题、说明与字段文案（options 值保持中文给 API）
+export function localizeToolDef(tool: ToolDef, m: Messages): ToolDef {
+  const pack = m.tools.items[tool.id]
+  return {
+    ...tool,
+    title: pack.title,
+    desc: pack.desc,
+    panelHint: pack.panelHint,
+    cta: pack.cta,
+    fields: tool.fields.map((field) => {
+      const f = pack.fields[field.key as keyof typeof pack.fields] as
+        | { label?: string; placeholder?: string }
+        | undefined
+      return {
+        ...field,
+        label: f?.label || field.label,
+        placeholder: f?.placeholder || field.placeholder,
+      }
+    }),
+  }
+}
+
+export function localizeToolDefs(m: Messages): ToolDef[] {
+  return TOOL_DEFS.map((tool) => localizeToolDef(tool, m))
+}
+
+// 芯片展示文案；未知值原样返回
+export function chipDisplayLabel(value: string, m: Messages): string {
+  const chips = m.tools.chips as Record<string, string>
+  return chips[value] || value
 }

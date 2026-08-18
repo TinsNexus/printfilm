@@ -3,6 +3,8 @@ import type { FormEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import BrandMark from '../components/BrandMark'
+import LanguageSwitch from '../components/layout/LanguageSwitch'
+import { useI18n } from '../i18n'
 
 // 仅允许站内相对路径回跳，防止开放重定向
 function safeNextPath(raw: string | null, fallback = '/') {
@@ -13,6 +15,7 @@ function safeNextPath(raw: string | null, fallback = '/') {
 
 export default function AuthPage() {
   const nav = useNavigate()
+  const { t } = useI18n()
   const [params] = useSearchParams()
   const nextPath = safeNextPath(params.get('next'), '/')
   const [mode, setMode] = useState<'login' | 'register'>('login')
@@ -34,7 +37,7 @@ export default function AuthPage() {
       localStorage.setItem('token', res.access_token)
       nav(nextPath)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '失败')
+      setError(err instanceof Error ? err.message : t('common.fail'))
     } finally {
       setLoading(false)
     }
@@ -43,18 +46,21 @@ export default function AuthPage() {
   return (
     <div className="auth-shell">
       <div className="auth-panel">
-        <BrandMark />
-        <h1>{mode === 'login' ? '回到工作台' : '创建创作者账号'}</h1>
-        <p className="lede">PRINTFILM · AI 漫剧与科普视频创作平台</p>
+        <div className="auth-panel-top">
+          <BrandMark />
+          <LanguageSwitch />
+        </div>
+        <h1>{mode === 'login' ? t('auth.loginTitle') : t('auth.registerTitle')}</h1>
+        <p className="lede">{t('auth.lede')}</p>
         <form onSubmit={onSubmit} className="stack">
           {mode === 'register' && (
             <label>
-              昵称
+              {t('auth.nickname')}
               <input value={nickname} onChange={(e) => setNickname(e.target.value)} required />
             </label>
           )}
           <label>
-            邮箱
+            {t('auth.email')}
             <input
               type="email"
               value={email}
@@ -63,7 +69,7 @@ export default function AuthPage() {
             />
           </label>
           <label>
-            密码
+            {t('auth.password')}
             <input
               type="password"
               value={password}
@@ -74,7 +80,7 @@ export default function AuthPage() {
           </label>
           {error && <p className="error">{error}</p>}
           <button className="btn primary" disabled={loading}>
-            {loading ? '处理中…' : mode === 'login' ? '登录' : '注册'}
+            {loading ? t('auth.processing') : mode === 'login' ? t('auth.login') : t('auth.register')}
           </button>
         </form>
         <button
@@ -82,7 +88,7 @@ export default function AuthPage() {
           className="linkish"
           onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
         >
-          {mode === 'login' ? '没有账号？注册' : '已有账号？登录'}
+          {mode === 'login' ? t('auth.toRegister') : t('auth.toLogin')}
         </button>
       </div>
       <div className="auth-visual" aria-hidden>
@@ -91,3 +97,4 @@ export default function AuthPage() {
     </div>
   )
 }
+

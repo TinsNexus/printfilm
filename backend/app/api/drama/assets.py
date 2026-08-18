@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -15,6 +16,7 @@ from app.models import User
 from app.models_drama import DramaAsset
 from app.schemas_drama import DramaAssetCreate, DramaAssetOut, DramaAssetUpdate, SeedAssetsFromScriptOut
 from app.services.drama.access import get_owned_drama_project
+from app.services.drama.jobs import dispatch_seed_assets_job
 from app.services.drama.seed import seed_assets_from_script
 
 router = APIRouter()
@@ -204,6 +206,33 @@ async def seed_assets(
     user: User = Depends(get_current_user),
 ) -> SeedAssetsFromScriptOut:
     project = await get_owned_drama_project(db, project_id, user, with_script=True)
+    heavy = bool(refresh_prompts or reextract_props)
+
+    if heavy:
+        params = dict(project.params or {}) if isinstance(project.params, dict) else {}
+        if str(params.get("assets_seed_status") or "") == "generating":
+            raise HTTPException(status_code=409, detail="资产抽取进行中，请稍候")
+        params["assets_seed_status"] = "generating"
+        params["assets_seed_generating_at"] = datetime.now(timezone.utc).isoformat()
+        params.pop("assets_seed_error", None)
+        project.params = params
+        await db.commit()
+        dispatch_seed_assets_job(
+            project_id,
+            refresh_prompts=refresh_prompts,
+            reextract_props=reextract_props,
+        )
+        existing = list(
+            (await db.execute(select(DramaAsset).where(DramaAsset.project_id == project.id)))
+            .scalars()
+            .all()
+        )
+        return SeedAssetsFromScriptOut(
+            assets=[DramaAssetOut.model_validate(a) for a in existing],
+            status="generating",
+            message="资产抽取任务已提交，请稍候刷新",
+        )
+
     try:
         result = await seed_assets_from_script(
             db,
@@ -221,4 +250,5 @@ async def seed_assets(
         prompts_refreshed=result.prompts_refreshed,
         props_updated=result.props_updated,
         llm_errors=result.llm_errors,
+        status="done",
     )

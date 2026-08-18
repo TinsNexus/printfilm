@@ -470,8 +470,7 @@ export default function StoryboardPage() {
     if (!project) return
     setBusy(true)
     try {
-      await api.regenImage(project.id, shot.id)
-      setProject(await api.getProject(project.id))
+      setProject(await api.regenImage(project.id, shot.id))
     } catch (err) {
       setError(err instanceof Error ? err.message : '重绘失败')
     } finally {
@@ -483,8 +482,7 @@ export default function StoryboardPage() {
     if (!project) return
     setBusy(true)
     try {
-      await api.regenVideo(project.id, shot.id)
-      setProject(await api.getProject(project.id))
+      setProject(await api.regenVideo(project.id, shot.id))
     } catch (err) {
       setError(err instanceof Error ? err.message : '重生视频失败')
     } finally {
@@ -496,8 +494,7 @@ export default function StoryboardPage() {
     if (!project) return
     setBusy(true)
     try {
-      await api.regenAudio(project.id, shot.id)
-      setProject(await api.getProject(project.id))
+      setProject(await api.regenAudio(project.id, shot.id))
     } catch (err) {
       setError(err instanceof Error ? err.message : '重配音失败')
     } finally {

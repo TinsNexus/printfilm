@@ -1273,3 +1273,102 @@ async def run_asset_video_job(
                 exc,
             )
             return {"ok": False, "error": str(exc)[:500]}
+
+
+# ---------- seed assets from script ----------
+
+
+async def run_seed_assets_job(
+    project_id: int,
+    *,
+    refresh_prompts: bool = False,
+    reextract_props: bool = False,
+) -> dict[str, Any]:
+    """从剧本抽取/刷新资产（含 LLM 提示词刷新）。"""
+    from app.services.drama.seed import seed_assets_from_script
+
+    logger.info(
+        "开始抽取漫剧资产 project_id=%s refresh=%s reextract=%s",
+        project_id,
+        refresh_prompts,
+        reextract_props,
+    )
+    async with AsyncSessionLocal() as db:
+        project = await db.get(
+            DramaProject,
+            project_id,
+            options=[selectinload(DramaProject.script)],
+        )
+        if not project:
+            return {"ok": False, "error": "project_not_found"}
+        params = dict(project.params or {}) if isinstance(project.params, dict) else {}
+        try:
+            result = await seed_assets_from_script(
+                db,
+                project,
+                refresh_prompts=refresh_prompts,
+                reextract_props=reextract_props,
+            )
+            params["assets_seed_status"] = "done"
+            params.pop("assets_seed_error", None)
+            params.pop("assets_seed_generating_at", None)
+            params["assets_seed_created"] = result.created_count
+            params["assets_seed_refreshed"] = result.prompts_refreshed
+            params["assets_seed_props_updated"] = result.props_updated
+            if result.llm_errors:
+                params["assets_seed_llm_errors"] = result.llm_errors[:20]
+            else:
+                params.pop("assets_seed_llm_errors", None)
+            project.params = params
+            await db.commit()
+            return {
+                "ok": True,
+                "created_count": result.created_count,
+                "prompts_refreshed": result.prompts_refreshed,
+                "props_updated": result.props_updated,
+                "llm_errors": result.llm_errors,
+            }
+        except Exception as exc:  # noqa: BLE001
+            params["assets_seed_status"] = "failed"
+            params["assets_seed_error"] = str(exc)[:500]
+            params.pop("assets_seed_generating_at", None)
+            project.params = params
+            await db.commit()
+            logger.exception("抽取漫剧资产失败 project_id=%s", project_id)
+            return {"ok": False, "error": str(exc)[:500]}
+
+
+def dispatch_seed_assets_job(
+    project_id: int,
+    *,
+    refresh_prompts: bool = False,
+    reextract_props: bool = False,
+) -> str:
+    """投递资产抽取任务；refresh/reextract 等重 LLM 路径走 Celery。"""
+    if _use_celery():
+        from app.workers.drama_tasks import drama_seed_assets_task
+
+        result = drama_seed_assets_task.apply_async(
+            args=[project_id, refresh_prompts, reextract_props],
+            queue=DRAMA_QUEUE,
+        )
+        logger.info(
+            "dispatch 抽取资产 → Celery project_id=%s task_id=%s",
+            project_id,
+            result.id,
+        )
+        return str(result.id)
+
+    key = _job_key("seed_assets", project_id)
+    if key in _running and not _running[key].done():
+        logger.info("dispatch 抽取资产 → 进程内已在跑 project_id=%s", project_id)
+        return "in-process"
+    _running[key] = asyncio.create_task(
+        run_seed_assets_job(
+            project_id,
+            refresh_prompts=refresh_prompts,
+            reextract_props=reextract_props,
+        )
+    )
+    logger.info("dispatch 抽取资产 → 进程内新建 project_id=%s", project_id)
+    return "in-process"

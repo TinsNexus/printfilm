@@ -436,17 +436,17 @@ export const api = {
     })
   },
   regenImage(projectId: number, shotId: number) {
-    return request<Shot>(`/api/projects/${projectId}/shots/${shotId}/regen-image`, {
+    return request<Project>(`/api/projects/${projectId}/shots/${shotId}/regen-image`, {
       method: 'POST',
     })
   },
   regenVideo(projectId: number, shotId: number) {
-    return request<Shot>(`/api/projects/${projectId}/shots/${shotId}/regen-video`, {
+    return request<Project>(`/api/projects/${projectId}/shots/${shotId}/regen-video`, {
       method: 'POST',
     })
   },
   regenAudio(projectId: number, shotId: number) {
-    return request<Shot>(`/api/projects/${projectId}/shots/${shotId}/regen-audio`, {
+    return request<Project>(`/api/projects/${projectId}/shots/${shotId}/regen-audio`, {
       method: 'POST',
     })
   },

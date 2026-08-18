@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -12,11 +13,12 @@ from app.deps import get_current_user
 from app.models import ToolRun, User
 from app.schemas_tools import ToolRunListOut, ToolRunOut, ToolRunRecordOut, ToolTaskOut
 from app.services.studio_tools import (
+    enqueue_image_tool,
     get_tool_run,
     list_tool_runs,
     persist_tool_run,
+    poll_image_tool_task,
     poll_video_task,
-    run_image_tool,
     save_upload,
     start_video_tool,
     update_tool_run_task,
@@ -28,7 +30,7 @@ IMAGE_TOOLS = {"t2i", "i2i", "i2p", "ecom"}
 VIDEO_TOOLS = {"t2v", "v2v"}
 
 
-# 提交独立工具生成（生图同步返回；生视频返回 task_id 供轮询）
+# 提交独立工具生成（生图异步 Celery；生视频返回 Seedance task_id 供轮询）
 @router.post("/run", response_model=ToolRunOut)
 async def run_tool(
     tool_id: str = Form(...),
@@ -46,6 +48,15 @@ async def run_tool(
 ) -> ToolRunOut:
     tid = (tool_id or "").strip()
     saved: list[Path] = []
+    tool_params = {
+        "negative": negative,
+        "ratio": ratio,
+        "strength": strength,
+        "mode": mode,
+        "pack": pack,
+        "duration": duration,
+        "motion": motion,
+    }
     try:
         for item in files or []:
             raw = await item.read()
@@ -55,7 +66,7 @@ async def run_tool(
                 raise ValueError("单个文件不能超过 40MB")
             saved.append(save_upload(user.id, raw, item.filename or "upload.bin"))
         if tid in IMAGE_TOOLS:
-            data = await run_image_tool(
+            data = await enqueue_image_tool(
                 db,
                 user,
                 tool_id=tid,
@@ -66,6 +77,7 @@ async def run_tool(
                 mode=mode or None,
                 pack=pack or None,
                 files=saved,
+                params=tool_params,
             )
         elif tid in VIDEO_TOOLS:
             data = await start_video_tool(
@@ -78,24 +90,16 @@ async def run_tool(
                 motion=motion or None,
                 files=saved,
             )
+            await persist_tool_run(
+                db,
+                user_id=user.id,
+                tool_id=tid,
+                prompt=prompt,
+                params=tool_params,
+                data=data,
+            )
         else:
             raise ValueError("未知工具")
-        await persist_tool_run(
-            db,
-            user_id=user.id,
-            tool_id=tid,
-            prompt=prompt,
-            params={
-                "negative": negative,
-                "ratio": ratio,
-                "strength": strength,
-                "mode": mode,
-                "pack": pack,
-                "duration": duration,
-                "motion": motion,
-            },
-            data=data,
-        )
         await db.commit()
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -104,7 +108,7 @@ async def run_tool(
     return ToolRunOut.model_validate(data)
 
 
-# 查询 Seedance 视频任务状态（单次，不阻塞），并回写创作记录
+# 查询工具异步任务（生图 Celery / 生视频 Seedance），并回写创作记录
 @router.get("/tasks/{task_id}", response_model=ToolTaskOut)
 async def get_tool_task(
     task_id: str,
@@ -113,8 +117,17 @@ async def get_tool_task(
 ) -> ToolTaskOut:
     if not task_id.strip():
         raise HTTPException(status_code=400, detail="缺少任务")
-    data = await poll_video_task(user, task_id.strip())
-    await update_tool_run_task(db, user.id, task_id.strip(), data)
+    tid = task_id.strip()
+    row = (
+        await db.execute(
+            select(ToolRun).where(ToolRun.user_id == user.id, ToolRun.task_id == tid).limit(1)
+        )
+    ).scalar_one_or_none()
+    if row and row.kind == "image":
+        data = await poll_image_tool_task(db, user, tid)
+    else:
+        data = await poll_video_task(user, tid)
+    await update_tool_run_task(db, user.id, tid, data)
     await db.commit()
     return ToolTaskOut.model_validate(data)
 

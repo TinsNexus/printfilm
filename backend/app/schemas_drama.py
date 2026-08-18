@@ -68,11 +68,13 @@ class DramaProjectUsageStats(BaseModel):
 class SeedAssetsFromScriptOut(BaseModel):
     """从剧本抽取/刷新资产的结果统计。"""
 
-    assets: list[DramaAssetOut]
+    assets: list[DramaAssetOut] = Field(default_factory=list)
     created_count: int = 0
     prompts_refreshed: int = 0
     props_updated: int = 0
     llm_errors: list[str] = Field(default_factory=list)
+    status: str = "done"
+    message: str | None = None
 
 
 class DramaFragmentOut(BaseModel):

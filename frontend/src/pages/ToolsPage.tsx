@@ -2,28 +2,31 @@ import { Link } from 'react-router-dom'
 import { ArrowRight } from 'lucide-react'
 import AppShell from '../components/layout/AppShell'
 import ComingSoon from '../components/ui/ComingSoon'
-import { PRODUCT_ICONS, TOOL_DEFS } from '../lib/toolsCatalog'
+import { useI18n } from '../i18n'
+import { PRODUCT_ICONS, localizeToolDefs } from '../lib/toolsCatalog'
 
 export default function ToolsPage() {
+  const { t, m } = useI18n()
   const DramaIcon = PRODUCT_ICONS.drama
   const KepuIcon = PRODUCT_ICONS.kepu
+  const tools = localizeToolDefs(m)
 
   return (
     <AppShell active="tools">
       <div className="pf-page-head">
         <div>
-          <h1>AI 创作工具</h1>
-          <p className="pf-muted">进入工具工作台，生成图片与短视频。</p>
+          <h1>{t('tools.title')}</h1>
+          <p className="pf-muted">{t('tools.lead')}</p>
         </div>
       </div>
       <div className="pf-tools-grid pf-tools-grid-lg">
-        {TOOL_DEFS.map((t) => {
-          const Icon = t.icon
+        {tools.map((tool) => {
+          const Icon = tool.icon
           return (
             <Link
-              key={t.id}
-              to={`/tools/${t.id}`}
-              className={`pf-tools-card pf-tools-card-lg${t.soon ? ' is-soon' : ''}`}
+              key={tool.id}
+              to={`/tools/${tool.id}`}
+              className={`pf-tools-card pf-tools-card-lg${tool.soon ? ' is-soon' : ''}`}
             >
               <div className="pf-tools-card-top">
                 <span className="pf-ws-tool-icon" aria-hidden>
@@ -34,10 +37,10 @@ export default function ToolsPage() {
                 </span>
               </div>
               <h3>
-                {t.title}
-                {t.soon ? <ComingSoon /> : null}
+                {tool.title}
+                {tool.soon ? <ComingSoon /> : null}
               </h3>
-              <p>{t.desc}</p>
+              <p>{tool.desc}</p>
             </Link>
           )
         })}
@@ -48,8 +51,8 @@ export default function ToolsPage() {
             <DramaIcon size={26} strokeWidth={1.6} />
           </span>
           <span className="pf-ws-product-body">
-            <strong>去漫剧创作</strong>
-            <span>剧本 · 分集 · 成片</span>
+            <strong>{t('tools.goDrama')}</strong>
+            <span>{t('tools.goDramaHint')}</span>
           </span>
           <span className="pf-ws-product-go" aria-hidden>
             <ArrowRight size={16} strokeWidth={2} />
@@ -60,8 +63,8 @@ export default function ToolsPage() {
             <KepuIcon size={26} strokeWidth={1.6} />
           </span>
           <span className="pf-ws-product-body">
-            <strong>去科普历史</strong>
-            <span>分镜流水线出片</span>
+            <strong>{t('tools.goKepu')}</strong>
+            <span>{t('tools.goKepuHint')}</span>
           </span>
           <span className="pf-ws-product-go" aria-hidden>
             <ArrowRight size={16} strokeWidth={2} />

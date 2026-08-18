@@ -6,22 +6,18 @@ import AppShell from '../components/layout/AppShell'
 import Button from '../components/ui/Button'
 import ComingSoon from '../components/ui/ComingSoon'
 import CreateChoiceModal from '../components/ui/CreateChoiceModal'
+import { useI18n } from '../i18n'
 import { getDramaImageStylePreviewUrl } from '../lib/dramaImageStylePreviews'
-import {
-  HOME_AUDIENCES,
-  HOME_CAPABILITIES,
-  HOME_DRAMA_STEPS,
-  HOME_KEPU_STEPS,
-  HOME_PIPELINE,
-} from '../lib/homeLanding'
-import { PRODUCT_ICONS, TOOL_DEFS } from '../lib/toolsCatalog'
+import { PRODUCT_ICONS, localizeToolDefs } from '../lib/toolsCatalog'
 
 export default function HomePage() {
   const nav = useNavigate()
+  const { t, m } = useI18n()
   const loggedIn = Boolean(localStorage.getItem('token'))
   const [createOpen, setCreateOpen] = useState(false)
   const DramaIcon = PRODUCT_ICONS.drama
   const KepuIcon = PRODUCT_ICONS.kepu
+  const tools = localizeToolDefs(m)
 
   // 未登录去登录；已登录弹出产品选择
   function goCreate() {
@@ -43,20 +39,18 @@ export default function HomePage() {
         <div className="pf-land-hero-copy">
           <p className="pf-land-kicker">PRINTFILM</p>
           <h1>
-            把故事做成
+            {t('home.headlineBefore')}
             <br />
-            <em>能播的片子</em>
+            <em>{t('home.headlineEm')}</em>
           </h1>
-          <p className="pf-land-lede">
-            AI 漫剧从剧本到分集成片，科普视频从分镜到配音合成。一套工作台，两种出片方式。
-          </p>
+          <p className="pf-land-lede">{t('home.lede')}</p>
           <div className="pf-land-cta">
             <Button variant="lime" size="lg" icon onClick={goCreate}>
-              开始创作
+              {t('home.startCreate')}
               <ArrowRight size={16} strokeWidth={2} aria-hidden />
             </Button>
             <Button variant="ghost" size="lg" icon to="/tools">
-              浏览工具
+              {t('home.browseTools')}
               <ArrowRight size={16} strokeWidth={2} aria-hidden />
             </Button>
           </div>
@@ -64,26 +58,26 @@ export default function HomePage() {
         <div className="pf-land-frames" aria-hidden>
           <figure className="pf-land-frame is-drama">
             <img src={getDramaImageStylePreviewUrl('ancient-chinese-mythology')} alt="" />
-            <figcaption>AI 漫剧</figcaption>
+            <figcaption>{t('home.dramaTitle')}</figcaption>
           </figure>
           <figure className="pf-land-frame is-kepu">
             <img src={getDramaImageStylePreviewUrl('neon-cyberpunk-film')} alt="" />
-            <figcaption>科普视频</figcaption>
+            <figcaption>{t('home.kepuTitle')}</figcaption>
           </figure>
         </div>
       </section>
 
-      <section className="pf-land-products" id="products" aria-label="主产品">
+      <section className="pf-land-products" id="products" aria-label={t('home.products')}>
         <button type="button" className="pf-land-product is-drama" onClick={() => goAuthOr('/drama')}>
           <span className="pf-land-product-icon" aria-hidden>
             <DramaIcon size={26} strokeWidth={1.6} />
           </span>
           <span className="pf-land-product-body">
-            <strong>AI 漫剧</strong>
-            <em>给短剧创作者</em>
-            <span>从一句话生成剧本，沉淀角色与场景，再按集分镜成片。</span>
+            <strong>{t('home.dramaTitle')}</strong>
+            <em>{t('home.dramaFor')}</em>
+            <span>{t('home.dramaDesc')}</span>
             <span className="pf-land-chips">
-              {HOME_DRAMA_STEPS.map((label) => (
+              {m.home.dramaSteps.map((label) => (
                 <span key={label}>{label}</span>
               ))}
             </span>
@@ -97,11 +91,11 @@ export default function HomePage() {
             <KepuIcon size={26} strokeWidth={1.6} />
           </span>
           <span className="pf-land-product-body">
-            <strong>科普视频</strong>
-            <em>给知识创作者</em>
-            <span>选定画面风格，写好分镜旁白，沿流水线出讲解短片。</span>
+            <strong>{t('home.kepuTitle')}</strong>
+            <em>{t('home.kepuFor')}</em>
+            <span>{t('home.kepuDesc')}</span>
             <span className="pf-land-chips">
-              {HOME_KEPU_STEPS.map((label) => (
+              {m.home.kepuSteps.map((label) => (
                 <span key={label}>{label}</span>
               ))}
             </span>
@@ -114,11 +108,11 @@ export default function HomePage() {
 
       <section className="pf-land-pipeline" aria-labelledby="pf-land-pipeline-title">
         <header className="pf-land-section-head">
-          <p className="pf-land-kicker">How it works</p>
-          <h2 id="pf-land-pipeline-title">三步出片</h2>
+          <p className="pf-land-kicker">{t('home.howKicker')}</p>
+          <h2 id="pf-land-pipeline-title">{t('home.howTitle')}</h2>
         </header>
         <ol className="pf-land-pipeline-list">
-          {HOME_PIPELINE.map((item) => (
+          {m.home.pipeline.map((item) => (
             <li key={item.step}>
               <span className="pf-land-step-no">{item.step}</span>
               <strong>{item.title}</strong>
@@ -130,11 +124,11 @@ export default function HomePage() {
 
       <section className="pf-land-caps" aria-labelledby="pf-land-caps-title">
         <header className="pf-land-section-head">
-          <p className="pf-land-kicker">Capabilities</p>
-          <h2 id="pf-land-caps-title">工作台里真正能用的</h2>
+          <p className="pf-land-kicker">{t('home.capsKicker')}</p>
+          <h2 id="pf-land-caps-title">{t('home.capsTitle')}</h2>
         </header>
         <div className="pf-land-cap-grid">
-          {HOME_CAPABILITIES.map((item) => (
+          {m.home.capabilities.map((item) => (
             <article key={item.title}>
               <strong>{item.title}</strong>
               <p>{item.desc}</p>
@@ -146,28 +140,28 @@ export default function HomePage() {
       <section className="pf-land-tools" id="tools">
         <header className="pf-land-section-head is-row">
           <div>
-            <p className="pf-land-kicker">Tools</p>
-            <h2>单点创作工具</h2>
+            <p className="pf-land-kicker">{t('home.toolsKicker')}</p>
+            <h2>{t('home.toolsTitle')}</h2>
           </div>
           <Link to="/tools" className="pf-link">
-            全部工具 →
+            {t('home.allTools')}
           </Link>
         </header>
         <div className="pf-land-tool-grid">
-          {TOOL_DEFS.map((t) => {
-            const Icon = t.icon
+          {tools.map((tool) => {
+            const Icon = tool.icon
             return (
               <Link
-                key={t.id}
-                to={`/tools/${t.id}`}
-                className={`pf-land-tool-card${t.soon ? ' is-soon' : ''}`}
+                key={tool.id}
+                to={`/tools/${tool.id}`}
+                className={`pf-land-tool-card${tool.soon ? ' is-soon' : ''}`}
               >
                 <span className="pf-land-tool-icon" aria-hidden>
                   <Icon size={20} strokeWidth={1.7} />
                 </span>
-                <strong>{t.title}</strong>
-                <span>{t.desc}</span>
-                {t.soon ? <ComingSoon /> : null}
+                <strong>{tool.title}</strong>
+                <span>{tool.desc}</span>
+                {tool.soon ? <ComingSoon /> : null}
               </Link>
             )
           })}
@@ -176,11 +170,11 @@ export default function HomePage() {
 
       <section className="pf-land-who" aria-labelledby="pf-land-who-title">
         <header className="pf-land-section-head">
-          <p className="pf-land-kicker">For</p>
-          <h2 id="pf-land-who-title">适合谁用</h2>
+          <p className="pf-land-kicker">{t('home.whoKicker')}</p>
+          <h2 id="pf-land-who-title">{t('home.whoTitle')}</h2>
         </header>
         <div className="pf-land-who-grid">
-          {HOME_AUDIENCES.map((item) => (
+          {m.home.audiences.map((item) => (
             <article key={item.title}>
               <strong>{item.title}</strong>
               <p>{item.desc}</p>
@@ -191,16 +185,16 @@ export default function HomePage() {
 
       <section className="pf-land-close">
         <div>
-          <h2>从一条创意开始</h2>
-          <p>登录后选择漫剧或科普，进入对应工作台。</p>
+          <h2>{t('home.closeTitle')}</h2>
+          <p>{t('home.closeLead')}</p>
         </div>
         <div className="pf-land-cta">
           <Button variant="lime" size="lg" icon onClick={goCreate}>
-            开始创作
+            {t('home.startCreate')}
             <ArrowRight size={16} strokeWidth={2} aria-hidden />
           </Button>
           <Button variant="ghost" size="lg" to="/pricing">
-            查看定价
+            {t('home.viewPricing')}
           </Button>
         </div>
       </section>
@@ -208,17 +202,17 @@ export default function HomePage() {
       <footer className="pf-land-foot">
         <div className="pf-land-foot-brand">
           <strong>PRINTFILM</strong>
-          <p>AI 漫剧与科普视频创作平台</p>
+          <p>{t('home.footBrand')}</p>
         </div>
-        <nav className="pf-land-foot-nav" aria-label="页脚导航">
-          <Link to="/drama">漫剧</Link>
-          <Link to="/history">科普</Link>
-          <Link to="/tools">工具</Link>
-          <Link to="/pricing">定价</Link>
-          <Link to="/help">帮助</Link>
-          <Link to="/terms">用户协议</Link>
-          <Link to="/privacy">隐私政策</Link>
-          <Link to="/contact">联系我们</Link>
+        <nav className="pf-land-foot-nav" aria-label={t('home.footNav')}>
+          <Link to="/drama">{t('nav.drama')}</Link>
+          <Link to="/history">{t('nav.kepu')}</Link>
+          <Link to="/tools">{t('nav.tools')}</Link>
+          <Link to="/pricing">{t('nav.pricing')}</Link>
+          <Link to="/help">{t('nav.help')}</Link>
+          <Link to="/terms">{t('footer.terms')}</Link>
+          <Link to="/privacy">{t('footer.privacy')}</Link>
+          <Link to="/contact">{t('footer.contact')}</Link>
         </nav>
         <p className="pf-land-copy">© {new Date().getFullYear()} PRINTFILM. All rights reserved.</p>
       </footer>

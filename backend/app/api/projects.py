@@ -87,6 +87,20 @@ async def _get_owned_project(db: AsyncSession, project_id: int, user: User) -> P
     return project
 
 
+def _ensure_side_task_allowed(project: Project) -> None:
+    """重绘/重生/合成侧任务：流水线进行中时拒绝，避免与 Celery pipeline 冲突。"""
+    running = {
+        ProjectStatus.SCRIPTING,
+        ProjectStatus.IMAGING,
+        ProjectStatus.VIDEOING,
+        ProjectStatus.AUDIOING,
+        ProjectStatus.COMPOSING,
+        ProjectStatus.AUDITING,
+    }
+    if project.status in running:
+        raise HTTPException(status_code=409, detail="生成进行中，请稍后")
+
+
 @router.post("/projects", response_model=ProjectOut)
 async def create_project(
     body: ProjectCreate,
@@ -672,67 +686,63 @@ async def update_shot(
     return shot
 
 
-@router.post("/projects/{project_id}/shots/{shot_id}/regen-image", response_model=ShotOut)
+@router.post("/projects/{project_id}/shots/{shot_id}/regen-image", response_model=ProjectOut)
 async def regen_image(
     project_id: int,
     shot_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> Shot:
-    await _get_owned_project(db, project_id, user)
-    try:
-        await pipeline.regen_shot_image(project_id, shot_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
-        msg = str(exc)
-        if "PolicyViolation" in msg or "SensitiveContent" in msg:
-            raise HTTPException(
-                status_code=400,
-                detail="画面提示词触发内容安全策略，请编辑分镜去掉品牌/人名后重试",
-            ) from exc
-        raise HTTPException(status_code=502, detail=msg[:500]) from exc
+) -> Project:
     project = await _get_owned_project(db, project_id, user)
-    shot = next(s for s in project.shots if s.id == shot_id)
-    return shot
+    _ensure_side_task_allowed(project)
+    shot = next((s for s in project.shots if s.id == shot_id), None)
+    if not shot:
+        raise HTTPException(status_code=404, detail="分镜不存在")
+    project.status = ProjectStatus.IMAGING
+    project.error_msg = None
+    await db.commit()
+    pipeline.dispatch_regen_image(project_id, shot_id)
+    return await _get_owned_project(db, project_id, user)
 
 
-@router.post("/projects/{project_id}/shots/{shot_id}/regen-video", response_model=ShotOut)
+@router.post("/projects/{project_id}/shots/{shot_id}/regen-video", response_model=ProjectOut)
 async def regen_video(
     project_id: int,
     shot_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> Shot:
-    await _get_owned_project(db, project_id, user)
-    try:
-        await pipeline.regen_shot_video(project_id, shot_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=str(exc)[:500]) from exc
+) -> Project:
     project = await _get_owned_project(db, project_id, user)
-    shot = next(s for s in project.shots if s.id == shot_id)
-    return shot
+    _ensure_side_task_allowed(project)
+    if (project.pipeline_mode or "full") == "image_text":
+        raise HTTPException(status_code=400, detail="图文模式无需生成 AI 视频，请直接重新合成成片")
+    shot = next((s for s in project.shots if s.id == shot_id), None)
+    if not shot or not (shot.image_url or shot.image_ark_url):
+        raise HTTPException(status_code=400, detail="请先生成该镜画面")
+    project.status = ProjectStatus.VIDEOING
+    project.error_msg = None
+    await db.commit()
+    pipeline.dispatch_regen_video(project_id, shot_id)
+    return await _get_owned_project(db, project_id, user)
 
 
-@router.post("/projects/{project_id}/shots/{shot_id}/regen-audio", response_model=ShotOut)
+@router.post("/projects/{project_id}/shots/{shot_id}/regen-audio", response_model=ProjectOut)
 async def regen_audio(
     project_id: int,
     shot_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> Shot:
-    await _get_owned_project(db, project_id, user)
-    try:
-        await pipeline.regen_shot_audio(project_id, shot_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=str(exc)[:500]) from exc
+) -> Project:
     project = await _get_owned_project(db, project_id, user)
-    shot = next(s for s in project.shots if s.id == shot_id)
-    return shot
+    _ensure_side_task_allowed(project)
+    shot = next((s for s in project.shots if s.id == shot_id), None)
+    if not shot:
+        raise HTTPException(status_code=404, detail="分镜不存在")
+    project.status = ProjectStatus.AUDIOING
+    project.error_msg = None
+    await db.commit()
+    pipeline.dispatch_regen_audio(project_id, shot_id)
+    return await _get_owned_project(db, project_id, user)
 
 
 @router.post("/projects/{project_id}/regen-audio", response_model=ProjectOut)
@@ -759,12 +769,7 @@ async def regen_all_audio(
     project.error_msg = None
     project.final_video_url = None
     await db.commit()
-    try:
-        await pipeline.regen_project_audio_and_compose(project_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=str(exc)[:500]) from exc
+    pipeline.dispatch_regen_project_audio_and_compose(project_id)
     return await _get_owned_project(db, project_id, user)
 
 
@@ -793,12 +798,7 @@ async def compose_only(
     project.progress = 90
     project.error_msg = None
     await db.commit()
-    try:
-        await pipeline.compose_only(project_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=str(exc)[:500]) from exc
+    pipeline.dispatch_compose_only(project_id)
     return await _get_owned_project(db, project_id, user)
 
 

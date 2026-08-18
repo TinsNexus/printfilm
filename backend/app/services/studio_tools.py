@@ -208,6 +208,177 @@ async def run_image_tool(
     return {"kind": "image", "urls": [url], "status": "succeeded"}
 
 
+def _redis_ok() -> bool:
+    try:
+        import redis
+
+        r = redis.Redis.from_url(
+            get_settings().redis_url,
+            decode_responses=True,
+            socket_connect_timeout=2,
+            socket_timeout=2,
+        )
+        return bool(r.ping())
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _dispatch_tool_image(run_id: int) -> str:
+    """投递工具生图 Celery 任务；不可用时在进程内 asyncio 执行。"""
+    settings = get_settings()
+    if settings.use_celery and _redis_ok():
+        from app.workers.tasks import tool_image_task
+        from app.workers.queues import PIPELINE_QUEUE
+
+        result = tool_image_task.apply_async(args=[run_id], queue=PIPELINE_QUEUE)
+        return str(result.id)
+    import asyncio
+
+    asyncio.create_task(execute_image_tool_run(run_id))
+    return f"local-{run_id}"
+
+
+# 提交生图任务：立即返回 task_id，实际生成在 Celery / 后台执行
+async def enqueue_image_tool(
+    db: AsyncSession,
+    user: User,
+    *,
+    tool_id: str,
+    prompt: str,
+    negative: str,
+    ratio: str | None,
+    strength: str | None,
+    mode: str | None,
+    pack: str | None,
+    files: list[Path],
+    params: dict,
+) -> dict:
+    row = ToolRun(
+        user_id=user.id,
+        tool_id=tool_id,
+        kind="image",
+        status="queued",
+        prompt=(prompt or "").strip()[:2000],
+        params={
+            **(params or {}),
+            "file_paths": [str(p) for p in files],
+        },
+    )
+    db.add(row)
+    await db.flush()
+    task_id = _dispatch_tool_image(row.id)
+    row.task_id = task_id
+    await db.flush()
+    return {
+        "kind": "image",
+        "urls": [],
+        "task_id": task_id,
+        "status": "queued",
+        "message": "生图任务已提交，请稍候",
+        "run_id": row.id,
+    }
+
+
+# Worker / 进程内：执行已入队的生图任务并回写 tool_runs
+async def execute_image_tool_run(run_id: int) -> dict:
+    from app.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        row = await db.get(ToolRun, run_id)
+        if not row:
+            return {"ok": False, "error": "run_not_found"}
+        if row.status == "succeeded" and row.urls:
+            return {"ok": True, "run_id": run_id}
+
+        user = await db.get(User, row.user_id)
+        if not user:
+            row.status = "failed"
+            row.error = "用户不存在"
+            await db.commit()
+            return {"ok": False, "error": row.error}
+
+        stored = row.params if isinstance(row.params, dict) else {}
+        file_paths = [Path(p) for p in stored.get("file_paths") or [] if p]
+        row.status = "running"
+        await db.commit()
+
+        try:
+            data = await run_image_tool(
+                db,
+                user,
+                tool_id=row.tool_id,
+                prompt=row.prompt or "",
+                negative=str(stored.get("negative") or ""),
+                ratio=stored.get("ratio") or None,
+                strength=stored.get("strength") or None,
+                mode=stored.get("mode") or None,
+                pack=stored.get("pack") or None,
+                files=file_paths,
+            )
+            urls = ensure_public_urls(list(data.get("urls") or []))
+            row.kind = str(data.get("kind") or "image")
+            row.status = str(data.get("status") or "succeeded")
+            row.urls = urls
+            row.preview_url = urls[0] if urls else row.preview_url
+            row.error = None
+            await db.commit()
+            return {"ok": True, "run_id": run_id, "urls": urls}
+        except Exception as exc:  # noqa: BLE001
+            row.status = "failed"
+            row.error = str(exc)[:512]
+            await db.commit()
+            logger.exception("execute_image_tool_run failed run_id=%s", run_id)
+            return {"ok": False, "run_id": run_id, "error": row.error}
+
+
+# 轮询生图 Celery 任务（或本地 fallback）状态
+async def poll_image_tool_task(db: AsyncSession, user: User, task_id: str) -> dict:
+    stmt = select(ToolRun).where(ToolRun.user_id == user.id, ToolRun.task_id == task_id)
+    row = (await db.execute(stmt)).scalar_one_or_none()
+    if not row:
+        return {"status": "failed", "kind": "image", "urls": [], "error": "任务不存在"}
+
+    if row.status == "succeeded":
+        row = await hydrate_tool_run_urls(db, row)
+        return {"status": "succeeded", "kind": "image", "urls": list(row.urls or [])}
+    if row.status == "failed":
+        return {
+            "status": "failed",
+            "kind": "image",
+            "urls": [],
+            "error": row.error or "生成失败",
+        }
+
+    if task_id.startswith("local-"):
+        return {"status": "running", "kind": "image", "urls": []}
+
+    try:
+        from celery.result import AsyncResult
+
+        from app.workers.celery_app import celery_app
+
+        async_result = AsyncResult(task_id, app=celery_app)
+        state = async_result.state or "PENDING"
+        if state in {"PENDING", "STARTED", "RETRY"}:
+            return {"status": "running", "kind": "image", "urls": []}
+        if state == "SUCCESS":
+            row = await hydrate_tool_run_urls(db, row)
+            if row.status == "succeeded" and row.urls:
+                return {"status": "succeeded", "kind": "image", "urls": list(row.urls or [])}
+            return {"status": "running", "kind": "image", "urls": []}
+        if state == "FAILURE":
+            err = str(async_result.result or row.error or "生成失败")[:512]
+            if row.status != "failed":
+                row.status = "failed"
+                row.error = err
+                await db.flush()
+            return {"status": "failed", "kind": "image", "urls": [], "error": err}
+    except Exception:  # noqa: BLE001
+        logger.exception("poll_image_tool_task celery state failed task=%s", task_id)
+
+    return {"status": "running", "kind": "image", "urls": []}
+
+
 # 文生视频 / 视频生视频：先出静帧再提交 Seedance，返回 task_id
 async def start_video_tool(
     db: AsyncSession,

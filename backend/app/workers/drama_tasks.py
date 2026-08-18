@@ -169,3 +169,30 @@ def drama_asset_video_task(
         )
     )
     return result
+
+
+@celery_app.task(name="drama.seed_assets", bind=True, max_retries=1)
+def drama_seed_assets_task(
+    self,
+    project_id: int,
+    refresh_prompts: bool = False,
+    reextract_props: bool = False,
+) -> dict:
+    # Celery：从剧本抽取/刷新漫剧资产
+    from app.services.drama.jobs import run_seed_assets_job
+
+    logger.info(
+        "[Celery] 领取抽取资产任务 project_id=%s refresh=%s task_id=%s",
+        project_id,
+        refresh_prompts,
+        self.request.id,
+    )
+    result = _run(
+        run_seed_assets_job(
+            project_id,
+            refresh_prompts=refresh_prompts,
+            reextract_props=reextract_props,
+        )
+    )
+    logger.info("[Celery] 抽取资产任务结束 project_id=%s result=%s", project_id, result)
+    return result

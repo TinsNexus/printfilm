@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from app.models import ProjectStatus
 from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,37 @@ def _run(coro):
             await dispose_engine()
 
     return asyncio.run(_wrapped())
+
+
+async def _mark_project_failed(project_id: int, message: str) -> None:
+    """侧任务失败时写回项目状态，供前端轮询感知。"""
+    from app.database import AsyncSessionLocal
+    from app.models import Project
+
+    async with AsyncSessionLocal() as db:
+        project = await db.get(Project, project_id)
+        if not project:
+            return
+        if project.status in {ProjectStatus.DONE, ProjectStatus.CANCELLED}:
+            return
+        project.status = ProjectStatus.FAILED
+        project.error_msg = (message or "任务失败")[:500]
+        await db.commit()
+
+
+def _run_side_task(coro_factory, *, project_id: int) -> dict:
+    """执行单项目侧任务并在异常时标记 FAILED。"""
+    try:
+        _run(coro_factory())
+        return {"ok": True, "project_id": project_id}
+    except Exception as exc:  # noqa: BLE001
+        msg = str(exc)
+        logger.exception("side task failed project=%s: %s", project_id, msg[:400])
+        try:
+            _run(_mark_project_failed(project_id, msg))
+        except Exception:  # noqa: BLE001
+            logger.exception("mark project failed project=%s", project_id)
+        return {"ok": False, "project_id": project_id, "error": msg[:500]}
 
 
 @celery_app.task(
@@ -115,18 +147,82 @@ def run_pipeline_task(self, project_id: int) -> dict:
 
 @celery_app.task(name="app.workers.tasks.regen_image_task")
 def regen_image_task(project_id: int, shot_id: int) -> dict:
+    from app.config import reload_settings
+    from app.services.ark import reset_ark
     from app.services.pipeline import regen_shot_image
 
-    _run(regen_shot_image(project_id, shot_id))
-    return {"ok": True}
+    reload_settings()
+    reset_ark()
+    return _run_side_task(
+        lambda: regen_shot_image(project_id, shot_id),
+        project_id=project_id,
+    )
 
 
 @celery_app.task(name="app.workers.tasks.regen_video_task")
 def regen_video_task(project_id: int, shot_id: int) -> dict:
+    from app.config import reload_settings
+    from app.services.ark import reset_ark
     from app.services.pipeline import regen_shot_video
 
-    _run(regen_shot_video(project_id, shot_id))
-    return {"ok": True}
+    reload_settings()
+    reset_ark()
+    return _run_side_task(
+        lambda: regen_shot_video(project_id, shot_id),
+        project_id=project_id,
+    )
+
+
+@celery_app.task(name="app.workers.tasks.regen_audio_task")
+def regen_audio_task(project_id: int, shot_id: int) -> dict:
+    from app.config import reload_settings
+    from app.services.pipeline import regen_shot_audio
+
+    reload_settings()
+    return _run_side_task(
+        lambda: regen_shot_audio(project_id, shot_id),
+        project_id=project_id,
+    )
+
+
+@celery_app.task(name="app.workers.tasks.regen_audio_compose_task")
+def regen_audio_compose_task(project_id: int) -> dict:
+    from app.config import reload_settings
+    from app.services.pipeline import regen_project_audio_and_compose
+
+    reload_settings()
+    return _run_side_task(
+        lambda: regen_project_audio_and_compose(project_id),
+        project_id=project_id,
+    )
+
+
+@celery_app.task(name="app.workers.tasks.compose_only_task")
+def compose_only_task(project_id: int) -> dict:
+    from app.config import reload_settings
+    from app.services.pipeline import compose_only
+
+    reload_settings()
+    return _run_side_task(
+        lambda: compose_only(project_id),
+        project_id=project_id,
+    )
+
+
+@celery_app.task(name="app.workers.tasks.tool_image_task", bind=True, max_retries=0)
+def tool_image_task(self, run_id: int) -> dict:
+    """独立工具生图：在 worker 中跑 Seedream + OSS。"""
+    from app.config import reload_settings
+    from app.services.ark import reset_ark
+    from app.services.studio_tools import execute_image_tool_run
+
+    reload_settings()
+    reset_ark()
+    try:
+        return _run(execute_image_tool_run(run_id))
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("tool image task failed run_id=%s", run_id)
+        return {"ok": False, "run_id": run_id, "error": str(exc)[:500]}
 
 
 @celery_app.task(
