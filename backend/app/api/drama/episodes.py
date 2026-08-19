@@ -27,7 +27,10 @@ from app.services.drama.access import (
     load_episode_fragments,
     match_fragments_for_generate,
 )
-from app.services.drama.generation import fragment_generation_status
+from app.services.drama.generation import (
+    fragment_generation_status,
+    project_link_last_frame_enabled,
+)
 from app.services.drama.jobs import (
     cancel_all_episode_video_jobs,
     cancel_episode_video_jobs,
@@ -244,7 +247,7 @@ async def generate_episode(
 ) -> dict:
     # 入队 Celery / 进程内任务，前端用 generate_status 轮询
     ep = await get_owned_episode(db, episode_id, user)
-    await get_owned_drama_project(db, ep.project_id, user)
+    project = await get_owned_drama_project(db, ep.project_id, user)
     all_frags = await load_episode_fragments(db, episode_id)
     frags = match_fragments_for_generate(all_frags, body.fragment_ids)
     if not frags:
@@ -259,26 +262,33 @@ async def generate_episode(
             detail="没有可生成的分镜（保存后分镜已更新，请再点一次生成）",
         )
 
-    # 已有分镜在排队/生成时，仅禁止重复提交同一分镜
-    busy_same = [
-        f.id
+    # 已在排队/生成的分镜跳过；其余按镜序入队（衔接时后一镜等上一镜尾帧）
+    idle_frags = [
+        f
         for f in frags
-        if fragment_generation_status(f).get("status") in {"queued", "running"}
+        if fragment_generation_status(f).get("status") not in {"queued", "running"}
     ]
-    if busy_same:
+    idle_frags.sort(key=lambda f: int(f.sort_order or 0))
+    if not idle_frags:
         raise HTTPException(
             status_code=409,
             detail="所选分镜正在生成，请等待完成后再试",
         )
 
-    frag_ids = [f.id for f in frags]
-    for f in frags:
+    sequential = project_link_last_frame_enabled(project)
+    frag_ids = [f.id for f in idle_frags]
+    for f in idle_frags:
         params = dict(f.params or {})
         params["generation"] = {"status": "queued"}
         f.params = params
     await db.commit()
 
-    task_id = dispatch_episode_generate_job(episode_id, user.id, frag_ids)
+    task_id = dispatch_episode_generate_job(
+        episode_id,
+        user.id,
+        frag_ids,
+        sequential=sequential,
+    )
     logger.info(
         "已入队分集视频 episode_id=%s project_id=%s fragments=%s task_id=%s",
         episode_id,

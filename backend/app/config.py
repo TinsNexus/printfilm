@@ -15,6 +15,15 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite+aiosqlite:///./ai_movie.db"
     database_url_sync: str = "sqlite:///./ai_movie.db"
+    # Postgres 连接池（API / Celery 分角色，避免 max_connections 打满）
+    # PRINTFILM_DB_ROLE=api|celery 可覆盖自动探测；生产建议 API workers=1
+    db_pool_role: str = ""
+    db_pool_size: int = 5
+    db_max_overflow: int = 5
+    db_pool_size_celery: int = 2
+    db_max_overflow_celery: int = 3
+    db_pool_recycle_sec: int = 1800
+    db_pool_timeout_sec: int = 30
     redis_url: str = "redis://127.0.0.1:6379/0"
 
     ark_api_key: str = ""

@@ -115,8 +115,8 @@ function EpisodeEditInner() {
   const selectedIsGenerating = Boolean(selected?.id && generatingIds.has(selected.id))
   // selectedGenerateLocked 仅锁当前镜的「生成」按钮
   const selectedGenerateLocked = busy || selectedIsGenerating
-  // generateAllLocked 全部生成：有任务进行中时禁止
-  const generateAllLocked = busy || anyFragmentGenerating
+  // generateAllLocked 仅提交入队时锁定，生成过程不阻塞编辑
+  const generateAllLocked = busy
   // planFragmentsLocked AI 重新分镜与视频生成互斥
   const planFragmentsLocked = busy || anyFragmentGenerating
   const selectedRefIds = useMemo(
@@ -498,7 +498,7 @@ function EpisodeEditInner() {
       message: formatDramaGateMessage(
         [],
         warnings,
-        `将保存当前编辑并排队生成「${fragLabel}」的视频，通常需要数分钟。是否继续？`,
+        `将保存并排队生成「${fragLabel}」。入队后可继续编辑；若开启镜间衔接，本镜会使用上一镜尾帧。`,
       ),
       confirmText: warnings.length > 0 ? '仍要生成' : '开始生成',
     })
@@ -539,7 +539,7 @@ function EpisodeEditInner() {
       return
     }
     if (generateAllLocked) {
-      setError('已有分镜正在生成，请等待完成后再试')
+      setError('正在提交，请稍候')
       return
     }
 
@@ -567,7 +567,7 @@ function EpisodeEditInner() {
       message: formatDramaGateMessage(
         [],
         allWarnings.slice(0, 8).map((message) => ({ level: 'warn' as const, message })),
-        `将保存当前编辑并排队生成本集全部 ${fragments.length} 条分镜视频，耗时较长且会覆盖已有视频。是否继续？`,
+        `将按镜序排队生成（已在生成中的会跳过）。入队后可继续编辑；开启镜间衔接时，后一镜会等上一镜尾帧写好再开始。`,
       ),
       confirmText: allWarnings.length > 0 ? '仍要全部生成' : '全部生成',
       tone: 'danger',
@@ -775,7 +775,7 @@ function EpisodeEditInner() {
             disabled={generateAllLocked || fragments.length === 0}
             onClick={() => void generateAll()}
           >
-            {generateAllLocked ? '处理中…' : '全部生成'}
+            {busy ? '入队中…' : '全部生成'}
           </button>
         </div>
       </header>

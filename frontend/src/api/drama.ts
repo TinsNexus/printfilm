@@ -217,7 +217,16 @@ export const dramaApi = {
     request<{ ok: boolean }>(`/api/drama/projects/${id}`, { method: 'DELETE' }),
 
   getScript: (projectId: number) => request<DramaScript>(`/api/drama/scripts/${projectId}`),
-  updateScript: (projectId: number, body: { image_style_id?: string; [key: string]: unknown }) =>
+  updateScript: (
+    projectId: number,
+    body: {
+      image_style_id?: string
+      summary?: Record<string, unknown>
+      episode_content?: unknown
+      source?: string
+      name?: string
+    },
+  ) =>
     request<DramaScript>(`/api/drama/scripts/${projectId}`, {
       method: 'PATCH',
       body: JSON.stringify(body),

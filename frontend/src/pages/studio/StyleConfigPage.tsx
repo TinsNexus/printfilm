@@ -149,9 +149,6 @@ export default function StyleConfigPage() {
       api
         .updateProject(project.id, {
           template_id: t.id,
-          style_prompt: d.style_prompt,
-          character_prompt: d.character_prompt || characterPrompt,
-          extra_prompt: d.extra_prompt,
           voice_id: d.voice_id,
         })
         .then(setProject)
@@ -216,10 +213,22 @@ export default function StyleConfigPage() {
             : charPreset === 'sil'
               ? '角色以剪影呈现。'
               : ''
+      const d = currentTpl ? defaultsFromTemplate(currentTpl) : null
+      /*
+       * styleOut 风格提示词；与模板相同则留空，生成时读后台
+       * extraOut 额外提示词
+       * charText 角色描述原文；与模板相同则不写入覆盖
+       */
+      const styleOut = stylePrompt.trim()
+      const extraOut = extraPrompt.trim()
+      const charText = characterPrompt.trim()
+      const sameStyle = Boolean(d) && styleOut === d!.style_prompt
+      const sameChar = Boolean(d) && charText === d!.character_prompt
+      const sameExtra = Boolean(d) && extraOut === d!.extra_prompt
       await api.updateProject(project.id, {
-        style_prompt: stylePrompt,
-        character_prompt: [characterPrompt, charNote].filter(Boolean).join('\n'),
-        extra_prompt: extraPrompt,
+        style_prompt: sameStyle ? '' : styleOut,
+        character_prompt: sameChar ? '' : [charText, charNote].filter(Boolean).join('\n'),
+        extra_prompt: sameExtra ? '' : extraOut,
         voice_id: voiceId,
         pipeline_mode: pipelineMode,
         output_ratio: ratio,

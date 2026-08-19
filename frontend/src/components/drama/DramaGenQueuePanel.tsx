@@ -4,6 +4,7 @@ import { Clapperboard, ImageIcon, Layers, Octagon, Trash2, X } from 'lucide-reac
 import { dramaApi } from '../../api/drama'
 import {
   clearFinishedDramaGenJobs,
+  ensureEpisodeVideoStatusPoll,
   markVideoJobsCancelled,
   subscribeDramaGenQueueOpen,
   useDramaGenQueue,
@@ -78,6 +79,13 @@ export function DramaGenQueuePanel() {
       setOpen(true)
     })
   }, [])
+
+  // 有进行中的分镜视频时后台轮询，离开编辑页也不中断
+  useEffect(() => {
+    if (active.some((job) => job.kind === 'video' && job.subtype === '分镜视频')) {
+      ensureEpisodeVideoStatusPoll()
+    }
+  }, [active])
 
   const toggleOpen = useCallback(() => {
     setOpen((prev) => !prev)

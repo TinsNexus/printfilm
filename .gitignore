@@ -34,6 +34,7 @@ venv/
 !frontend/.env.production
 deploy/.env.prod
 deploy/scripts/deploy_kepu.py
+deploy/scripts/deploy_kepu_8136.py
 frontend/.env.local
 frontend/.env.*.local
 

@@ -40,6 +40,22 @@ logger = logging.getLogger(__name__)
 # PROMPT_REFRESH_CONCURRENCY 并发生图提示词 LLM 数
 PROMPT_REFRESH_CONCURRENCY = 3
 
+# 资产库类型（不含 voice 等）
+LIBRARY_ASSET_TYPES = frozenset({"character", "scene", "prop", "material", "none"})
+
+
+def _normalize_asset_name(name: str) -> str:
+    """统一资产名空白，避免「张三」与「张三 」重复入库。"""
+    return re.sub(r"\s+", " ", (name or "").strip())
+
+
+def _asset_dedupe_key(asset_type: str, name: str) -> tuple[str, str]:
+    """(类型, 规范化名称) 作为去重键；none 与 material 视为同类。"""
+    kind = (asset_type or "").lower()
+    if kind == "none":
+        kind = "material"
+    return (kind, _normalize_asset_name(name))
+
 
 @dataclass
 class SeedAssetsResult:
@@ -149,10 +165,17 @@ async def seed_assets_from_script(
         .scalars()
         .all()
     )
-    existing_names = {(a.name or "").strip() for a in existing if a.type in {"character", "scene"}}
+    existing_by_key: dict[tuple[str, str], DramaAsset] = {}
+    for asset in existing:
+        name = _normalize_asset_name(asset.name or "")
+        if not name:
+            continue
+        key = _asset_dedupe_key(asset.type or "", name)
+        existing_by_key.setdefault(key, asset)
+
+    project_params = dict(project.params or {}) if isinstance(project.params, dict) else {}
     has_prop = any((a.type or "") == "prop" for a in existing)
     has_material = any((a.type or "") in {"material", "none"} for a in existing)
-    project_params = dict(project.params or {}) if isinstance(project.params, dict) else {}
     props_seeded = bool(project_params.get("props_materials_seeded"))
     if reextract_props:
         props_seeded = False
@@ -169,11 +192,6 @@ async def seed_assets_from_script(
         reextract_props,
         len(existing),
     )
-    existing_by_key = {
-        (a.type or "", (a.name or "").strip()): a
-        for a in existing
-        if (a.name or "").strip()
-    }
 
     # refresh：先把摘要人物/场景字段同步到已有资产
     if refresh_prompts:
@@ -181,7 +199,7 @@ async def seed_assets_from_script(
             if not isinstance(ch, dict):
                 continue
             name = str(ch.get("name") or "").strip()
-            asset = existing_by_key.get(("character", name))
+            asset = existing_by_key.get(_asset_dedupe_key("character", name))
             if asset:
                 asset.params = _merge_preserved_asset_params(
                     dict(asset.params or {}),
@@ -219,7 +237,7 @@ async def seed_assets_from_script(
 
     if refresh_prompts:
         for scene in scene_names:
-            asset = existing_by_key.get(("scene", scene))
+            asset = existing_by_key.get(_asset_dedupe_key("scene", scene))
             if asset:
                 asset.params = _merge_preserved_asset_params(
                     dict(asset.params or {}),
@@ -227,37 +245,43 @@ async def seed_assets_from_script(
                 )
 
     for name in character_names:
-        if not name or name in existing_names:
+        norm = _normalize_asset_name(name)
+        if not norm:
             continue
-        ch = summary_by_name.get(name) or _character_stub_from_cast(
-            name, story_type, summary=summary, bodies=bodies,
+        char_key = _asset_dedupe_key("character", norm)
+        if char_key in existing_by_key:
+            continue
+        ch = summary_by_name.get(name) or summary_by_name.get(norm) or _character_stub_from_cast(
+            norm, story_type, summary=summary, bodies=bodies,
         )
         asset = DramaAsset(
             project_id=project.id,
             type="character",
             asset_type="image",
-            name=name,
+            name=norm,
             params=build_character_params(ch),
         )
         db.add(asset)
         created.append(asset)
-        existing_names.add(name)
-        existing_by_key[("character", name)] = asset
+        existing_by_key[char_key] = asset
 
     for scene in scene_names[:40]:
-        if scene in existing_names:
+        norm = _normalize_asset_name(scene)
+        if not norm:
+            continue
+        scene_key = _asset_dedupe_key("scene", norm)
+        if scene_key in existing_by_key:
             continue
         asset = DramaAsset(
             project_id=project.id,
             type="scene",
             asset_type="image",
-            name=scene,
-            params=build_scene_params(scene, story_type),
+            name=norm,
+            params=build_scene_params(norm, story_type),
         )
         db.add(asset)
         created.append(asset)
-        existing_names.add(scene)
-        existing_by_key[("scene", scene)] = asset
+        existing_by_key[scene_key] = asset
 
     # 道具 / 素材：尚无该类资产、或强制重抽时调用 LLM
     need_props = not has_prop
@@ -273,17 +297,14 @@ async def seed_assets_from_script(
                 raise
             logger.exception("道具/素材 LLM 抽取失败 project_id=%s", project.id)
             extracted = {"props": [], "materials": []}
-        prop_names = {(a.name or "").strip() for a in existing if a.type == "prop"}
-        material_names = {
-            (a.name or "").strip() for a in existing if (a.type or "") in {"material", "none"}
-        }
         if need_props or reextract_props:
             for item in extracted.get("props") or []:
-                name = str(item.get("name") or "").strip()
+                name = _normalize_asset_name(str(item.get("name") or ""))
                 visual = str(item.get("visualPrompt") or "").strip()
                 if not name:
                     continue
-                existing_asset = existing_by_key.get(("prop", name))
+                prop_key = _asset_dedupe_key("prop", name)
+                existing_asset = existing_by_key.get(prop_key)
                 if existing_asset and reextract_props and visual:
                     existing_asset.params = _merge_preserved_asset_params(
                         dict(existing_asset.params or {}),
@@ -291,7 +312,7 @@ async def seed_assets_from_script(
                     )
                     props_updated += 1
                     continue
-                if not name or name in prop_names or name in existing_names:
+                if prop_key in existing_by_key:
                     continue
                 asset = DramaAsset(
                     project_id=project.id,
@@ -302,18 +323,15 @@ async def seed_assets_from_script(
                 )
                 db.add(asset)
                 created.append(asset)
-                prop_names.add(name)
-                existing_names.add(name)
-                existing_by_key[("prop", name)] = asset
+                existing_by_key[prop_key] = asset
         if need_materials or reextract_props:
             for item in extracted.get("materials") or []:
-                name = str(item.get("name") or "").strip()
+                name = _normalize_asset_name(str(item.get("name") or ""))
                 visual = str(item.get("visualPrompt") or "").strip()
                 if not name:
                     continue
-                existing_asset = existing_by_key.get(("material", name)) or existing_by_key.get(
-                    ("none", name)
-                )
+                mat_key = _asset_dedupe_key("material", name)
+                existing_asset = existing_by_key.get(mat_key)
                 if existing_asset and reextract_props and visual:
                     existing_asset.params = _merge_preserved_asset_params(
                         dict(existing_asset.params or {}),
@@ -321,7 +339,7 @@ async def seed_assets_from_script(
                     )
                     props_updated += 1
                     continue
-                if not name or name in material_names or name in existing_names:
+                if mat_key in existing_by_key:
                     continue
                 asset = DramaAsset(
                     project_id=project.id,
@@ -332,9 +350,7 @@ async def seed_assets_from_script(
                 )
                 db.add(asset)
                 created.append(asset)
-                material_names.add(name)
-                existing_names.add(name)
-                existing_by_key[("material", name)] = asset
+                existing_by_key[mat_key] = asset
         project_params["props_materials_seeded"] = True
         project.params = project_params
 

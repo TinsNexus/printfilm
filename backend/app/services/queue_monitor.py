@@ -37,6 +37,7 @@ TASK_LABELS: dict[str, str] = {
     "drama.episode_scripts": "漫剧·分集剧本",
     "drama.episode_fragment_plan": "漫剧·分镜规划",
     "drama.episode_generate": "漫剧·分集视频",
+    "drama.fragment_generate": "漫剧·分镜视频",
     "drama.asset_image": "漫剧·资产生图",
     "drama.asset_video": "漫剧·资产视频",
     "drama.seed_assets": "漫剧·抽取资产",

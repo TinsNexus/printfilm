@@ -578,19 +578,43 @@ export default function StoryboardPage() {
     }
   }
 
+  // 保存项目提示词；与后台模板相同则清空覆盖
   async function saveProjectPrompts() {
     if (!project || !promptEdit) return
     setBusy(true)
     try {
+      const d = promptDefaults
+      const styleOut = promptEdit.style_prompt.trim()
+      const charOut = promptEdit.character_prompt.trim()
+      const extraOut = promptEdit.extra_prompt.trim()
       const updated = await api.updateProject(project.id, {
-        style_prompt: promptEdit.style_prompt,
-        character_prompt: promptEdit.character_prompt,
-        extra_prompt: promptEdit.extra_prompt,
+        style_prompt: d && styleOut === d.style_prompt ? '' : styleOut,
+        character_prompt: d && charOut === d.character_prompt ? '' : charOut,
+        extra_prompt: d && extraOut === d.extra_prompt ? '' : extraOut,
       })
       setProject(updated)
       setPromptEdit(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : '保存提示词失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // 清空项目覆盖，后续生成跟随后台模板
+  async function restoreTemplatePrompts() {
+    if (!project) return
+    setBusy(true)
+    try {
+      const updated = await api.updateProject(project.id, {
+        style_prompt: '',
+        character_prompt: '',
+        extra_prompt: '',
+      })
+      setProject(updated)
+      setPromptEdit(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '恢复模板失败')
     } finally {
       setBusy(false)
     }
@@ -831,7 +855,7 @@ title="用当前镜头重新拼接"
           <div className="pf-prompt-panel">
             <h4>内置提示词</h4>
             <p className="pf-muted" style={{ fontSize: '0.72rem', margin: '0 0 0.45rem' }}>
-              点击可查看并修改，影响后续重生成
+              默认来自管理后台模板。此处修改只覆盖本项目，后续重生成才生效。
             </p>
             {(
               [
@@ -1426,7 +1450,7 @@ title="用当前镜头重新拼接"
           <div className="modal pf-prompt-modal" onClick={(e) => e.stopPropagation()}>
             <h3>项目内置提示词</h3>
             <p className="pf-muted" style={{ fontSize: '0.8rem', marginTop: 0 }}>
-              修改后对后续「重生成画面/视频」生效；已生成的镜头需点重生成才会更新。
+              默认跟随后台模板。保存为与模板相同的内容会自动清除覆盖；已生成镜头需点重生成才会更新。
             </p>
             <label>
               风格提示词
@@ -1453,7 +1477,7 @@ title="用当前镜头重新拼接"
                 rows={2}
               />
             </label>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
               <button
                 type="button"
                 className="pf-btn pf-btn-lime"
@@ -1461,6 +1485,14 @@ title="用当前镜头重新拼接"
                 onClick={saveProjectPrompts}
               >
                 保存
+              </button>
+              <button
+                type="button"
+                className="pf-btn pf-btn-ghost"
+                disabled={busy}
+                onClick={() => void restoreTemplatePrompts()}
+              >
+                恢复后台模板
               </button>
               <button type="button" className="pf-btn pf-btn-ghost" onClick={() => setPromptEdit(null)}>
                 取消

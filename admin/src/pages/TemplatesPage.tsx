@@ -20,6 +20,8 @@ type FormState = {
   category: string;
   preview_cover: string;
   style_prefix: string;
+  character_prompt: string;
+  extra_prompt: string;
   negative_prompt: string;
   default_ratio: string;
   shot_duration_min: number;
@@ -37,6 +39,8 @@ const emptyForm = (): FormState => ({
   category: "",
   preview_cover: "",
   style_prefix: "",
+  character_prompt: "",
+  extra_prompt: "",
   negative_prompt: "",
   default_ratio: "16:9",
   shot_duration_min: 3,
@@ -46,6 +50,12 @@ const emptyForm = (): FormState => ({
   is_active: true,
   is_premium: false,
 });
+
+// 从 seedream_config 读取角色/额外提示词
+function seedreamText(cfg: Record<string, unknown> | undefined, key: string): string {
+  const value = cfg?.[key];
+  return typeof value === "string" ? value : "";
+}
 
 // Template CRUD with active / premium toggles
 export function TemplatesPage() {
@@ -96,6 +106,8 @@ export function TemplatesPage() {
       category: (tpl.category || []).join(","),
       preview_cover: tpl.preview_cover,
       style_prefix: tpl.style_prefix,
+      character_prompt: seedreamText(tpl.seedream_config, "character_prompt"),
+      extra_prompt: seedreamText(tpl.seedream_config, "extra_prompt"),
       negative_prompt: tpl.negative_prompt,
       default_ratio: tpl.default_ratio,
       shot_duration_min: tpl.shot_duration_min,
@@ -133,6 +145,11 @@ export function TemplatesPage() {
             sort_order: form.sort_order,
             is_active: form.is_active,
             is_premium: form.is_premium,
+            seedream_config: {
+              ...(editing.seedream_config || {}),
+              character_prompt: form.character_prompt,
+              extra_prompt: form.extra_prompt,
+            },
           }),
         });
       } else {
@@ -140,10 +157,24 @@ export function TemplatesPage() {
         await api(`/api/admin/templates`, {
           method: "POST",
           body: JSON.stringify({
-            ...form,
             id: form.id.trim(),
+            name: form.name,
+            description: form.description,
             category,
-            seedream_config: {},
+            preview_cover: form.preview_cover,
+            style_prefix: form.style_prefix,
+            negative_prompt: form.negative_prompt,
+            default_ratio: form.default_ratio,
+            shot_duration_min: form.shot_duration_min,
+            shot_duration_max: form.shot_duration_max,
+            llm_system_addon: form.llm_system_addon,
+            sort_order: form.sort_order,
+            is_active: form.is_active,
+            is_premium: form.is_premium,
+            seedream_config: {
+              character_prompt: form.character_prompt,
+              extra_prompt: form.extra_prompt,
+            },
             seedance_config: {},
             audio_config: {},
             subtitle_config: {},
@@ -187,7 +218,9 @@ export function TemplatesPage() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold text-[#303133]">模板管理</h2>
-          <p className="mt-1 text-sm text-[#909399]">增删改、上下架与 premium</p>
+          <p className="mt-1 text-sm text-[#909399]">
+            风格 / 角色 / 额外提示词以本页为准；启动不再用代码覆盖。已创建项目若曾单独改过，需在分镜页恢复模板后才会跟随。
+          </p>
         </div>
         <Button onClick={openCreate}>新建模板</Button>
       </div>
@@ -283,14 +316,35 @@ export function TemplatesPage() {
               />
             </div>
             <div className="space-y-2 sm:col-span-2">
-              <Label>style_prefix</Label>
+              <Label>风格提示词</Label>
               <Textarea
                 value={form.style_prefix}
                 onChange={(e) => setForm((f) => ({ ...f, style_prefix: e.target.value }))}
               />
             </div>
             <div className="space-y-2 sm:col-span-2">
-              <Label>negative_prompt</Label>
+              <Label>角色提示词</Label>
+              <Textarea
+                value={form.character_prompt}
+                onChange={(e) => setForm((f) => ({ ...f, character_prompt: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label>额外提示词</Label>
+              <Textarea
+                value={form.extra_prompt}
+                onChange={(e) => setForm((f) => ({ ...f, extra_prompt: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label>LLM 附加说明</Label>
+              <Textarea
+                value={form.llm_system_addon}
+                onChange={(e) => setForm((f) => ({ ...f, llm_system_addon: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label>负面提示词</Label>
               <Textarea
                 value={form.negative_prompt}
                 onChange={(e) => setForm((f) => ({ ...f, negative_prompt: e.target.value }))}

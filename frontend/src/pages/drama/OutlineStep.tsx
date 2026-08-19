@@ -12,6 +12,7 @@ import {
   getImageStyleId,
   getSummaryStatus,
   parseEpisodeBodies,
+  buildEpisodeContentUpdate,
 } from './dramaWorkspaceUtils'
 import { dialog } from '../../lib/dialog'
 
@@ -42,6 +43,12 @@ export function OutlineStep({
   const [summaryError, setSummaryError] = useState('')
   const [episodeError, setEpisodeError] = useState('')
   const [progress, setProgress] = useState({ done: 0, total: 0 })
+  const [summaryEditing, setSummaryEditing] = useState(false)
+  const [summaryDraft, setSummaryDraft] = useState<Record<string, unknown> | null>(null)
+  const [summarySaving, setSummarySaving] = useState(false)
+  const [editingEpisodeNum, setEditingEpisodeNum] = useState<number | null>(null)
+  const [episodeBodyDraft, setEpisodeBodyDraft] = useState('')
+  const [episodeSaving, setEpisodeSaving] = useState(false)
   const pipelineRef = useRef(0)
 
   const summary = (script?.summary || null) as Record<string, unknown> | null
@@ -305,6 +312,64 @@ export function OutlineStep({
     }
   }
 
+  // 进入剧本摘要编辑
+  function startSummaryEdit() {
+    if (!summary) return
+    setSummaryDraft(structuredClone(summary) as Record<string, unknown>)
+    setSummaryEditing(true)
+    setExpanded((prev) => new Set(prev).add('summary'))
+  }
+
+  // 保存手动编辑的剧本摘要
+  async function saveSummaryEdit() {
+    if (!summaryDraft) return
+    setSummarySaving(true)
+    try {
+      const updated = await dramaApi.updateScript(projectId, { summary: summaryDraft })
+      setScript(updated)
+      setSummaryEditing(false)
+      setSummaryDraft(null)
+      const p = await dramaApi.getProject(projectId)
+      onProjectChange(p)
+    } catch (err) {
+      onError(err instanceof Error ? err.message : '摘要保存失败')
+    } finally {
+      setSummarySaving(false)
+    }
+  }
+
+  // 开始编辑某一集正文
+  function startEpisodeEdit(episodeNumber: number, body: string) {
+    setEditingEpisodeNum(episodeNumber)
+    setEpisodeBodyDraft(body)
+    setExpandedEpisodes((prev) => new Set(prev).add(episodeNumber))
+  }
+
+  // 保存分集正文修改
+  async function saveEpisodeEdit() {
+    if (editingEpisodeNum == null || !script) return
+    setEpisodeSaving(true)
+    try {
+      const bodies = parseEpisodeBodies(script).map((ep) =>
+        (ep.episodeNumber || 0) === editingEpisodeNum
+          ? { ...ep, body: episodeBodyDraft }
+          : ep,
+      )
+      const updated = await dramaApi.updateScript(projectId, {
+        episode_content: buildEpisodeContentUpdate(script, bodies),
+      })
+      setScript(updated)
+      setEditingEpisodeNum(null)
+      setEpisodeBodyDraft('')
+      const p = await dramaApi.getProject(projectId)
+      onProjectChange(p)
+    } catch (err) {
+      onError(err instanceof Error ? err.message : '分集保存失败')
+    } finally {
+      setEpisodeSaving(false)
+    }
+  }
+
   const characters = Array.isArray(summary?.characters)
     ? (summary.characters as Array<Record<string, unknown>>)
     : []
@@ -376,6 +441,20 @@ export function OutlineStep({
             title="剧本摘要"
             open={expanded.has('summary')}
             onToggle={() => toggleSection('summary')}
+            action={
+              summary && summaryStatus === 'completed' && !summaryEditing ? (
+                <button
+                  type="button"
+                  className="drama-regen-btn"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    startSummaryEdit()
+                  }}
+                >
+                  编辑摘要
+                </button>
+              ) : null
+            }
           >
             {summaryGenerating || summaryStatus === 'generating' ? (
               <p className="drama-loader">剧本摘要生成中，请稍候…</p>
@@ -388,7 +467,133 @@ export function OutlineStep({
                 </button>
               </div>
             ) : null}
-            {summary && summaryStatus === 'completed' ? (
+            {summaryEditing && summaryDraft ? (
+              <div className="drama-outline-edit">
+                <EditableSummaryField
+                  label="自定义集数"
+                  value={String(summaryDraft.episodeCount ?? '')}
+                  onChange={(v) =>
+                    setSummaryDraft((prev) =>
+                      prev ? { ...prev, episodeCount: v ? Number(v) || v : '' } : prev,
+                    )
+                  }
+                />
+                <EditableSummaryField
+                  label="故事类型"
+                  value={String(summaryDraft.storyType || '')}
+                  onChange={(v) =>
+                    setSummaryDraft((prev) => (prev ? { ...prev, storyType: v } : prev))
+                  }
+                />
+                <EditableSummaryField
+                  label="目标受众"
+                  value={String(summaryDraft.targetAudience || '')}
+                  onChange={(v) =>
+                    setSummaryDraft((prev) => (prev ? { ...prev, targetAudience: v } : prev))
+                  }
+                />
+                <EditableSummaryField
+                  label="核心梗"
+                  value={String(summaryDraft.coreHook || '')}
+                  onChange={(v) =>
+                    setSummaryDraft((prev) => (prev ? { ...prev, coreHook: v } : prev))
+                  }
+                  multiline
+                />
+                <EditableSummaryField
+                  label="一句话故事"
+                  value={String(summaryDraft.oneLineStory || '')}
+                  onChange={(v) =>
+                    setSummaryDraft((prev) => (prev ? { ...prev, oneLineStory: v } : prev))
+                  }
+                  multiline
+                />
+                <EditableSummaryField
+                  label="故事梗概"
+                  value={String(summaryDraft.synopsis || '')}
+                  onChange={(v) =>
+                    setSummaryDraft((prev) => (prev ? { ...prev, synopsis: v } : prev))
+                  }
+                  multiline
+                />
+                <section className="drama-summary-field">
+                  <h4>人物小传</h4>
+                  <p className="drama-muted drama-outline-edit-hint">
+                    可直接修改各字段；保存后资产库「重新抽取」会同步引用新摘要。
+                  </p>
+                  <div className="drama-character-list">
+                    {(Array.isArray(summaryDraft.characters)
+                      ? (summaryDraft.characters as Array<Record<string, unknown>>)
+                      : []
+                    ).map((ch, i) => (
+                      <article key={`edit-${ch.name}-${i}`} className="drama-character-card">
+                        <EditableSummaryField
+                          label="姓名"
+                          value={String(ch.name || '')}
+                          onChange={(v) =>
+                            setSummaryDraft((prev) => {
+                              if (!prev) return prev
+                              const list = [...(Array.isArray(prev.characters) ? prev.characters : [])]
+                              list[i] = { ...(list[i] as Record<string, unknown>), name: v }
+                              return { ...prev, characters: list }
+                            })
+                          }
+                        />
+                        {(
+                          [
+                            ['称谓', 'title'],
+                            ['角色类型', 'roleType'],
+                            ['视觉形象', 'visualImage'],
+                            ['核心标签', 'coreTags'],
+                            ['身份背景', 'identityBackground'],
+                            ['性格特点', 'personality'],
+                          ] as const
+                        ).map(([label, key]) => (
+                          <EditableSummaryField
+                            key={key}
+                            label={label}
+                            value={String(ch[key] || '')}
+                            onChange={(v) =>
+                              setSummaryDraft((prev) => {
+                                if (!prev) return prev
+                                const list = [
+                                  ...(Array.isArray(prev.characters) ? prev.characters : []),
+                                ]
+                                list[i] = { ...(list[i] as Record<string, unknown>), [key]: v }
+                                return { ...prev, characters: list }
+                              })
+                            }
+                            multiline={key === 'visualImage' || key === 'identityBackground'}
+                          />
+                        ))}
+                      </article>
+                    ))}
+                  </div>
+                </section>
+                <div className="drama-outline-edit-actions">
+                  <button
+                    type="button"
+                    className="drama-btn-primary"
+                    disabled={summarySaving}
+                    onClick={() => void saveSummaryEdit()}
+                  >
+                    {summarySaving ? '保存中…' : '保存摘要'}
+                  </button>
+                  <button
+                    type="button"
+                    className="pf-btn"
+                    disabled={summarySaving}
+                    onClick={() => {
+                      setSummaryEditing(false)
+                      setSummaryDraft(null)
+                    }}
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            {!summaryEditing && summary && summaryStatus === 'completed' ? (
               <div className="drama-summary-structured">
                 <SummaryField label="自定义集数" value={String(summary.episodeCount ?? '')} />
                 <SummaryField label="故事类型" value={String(summary.storyType || '')} />
@@ -516,7 +721,52 @@ export function OutlineStep({
                           </span>
                           <span>{open ? '▾' : '▸'}</span>
                         </button>
-                        {open ? <pre className="drama-pre">{ep.body || ''}</pre> : null}
+                        {open ? (
+                          editingEpisodeNum === num ? (
+                            <div className="drama-outline-edit">
+                              <textarea
+                                className="drama-outline-edit-body"
+                                rows={16}
+                                value={episodeBodyDraft}
+                                onChange={(e) => setEpisodeBodyDraft(e.target.value)}
+                              />
+                              <div className="drama-outline-edit-actions">
+                                <button
+                                  type="button"
+                                  className="drama-btn-primary"
+                                  disabled={episodeSaving}
+                                  onClick={() => void saveEpisodeEdit()}
+                                >
+                                  {episodeSaving ? '保存中…' : '保存本集'}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="pf-btn"
+                                  disabled={episodeSaving}
+                                  onClick={() => {
+                                    setEditingEpisodeNum(null)
+                                    setEpisodeBodyDraft('')
+                                  }}
+                                >
+                                  取消
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="drama-episode-body-toolbar">
+                                <button
+                                  type="button"
+                                  className="drama-regen-btn"
+                                  onClick={() => startEpisodeEdit(num, ep.body || '')}
+                                >
+                                  编辑正文
+                                </button>
+                              </div>
+                              <pre className="drama-pre">{ep.body || ''}</pre>
+                            </>
+                          )
+                        ) : null}
                       </div>
                     )
                   })}
@@ -565,5 +815,29 @@ function SummaryField({ label, value }: { label: string; value: string }) {
       <h4>{label}</h4>
       <p className="drama-pre">{value}</p>
     </section>
+  )
+}
+
+// 可编辑摘要字段
+function EditableSummaryField({
+  label,
+  value,
+  onChange,
+  multiline = false,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  multiline?: boolean
+}) {
+  return (
+    <label className="drama-outline-edit-field">
+      <span>{label}</span>
+      {multiline ? (
+        <textarea rows={3} value={value} onChange={(e) => onChange(e.target.value)} />
+      ) : (
+        <input type="text" value={value} onChange={(e) => onChange(e.target.value)} />
+      )}
+    </label>
   )
 }

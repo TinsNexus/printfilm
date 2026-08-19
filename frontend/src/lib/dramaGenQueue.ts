@@ -235,10 +235,27 @@ export function syncEpisodeVideoJobs(input: {
 
   for (const item of input.statusItems) {
     const raw = String(item.status || 'idle')
-    if (raw === 'idle') continue
+    const existing = jobs.find((j) => j.id === videoJobId(item.fragment_id))
+    // idle：服务端无任务。乐观入队后若已中断，从「生成中」清掉
+    if (raw === 'idle') {
+      if (existing && (existing.status === 'queued' || existing.status === 'running')) {
+        upsertDramaGenJob({
+          id: existing.id,
+          kind: existing.kind,
+          projectId: existing.projectId,
+          targetId: existing.targetId,
+          episodeId: existing.episodeId,
+          title: existing.title,
+          subtype: existing.subtype,
+          status: 'failed',
+          error: '任务已中断，请重新生成',
+        })
+      }
+      continue
+    }
     let status: DramaGenJobStatus = 'running'
     if (raw === 'done') status = 'done'
-    else if (raw === 'failed') status = 'failed'
+    else if (raw === 'failed' || raw === 'cancelled') status = 'failed'
     else if (raw === 'queued') status = 'queued'
     else status = 'running'
 
@@ -253,10 +270,11 @@ export function syncEpisodeVideoJobs(input: {
       subtype: '分镜视频',
       status,
       message: item.message || (item.phase === 'assets' ? '生成参考图…' : undefined),
-      error: item.error,
+      error: raw === 'cancelled' ? '已取消' : item.error,
     })
   }
   emit()
+  ensureEpisodeVideoStatusPoll()
 }
 
 // 入队时立刻写入队列（乐观展示，不依赖首轮轮询）
@@ -283,6 +301,64 @@ export function enqueueEpisodeVideoJobs(input: {
     statusItems: items,
   })
   requestOpenDramaGenQueue()
+  ensureEpisodeVideoStatusPoll()
+}
+
+/*
+ * videoPollTimer 离开分集页后仍轮询 generate_status
+ * videoPollInFlight 避免重叠请求
+ */
+let videoPollTimer = 0
+let videoPollInFlight = false
+
+// 后台轮询进行中的分镜视频（不阻塞编辑页）
+export function ensureEpisodeVideoStatusPoll(): void {
+  if (typeof window === 'undefined') return
+  if (videoPollTimer) return
+  videoPollTimer = window.setInterval(() => {
+    void pollActiveEpisodeVideoJobs()
+  }, 4000)
+  void pollActiveEpisodeVideoJobs()
+}
+
+// 按分集拉取状态并写回队列
+async function pollActiveEpisodeVideoJobs(): Promise<void> {
+  if (videoPollInFlight) return
+  const active = jobs.filter(
+    (job) =>
+      job.kind === 'video' &&
+      job.subtype === '分镜视频' &&
+      (job.status === 'queued' || job.status === 'running') &&
+      typeof job.episodeId === 'number',
+  )
+  if (active.length === 0) {
+    if (videoPollTimer) {
+      window.clearInterval(videoPollTimer)
+      videoPollTimer = 0
+    }
+    return
+  }
+  videoPollInFlight = true
+  try {
+    const { dramaApi } = await import('../api/drama')
+    const episodeIds = [...new Set(active.map((job) => job.episodeId as number))]
+    await Promise.all(
+      episodeIds.map(async (episodeId) => {
+        const epJobs = active.filter((job) => job.episodeId === episodeId)
+        const st = await dramaApi.generateStatus(episodeId)
+        syncEpisodeVideoJobs({
+          projectId: epJobs[0].projectId,
+          episodeId,
+          fragments: epJobs.map((job) => ({ id: job.targetId })),
+          statusItems: st.fragments,
+        })
+      }),
+    )
+  } catch {
+    /* 轮询失败下一轮再试 */
+  } finally {
+    videoPollInFlight = false
+  }
 }
 
 // 请求打开右下角队列面板

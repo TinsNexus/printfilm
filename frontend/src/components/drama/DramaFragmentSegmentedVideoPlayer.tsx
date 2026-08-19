@@ -1,5 +1,5 @@
 /** 分集编辑：带分镜分段进度条的视频播放器（客户端顺序连播） */
-import { Download, MonitorPlay, Pause, Play, Volume2, VolumeX } from 'lucide-react'
+import { Download, Maximize, Minimize, MonitorPlay, Pause, Play, Volume2, VolumeX } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { resolveDramaMediaUrl, type DramaFragment } from '../../api/drama'
 import {
@@ -30,6 +30,8 @@ export function DramaFragmentSegmentedVideoPlayer({
 }: Props) {
   // videoRef 视频元素引用
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  // screenRef 预览画面容器（全屏目标）
+  const screenRef = useRef<HTMLDivElement | null>(null)
   // trackRef 分段进度条容器引用
   const trackRef = useRef<HTMLDivElement | null>(null)
   // isSeeking 是否正在拖动进度条
@@ -58,6 +60,8 @@ export function DramaFragmentSegmentedVideoPlayer({
   const [autoLinkNext, setAutoLinkNext] = useState(true)
   // muted 是否静音
   const [muted, setMuted] = useState(false)
+  // isFullscreen 预览是否处于全屏
+  const [isFullscreen, setIsFullscreen] = useState(false)
 
   playingFragmentIdRef.current = playingFragmentId
   autoLinkNextRef.current = autoLinkNext
@@ -320,6 +324,36 @@ export function DramaFragmentSegmentedVideoPlayer({
     video.muted = muted
   }, [muted])
 
+  // 同步浏览器全屏状态
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(document.fullscreenElement === screenRef.current)
+    }
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  }, [])
+
+  // 切换预览画面全屏
+  const handleToggleFullscreen = useCallback(async () => {
+    const screen = screenRef.current
+
+    if (!screen || !hasCurrentVideo) {
+      return
+    }
+
+    try {
+      if (document.fullscreenElement === screen) {
+        await document.exitFullscreen()
+        return
+      }
+
+      await screen.requestFullscreen()
+    } catch {
+      /* 浏览器可能拒绝全屏 */
+    }
+  }, [hasCurrentVideo])
+
   // 下载当前分镜视频
   const handleDownloadVideo = useCallback(() => {
     if (!videoUrl) {
@@ -341,9 +375,10 @@ export function DramaFragmentSegmentedVideoPlayer({
   return (
     <div className="drama-ep-segmented-player">
       <div
+        ref={screenRef}
         className={`drama-ep-player drama-ep-segmented-screen ${ratioClass}${
           !hasCurrentVideo ? ' is-empty' : ''
-        }`}
+        }${isFullscreen ? ' is-fullscreen' : ''}`}
       >
         {hasCurrentVideo ? (
           <>
@@ -354,14 +389,28 @@ export function DramaFragmentSegmentedVideoPlayer({
               playsInline
               preload="auto"
             />
-            <button
-              type="button"
-              aria-label="下载视频"
-              className="drama-ep-video-download"
-              onClick={handleDownloadVideo}
-            >
-              <Download size={16} strokeWidth={1.8} />
-            </button>
+            <div className="drama-ep-video-overlay-actions">
+              <button
+                type="button"
+                aria-label={isFullscreen ? '退出全屏' : '全屏预览'}
+                className="drama-ep-video-overlay-btn"
+                onClick={() => void handleToggleFullscreen()}
+              >
+                {isFullscreen ? (
+                  <Minimize size={16} strokeWidth={1.8} />
+                ) : (
+                  <Maximize size={16} strokeWidth={1.8} />
+                )}
+              </button>
+              <button
+                type="button"
+                aria-label="下载视频"
+                className="drama-ep-video-overlay-btn"
+                onClick={handleDownloadVideo}
+              >
+                <Download size={16} strokeWidth={1.8} />
+              </button>
+            </div>
           </>
         ) : posterUrl ? (
           <img src={posterUrl} alt="分镜预览" />
@@ -462,6 +511,21 @@ export function DramaFragmentSegmentedVideoPlayer({
               <VolumeX size={16} strokeWidth={1.8} />
             ) : (
               <Volume2 size={16} strokeWidth={1.8} />
+            )}
+          </button>
+
+          <button
+            type="button"
+            aria-label={isFullscreen ? '退出全屏' : '全屏预览'}
+            title={isFullscreen ? '退出全屏' : '全屏预览'}
+            disabled={!hasCurrentVideo}
+            className="drama-ep-video-icon-btn"
+            onClick={() => void handleToggleFullscreen()}
+          >
+            {isFullscreen ? (
+              <Minimize size={16} strokeWidth={1.8} />
+            ) : (
+              <Maximize size={16} strokeWidth={1.8} />
             )}
           </button>
         </div>

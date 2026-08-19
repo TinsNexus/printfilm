@@ -2180,6 +2180,54 @@
   margin-bottom: 2px;
 }
 
+.drama-outline-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.drama-outline-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.drama-outline-edit-field span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.drama-outline-edit-field input,
+.drama-outline-edit-field textarea,
+.drama-outline-edit-body {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font: inherit;
+  line-height: 1.5;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.drama-outline-edit-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.drama-outline-edit-hint {
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+
+.drama-episode-body-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
 .drama-character-field p {
   margin: 0;
   font-size: 13px;
@@ -4110,10 +4158,15 @@
   background: #efeff4;
 }
 
-.drama-ep-video-download {
+.drama-ep-video-overlay-actions {
   position: absolute;
   top: 10px;
   right: 10px;
+  display: flex;
+  gap: 8px;
+}
+
+.drama-ep-video-overlay-btn {
   width: 32px;
   height: 32px;
   border: none;
@@ -4128,8 +4181,22 @@
   transition: background 0.15s ease;
 }
 
-.drama-ep-video-download:hover {
+.drama-ep-video-overlay-btn:hover {
   background: rgba(0, 0, 0, 0.6);
+}
+
+.drama-ep-segmented-screen:fullscreen,
+.drama-ep-segmented-screen.is-fullscreen {
+  max-width: none;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  aspect-ratio: auto;
+}
+
+.drama-ep-segmented-screen:fullscreen video,
+.drama-ep-segmented-screen.is-fullscreen video {
+  object-fit: contain;
 }
 
 .drama-ep-video-controls {

@@ -1,5 +1,5 @@
-/** 资产库步骤：进入时 seed，分类 Tab + 生图队列 + 角色音色绑定 */
-import { useEffect, useMemo, useRef, useState } from 'react'
+/** 资产库步骤：首次无资产时自动 seed，分类 Tab + 生图队列 + 角色音色绑定 */
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Boxes, Sparkles } from 'lucide-react'
 import { dramaApi, resolveDramaMediaUrl, type DramaAsset, type DramaProject } from '../../api/drama'
@@ -99,11 +99,6 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
   const [batchVoiceBusy, setBatchVoiceBusy] = useState(false)
   const [narratorVoiceOpen, setNarratorVoiceOpen] = useState(false)
   const genQueue = useDramaImageGenQueue()
-  const seeded = useRef(false)
-
-  useEffect(() => {
-    seeded.current = false
-  }, [projectId])
 
   useEffect(() => {
     async function enter() {
@@ -118,17 +113,16 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
           model_id: prev.model_id,
           resolution: prev.resolution,
         }))
-        if (!seeded.current) {
-          seeded.current = true
+        let list = normalizeAssetList(
+          await dramaApi.listAssets(projectId, { libraryOnly: true }),
+        )
+        // 仅首次（资产库为空且已有剧本摘要）自动从剧本抽取；之后需手动点「重新抽取资产」
+        if (list.length === 0 && p?.script?.summary) {
           const seededResult = await dramaApi.seedAssets(projectId)
-          const list = normalizeAssetList(seededResult?.assets)
-          setAssets(list)
-          resumeDramaImageGensFromAssets(projectId, list)
-        } else {
-          const list = normalizeAssetList(await dramaApi.listAssets(projectId, { libraryOnly: true }))
-          setAssets(list)
-          resumeDramaImageGensFromAssets(projectId, list)
+          list = normalizeAssetList(seededResult?.assets)
         }
+        setAssets(list)
+        resumeDramaImageGensFromAssets(projectId, list)
       } catch (err) {
         onError(err instanceof Error ? err.message : '资产加载失败')
         try {

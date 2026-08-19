@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -145,10 +146,17 @@ async def upload_asset_media(
         else:
             raise HTTPException(status_code=400, detail="仅支持 JPG / PNG / WebP / GIF")
 
-    raw = await file.read()
-    if not raw:
+    # 直接检查上传临时文件大小，避免先把整文件读入内存。
+    upload_fp = file.file
+    try:
+        upload_fp.seek(0, 2)
+        size = upload_fp.tell()
+        upload_fp.seek(0)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"无法读取上传文件：{exc}") from exc
+    if size <= 0:
         raise HTTPException(status_code=400, detail="空文件")
-    if len(raw) > 20 * 1024 * 1024:
+    if size > 20 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="文件不能超过 20MB")
 
     object_key = (
@@ -156,7 +164,13 @@ async def upload_asset_media(
         f"asset_{asset.id}_{uuid.uuid4().hex[:10]}{ext}"
     )
     try:
-        url = oss_svc.upload_bytes(raw, object_key, content_type=content_type or "application/octet-stream")
+        # OSS SDK 为同步阻塞 IO，放到线程池里避免阻塞事件循环。
+        url = await run_in_threadpool(
+            oss_svc.upload_fileobj,
+            upload_fp,
+            object_key,
+            content_type=content_type or "application/octet-stream",
+        )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"OSS 上传失败：{exc}") from exc
 

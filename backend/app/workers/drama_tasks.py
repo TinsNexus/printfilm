@@ -61,6 +61,41 @@ def drama_episode_fragment_plan_task(
     return result
 
 
+@celery_app.task(name="drama.fragment_generate", bind=True, max_retries=1)
+def drama_fragment_generate_task(
+    self,
+    episode_id: int,
+    user_id: int,
+    fragment_id: int,
+    remaining_ids: list[int] | None = None,
+) -> dict:
+    # Celery：单条分镜；remaining_ids 成功后再入队，供尾帧衔接
+    from app.services.drama.jobs import run_fragment_generate_job
+
+    logger.info(
+        "[Celery] 领取分镜视频任务 episode_id=%s fragment_id=%s rest=%s task_id=%s",
+        episode_id,
+        fragment_id,
+        len(remaining_ids or []),
+        self.request.id,
+    )
+    result = _run(
+        run_fragment_generate_job(
+            episode_id,
+            user_id,
+            fragment_id,
+            remaining_ids or [],
+        )
+    )
+    logger.info(
+        "[Celery] 分镜视频任务结束 episode_id=%s fragment_id=%s result=%s",
+        episode_id,
+        fragment_id,
+        result,
+    )
+    return result
+
+
 @celery_app.task(name="drama.episode_generate", bind=True, max_retries=1)
 def drama_episode_generate_task(
     self,
@@ -68,7 +103,7 @@ def drama_episode_generate_task(
     user_id: int,
     fragment_ids: list[int],
 ) -> dict:
-    # Celery：分集视频生成
+    # Celery：旧版整集视频（兼容队列里尚未消费的消息）
     from app.services.drama.jobs import run_episode_generate_job
 
     logger.info(

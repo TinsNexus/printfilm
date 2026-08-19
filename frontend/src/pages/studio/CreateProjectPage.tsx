@@ -268,9 +268,6 @@ export default function CreateProjectPage() {
         pipeline_mode,
         output_ratio: d?.output_ratio || '16:9',
         voice_id: d?.voice_id,
-        style_prompt: d?.style_prompt,
-        character_prompt: d?.character_prompt,
-        extra_prompt: d?.extra_prompt,
       })
       nav(`/studio/${project.id}/style`)
     } catch (err) {

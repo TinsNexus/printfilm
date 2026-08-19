@@ -109,12 +109,9 @@ async def create_project(
 ) -> Project:
     from app.models import Template
 
-    from app.services.style_lock import template_prompt_defaults
-
     tpl = await db.get(Template, body.template_id)
     if not tpl or not tpl.is_active:
         raise HTTPException(status_code=400, detail="无效模板")
-    defaults = template_prompt_defaults(tpl)
     project = Project(
         user_id=user.id,
         template_id=body.template_id,
@@ -125,10 +122,10 @@ async def create_project(
         pipeline_mode=body.pipeline_mode,
         output_ratio=(body.output_ratio or "").strip(),
         voice_id=(body.voice_id or "").strip(),
-        # API 可省略；省略时从模板灌入，避免侧栏「内置提示词」全空
-        style_prompt=(body.style_prompt or "").strip() or defaults["style_prompt"],
-        character_prompt=(body.character_prompt or "").strip() or defaults["character_prompt"],
-        extra_prompt=(body.extra_prompt or "").strip() or defaults["extra_prompt"],
+        # 空则生成时读后台模板；不在创建时拷贝，避免后台改模板对已有项目不生效
+        style_prompt=(body.style_prompt or "").strip(),
+        character_prompt=(body.character_prompt or "").strip(),
+        extra_prompt=(body.extra_prompt or "").strip(),
         ref_image_url=body.ref_image_url,
         status=ProjectStatus.DRAFT,
     )
@@ -391,23 +388,23 @@ async def update_project(
     if "template_id" in data:
         from app.models import Template
 
-        from app.services.style_lock import template_prompt_defaults
-
         tpl = await db.get(Template, data["template_id"])
         if not tpl or not tpl.is_active:
             raise HTTPException(status_code=400, detail="无效模板")
-        # 仅改模板时同步内置提示词；若请求已显式带 style/character/extra 则尊重客户端
-        defaults = template_prompt_defaults(tpl)
+        # 换模板后清空项目覆盖，后续生成跟随后台模板；请求显式带提示词则保留
         if "style_prompt" not in data:
-            data["style_prompt"] = defaults["style_prompt"]
+            data["style_prompt"] = ""
         if "character_prompt" not in data:
-            data["character_prompt"] = defaults["character_prompt"]
+            data["character_prompt"] = ""
         if "extra_prompt" not in data:
-            data["extra_prompt"] = defaults["extra_prompt"]
+            data["extra_prompt"] = ""
     if "cover_url" in data and data["cover_url"]:
         url = str(data["cover_url"]).strip()
         if not (url.startswith("/static/") or url.startswith("http://") or url.startswith("https://")):
             raise HTTPException(status_code=400, detail="无效封面地址")
+    for key in ("style_prompt", "character_prompt", "extra_prompt"):
+        if key in data:
+            data[key] = str(data[key] or "").strip()
     for k, v in data.items():
         setattr(project, k, v)
     await db.commit()

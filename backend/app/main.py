@@ -106,6 +106,14 @@ async def on_startup() -> None:
         pass
 
 
+@app.on_event("shutdown")
+async def on_shutdown() -> None:
+    """Release Postgres pool on uvicorn worker exit."""
+    from app.database import dispose_engine
+
+    await dispose_engine()
+
+
 async def _migrate_sqlite() -> None:
     """Lightweight additive migrations (SQLite + Postgres)."""
     is_sqlite = settings.database_url.startswith("sqlite")
@@ -233,42 +241,42 @@ async def seed_agent_skills() -> None:
         await seed_builtin_skills(db)
 
 
-async def seed_templates() -> None:
-    """Upsert built-in templates; publish cover images to OSS when enabled."""
-    import logging
-
+def _publish_template_cover(cover: str, log: logging.Logger) -> str:
+    """把 /static 封面发到 OSS；失败则仍返回原路径。"""
     from app.services import storage
 
+    if not cover.startswith("/static/"):
+        return cover
+    local = storage.STATIC_ROOT / cover.removeprefix("/static/")
+    if not local.is_file():
+        log.warning("template cover missing on disk: %s", local)
+        return cover
+    try:
+        return storage.publish_local(local, sync=True)
+    except Exception:  # noqa: BLE001
+        log.exception("template cover OSS publish failed: %s", local)
+        return cover
+
+
+async def seed_templates() -> None:
+    """只插入缺失的内置模板；已有记录以管理后台为准，启动不再覆盖文案与配置。"""
     log = logging.getLogger("app.seed")
     async with AsyncSessionLocal() as db:
         for item in TEMPLATES:
             data = dict(item)
             existing = await db.get(Template, data["id"])
             cover = (data.get("preview_cover") or "").strip()
-            # Skip re-upload when DB already has a public URL (avoids blocking API startup).
-            if (
-                existing
-                and (existing.preview_cover or "").startswith(("http://", "https://"))
-                and cover.startswith("/static/")
-            ):
-                data["preview_cover"] = existing.preview_cover
-            elif cover.startswith("/static/"):
-                local = storage.STATIC_ROOT / cover.removeprefix("/static/")
-                if local.is_file():
-                    try:
-                        data["preview_cover"] = storage.publish_local(local, sync=True)
-                    except Exception:  # noqa: BLE001
-                        log.exception("template cover OSS publish failed: %s", local)
-                else:
-                    log.warning("template cover missing on disk: %s", local)
             if existing:
-                for k, v in data.items():
-                    setattr(existing, k, v)
-            else:
-                db.add(Template(**data))
+                # 已有模板不覆盖后台配置；仅当封面仍是本地路径时按库内路径补发 OSS
+                current = (existing.preview_cover or "").strip()
+                if not current.startswith(("http://", "https://")):
+                    published = _publish_template_cover(current or cover, log)
+                    if published.startswith(("http://", "https://")) and published != current:
+                        existing.preview_cover = published
+                continue
+            data["preview_cover"] = _publish_template_cover(cover, log)
+            db.add(Template(**data))
         await db.commit()
-        result = await db.execute(select(Template))
-        _ = result.scalars().all()
 
 
 @app.get("/api/health")
@@ -305,10 +313,13 @@ async def health() -> dict:
                 queue_unacked = None
     except Exception:  # noqa: BLE001
         redis_ok = False
+    from app.database import pool_status
+
     return {
         "ok": True,
         "ark_mock": s.ark_mock,
         "use_celery": s.use_celery,
+        "db_pool": pool_status(),
         "redis_ok": redis_ok,
         "queue": {
             "name": s.celery_worker_queues or s.celery_autoscale_queue,

@@ -29,3 +29,16 @@ export function getImageStyleId(
   const fromProject = (project?.params || {}).image_style_id
   return String(fromScript || fromProject || '')
 }
+
+// 写回分集正文时保持与原结构一致（数组或 { episodes }）
+export function buildEpisodeContentUpdate(
+  script: DramaScript | null | undefined,
+  bodies: DramaEpisodeBody[],
+): DramaScript['episode_content'] {
+  const raw = script?.episode_content
+  if (Array.isArray(raw)) return bodies
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return { ...(raw as Record<string, unknown>), episodes: bodies }
+  }
+  return { episodes: bodies }
+}

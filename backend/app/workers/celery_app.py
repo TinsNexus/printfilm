@@ -1,4 +1,7 @@
+import os
+
 from celery import Celery
+from celery.signals import worker_process_init
 
 from app.config import reload_settings
 from app.workers.queues import (
@@ -48,8 +51,23 @@ celery_app.conf.update(
         "drama.episode_scripts": {"queue": DRAMA_QUEUE},
         "drama.episode_fragment_plan": {"queue": DRAMA_QUEUE},
         "drama.episode_generate": {"queue": VIDEO_QUEUE},
+        "drama.fragment_generate": {"queue": VIDEO_QUEUE},
         "drama.asset_image": {"queue": DRAMA_QUEUE},
         "drama.asset_video": {"queue": VIDEO_QUEUE},
         "drama.seed_assets": {"queue": DRAMA_QUEUE},
     },
 )
+
+
+@worker_process_init.connect
+def _reset_db_pool_after_fork(**_kwargs) -> None:
+    """Celery prefork 子进程丢弃父进程继承的连接池，避免 idle 连接泄漏。"""
+    os.environ.setdefault("PRINTFILM_DB_ROLE", "celery")
+    try:
+        import asyncio
+
+        from app.database import dispose_engine
+
+        asyncio.run(dispose_engine())
+    except Exception:  # noqa: BLE001
+        pass

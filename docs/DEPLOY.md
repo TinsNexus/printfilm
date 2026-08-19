@@ -40,16 +40,19 @@ python deploy/scripts/deploy_kepu.py
 
 脚本会：
 
-1. 打包源码（排除 `.venv` / `node_modules` / `dist` / 生成媒体等）
-2. SSH 上传并解压到 `/opt/ai_movie`（保留远端 venv / node_modules）
-3. 写入 compose env、`backend/.env`、systemd、nginx（含前台 + admin + `www.printfilm.com` / `admin.printfilm.com` 别名）
-4. `docker compose up -d`（Postgres/Redis）
-5. `pip install -r requirements.txt`
-6. `frontend`：`npm ci && VITE_API_BASE= npm run build`
-7. `admin`：`npm ci && npm run build`
-8. 重启 `ai-movie-api` / `ai-movie-worker`，reload nginx
-9. 为 `admin.kepu.printfilm.com`、`www.printfilm.com`、`admin.printfilm.com` 申请/续签证书（certbot，幂等）
-10. 健康检查：`/api/health`、前台与后台首页（含别名域名）
+1. **本地** `frontend` / `admin` 执行 `npm ci && npm run build`（`VITE_API_BASE=` 空，同源）
+2. 打包源码 + 已构建的 `dist`（排除 `.venv` / `node_modules` / 生成媒体等）
+3. SSH 上传并解压到 `/opt/ai_movie`（保留远端 venv）
+4. 写入 compose env、`backend/.env`、systemd、nginx（含前台 + admin + `www.printfilm.com` / `admin.printfilm.com` 别名）
+5. `docker compose up -d`（Postgres/Redis）
+6. 远端 `pip install -r requirements.txt`（**不再**在服务器 npm build）
+7. 重启 `ai-movie-api` / `ai-movie-worker`，reload nginx
+8. 为 `admin.kepu.printfilm.com`、`www.printfilm.com`、`admin.printfilm.com` 申请/续签证书（certbot，幂等）
+9. 健康检查：`/api/health`、前台与后台首页（含别名域名）
+
+已构建过 dist、只想重传时可设 `SKIP_LOCAL_BUILD=1`（需本地 `frontend/dist` 与 `admin/dist` 已存在）。
+
+`node_modules` 已存在时会**跳过 `npm ci`**（Windows 上 ci 常需 5–15 分钟）；需强制重装依赖时设 `FORCE_NPM_CI=1`。
 
 **注意**：全量脚本会覆盖远端 `backend/.env` 为脚本内嵌模板。若线上临时改过密钥/回调，发布后核对 EPAY / CORS / OSS 等项。
 
@@ -86,9 +89,11 @@ cd /opt/ai_movie/admin && npm ci && npm run build
 
 | 单元 | 说明 |
 |------|------|
-| `ai-movie-api.service` | uvicorn `127.0.0.1:8000` |
-| `ai-movie-worker.service` | celery `-Q drama,oss,video,pipeline` |
+| `ai-movie-api.service` | uvicorn `127.0.0.1:8000`（**建议 `--workers 1`**） |
+| `ai-movie-worker.service` | celery `-Q drama,oss,video,pipeline`；unit 设 `PRINTFILM_DB_ROLE=celery` |
 | `ai-movie-pg` / `ai-movie-redis` | Docker |
+
+**Postgres 连接池**：生产 `.env` 使用 `DB_POOL_SIZE` / `DB_MAX_OVERFLOW`（API）与 `DB_POOL_SIZE_CELERY` / `DB_MAX_OVERFLOW_CELERY`（Worker）。若 API 报 `sorry, too many clients already`，先看 `curl /api/health` 的 `db_pool`，再 `systemctl restart ai-movie-api ai-movie-worker`。
 
 常用命令：
 
