@@ -725,15 +725,60 @@ class ArkGateway:
         max_attempts: int = 2,
     ) -> tuple[str, str | None]:
         """创建 Seedance 多模态任务并等待完成；返回 (本地视频 URL, 可选本地尾帧 URL)。"""
+        def _is_audio_download_error(err: Exception) -> bool:
+            msg = str(err)
+            return "audio_url" in msg and "resource download failed" in msg
+
+        def _strip_reference_audio(src: dict[str, Any]) -> dict[str, Any] | None:
+            content = src.get("content")
+            if not isinstance(content, list):
+                return None
+            filtered: list[dict[str, Any]] = []
+            removed = False
+            for item in content:
+                if not isinstance(item, dict):
+                    filtered.append(item)
+                    continue
+                if item.get("type") == "audio_url" and item.get("role") == "reference_audio":
+                    removed = True
+                    continue
+                if item.get("type") == "text":
+                    text = str(item.get("text") or "")
+                    cleaned_lines = [
+                        line
+                        for line in text.splitlines()
+                        if "参考音频" not in line
+                        and "角色音色" not in line
+                        and "旁白音色" not in line
+                    ]
+                    filtered.append({**item, "text": "\n".join(cleaned_lines).strip()})
+                    continue
+                filtered.append(item)
+            if not removed:
+                return None
+            return {**src, "content": filtered}
+
         last_err: Exception | None = None
+        fallback_body = body
+        audio_fallback_used = False
         for _attempt in range(max_attempts):
             try:
-                task_id = await self.gen_video_seedance_body(body, project_id=project_id)
+                task_id = await self.gen_video_seedance_body(fallback_body, project_id=project_id)
                 return await self.wait_video_assets(
                     task_id, project_id=project_id, shot_no=shot_no
                 )
             except Exception as exc:  # noqa: BLE001
                 last_err = exc
+                if not audio_fallback_used and _is_audio_download_error(exc):
+                    stripped = _strip_reference_audio(fallback_body)
+                    if stripped:
+                        logger.warning(
+                            "Seedance reference_audio download failed; retry without audio refs project=%s shot=%s",
+                            project_id,
+                            shot_no,
+                        )
+                        fallback_body = stripped
+                        audio_fallback_used = True
         raise RuntimeError(str(last_err) if last_err else "Seedance multimodal failed")
 
     async def poll_task(self, task_id: str) -> TaskResult:

@@ -96,3 +96,22 @@ def match_fragments_for_generate(
         return ordered
     id_set = set(fragment_ids)
     return [f for f in ordered if f.id in id_set]
+
+
+async def count_user_active_fragment_video_jobs(db: AsyncSession, user_id: int) -> int:
+    """统计用户当前在途分镜视频数（queued/running/generating）。"""
+    from app.services.drama.generation import fragment_generation_status
+
+    result = await db.execute(
+        select(DramaEpisodeFragment)
+        .join(DramaEpisode, DramaEpisodeFragment.episode_id == DramaEpisode.id)
+        .join(DramaProject, DramaEpisode.project_id == DramaProject.id)
+        .where(DramaProject.user_id == user_id)
+    )
+    fragments = result.scalars().all()
+    total = 0
+    for fragment in fragments:
+        status = str(fragment_generation_status(fragment).get("status") or "")
+        if status in {"queued", "running", "generating"}:
+            total += 1
+    return total

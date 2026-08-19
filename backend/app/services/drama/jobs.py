@@ -981,6 +981,7 @@ async def _generate_one_fragment_video(
             gen_status = str(gen.get("status") or "") if isinstance(gen, dict) else ""
             if _is_episode_video_cancelled(episode_id) or gen_status == "cancelled":
                 params = dict(frag.params or {})
+                params.pop("generation_attempts", None)
                 params["generation"] = {"status": "cancelled"}
                 frag.params = params
                 await db.commit()
@@ -992,14 +993,44 @@ async def _generate_one_fragment_video(
                 return False
 
             params = dict(frag.params or {})
-            params["generation"] = {"status": "running"}
+            persisted_attempts = int(params.get("generation_attempts") or 0)
+            prev_attempts = persisted_attempts
+            if isinstance(gen, dict):
+                prev_attempts = max(prev_attempts, int(gen.get("attempts") or 0))
+            max_attempts = max(1, int(get_settings().drama_fragment_max_attempts or 3))
+            attempts = prev_attempts + 1
+            if attempts > max_attempts:
+                params["generation_attempts"] = prev_attempts
+                params["generation"] = {
+                    "status": "failed",
+                    "error": f"分镜重试超过上限（{max_attempts} 次）",
+                    "attempts": prev_attempts,
+                    "attempt_limit": max_attempts,
+                }
+                frag.params = params
+                await db.commit()
+                logger.warning(
+                    "分镜视频跳过：超过重试上限 fragment_id=%s attempts=%s limit=%s",
+                    fragment_id,
+                    prev_attempts,
+                    max_attempts,
+                )
+                return False
+            params["generation_attempts"] = attempts
+            params["generation"] = {
+                "status": "running",
+                "attempts": attempts,
+                "attempt_limit": max_attempts,
+            }
             frag.params = params
             await db.commit()
             try:
                 logger.info(
-                    "生成分镜视频 fragment_id=%s episode_id=%s",
+                    "生成分镜视频 fragment_id=%s episode_id=%s attempt=%s/%s",
                     fragment_id,
                     episode_id,
+                    attempts,
+                    max_attempts,
                 )
                 await generate_fragment_video(db, user, project, frag)
                 await db.refresh(frag)
@@ -1009,11 +1040,14 @@ async def _generate_one_fragment_video(
                     raw = frag.params.get("lastFrameUrl") or frag.params.get("last_frame_url")
                     if isinstance(raw, str):
                         last_frame = raw
+                params.pop("generation_attempts", None)
                 params["generation"] = {
                     "status": "done",
                     "video": frag.video,
                     "cover": frag.cover,
                     "lastFrameUrl": last_frame or None,
+                    "attempts": attempts,
+                    "attempt_limit": max_attempts,
                 }
                 if last_frame:
                     params["lastFrameUrl"] = last_frame
@@ -1022,10 +1056,21 @@ async def _generate_one_fragment_video(
                 return True
             except Exception as exc:  # noqa: BLE001
                 params = dict(frag.params or {})
-                params["generation"] = {"status": "failed", "error": str(exc)[:500]}
+                params["generation_attempts"] = attempts
+                params["generation"] = {
+                    "status": "failed",
+                    "error": str(exc)[:500],
+                    "attempts": attempts,
+                    "attempt_limit": max_attempts,
+                }
                 frag.params = params
                 await db.commit()
-                logger.exception("分镜视频失败 fragment_id=%s", fragment_id)
+                logger.exception(
+                    "分镜视频失败 fragment_id=%s attempt=%s/%s",
+                    fragment_id,
+                    attempts,
+                    max_attempts,
+                )
                 return False
 
 

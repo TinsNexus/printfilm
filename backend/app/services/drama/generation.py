@@ -285,6 +285,55 @@ async def ensure_reference_assets_public_urls(
     """将引用资产的本地 cover/url 同步上传 OSS，供 Seedance 公网拉取。"""
     from app.services import storage as storage_svc
 
+    source_asset_cache: dict[int, DramaAsset | None] = {}
+
+    # 角色音色优先复用 source voice asset 的公网 URL；缺失时再尝试补传本地文件。
+    async def _resolve_public_voice_url(asset: DramaAsset, params: dict[str, Any]) -> str | None:
+        voice_url = read_asset_voice_audio_url(params)
+        if not voice_url:
+            return None
+
+        binding = params.get("voiceAudio")
+        if not isinstance(binding, dict):
+            canvas = params.get("canvas")
+            if isinstance(canvas, dict):
+                maybe_binding = canvas.get("voiceAudio")
+                if isinstance(maybe_binding, dict):
+                    binding = maybe_binding
+        source_id = binding.get("sourceAssetId") if isinstance(binding, dict) else None
+        if isinstance(source_id, int):
+            source_asset = source_asset_cache.get(source_id)
+            if source_id not in source_asset_cache:
+                source_asset = await db.get(DramaAsset, source_id)
+                source_asset_cache[source_id] = source_asset
+            if source_asset and source_asset.project_id == asset.project_id:
+                source_url = (source_asset.url or "").strip()
+                if source_url.startswith("https://"):
+                    local_source = storage_svc.local_path_from_url(source_url)
+                    if local_source:
+                        try:
+                            await storage_svc.ensure_local_media(source_url, local_source)
+                            return storage_svc.to_public_url(storage_svc.rel_static_url(local_source))
+                        except Exception:  # noqa: BLE001
+                            logger.exception(
+                                "restore voice reference local file failed source_asset_id=%s",
+                                source_asset.id,
+                            )
+                            return source_url
+                    return source_url
+
+        if voice_url.startswith("https://"):
+            return voice_url
+
+        published_voice = storage_svc.republish_url(voice_url, sync=True)
+        if (
+            published_voice
+            and published_voice != voice_url
+            and str(published_voice).startswith("https://")
+        ):
+            return str(published_voice)
+        return None
+
     changed = False
     for asset in assets:
         for field in ("cover", "url"):
@@ -302,29 +351,24 @@ async def ensure_reference_assets_public_urls(
                     asset.id,
                     field,
                 )
-        # 角色音色本地音频同样需要公网
+        # 角色音色需要公网 URL；若历史绑定仍是 /static，改指向 source voice asset 的 HTTPS。
         params = dict(asset.params or {}) if isinstance(asset.params, dict) else {}
-        voice_url = read_asset_voice_audio_url(params)
-        if voice_url and not voice_url.startswith("https://"):
-            published_voice = storage_svc.republish_url(voice_url, sync=True)
-            if (
-                published_voice
-                and published_voice != voice_url
-                and str(published_voice).startswith("https://")
-            ):
-                binding = params.get("voiceAudio")
-                if isinstance(binding, dict):
-                    params["voiceAudio"] = {**binding, "url": str(published_voice)}
-                canvas = params.get("canvas")
-                if isinstance(canvas, dict):
-                    voice_binding = canvas.get("voiceAudio")
-                    if isinstance(voice_binding, dict):
-                        params["canvas"] = {
-                            **canvas,
-                            "voiceAudio": {**voice_binding, "url": str(published_voice)},
-                        }
-                asset.params = params
-                changed = True
+        current_voice_url = read_asset_voice_audio_url(params)
+        public_voice_url = await _resolve_public_voice_url(asset, params)
+        if public_voice_url and public_voice_url != current_voice_url:
+            binding = params.get("voiceAudio")
+            if isinstance(binding, dict):
+                params["voiceAudio"] = {**binding, "url": public_voice_url}
+            canvas = params.get("canvas")
+            if isinstance(canvas, dict):
+                voice_binding = canvas.get("voiceAudio")
+                if isinstance(voice_binding, dict):
+                    params["canvas"] = {
+                        **canvas,
+                        "voiceAudio": {**voice_binding, "url": public_voice_url},
+                    }
+            asset.params = params
+            changed = True
     if changed:
         await db.commit()
         for asset in assets:

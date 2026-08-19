@@ -22,6 +22,7 @@ from app.schemas_drama import (
 )
 from app.services.agent.compose import parse_skill_ids
 from app.services.drama.access import (
+    count_user_active_fragment_video_jobs,
     get_owned_drama_project,
     get_owned_episode,
     load_episode_fragments,
@@ -37,6 +38,7 @@ from app.services.drama.jobs import (
     dispatch_episode_fragment_plan_job,
     dispatch_episode_generate_job,
 )
+from app.config import get_settings
 from app.services.drama.seed import seed_episodes_from_script
 
 router = APIRouter()
@@ -266,7 +268,7 @@ async def generate_episode(
     idle_frags = [
         f
         for f in frags
-        if fragment_generation_status(f).get("status") not in {"queued", "running"}
+        if fragment_generation_status(f).get("status") not in {"queued", "running", "generating"}
     ]
     idle_frags.sort(key=lambda f: int(f.sort_order or 0))
     if not idle_frags:
@@ -274,6 +276,19 @@ async def generate_episode(
             status_code=409,
             detail="所选分镜正在生成，请等待完成后再试",
         )
+
+    # 单用户限流：避免一次性挂太多 queued/running 分镜，拖慢整条 video 队列。
+    limit = max(1, int(get_settings().drama_user_video_job_limit or 12))
+    active_jobs = await count_user_active_fragment_video_jobs(db, user.id)
+    remaining_slots = max(0, limit - active_jobs)
+    if remaining_slots <= 0:
+        raise HTTPException(
+            status_code=429,
+            detail=f"你当前已有 {active_jobs}/{limit} 个分镜在生成，请等待部分完成后再试",
+        )
+    accepted_frags = idle_frags[:remaining_slots]
+    dropped_count = max(0, len(idle_frags) - len(accepted_frags))
+    idle_frags = accepted_frags
 
     sequential = project_link_last_frame_enabled(project)
     frag_ids = [f.id for f in idle_frags]
@@ -301,6 +316,9 @@ async def generate_episode(
         "fragment_ids": frag_ids,
         "status": "queued",
         "task_id": task_id,
+        "user_active_jobs": active_jobs + len(frag_ids),
+        "user_job_limit": limit,
+        "remaining_not_queued": dropped_count,
     }
 
 

@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     # Seedance 2.5 官方并发上限约 10
     pipeline_video_concurrency: int = 10
     pipeline_audio_concurrency: int = 4
+    # 单用户漫剧视频在途分镜上限（queued/running）；避免单个账号堆满长链任务
+    drama_user_video_job_limit: int = 12
+    # 单个分镜视频最大尝试次数；超过后直接失败，避免长时间卡在同一镜
+    drama_fragment_max_attempts: int = 3
     # 已废弃：科普不再直出口播（即使 .env 为 true 也会被管线忽略）
     kepu_seedance_generate_audio: bool = False
     # 科普 Seedance 仍出音轨：只要操作/环境音效，不要口播与 BGM
