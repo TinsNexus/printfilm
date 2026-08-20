@@ -106,8 +106,8 @@ export function UsersPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <PageHeader title="用户管理" description="搜索用户，调整套餐、余额与无限额度" />
+    <div className="admin-list-page">
+      <PageHeader description="搜索用户，调整套餐、余额与无限额度" />
 
       <Toolbar>
         <Input

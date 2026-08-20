@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { PageHeader } from "@/components/ui/page";
 import { PROJECT_STATUS_OPTIONS, projectStatusLabel } from "@/lib/statusLabels";
 
 type ListRes = { items: AdminProject[]; meta: PageMeta };
@@ -64,12 +65,9 @@ export function ProjectsPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="text-xl font-semibold text-[#303133]">项目管理</h2>
-        <p className="mt-1 text-sm text-[#909399]">按状态筛选，查看失败原因与进度</p>
-      </div>
-      <div className="flex flex-wrap gap-2">
+    <div className="admin-list-page">
+      <PageHeader description="按状态筛选，查看失败原因与进度" />
+      <div className="admin-filter-bar">
         <Select className="w-44" value={status} onChange={(e) => setStatus(e.target.value)}>
           {PROJECT_STATUS_OPTIONS.map((opt) => (
             <option key={opt.value || "all"} value={opt.value}>

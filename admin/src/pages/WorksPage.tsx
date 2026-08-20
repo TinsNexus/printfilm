@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { PageHeader } from "@/components/ui/page";
 import { auditStatusLabel, visibilityLabel } from "@/lib/statusLabels";
 
 type ListRes = { items: AdminWork[]; meta: PageMeta };
@@ -53,12 +54,9 @@ export function WorksPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="text-xl font-semibold text-[#303133]">作品审核</h2>
-        <p className="mt-1 text-sm text-[#909399]">调整可见性与审核状态</p>
-      </div>
-      <div className="flex flex-wrap gap-2">
+    <div className="admin-list-page">
+      <PageHeader description="调整可见性与审核状态" />
+      <div className="admin-filter-bar">
         <Select className="w-40" value={auditStatus} onChange={(e) => setAuditStatus(e.target.value)}>
           <option value="">全部审核</option>
           <option value="pending">待审核</option>

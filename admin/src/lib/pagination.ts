@@ -1,3 +1,6 @@
+/** 模板列表每页数量（卡片网格铺满） */
+export const TEMPLATE_PAGE_SIZE = 24;
+
 /** Default page size for all admin list pages */
 export const DEFAULT_PAGE_SIZE = 10;
 

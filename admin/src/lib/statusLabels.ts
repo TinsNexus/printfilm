@@ -53,6 +53,26 @@ export const PAY_TYPE_LABELS: Record<string, string> = {
   wxpay: "微信",
 };
 
+/** Unified task platform status → Chinese */
+export const TASK_STATUS_LABELS: Record<string, string> = {
+  pending: "排队中",
+  leased: "已租约",
+  running: "执行中",
+  awaiting_poll: "等待轮询",
+  awaiting_review: "待审核",
+  cancel_requested: "取消中",
+  succeeded: "已成功",
+  failed: "失败",
+  cancelled: "已取消",
+};
+
+/** Task domain → Chinese */
+export const TASK_DOMAIN_LABELS: Record<string, string> = {
+  drama: "漫剧",
+  kepu: "科普",
+  tools: "工具",
+};
+
 // Resolve project status display text
 export function projectStatusLabel(status: string): string {
   return PROJECT_STATUS_LABELS[status] ?? status;
@@ -81,6 +101,16 @@ export function ledgerKindLabel(kind: string): string {
 // Resolve pay type display text
 export function payTypeLabel(payType: string): string {
   return PAY_TYPE_LABELS[payType] ?? payType;
+}
+
+// Resolve task status display text
+export function taskStatusLabel(status: string): string {
+  return TASK_STATUS_LABELS[status] ?? status;
+}
+
+// Resolve task domain display text
+export function taskDomainLabel(domain: string): string {
+  return TASK_DOMAIN_LABELS[domain] ?? domain;
 }
 
 /** Filter options for project status select (value stays English for API) */
