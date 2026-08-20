@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,23 @@ logger = logging.getLogger(__name__)
 IMAGE_REF_ASSET_TYPES = frozenset({"character", "scene", "prop"})
 
 
+# 统一解析项目参数里的布尔值，兼容历史字符串/数字写法
+def _coerce_project_bool(value: Any, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off", ""}:
+            return False
+    return bool(value)
+
+
 # 读取分镜已落盘的尾帧 URL
 def read_fragment_last_frame_url(fragment: DramaEpisodeFragment | None) -> str | None:
     if not fragment:
@@ -57,15 +75,13 @@ def write_fragment_last_frame_url(fragment: DramaEpisodeFragment, url: str | Non
     fragment.params = params
 
 
-# 项目是否开启「上一镜尾帧 → 本镜首帧」衔接（默认开启）
+# 项目是否开启「上一镜尾帧 → 本镜首帧」衔接（默认关闭）
 def project_link_last_frame_enabled(project: DramaProject) -> bool:
     params = project.params if isinstance(project.params, dict) else {}
     raw = params.get("linkLastFrame")
     if raw is None:
         raw = params.get("link_last_frame")
-    if raw is None:
-        return True
-    return bool(raw)
+    return _coerce_project_bool(raw, False)
 
 
 # 查找同集中 sort_order 更小的上一镜
@@ -94,6 +110,51 @@ def fragment_generation_status(fragment: DramaEpisodeFragment) -> dict[str, Any]
     if isinstance(gen, dict):
         return gen
     return {"status": "idle"}
+
+
+# 无对应平台任务时，把 queued/running 分镜恢复为 idle，避免假排队
+async def reconcile_orphaned_fragment_generations(
+    db: AsyncSession,
+    fragments: list[DramaEpisodeFragment],
+    active_fragment_ids: set[int],
+) -> int:
+    changed = 0
+    for fragment in fragments:
+        status = str(fragment_generation_status(fragment).get("status") or "")
+        if status not in {"queued", "running", "generating"}:
+            continue
+        if fragment.id in active_fragment_ids:
+            continue
+        params = dict(fragment.params or {})
+        params.pop("generation_attempts", None)
+        params["generation"] = {
+            "status": "idle",
+            "message": "任务已中断，请重新生成",
+        }
+        fragment.params = params
+        changed += 1
+    if changed:
+        await db.commit()
+        logger.info("已修复孤儿分镜生成状态 count=%s", changed)
+    return changed
+
+
+def collect_active_fragment_ids_from_tasks(tasks) -> set[int]:
+    active_ids: set[int] = set()
+    for task in tasks:
+        if task.task_type != "fragment_video":
+            continue
+        payload = task.payload if isinstance(task.payload, dict) else {}
+        raw_ids = payload.get("fragment_ids") or []
+        if isinstance(raw_ids, list):
+            for item in raw_ids:
+                try:
+                    active_ids.add(int(item))
+                except (TypeError, ValueError):
+                    continue
+        if task.fragment_id:
+            active_ids.add(int(task.fragment_id))
+    return active_ids
 
 
 # 从分镜正文提取 @asset:id
@@ -308,29 +369,24 @@ async def ensure_reference_assets_public_urls(
                 source_asset_cache[source_id] = source_asset
             if source_asset and source_asset.project_id == asset.project_id:
                 source_url = (source_asset.url or "").strip()
-                if source_url.startswith("https://"):
+                if source_url:
                     local_source = storage_svc.local_path_from_url(source_url)
                     if local_source:
                         try:
                             await storage_svc.ensure_local_media(source_url, local_source)
-                            return storage_svc.to_public_url(storage_svc.rel_static_url(local_source))
+                            published = storage_svc.republish_url(source_url, sync=True)
+                            if published and str(published).startswith("https://"):
+                                return str(published)
                         except Exception:  # noqa: BLE001
                             logger.exception(
                                 "restore voice reference local file failed source_asset_id=%s",
                                 source_asset.id,
                             )
-                            return source_url
-                    return source_url
-
-        if voice_url.startswith("https://"):
-            return voice_url
+                    elif source_url.startswith("https://") and "oss" in source_url:
+                        return source_url
 
         published_voice = storage_svc.republish_url(voice_url, sync=True)
-        if (
-            published_voice
-            and published_voice != voice_url
-            and str(published_voice).startswith("https://")
-        ):
+        if published_voice and str(published_voice).startswith("https://"):
             return str(published_voice)
         return None
 
@@ -692,6 +748,241 @@ async def generate_fragment_video(
         bool(last_frame_url),
         bool(continuity_url),
     )
+    return fragment
+
+
+@dataclass
+class FragmentVideoPrepared:
+    """分镜视频提交前上下文（Worker 准备阶段产物，写入 task.payload）。"""
+
+    submit_mode: str
+    seedance_body: dict[str, Any] | None = None
+    image_url: str | None = None
+    prompt: str = ""
+    duration: int = 8
+    ratio: str = "9:16"
+    resolution: str = "480p"
+    generate_audio: bool = True
+
+
+@dataclass
+class FragmentVideoSubmitResult:
+    """分镜视频提交结果：一律异步轮询，不在 Worker 内阻塞等待。"""
+
+    provider_task_id: str
+
+
+# Worker 准备阶段：参考图 / 衔接帧 / 请求体（可耗时，但不等待上游成片）。
+async def prepare_fragment_video_for_submit(
+    db: AsyncSession,
+    user: User,
+    project: DramaProject,
+    fragment: DramaEpisodeFragment,
+) -> FragmentVideoPrepared:
+    settings = get_settings()
+    prompt = (fragment.content or "").strip() or "短剧分镜"
+    duration = int(fragment.duration_sec or 8)
+    duration = max(settings.seedance_duration_min, min(duration, settings.seedance_duration_max))
+    ratio = str((project.params or {}).get("aspect_ratio") or "").strip() or "9:16"
+    resolution = str((project.params or {}).get("resolution") or "").strip() or "480p"
+
+    refs = (
+        await db.execute(
+            select(DramaFragmentAssetRef)
+            .where(DramaFragmentAssetRef.fragment_id == fragment.id)
+            .order_by(DramaFragmentAssetRef.id.asc())
+        )
+    ).scalars().all()
+    ref_assets: list[DramaAsset] = []
+    seen_ids: set[int] = set()
+    for ref in refs:
+        if ref.asset_id in seen_ids:
+            continue
+        asset = await db.get(DramaAsset, ref.asset_id)
+        if asset:
+            seen_ids.add(ref.asset_id)
+            ref_assets.append(asset)
+
+    ref_assets = await ensure_fragment_reference_images(
+        db,
+        user,
+        project,
+        fragment,
+        ref_assets=ref_assets,
+    )
+    ref_assets = await ensure_reference_assets_public_urls(db, ref_assets)
+    ref_payloads = build_fragment_ref_payloads(project, ref_assets)
+    style_id = str((project.params or {}).get("image_style_id") or "").strip() or None
+    catalog = build_seedance_reference_catalog(ref_payloads)
+
+    continuity_url: str | None = None
+    if project_link_last_frame_enabled(project):
+        prev = await find_previous_episode_fragment(db, fragment)
+        continuity_url = read_fragment_last_frame_url(prev)
+        if continuity_url:
+            continuity_url = storage_svc_early_republish(continuity_url)
+
+    image_url = ""
+    for item in catalog.images:
+        image_url = item.url
+        break
+
+    if ref_payloads and (catalog.images or catalog.audios):
+        body = build_seedance_generate_body(
+            {
+                "content": prompt,
+                "reference": ref_payloads,
+                "video_style_id": style_id,
+                "aspect_ratio": ratio,
+                "resolution": resolution,
+                "duration_fallback": duration,
+                "continuity_first_frame_url": continuity_url,
+            }
+        )
+        return FragmentVideoPrepared(
+            submit_mode="seedance_body",
+            seedance_body=body,
+            prompt=prompt,
+            duration=duration,
+            ratio=ratio,
+            resolution=resolution,
+        )
+
+    ark = get_ark()
+    if not image_url:
+        still = await ark.gen_image(prompt[:500], project_id=project.id, shot_no=fragment.id)
+        image_url = still.local_url or ""
+
+    return FragmentVideoPrepared(
+        submit_mode="i2v",
+        image_url=image_url,
+        prompt=prompt,
+        duration=duration,
+        ratio=ratio,
+        resolution=resolution,
+        generate_audio=True,
+    )
+
+
+# Worker 提交阶段：仅 HTTP 创建上游任务，立即返回 provider_task_id（非阻塞）。
+async def submit_prepared_fragment_video(
+    prepared: FragmentVideoPrepared,
+    *,
+    project_id: int,
+) -> str:
+    ark = get_ark()
+    if prepared.submit_mode == "seedance_body" and prepared.seedance_body:
+        return await ark.gen_video_seedance_body(prepared.seedance_body, project_id=project_id)
+    if prepared.submit_mode == "i2v" and prepared.image_url:
+        return await ark.gen_video_i2v(
+            prepared.image_url,
+            prepared.prompt,
+            prepared.duration,
+            resolution=prepared.resolution,
+            ratio=prepared.ratio,
+            generate_audio=prepared.generate_audio,
+        )
+    raise RuntimeError("分镜视频提交上下文不完整")
+
+
+def serialize_fragment_video_prepared(prepared: FragmentVideoPrepared) -> dict[str, Any]:
+    return {
+        "submit_mode": prepared.submit_mode,
+        "seedance_body": prepared.seedance_body,
+        "image_url": prepared.image_url,
+        "prompt": prepared.prompt,
+        "duration": prepared.duration,
+        "ratio": prepared.ratio,
+        "resolution": prepared.resolution,
+        "generate_audio": prepared.generate_audio,
+    }
+
+
+def deserialize_fragment_video_prepared(raw: dict[str, Any]) -> FragmentVideoPrepared:
+    return FragmentVideoPrepared(
+        submit_mode=str(raw.get("submit_mode") or ""),
+        seedance_body=raw.get("seedance_body") if isinstance(raw.get("seedance_body"), dict) else None,
+        image_url=str(raw.get("image_url") or "") or None,
+        prompt=str(raw.get("prompt") or ""),
+        duration=int(raw.get("duration") or 8),
+        ratio=str(raw.get("ratio") or "9:16"),
+        resolution=str(raw.get("resolution") or "480p"),
+        generate_audio=bool(raw.get("generate_audio", True)),
+    )
+
+
+# 兼容旧调用：准备 + 提交，不在 Worker 内 wait。
+async def submit_fragment_video_generation(
+    db: AsyncSession,
+    user: User,
+    project: DramaProject,
+    fragment: DramaEpisodeFragment,
+) -> FragmentVideoSubmitResult:
+    prepared = await prepare_fragment_video_for_submit(db, user, project, fragment)
+    provider_task_id = await submit_prepared_fragment_video(prepared, project_id=project.id)
+    return FragmentVideoSubmitResult(provider_task_id=provider_task_id)
+
+
+# 将本地/上游视频落盘结果写回分镜并计费。
+async def apply_fragment_video_assets(
+    db: AsyncSession,
+    user: User,
+    project: DramaProject,
+    fragment: DramaEpisodeFragment,
+    *,
+    local_video: str,
+    local_last_frame: str | None = None,
+    attempts: int = 1,
+    attempt_limit: int = 3,
+) -> DramaEpisodeFragment:
+    from app.services import storage as storage_svc
+    from app.services.ffmpeg_compose import extract_video_poster_frame
+
+    settings = get_settings()
+    video_url = storage_svc.republish_url(local_video, sync=True) or local_video
+    cover_url = ""
+    video_path = storage_svc.local_path_from_url(local_video)
+    if video_path is None and isinstance(local_video, str) and not local_video.startswith("http"):
+        candidate = Path(local_video)
+        if candidate.exists():
+            video_path = candidate
+    if video_path and video_path.exists():
+        poster_dest = storage_svc.project_dir(project.id) / f"shot_{fragment.id}_cover.jpg"
+        if extract_video_poster_frame(video_path, poster_dest):
+            cover_src = storage_svc.rel_static_url(poster_dest)
+            cover_url = storage_svc.republish_url(cover_src, sync=True) or cover_src
+    last_frame_url = None
+    if local_last_frame:
+        last_frame_url = storage_svc.republish_url(local_last_frame, sync=True) or local_last_frame
+        if not cover_url:
+            cover_url = last_frame_url
+    fragment.video = video_url
+    fragment.cover = cover_url or ""
+    write_fragment_last_frame_url(fragment, last_frame_url)
+    params = dict(fragment.params or {})
+    params.pop("generation_attempts", None)
+    params["generation"] = {
+        "status": "done",
+        "video": fragment.video,
+        "cover": fragment.cover,
+        "lastFrameUrl": last_frame_url or None,
+        "attempts": attempts,
+        "attempt_limit": attempt_limit,
+    }
+    if last_frame_url:
+        params["lastFrameUrl"] = last_frame_url
+    fragment.params = params
+    await record_usage(
+        db,
+        user_id=user.id,
+        project_id=None,
+        drama_project_id=project.id,
+        billing_key="seedance2:video0",
+        model=settings.model_video,
+        estimated=True,
+    )
+    await db.commit()
+    await db.refresh(fragment)
     return fragment
 
 

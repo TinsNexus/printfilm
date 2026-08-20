@@ -125,13 +125,28 @@ def rel_static_url(path: Path) -> str:
 
 
 def is_local_static_url(url: str | None) -> bool:
+    """True when url points at media under backend/static (relative or site /static/)."""
     if not url:
         return False
     if url.startswith("/static/"):
         return True
     settings = get_settings()
-    prefix = settings.public_base_url.rstrip("/") + "/static/"
-    return url.startswith(prefix)
+    base = settings.public_base_url.rstrip("/")
+    if url.startswith(f"{base}/static/"):
+        return True
+    # 历史拼写错误域名、本地调试地址
+    for host in ("kepu.printfilm.com", "kepu.printtfilm.com", "127.0.0.1:8000", "localhost:8000"):
+        for scheme in ("https://", "http://"):
+            if url.startswith(f"{scheme}{host}/static/"):
+                return True
+    local = local_path_from_url(url)
+    if local and local.is_file():
+        try:
+            local.resolve().relative_to(STATIC_ROOT.resolve())
+            return True
+        except ValueError:
+            return False
+    return False
 
 
 @contextmanager
@@ -191,7 +206,7 @@ def upload_local_sync(path: Path, *, retries: int = 2) -> str:
 def publish_local(path: Path, *, sync: bool = False, retries: int = 2) -> str:
     """Publish media for the frontend.
 
-    Default: return /static URL immediately; when OSS+Celery async is on, enqueue
+    Default: return /static URL immediately; when OSS async is on, enqueue
     upload and DB backfill. Use sync=True for startup seeds or when immediate OSS
     URL is required.
 
@@ -217,7 +232,6 @@ def publish_local(path: Path, *, sync: bool = False, retries: int = 2) -> str:
     want_async = (
         not sync
         and bool(settings.oss_upload_async)
-        and bool(settings.use_celery)
     )
     if want_async:
         try:
@@ -237,7 +251,9 @@ def publish_local(path: Path, *, sync: bool = False, retries: int = 2) -> str:
 
 def republish_url(url: str | None, *, sync: bool = True) -> str | None:
     """If url is a local /static path and file exists, upload to OSS and return new URL."""
-    if not url or not is_local_static_url(url):
+    if not url:
+        return url
+    if not is_local_static_url(url):
         return url
     from app.services import oss as oss_svc
 

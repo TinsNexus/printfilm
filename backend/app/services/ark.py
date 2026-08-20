@@ -17,6 +17,8 @@ from urllib.parse import urlparse
 import httpx
 
 from app.config import Settings, get_settings
+from app.schemas_routing import ResolvedModelRoute
+from app.services.logical_model_router import resolve_logical_model, resolve_logical_model_id
 from app.services import storage
 from app.services.ffmpeg_compose import is_near_silent_audio
 from app.services.llm_client import chat_completions
@@ -197,6 +199,27 @@ class ArkGateway:
         if not path.startswith("/"):
             path = "/" + path
         return f"{base}{path}"
+
+    # 按逻辑路由解析 ARK 渠道凭证
+    def _resolve_ark_route(self, capability: str, model_id: str | None) -> ResolvedModelRoute | None:
+        logical_id = resolve_logical_model_id(capability, model_id)
+        return resolve_logical_model(capability, logical_id)
+
+    def _route_headers(self, route: ResolvedModelRoute | None = None) -> dict[str, str]:
+        if route and route.api_key:
+            return {
+                "Authorization": f"Bearer {route.api_key}",
+                "Content-Type": "application/json",
+            }
+        return self._headers()
+
+    def _route_url(self, path: str, route: ResolvedModelRoute | None = None) -> str:
+        if route and route.base_url:
+            base = route.base_url.rstrip("/")
+            if not path.startswith("/"):
+                path = "/" + path
+            return f"{base}{path}"
+        return self._url(path)
 
     async def chat_storyboard(
         self,
@@ -442,8 +465,10 @@ class ArkGateway:
         prompt_hash_src: str,
         model: str | None = None,
     ) -> ImageResult:
+        route = self._resolve_ark_route("image", model)
+        upstream_model = route.upstream_model if route else ((model or "").strip() or self.settings.model_image)
         body: dict[str, Any] = {
-            "model": (model or "").strip() or self.settings.model_image,
+            "model": upstream_model,
             "prompt": full_prompt,
             "size": size or self.settings.ark_image_size,
             "response_format": "url",
@@ -457,8 +482,8 @@ class ArkGateway:
 
         async with httpx.AsyncClient(timeout=180.0) as client:
             resp = await client.post(
-                self._url("/images/generations"),
-                headers=self._headers(),
+                self._route_url("/images/generations", route),
+                headers=self._route_headers(route),
                 json=body,
             )
             if resp.status_code >= 400:
@@ -585,8 +610,10 @@ class ArkGateway:
         ]
         # 首帧/首尾帧生视频：ratio 必须省略，输出比例跟随首帧图
         # （传 ratio 会报 InvalidParameter.TaskTypeConstraint）
+        route = self._resolve_ark_route("video", self.settings.model_video)
+        video_model = route.upstream_model if route else self.settings.model_video
         body: dict[str, Any] = {
-            "model": self.settings.model_video,
+            "model": video_model,
             "content": content,
             "duration": self._seedance_duration(duration),
             "resolution": resolution,
@@ -606,16 +633,16 @@ class ArkGateway:
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(
-                self._url("/contents/generations/tasks"),
-                headers=self._headers(),
+                self._route_url("/contents/generations/tasks", route),
+                headers=self._route_headers(route),
                 json=body,
             )
             if resp.status_code >= 400 and prompt_as_json:
                 # Fallback: plain text prompt
                 body["content"][0]["text"] = plain
                 resp = await client.post(
-                    self._url("/contents/generations/tasks"),
-                    headers=self._headers(),
+                    self._route_url("/contents/generations/tasks", route),
+                    headers=self._route_headers(route),
                     json=body,
                 )
             if resp.status_code >= 400:
@@ -624,8 +651,8 @@ class ArkGateway:
                 if "ratio" in err_text.lower() and "ratio" in body:
                     body.pop("ratio", None)
                     resp = await client.post(
-                        self._url("/contents/generations/tasks"),
-                        headers=self._headers(),
+                        self._route_url("/contents/generations/tasks", route),
+                        headers=self._route_headers(route),
                         json=body,
                     )
             if resp.status_code >= 400:
@@ -633,8 +660,8 @@ class ArkGateway:
                 body["content"][1].pop("role", None)
                 body["ratio"] = "adaptive"
                 resp = await client.post(
-                    self._url("/contents/generations/tasks"),
-                    headers=self._headers(),
+                    self._route_url("/contents/generations/tasks", route),
+                    headers=self._route_headers(route),
                     json=body,
                 )
             if resp.status_code >= 400:
@@ -693,6 +720,7 @@ class ArkGateway:
                 project_id=project_id,
             )
         payload["duration"] = self._seedance_duration(payload.get("duration", 8))
+        route = self._resolve_ark_route("video", str(payload.get("model") or ""))
 
         logger.info(
             "Seedance multimodal create model=%s duration=%s items=%s",
@@ -703,8 +731,8 @@ class ArkGateway:
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(
-                self._url("/contents/generations/tasks"),
-                headers=self._headers(),
+                self._route_url("/contents/generations/tasks", route),
+                headers=self._route_headers(route),
                 json=payload,
             )
             if resp.status_code >= 400:
@@ -852,15 +880,14 @@ class ArkGateway:
             return TaskResult(status="failed", error=str(err))
         return TaskResult(status="running")
 
-    async def wait_video_assets(
+    async def save_video_assets_from_result(
         self,
-        task_id: str,
+        result: TaskResult,
         *,
         project_id: int,
         shot_no: int,
     ) -> tuple[str, str | None]:
-        """等待任务完成并落盘视频；若有尾帧则一并落盘。"""
-        result = await self.poll_task(task_id)
+        """将单次 poll 成功结果落盘为本地视频与可选尾帧。"""
         if result.status != "succeeded" or not result.url:
             raise RuntimeError(result.error or "video generation failed")
 
@@ -880,14 +907,24 @@ class ArkGateway:
                     frame_dest = storage.project_dir(project_id) / f"shot_{shot_no:03d}_last.jpg"
                     await storage.download_to(result.last_frame_url, frame_dest)
                     last_local = storage.publish_local(frame_dest)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "Seedance last frame download failed shot_no=%s err=%s",
-                    shot_no,
-                    exc,
-                )
-                last_local = None
+            except Exception:  # noqa: BLE001
+                logger.warning("failed to save last frame project=%s shot=%s", project_id, shot_no)
         return video_local, last_local
+
+    async def wait_video_assets(
+        self,
+        task_id: str,
+        *,
+        project_id: int,
+        shot_no: int,
+    ) -> tuple[str, str | None]:
+        """等待任务完成并落盘视频；若有尾帧则一并落盘。"""
+        result = await self.poll_task(task_id)
+        return await self.save_video_assets_from_result(
+            result,
+            project_id=project_id,
+            shot_no=shot_no,
+        )
 
     async def wait_video(
         self,

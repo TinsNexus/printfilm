@@ -1,4 +1,4 @@
-"""Pipeline orchestration — stages shared by in-process and Celery runners."""
+"""Pipeline orchestration — in-process runtime used by the task platform."""
 
 from __future__ import annotations
 
@@ -23,7 +23,6 @@ from app.services.ffmpeg_compose import (
     is_near_silent_audio,
     probe_duration,
 )
-from app.workers.queues import PIPELINE_QUEUE, VIDEO_QUEUE
 from app.services.progress import publish_progress
 from app.services import storage
 from app.services.style_lock import (
@@ -82,8 +81,6 @@ async def _record_usage_est(
             await db.commit()
     except Exception:  # noqa: BLE001
         logger.exception("billing record failed project=%s key=%s", project_id, billing_key)
-_celery_task_ids: dict[int, str] = {}
-
 # Seedream min pixels ~3686400; portrait 9:16 ≈ 1440x2560
 _IMAGE_SIZE_BY_RATIO = {
     "9:16": "1440x2560",
@@ -102,30 +99,8 @@ class PipelineCancelled(Exception):
 
 
 def start_pipeline(project_id: int) -> str:
-    """Dispatch to Celery when enabled+Redis up; else in-process asyncio."""
+    """Start one in-process pipeline task."""
     _cancelled.discard(project_id)
-    settings = get_settings()
-    if settings.use_celery and _redis_ok():
-        from app.workers.queue_dedupe import clear_pipeline_run_lock, purge_pipeline_queue_for_project
-        from app.workers.tasks import run_pipeline_task
-
-        # Drop stale queued copies + revoke last known task so continue never double-runs
-        old_id = _celery_task_ids.pop(project_id, None)
-        if old_id and old_id != "in-process":
-            try:
-                from app.workers.celery_app import celery_app
-
-                celery_app.control.revoke(old_id, terminate=True, signal="SIGTERM")
-            except Exception:  # noqa: BLE001
-                logger.warning("revoke previous task failed project=%s task=%s", project_id, old_id)
-        purge_pipeline_queue_for_project(project_id)
-        clear_pipeline_run_lock(project_id)
-
-        async_result = run_pipeline_task.apply_async(args=[project_id], queue=PIPELINE_QUEUE)
-        task_id = str(async_result.id)
-        _celery_task_ids[project_id] = task_id
-        return task_id
-
     if project_id in _running and not _running[project_id].done():
         return "in-process"
     _running[project_id] = asyncio.create_task(run_pipeline(project_id))
@@ -133,7 +108,7 @@ def start_pipeline(project_id: int) -> str:
 
 
 def cancel_pipeline(project_id: int) -> bool:
-    """Request cancel; best-effort stop in-process task / Celery worker."""
+    """Request cancel for one in-process pipeline task."""
     _cancelled.add(project_id)
     stopped = False
 
@@ -142,25 +117,6 @@ def cancel_pipeline(project_id: int) -> bool:
         task.cancel()
         stopped = True
 
-    celery_id = _celery_task_ids.pop(project_id, None)
-    if celery_id and celery_id != "in-process":
-        try:
-            from app.workers.celery_app import celery_app
-
-            celery_app.control.revoke(celery_id, terminate=True, signal="SIGTERM")
-            stopped = True
-        except Exception:  # noqa: BLE001
-            logger.warning("celery revoke failed project=%s task=%s", project_id, celery_id)
-
-    try:
-        from app.workers.queue_dedupe import clear_pipeline_run_lock, purge_pipeline_queue_for_project
-
-        if purge_pipeline_queue_for_project(project_id):
-            stopped = True
-        clear_pipeline_run_lock(project_id)
-    except Exception:  # noqa: BLE001
-        logger.exception("queue purge on cancel failed project=%s", project_id)
-
     return stopped
 
 
@@ -168,45 +124,16 @@ def is_cancelled(project_id: int) -> bool:
     return project_id in _cancelled
 
 
-def _redis_ok() -> bool:
-    try:
-        import redis
-
-        r = redis.Redis.from_url(
-            get_settings().redis_url,
-            decode_responses=True,
-            socket_connect_timeout=2,
-            socket_timeout=2,
-        )
-        return bool(r.ping())
-    except Exception:  # noqa: BLE001
-        return False
-
-
-# 单镜重生 / 合成等短任务的进程内 fallback（Celery 不可用时）
+# 单镜重生 / 合成等短任务的进程内异步执行。
 _regen_tasks: dict[str, asyncio.Task] = {}
 
 
 def _dispatch_side_task(
     key: str,
     *,
-    celery_task_name: str,
-    celery_args: list,
-    queue: str,
     coro_factory,
 ) -> str:
-    """投递 Celery 侧任务；Redis 不可用时在 API 进程内 asyncio 执行。"""
-    settings = get_settings()
-    if settings.use_celery and _redis_ok():
-        from app.workers.celery_app import celery_app
-
-        async_result = celery_app.send_task(
-            celery_task_name,
-            args=celery_args,
-            queue=queue,
-        )
-        return str(async_result.id)
-
+    """Start one in-process side task."""
     existing = _regen_tasks.get(key)
     if existing and not existing.done():
         return "in-process"
@@ -230,9 +157,6 @@ def dispatch_regen_image(project_id: int, shot_id: int) -> str:
 
     return _dispatch_side_task(
         key,
-        celery_task_name="app.workers.tasks.regen_image_task",
-        celery_args=[project_id, shot_id],
-        queue=PIPELINE_QUEUE,
         coro_factory=_coro,
     )
 
@@ -246,9 +170,6 @@ def dispatch_regen_video(project_id: int, shot_id: int) -> str:
 
     return _dispatch_side_task(
         key,
-        celery_task_name="app.workers.tasks.regen_video_task",
-        celery_args=[project_id, shot_id],
-        queue=VIDEO_QUEUE,
         coro_factory=_coro,
     )
 
@@ -262,9 +183,6 @@ def dispatch_regen_audio(project_id: int, shot_id: int) -> str:
 
     return _dispatch_side_task(
         key,
-        celery_task_name="app.workers.tasks.regen_audio_task",
-        celery_args=[project_id, shot_id],
-        queue=PIPELINE_QUEUE,
         coro_factory=_coro,
     )
 
@@ -278,9 +196,6 @@ def dispatch_regen_project_audio_and_compose(project_id: int) -> str:
 
     return _dispatch_side_task(
         key,
-        celery_task_name="app.workers.tasks.regen_audio_compose_task",
-        celery_args=[project_id],
-        queue=PIPELINE_QUEUE,
         coro_factory=_coro,
     )
 
@@ -294,9 +209,6 @@ def dispatch_compose_only(project_id: int) -> str:
 
     return _dispatch_side_task(
         key,
-        celery_task_name="app.workers.tasks.compose_only_task",
-        celery_args=[project_id],
-        queue=PIPELINE_QUEUE,
         coro_factory=_coro,
     )
 
@@ -636,7 +548,6 @@ async def run_pipeline(project_id: int) -> None:
         raise
     finally:
         _cancelled.discard(project_id)
-        _celery_task_ids.pop(project_id, None)
         _running.pop(project_id, None)
 
 

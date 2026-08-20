@@ -1,9 +1,10 @@
-"""Drama long-running jobs: Celery dispatch + in-process fallback."""
+"""Drama long-running jobs executed in-process by the task platform."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -12,6 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.config import get_settings
 from app.database import AsyncSessionLocal
 from app.models import User
+from app.models_tasks import TaskRun
 from app.models_drama import (
     DramaAsset,
     DramaEpisode,
@@ -31,13 +33,17 @@ from app.services.drama.agents import (
 )
 from app.services.drama.asset_video import generate_asset_video
 from app.services.drama.generation import (
+    apply_fragment_video_assets,
+    deserialize_fragment_video_prepared,
     fragment_generation_status,
     generate_asset_image,
     generate_fragment_video,
+    prepare_fragment_video_for_submit,
     project_link_last_frame_enabled,
+    serialize_fragment_video_prepared,
+    submit_prepared_fragment_video,
 )
 from app.services.drama.visual_prompt import resolve_visual_prompt_for_asset
-from app.workers.queues import DRAMA_QUEUE, PIPELINE_QUEUE, VIDEO_QUEUE
 
 logger = logging.getLogger(__name__)
 
@@ -45,16 +51,6 @@ logger = logging.getLogger(__name__)
 _running: dict[str, asyncio.Task] = {}
 # 分集视频取消标记（episode_id）
 _video_cancelled_episodes: set[int] = set()
-_episode_video_celery_ids: dict[int, list[str]] = {}
-
-VIDEO_CELERY_TASKS = frozenset(
-    {
-        "drama.episode_generate",
-        "drama.fragment_generate",
-        "app.workers.tasks.regen_video_task",
-    }
-)
-VIDEO_QUEUES = (VIDEO_QUEUE,)
 ACTIVE_VIDEO_GEN_STATUSES = frozenset({"queued", "running", "generating"})
 
 
@@ -85,121 +81,6 @@ def _cancel_inprocess_episode_video(episode_id: int) -> bool:
     return cancelled
 
 
-def _revoke_celery_task_ids(task_ids: list[str]) -> int:
-    if not task_ids:
-        return 0
-    try:
-        from app.workers.celery_app import celery_app
-
-        for tid in task_ids:
-            celery_app.control.revoke(tid, terminate=True, signal="SIGTERM")
-        return len(task_ids)
-    except Exception:  # noqa: BLE001
-        logger.exception("revoke celery video tasks failed")
-        return 0
-
-
-def _episode_id_from_video_celery_message(msg: dict[str, Any]) -> int | None:
-    headers = msg.get("headers") or {}
-    task = str(headers.get("task") or "")
-    if task not in {"drama.episode_generate", "drama.fragment_generate"}:
-        return None
-    body = msg.get("body")
-    if not body:
-        return None
-    try:
-        import base64
-        import json
-
-        if isinstance(body, bytes):
-            body = body.decode("utf-8", errors="replace")
-        raw = base64.b64decode(body)
-        payload = json.loads(raw.decode("utf-8"))
-        args = payload[0] if isinstance(payload, (list, tuple)) and payload else None
-        if isinstance(args, (list, tuple)) and args:
-            return int(args[0])
-    except Exception:  # noqa: BLE001
-        return None
-    return None
-
-
-def _purge_video_queue_messages(*, episode_id: int | None = None) -> tuple[int, list[str]]:
-    """从 video/pipeline 队列移除视频任务；返回 (removed, revoked_ids)。"""
-    try:
-        import json
-
-        import redis
-
-        r = redis.Redis.from_url(get_settings().redis_url, decode_responses=True)
-        total_removed = 0
-        revoked_ids: list[str] = []
-        for queue in VIDEO_QUEUES:
-            items = r.lrange(queue, 0, -1) or []
-            if not items:
-                continue
-            kept: list[str] = []
-            queue_removed = 0
-            for raw in items:
-                try:
-                    msg = json.loads(raw)
-                except Exception:  # noqa: BLE001
-                    kept.append(raw)
-                    continue
-                headers = msg.get("headers") or {}
-                task = str(headers.get("task") or "")
-                if task not in VIDEO_CELERY_TASKS:
-                    kept.append(raw)
-                    continue
-                ep_id = _episode_id_from_video_celery_message(msg)
-                if episode_id is not None and ep_id != int(episode_id):
-                    kept.append(raw)
-                    continue
-                tid = str(headers.get("id") or "")
-                if tid:
-                    revoked_ids.append(tid)
-                queue_removed += 1
-            if queue_removed <= 0:
-                continue
-            pipe = r.pipeline()
-            pipe.delete(queue)
-            if kept:
-                pipe.rpush(queue, *kept)
-            pipe.execute()
-            total_removed += queue_removed
-        return total_removed, revoked_ids
-    except Exception:  # noqa: BLE001
-        logger.exception("purge video queue failed episode_id=%s", episode_id)
-        return 0, []
-
-
-def _collect_active_video_celery_ids(*, episode_id: int | None = None) -> list[str]:
-    ids: list[str] = []
-    try:
-        from app.workers.celery_app import celery_app
-
-        inspect = celery_app.control.inspect(timeout=2.0)
-        for fetch in (inspect.active, inspect.reserved, inspect.scheduled):
-            data = fetch() or {}
-            for _worker, tasks in data.items():
-                for task in tasks or []:
-                    name = str(task.get("name") or task.get("request", {}).get("name") or "")
-                    if name not in VIDEO_CELERY_TASKS:
-                        continue
-                    args = task.get("args") or task.get("request", {}).get("args") or []
-                    if (
-                        name in {"drama.episode_generate", "drama.fragment_generate"}
-                        and episode_id is not None
-                    ):
-                        if not args or int(args[0]) != int(episode_id):
-                            continue
-                    tid = str(task.get("id") or task.get("request", {}).get("id") or "")
-                    if tid:
-                        ids.append(tid)
-    except Exception:  # noqa: BLE001
-        logger.exception("inspect active video tasks failed")
-    return ids
-
-
 async def _reset_fragment_video_generation(
     db,
     *,
@@ -225,40 +106,30 @@ async def _reset_fragment_video_generation(
 
 
 async def cancel_episode_video_jobs(episode_id: int) -> dict[str, Any]:
-    """取消单集视频任务：revoke Celery、终止进程内任务、重置分镜状态。"""
+    """取消单集视频任务：终止进程内任务并重置分镜状态。"""
     _mark_episode_video_cancelled(episode_id)
     cancelled_inprocess = _cancel_inprocess_episode_video(episode_id)
-    revoked_ids: list[str] = []
-    stored = _episode_video_celery_ids.pop(int(episode_id), None)
-    if stored:
-        revoked_ids.extend(stored)
-    revoked_ids.extend(_collect_active_video_celery_ids(episode_id=episode_id))
-    purged, purged_ids = _purge_video_queue_messages(episode_id=episode_id)
-    revoked_ids.extend(purged_ids)
-    revoked = _revoke_celery_task_ids(list(dict.fromkeys(revoked_ids)))
     async with AsyncSessionLocal() as db:
         fragments = await _reset_fragment_video_generation(db, episode_id=episode_id)
     logger.info(
-        "取消分集视频 episode_id=%s inprocess=%s purged=%s revoked=%s fragments=%s",
+        "取消分集视频 episode_id=%s inprocess=%s fragments=%s",
         episode_id,
         cancelled_inprocess,
-        purged,
-        revoked,
         fragments,
     )
     return {
         "ok": True,
         "episode_id": episode_id,
         "inprocess": cancelled_inprocess,
-        "purged": purged,
-        "revoked": revoked,
+        "purged": 0,
+        "revoked": 0,
         "fragments": fragments,
     }
 
 
 async def cancel_all_episode_video_jobs() -> dict[str, Any]:
     """取消全部漫剧分镜视频任务。"""
-    episode_ids = set(_episode_video_celery_ids.keys()) | set(_video_cancelled_episodes)
+    episode_ids = set(_video_cancelled_episodes)
     async with AsyncSessionLocal() as db:
         frags = (await db.execute(select(DramaEpisodeFragment))).scalars().all()
         for frag in frags:
@@ -271,45 +142,20 @@ async def cancel_all_episode_video_jobs() -> dict[str, Any]:
         _mark_episode_video_cancelled(ep_id)
         _cancel_inprocess_episode_video(ep_id)
 
-    revoked_ids = _collect_active_video_celery_ids()
-    for tids in _episode_video_celery_ids.values():
-        revoked_ids.extend(tids)
-    purged, purged_ids = _purge_video_queue_messages()
-    revoked_ids.extend(purged_ids)
-    revoked = _revoke_celery_task_ids(list(dict.fromkeys(revoked_ids)))
-    _episode_video_celery_ids.clear()
-
     async with AsyncSessionLocal() as db:
         fragments = await _reset_fragment_video_generation(db)
     logger.info(
-        "取消全部视频任务 purged=%s revoked=%s fragments=%s episodes=%s",
-        purged,
-        revoked,
+        "取消全部视频任务 fragments=%s episodes=%s",
         fragments,
         len(episode_ids),
     )
     return {
         "ok": True,
-        "purged": purged,
-        "revoked": revoked,
+        "purged": 0,
+        "revoked": 0,
         "fragments": fragments,
         "episodes": len(episode_ids),
     }
-
-
-def _redis_ok() -> bool:
-    try:
-        import redis
-
-        r = redis.Redis.from_url(get_settings().redis_url, socket_connect_timeout=0.4)
-        r.ping()
-        return True
-    except Exception:  # noqa: BLE001
-        return False
-
-
-def _use_celery() -> bool:
-    return bool(get_settings().use_celery) and _redis_ok()
 
 
 def _job_key(kind: str, entity_id: int) -> str:
@@ -320,17 +166,10 @@ def _job_key(kind: str, entity_id: int) -> str:
 
 
 def dispatch_script_summary_job(project_id: int) -> str:
-    """Enqueue script summary; returns celery / in-process id.
+    """Start one in-process script-summary task.
 
     Caller should mark summary_status=generating before calling.
     """
-    if _use_celery():
-        from app.workers.drama_tasks import drama_script_summary_task
-
-        result = drama_script_summary_task.apply_async(args=[project_id], queue=DRAMA_QUEUE)
-        logger.info("dispatch 剧本摘要 → Celery project_id=%s task_id=%s", project_id, result.id)
-        return str(result.id)
-
     key = _job_key("summary", project_id)
     if key in _running and not _running[key].done():
         logger.info("dispatch 剧本摘要 → 进程内已在跑 project_id=%s", project_id)
@@ -411,25 +250,10 @@ async def run_script_summary_job(project_id: int) -> dict[str, Any]:
 
 
 def dispatch_episode_scripts_job(project_id: int, force: bool = False) -> str:
-    """Enqueue full episode-script generation for a project.
+    """Start one in-process episode-script task.
 
     Caller should mark episode_content_status=generating before calling.
     """
-    if _use_celery():
-        from app.workers.drama_tasks import drama_episode_scripts_task
-
-        result = drama_episode_scripts_task.apply_async(
-            args=[project_id, force],
-            queue=DRAMA_QUEUE,
-        )
-        logger.info(
-            "dispatch 分集剧本 → Celery project_id=%s force=%s task_id=%s",
-            project_id,
-            force,
-            result.id,
-        )
-        return str(result.id)
-
     key = _job_key("episodes", project_id)
     if key in _running and not _running[key].done():
         logger.info("dispatch 分集剧本 → 进程内已在跑 project_id=%s", project_id)
@@ -569,21 +393,7 @@ async def run_episode_scripts_job(project_id: int, force: bool = False) -> dict[
 
 
 def dispatch_episode_fragment_plan_job(episode_id: int, *, fallback_rules: bool = True) -> str:
-    # 入队单集 LLM 分镜；Celery 不可用时进程内跑
-    if _use_celery():
-        from app.workers.drama_tasks import drama_episode_fragment_plan_task
-
-        result = drama_episode_fragment_plan_task.apply_async(
-            args=[episode_id, fallback_rules],
-            queue=DRAMA_QUEUE,
-        )
-        logger.info(
-            "dispatch 单集分镜 → Celery episode_id=%s task_id=%s",
-            episode_id,
-            result.id,
-        )
-        return str(result.id)
-
+    # 启动单集 LLM 分镜任务。
     key = _job_key("fragplan", episode_id)
     if key in _running and not _running[key].done():
         logger.info("dispatch 单集分镜 → 进程内已在跑 episode_id=%s", episode_id)
@@ -781,34 +591,6 @@ async def run_episode_fragment_plan_job(
 # ---------- episode video ----------
 
 
-def _remember_episode_video_celery_id(episode_id: int, task_id: str) -> None:
-    # 记下本集当前/历史 Celery id，取消时 revoke
-    prev = _episode_video_celery_ids.get(int(episode_id), [])
-    _episode_video_celery_ids[int(episode_id)] = [*prev, str(task_id)]
-
-
-def _dispatch_fragment_generate(
-    episode_id: int,
-    user_id: int,
-    fragment_id: int,
-    remaining_ids: list[int],
-) -> str:
-    # 入队一条分镜；remaining_ids 在本镜成功后再派发（尾帧衔接）
-    from app.workers.drama_tasks import drama_fragment_generate_task
-
-    result = drama_fragment_generate_task.apply_async(
-        args=[
-            episode_id,
-            user_id,
-            int(fragment_id),
-            [int(x) for x in remaining_ids],
-        ],
-        queue=VIDEO_QUEUE,
-    )
-    _remember_episode_video_celery_id(episode_id, str(result.id))
-    return str(result.id)
-
-
 async def _queued_remaining_fragment_ids(fragment_ids: list[int]) -> list[int]:
     # 取消后库里已不是 queued，不再派发下一镜
     still: list[int] = []
@@ -821,6 +603,9 @@ async def _queued_remaining_fragment_ids(fragment_ids: list[int]) -> list[int]:
             if status == "queued":
                 still.append(int(fid))
     return still
+
+
+async def _fail_remaining_fragment_videos(fragment_ids: list[int], error: str) -> None:
     # 上一镜失败/取消后，后续镜无法取尾帧，标记失败避免一直「排队中」
     if not fragment_ids:
         return
@@ -879,26 +664,6 @@ def dispatch_episode_generate_job(
     _clear_episode_video_cancelled(episode_id)
     if not ids:
         return "queued"
-
-    if _use_celery():
-        if sequential:
-            task_id = _dispatch_fragment_generate(episode_id, user_id, ids[0], ids[1:])
-            logger.info(
-                "dispatch 分镜视频链 → Celery episode_id=%s first=%s rest=%s",
-                episode_id,
-                ids[0],
-                len(ids) - 1,
-            )
-            return task_id
-        task_ids = [
-            _dispatch_fragment_generate(episode_id, user_id, fid, []) for fid in ids
-        ]
-        logger.info(
-            "dispatch 分镜视频并行 → Celery episode_id=%s fragments=%s",
-            episode_id,
-            len(task_ids),
-        )
-        return task_ids[0]
 
     if sequential:
         key = f"epgen:{int(episode_id)}"
@@ -1116,12 +881,7 @@ async def run_fragment_generate_job(
             if still_queued:
                 next_id = still_queued[0]
                 rest = still_queued[1:]
-                if _use_celery():
-                    _dispatch_fragment_generate(episode_id, user_id, next_id, rest)
-                else:
-                    asyncio.create_task(
-                        _run_fragment_chain_inprocess(episode_id, user_id, still_queued)
-                    )
+                asyncio.create_task(_run_fragment_chain_inprocess(episode_id, user_id, still_queued))
                 logger.info(
                     "已衔接下一镜 episode_id=%s next=%s rest=%s",
                     episode_id,
@@ -1138,12 +898,248 @@ async def run_fragment_generate_job(
     }
 
 
+# 任务平台（NIO）：Worker 短生命周期 — prepare → submit → 注册 awaiting_poll，由 Selector 轮询。
+async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
+    from app.services.tasks.service import append_task_event, get_task_for_runtime, set_task_step_state
+
+    payload = task.payload if isinstance(task.payload, dict) else {}
+    nio_phase = str(payload.get("nio_phase") or "prepare")
+    fragment_ids = payload.get("fragment_ids") or []
+    fragment_id = int(task.fragment_id or (fragment_ids[0] if fragment_ids else 0))
+    episode_id = int(task.episode_id or payload.get("episode_id") or 0)
+    user_id = int(task.requested_by)
+    if fragment_id <= 0 or episode_id <= 0:
+        raise ValueError("任务缺少 episode_id / fragment_id")
+
+    async with AsyncSessionLocal() as db:
+        task_row = await get_task_for_runtime(db, task.id)
+        if not task_row:
+            return {"ok": False, "error": "missing_task"}
+        ep = await db.get(
+            DramaEpisode,
+            episode_id,
+            options=[selectinload(DramaEpisode.project).selectinload(DramaProject.script)],
+        )
+        if not ep or not ep.project:
+            raise ValueError("分集或项目不存在")
+        project = ep.project
+        user = await db.get(User, user_id)
+        if not user:
+            raise ValueError("用户不存在")
+        frag = await db.get(
+            DramaEpisodeFragment,
+            fragment_id,
+            options=[
+                selectinload(DramaEpisodeFragment.asset_references).selectinload(
+                    DramaFragmentAssetRef.asset
+                )
+            ],
+        )
+        if not frag or frag.episode_id != episode_id:
+            raise ValueError("分镜不存在")
+
+        if _is_episode_video_cancelled(episode_id):
+            params = dict(frag.params or {})
+            params.pop("generation_attempts", None)
+            params["generation"] = {"status": "cancelled"}
+            frag.params = params
+            await db.commit()
+            return {"ok": False, "cancelled": True}
+
+        gen = frag.params.get("generation") if isinstance(frag.params, dict) else None
+        persisted_attempts = int((frag.params or {}).get("generation_attempts") or 0)
+        prev_attempts = persisted_attempts
+        if isinstance(gen, dict):
+            prev_attempts = max(prev_attempts, int(gen.get("attempts") or 0))
+        max_attempts = max(1, int(get_settings().drama_fragment_max_attempts or 3))
+        attempts = prev_attempts + 1 if nio_phase == "prepare" else int(payload.get("generation_attempts") or prev_attempts + 1)
+        if nio_phase == "prepare" and attempts > max_attempts:
+            params = dict(frag.params or {})
+            params["generation"] = {
+                "status": "failed",
+                "error": f"分镜重试超过上限（{max_attempts} 次）",
+                "attempts": prev_attempts,
+                "attempt_limit": max_attempts,
+            }
+            frag.params = params
+            await db.commit()
+            raise RuntimeError(params["generation"]["error"])
+
+        if nio_phase == "prepare":
+            params = dict(frag.params or {})
+            params["generation_attempts"] = attempts
+            params["generation"] = {
+                "status": "running",
+                "phase": "assets",
+                "attempts": attempts,
+                "attempt_limit": max_attempts,
+            }
+            frag.params = params
+            task_row.progress_percent = max(int(task_row.progress_percent or 0), 10)
+            task_row.current_step_status = "preparing"
+            await db.commit()
+
+            prepared = await prepare_fragment_video_for_submit(db, user, project, frag)
+            now = datetime.now(UTC)
+            next_payload = dict(payload)
+            next_payload["nio_phase"] = "submit"
+            next_payload["generation_attempts"] = attempts
+            next_payload["attempt_limit"] = max_attempts
+            next_payload["prepared"] = serialize_fragment_video_prepared(prepared)
+            task_row.status = "pending"
+            task_row.progress_percent = 25
+            task_row.current_step_status = "prepared"
+            task_row.payload = next_payload
+            task_row.next_action_at = now
+            task_row.lease_token = None
+            task_row.lease_until = None
+            step = task_row.steps[0] if task_row.steps else None
+            set_task_step_state(task_row, step, status="prepared", now=now)
+            await append_task_event(
+                db,
+                task_row.id,
+                event_type="task.prepared",
+                status=task_row.status,
+                phase=task_row.current_step_key,
+                message="参考资源就绪，重新入队提交",
+            )
+            await db.commit()
+            return {"deferred": True, "nio_phase": "submit"}
+
+        # nio_phase == submit：仅 HTTP 注册上游，立即释放 Worker
+        prepared_raw = payload.get("prepared")
+        if not isinstance(prepared_raw, dict):
+            prepared = await prepare_fragment_video_for_submit(db, user, project, frag)
+        else:
+            prepared = deserialize_fragment_video_prepared(prepared_raw)
+
+        params = dict(frag.params or {})
+        params["generation"] = {
+            "status": "running",
+            "phase": "submit",
+            "attempts": attempts,
+            "attempt_limit": max_attempts,
+        }
+        frag.params = params
+        task_row.progress_percent = max(int(task_row.progress_percent or 0), 30)
+        task_row.current_step_status = "submitting"
+        await db.commit()
+
+        provider_task_id = await submit_prepared_fragment_video(prepared, project_id=project.id)
+        poll_interval = max(1.0, float(get_settings().ark_video_poll_interval or 8.0))
+        now = datetime.now(UTC)
+        task_row.status = "awaiting_poll"
+        task_row.provider_task_id = provider_task_id
+        task_row.progress_percent = 40
+        task_row.current_step_status = "polling"
+        task_row.next_action_at = now + timedelta(seconds=poll_interval)
+        task_row.lease_token = None
+        task_row.lease_until = None
+        next_payload = dict(payload)
+        next_payload.pop("prepared", None)
+        next_payload["nio_phase"] = "poll"
+        next_payload["generation_attempts"] = attempts
+        next_payload["attempt_limit"] = max_attempts
+        task_row.payload = next_payload
+        step = task_row.steps[0] if task_row.steps else None
+        set_task_step_state(task_row, step, status="polling", now=now)
+        await append_task_event(
+            db,
+            task_row.id,
+            event_type="task.registered",
+            status=task_row.status,
+            phase=task_row.current_step_key,
+            message="已注册上游，Selector 非阻塞轮询",
+            payload={"provider_task_id": provider_task_id},
+        )
+        await db.commit()
+        return {"awaiting_poll": True, "provider_task_id": provider_task_id}
+
+
+# 任务平台：轮询 awaiting_poll 的分镜视频任务。
+async def poll_fragment_video_task(task_id: int) -> None:
+    from app.services.ark import get_ark
+    from app.services.tasks.executor import _complete_task, _fail_task
+    from app.services.tasks.service import activate_next_sequential_task, get_task_for_runtime
+
+    async with AsyncSessionLocal() as db:
+        task = await get_task_for_runtime(db, task_id)
+        if not task or task.status != "awaiting_poll" or not task.provider_task_id:
+            return
+        payload = task.payload if isinstance(task.payload, dict) else {}
+        fragment_ids = payload.get("fragment_ids") or []
+        fragment_id = int(task.fragment_id or (fragment_ids[0] if fragment_ids else 0))
+        episode_id = int(task.episode_id or payload.get("episode_id") or 0)
+        user_id = int(task.requested_by)
+        attempts = int(payload.get("generation_attempts") or 1)
+        attempt_limit = int(payload.get("attempt_limit") or get_settings().drama_fragment_max_attempts or 3)
+        poll_interval = max(1.0, float(get_settings().ark_video_poll_interval or 8.0))
+        now = datetime.now(UTC)
+
+        if _is_episode_video_cancelled(episode_id):
+            await _fail_task(db, task, RuntimeError("任务已取消"))
+            return
+
+        result = await get_ark().fetch_task_once(task.provider_task_id)
+        if result.status == "running":
+            task.next_action_at = now + timedelta(seconds=poll_interval)
+            task.progress_percent = min(95, int(task.progress_percent or 40) + 3)
+            task.current_step_status = "polling"
+            await db.commit()
+            return
+        if result.status != "succeeded":
+            frag = await db.get(DramaEpisodeFragment, fragment_id)
+            if frag:
+                params = dict(frag.params or {})
+                params["generation"] = {
+                    "status": "failed",
+                    "error": str(result.error or "上游生成失败")[:500],
+                    "attempts": attempts,
+                    "attempt_limit": attempt_limit,
+                }
+                frag.params = params
+            await _fail_task(db, task, RuntimeError(result.error or "上游生成失败"))
+            return
+
+        ep = await db.get(DramaEpisode, episode_id, options=[selectinload(DramaEpisode.project)])
+        user = await db.get(User, user_id)
+        frag = await db.get(DramaEpisodeFragment, fragment_id)
+        if not ep or not ep.project or not user or not frag:
+            await _fail_task(db, task, RuntimeError("分镜上下文丢失"))
+            return
+
+        task.current_step_status = "finalizing"
+        task.progress_percent = max(int(task.progress_percent or 0), 90)
+        await db.commit()
+
+        local_video, local_last_frame = await get_ark().save_video_assets_from_result(
+            result,
+            project_id=ep.project.id,
+            shot_no=fragment_id,
+        )
+        await apply_fragment_video_assets(
+            db,
+            user,
+            ep.project,
+            frag,
+            local_video=local_video,
+            local_last_frame=local_last_frame,
+            attempts=attempts,
+            attempt_limit=attempt_limit,
+        )
+        batch_index = int(payload.get("batch_index", 0))
+        await activate_next_sequential_task(db, task.batch_key, batch_index)
+        task.progress_percent = 100
+        await _complete_task(db, task, {"ok": True, "fragment_id": fragment_id})
+
+
 async def run_episode_generate_job(
     episode_id: int,
     user_id: int,
     fragment_ids: list[int],
 ) -> dict[str, Any]:
     # 校验分集后，按 Seedance 并发上限并行生成各分镜
+    _clear_episode_video_cancelled(episode_id)
     logger.info(
         "开始生成分集视频 episode_id=%s fragments=%s",
         episode_id,
@@ -1233,33 +1229,6 @@ def dispatch_asset_image_job(
     resolution: str | None = None,
 ) -> str:
     """Enqueue asset image generation. Caller marks asset generating when possible."""
-    if _use_celery():
-        from app.workers.drama_tasks import drama_asset_image_task
-
-        result = drama_asset_image_task.apply_async(
-            kwargs={
-                "project_id": project_id,
-                "user_id": user_id,
-                "prompt": prompt,
-                "asset_id": asset_id,
-                "name": name,
-                "kind": kind,
-                "image_style_id": image_style_id,
-                "model_id": model_id,
-                "aspect_ratio": aspect_ratio,
-                "resolution": resolution,
-            },
-            queue=DRAMA_QUEUE,
-        )
-        logger.info(
-            "dispatch 资产生图 → Celery project_id=%s asset_id=%s kind=%s task_id=%s",
-            project_id,
-            asset_id,
-            kind,
-            result.id,
-        )
-        return str(result.id)
-
     key = _job_key("img", asset_id or project_id)
     if key in _running and not _running[key].done():
         logger.info("dispatch 资产生图 → 进程内已在跑 asset_id=%s", asset_id)
@@ -1401,33 +1370,7 @@ def dispatch_asset_video_job(
     image_style_id: str | None = None,
     reference_asset_ids: list[int] | None = None,
 ) -> str:
-    """Enqueue canvas asset video generation. Caller marks asset generating."""
-    if _use_celery():
-        from app.workers.drama_tasks import drama_asset_video_task
-
-        result = drama_asset_video_task.apply_async(
-            kwargs={
-                "project_id": project_id,
-                "user_id": user_id,
-                "prompt": prompt,
-                "asset_id": asset_id,
-                "model_id": model_id,
-                "aspect_ratio": aspect_ratio,
-                "resolution": resolution,
-                "duration_sec": duration_sec,
-                "image_style_id": image_style_id,
-                "reference_asset_ids": reference_asset_ids or [],
-            },
-            queue=VIDEO_QUEUE,
-        )
-        logger.info(
-            "dispatch 资产生视频 → Celery project_id=%s asset_id=%s task_id=%s",
-            project_id,
-            asset_id,
-            result.id,
-        )
-        return str(result.id)
-
+    """Start one in-process asset-video generation task."""
     key = _job_key("vid", asset_id)
     if key in _running and not _running[key].done():
         logger.info("dispatch 资产生视频 → 进程内已在跑 asset_id=%s", asset_id)
@@ -1601,21 +1544,7 @@ def dispatch_seed_assets_job(
     refresh_prompts: bool = False,
     reextract_props: bool = False,
 ) -> str:
-    """投递资产抽取任务；refresh/reextract 等重 LLM 路径走 Celery。"""
-    if _use_celery():
-        from app.workers.drama_tasks import drama_seed_assets_task
-
-        result = drama_seed_assets_task.apply_async(
-            args=[project_id, refresh_prompts, reextract_props],
-            queue=DRAMA_QUEUE,
-        )
-        logger.info(
-            "dispatch 抽取资产 → Celery project_id=%s task_id=%s",
-            project_id,
-            result.id,
-        )
-        return str(result.id)
-
+    """Start one in-process seed-assets task."""
     key = _job_key("seed_assets", project_id)
     if key in _running and not _running[key].done():
         logger.info("dispatch 抽取资产 → 进程内已在跑 project_id=%s", project_id)

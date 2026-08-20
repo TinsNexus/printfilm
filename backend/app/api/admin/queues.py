@@ -1,35 +1,56 @@
-# Admin queue monitoring API
-import asyncio
+# Admin task runtime monitoring API (legacy /queues path for dashboard compat)
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
+from app.database import get_db
 from app.deps import get_current_admin
 from app.models import User
 from app.schemas import AdminQueuesOut
-from app.services.queue_monitor import collect_queue_snapshot
-from app.services.worker_manager import get_worker_control_status
+from app.services.tasks.runtime import runtime_summary
+from app.services.tasks.service import get_task_stats_admin
 
 router = APIRouter()
 
 
-def _build_queues_response(*, detail: bool) -> dict:
-    data = collect_queue_snapshot(include_inspect=detail)
-    pools = data.pop("_inspect_pools", None)
-    data.pop("_inspect_stats", None)
-    data.pop("_inspect_active", None)
-    data.pop("inspect_included", None)
-    data["worker_control"] = get_worker_control_status(
-        pools=pools if detail else None,
-        skip_inspect=not detail,
-    )
-    return data
-
-
 @router.get("/queues", response_model=AdminQueuesOut)
 async def admin_queues(
-    detail: bool = Query(default=False, description="true=含 Celery inspect 任务明细，较慢"),
+    detail: bool = Query(default=False, description="保留参数，任务中心请用 /admin/tasks"),
     _admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
 ) -> AdminQueuesOut:
-    # 队列监控：默认轻量（仅 Redis 计数）；detail=1 才拉 worker 执行态
-    data = await asyncio.to_thread(_build_queues_response, detail=detail)
-    return AdminQueuesOut.model_validate(data)
+    # 兼容旧路径：返回 task_runs 聚合统计，不再暴露历史 worker 控制项
+    _ = detail
+    settings = get_settings()
+    stats = await get_task_stats_admin(db)
+    runtime = runtime_summary()
+    running_jobs = int(runtime.get("scheduler_running_jobs") or 0)
+    max_concurrency = int(settings.task_runtime_max_concurrency)
+    pending = int(stats.get("pending_count") or 0)
+    active = int(stats.get("active_count") or 0)
+    return AdminQueuesOut.model_validate(
+        {
+            "ok": True,
+            "redis_ok": False,
+            "unacked": 0,
+            "total_pending": pending,
+            "active_count": active,
+            "reserved_count": int(stats.get("leased_count") or 0),
+            "queues": [
+                {
+                    "name": item["domain"],
+                    "label": item["domain"],
+                    "pending": item["pending"],
+                    "sample": [],
+                }
+                for item in stats.get("domains") or []
+            ],
+            "pending_tasks": [],
+            "active_tasks": [],
+            "reserved_tasks": [],
+            "runtime": {"mode": "task_runtime", "running_jobs": running_jobs, "max_concurrency": max_concurrency},
+            "fetched_at": datetime.now(UTC).isoformat(),
+        }
+    )

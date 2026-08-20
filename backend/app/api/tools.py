@@ -30,7 +30,7 @@ IMAGE_TOOLS = {"t2i", "i2i", "i2p", "ecom"}
 VIDEO_TOOLS = {"t2v", "v2v"}
 
 
-# 提交独立工具生成（生图异步 Celery；生视频返回 Seedance task_id 供轮询）
+# 提交独立工具生成（生图走统一任务平台；生视频返回 Seedance task_id 供轮询）
 @router.post("/run", response_model=ToolRunOut)
 async def run_tool(
     tool_id: str = Form(...),
@@ -108,7 +108,7 @@ async def run_tool(
     return ToolRunOut.model_validate(data)
 
 
-# 查询工具异步任务（生图 Celery / 生视频 Seedance），并回写创作记录
+# 查询工具异步任务（生图任务平台 / 生视频 Seedance），并回写创作记录
 @router.get("/tasks/{task_id}", response_model=ToolTaskOut)
 async def get_tool_task(
     task_id: str,

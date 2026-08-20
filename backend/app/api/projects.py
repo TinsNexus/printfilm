@@ -34,9 +34,15 @@ from app.schemas import (
     VoicePreviewRequest,
     WorkOut,
 )
+from app.schemas_tasks import TaskCreateRequest, TaskTargetBind
 from app.services import pipeline, storage
 from app.services.ark import get_ark
 from app.services.progress import redis_bridge, subscribe, unsubscribe
+from app.services.tasks.service import (
+    cancel_tasks_for_scope,
+    create_task,
+    list_active_tasks_for_owner,
+)
 from app.services.voices import ensure_voice_preview, list_voices
 
 router = APIRouter(tags=["projects"])
@@ -84,6 +90,11 @@ async def _get_owned_project(db: AsyncSession, project_id: int, user: User) -> P
     project = result.scalar_one_or_none()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
+    project.active_tasks = await list_active_tasks_for_owner(db, user.id, project_id=project.id)
+    runtime_status, runtime_progress, runtime_error = _project_runtime_view(project)
+    project.status = runtime_status
+    project.progress = runtime_progress
+    project.error_msg = runtime_error
     return project
 
 
@@ -99,6 +110,81 @@ def _ensure_side_task_allowed(project: Project) -> None:
     }
     if project.status in running:
         raise HTTPException(status_code=409, detail="生成进行中，请稍后")
+
+
+# 用统一任务中心投影项目运行态，避免前端只依赖旧 Project.status。
+def _project_runtime_view(project: Project) -> tuple[str, int, str | None]:
+    active_tasks = list(getattr(project, "active_tasks", []) or [])
+    if not active_tasks:
+        return str(project.status), int(project.progress or 0), project.error_msg
+    task = active_tasks[0]
+    task_type = str(getattr(task, "task_type", "") or "")
+    status = str(getattr(task, "status", "") or "")
+    progress = int(getattr(task, "progress_percent", 0) or 0)
+    if task_type == "project_pipeline":
+        label = ProjectStatus.SCRIPTING
+    elif task_type == "shot_regen_image":
+        label = ProjectStatus.IMAGING
+    elif task_type == "shot_regen_video":
+        label = ProjectStatus.VIDEOING
+    elif task_type == "shot_regen_audio":
+        label = ProjectStatus.AUDIOING
+    elif task_type == "project_regen_audio":
+        label = ProjectStatus.AUDIOING
+    elif task_type == "project_compose_only":
+        label = ProjectStatus.COMPOSING
+    else:
+        label = str(project.status)
+    if status in {"failed", "cancelled"}:
+        return status.upper(), progress, getattr(task, "error_message", None) or project.error_msg
+    if status in {"pending", "leased", "running", "awaiting_poll", "cancel_requested"}:
+        return label, max(progress, int(project.progress or 0)), getattr(task, "error_message", None)
+    return str(project.status), int(project.progress or 0), project.error_msg
+
+
+# 为科普项目/镜头创建统一任务，由平台调度器自动执行
+async def _create_kepu_task(
+    db: AsyncSession,
+    user: User,
+    *,
+    project_id: int,
+    task_type: str,
+    shot_id: int | None = None,
+    payload: dict | None = None,
+) -> int:
+    targets = [TaskTargetBind(target_type="project", target_id=project_id)]
+    if shot_id is not None:
+        targets.append(TaskTargetBind(target_type="shot", target_id=shot_id))
+    task = await create_task(
+        db,
+        user,
+        TaskCreateRequest(
+            domain="kepu",
+            task_type=task_type,
+            dedupe_key=f"kepu:{task_type}:project:{project_id}:shot:{shot_id or 0}",
+            payload={"project_id": project_id, "shot_id": shot_id, **(payload or {})},
+            project_id=project_id,
+            shot_id=shot_id,
+            targets=targets,
+        ),
+    )
+    return int(task.id)
+
+
+# 批量读取项目活动任务，避免列表页逐项查询。
+async def list_active_tasks_for_user_rows(
+    db: AsyncSession,
+    user_id: int,
+    project_ids: list[int],
+) -> dict[int, list]:
+    by_project_id: dict[int, list] = {}
+    for project_id in project_ids:
+        by_project_id[int(project_id)] = await list_active_tasks_for_owner(
+            db,
+            user_id,
+            project_id=int(project_id),
+        )
+    return by_project_id
 
 
 @router.post("/projects", response_model=ProjectOut)
@@ -223,22 +309,26 @@ async def list_projects(
             )
         )
         published_ids = {int(x) for x in pub_result.scalars().all()}
+        active_tasks = await list_active_tasks_for_user_rows(db, user.id, [p.id for p in rows])
+        for project in rows:
+            project.active_tasks = active_tasks.get(int(project.id), [])
 
     items = [
         ProjectListItem(
             id=p.id,
             title=p.title,
             template_id=p.template_id,
-            status=p.status,
-            progress=int(p.progress or 0),
+            status=_project_runtime_view(p)[0],
+            progress=_project_runtime_view(p)[1],
             cover_url=p.cover_url,
             final_video_url=p.final_video_url,
-            error_msg=p.error_msg,
+            error_msg=_project_runtime_view(p)[2],
             pipeline_mode=p.pipeline_mode or "full",
             output_ratio=p.output_ratio or "",
             published=p.id in published_ids,
             created_at=p.created_at,
             updated_at=p.updated_at,
+            active_tasks=list(getattr(p, "active_tasks", []) or []),
         )
         for p in rows
     ]
@@ -523,13 +613,25 @@ async def generate_project(
             project.status = ProjectStatus.COMPOSING
             project.progress = max(project.progress or 0, 88)
     await db.commit()
-    task_id = pipeline.start_pipeline(project_id)
-    # Persist celery id on a job row when available
-    if task_id and task_id != "in-process":
-        from app.models import PipelineJob
-
-        db.add(PipelineJob(project_id=project_id, stage="DISPATCH", progress=1, celery_task_id=task_id))
-        await db.commit()
+    task = await create_task(
+        db,
+        user,
+        TaskCreateRequest(
+            domain="kepu",
+            task_type="project_pipeline",
+            dedupe_key=f"kepu:project_pipeline:{project_id}:{int(bool(restart))}:{phase}",
+            payload={
+                "project_id": project_id,
+                "restart": bool(restart),
+                "phase": phase,
+                "pipeline_mode": project.pipeline_mode or "full",
+            },
+            project_id=project_id,
+            targets=[
+                TaskTargetBind(target_type="project", target_id=project_id),
+            ],
+        ),
+    )
     return await _get_owned_project(db, project_id, user)
 
 
@@ -551,6 +653,7 @@ async def cancel_project(
     if project.status not in running:
         raise HTTPException(status_code=400, detail="当前状态不可取消")
 
+    await cancel_tasks_for_scope(db, user.id, project_id=project_id)
     pipeline.cancel_pipeline(project_id)
     project.status = ProjectStatus.CANCELLED
     project.error_msg = "用户取消"
@@ -698,7 +801,13 @@ async def regen_image(
     project.status = ProjectStatus.IMAGING
     project.error_msg = None
     await db.commit()
-    pipeline.dispatch_regen_image(project_id, shot_id)
+    await _create_kepu_task(
+        db,
+        user,
+        project_id=project_id,
+        shot_id=shot_id,
+        task_type="shot_regen_image",
+    )
     return await _get_owned_project(db, project_id, user)
 
 
@@ -719,7 +828,13 @@ async def regen_video(
     project.status = ProjectStatus.VIDEOING
     project.error_msg = None
     await db.commit()
-    pipeline.dispatch_regen_video(project_id, shot_id)
+    await _create_kepu_task(
+        db,
+        user,
+        project_id=project_id,
+        shot_id=shot_id,
+        task_type="shot_regen_video",
+    )
     return await _get_owned_project(db, project_id, user)
 
 
@@ -738,7 +853,13 @@ async def regen_audio(
     project.status = ProjectStatus.AUDIOING
     project.error_msg = None
     await db.commit()
-    pipeline.dispatch_regen_audio(project_id, shot_id)
+    await _create_kepu_task(
+        db,
+        user,
+        project_id=project_id,
+        shot_id=shot_id,
+        task_type="shot_regen_audio",
+    )
     return await _get_owned_project(db, project_id, user)
 
 
@@ -766,7 +887,12 @@ async def regen_all_audio(
     project.error_msg = None
     project.final_video_url = None
     await db.commit()
-    pipeline.dispatch_regen_project_audio_and_compose(project_id)
+    await _create_kepu_task(
+        db,
+        user,
+        project_id=project_id,
+        task_type="project_regen_audio",
+    )
     return await _get_owned_project(db, project_id, user)
 
 
@@ -795,7 +921,12 @@ async def compose_only(
     project.progress = 90
     project.error_msg = None
     await db.commit()
-    pipeline.dispatch_compose_only(project_id)
+    await _create_kepu_task(
+        db,
+        user,
+        project_id=project_id,
+        task_type="project_compose_only",
+    )
     return await _get_owned_project(db, project_id, user)
 
 

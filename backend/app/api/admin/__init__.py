@@ -1,12 +1,13 @@
 # Admin API router aggregation
 from fastapi import APIRouter
 
-from app.api.admin import dashboard, drama_projects, ledger, orders, projects, queues, templates, users, workers, works
+from app.api.admin import dashboard, drama_projects, ledger, orders, projects, queues, settings, tasks, templates, users, works
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 router.include_router(dashboard.router)
 router.include_router(queues.router)
-router.include_router(workers.router)
+router.include_router(tasks.router)
+router.include_router(settings.router)
 router.include_router(users.router)
 router.include_router(orders.router)
 router.include_router(ledger.router)

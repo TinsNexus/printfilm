@@ -28,6 +28,7 @@ from app.services.drama.build_fragments import (
     parse_cast_names,
     split_episode_content_into_scenes,
 )
+from app.services.drama.access import detach_task_fragment_refs
 from app.services.drama.extract_props_materials import extract_props_materials
 from app.services.drama.seed_asset_params import (
     build_character_params,
@@ -571,6 +572,8 @@ async def _replace_episode_fragments(
         else []
     )
     protected_ids = {int(f.id) for f in protected}
+    stale_ids = [int(f.id) for f in existing if int(f.id) not in protected_ids]
+    await detach_task_fragment_refs(db, stale_ids)
     for old in existing:
         if int(old.id) not in protected_ids:
             await db.delete(old)

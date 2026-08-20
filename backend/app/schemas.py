@@ -1,7 +1,10 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+from app.schemas_common import PageMeta
+from app.schemas_tasks import TaskRunBriefOut
 
 
 # ---- Auth ----
@@ -35,6 +38,11 @@ class UserOut(BaseModel):
     phone: str = ""
 
     model_config = {"from_attributes": True}
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def normalize_phone(cls, value: Any) -> str:
+        return str(value or "")
 
 
 class ProfileUpdateRequest(BaseModel):
@@ -166,6 +174,7 @@ class ProjectOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     shots: list[ShotOut] = []
+    active_tasks: list[TaskRunBriefOut] = []
 
     model_config = {"from_attributes": True}
 
@@ -184,6 +193,7 @@ class ProjectListItem(BaseModel):
     published: bool = False
     created_at: datetime
     updated_at: datetime | None = None
+    active_tasks: list[TaskRunBriefOut] = []
 
     model_config = {"from_attributes": True}
 
@@ -237,12 +247,6 @@ class ProgressEvent(BaseModel):
 
 
 # ---- Admin ----
-class PageMeta(BaseModel):
-    page: int
-    page_size: int
-    total: int
-
-
 class ProjectListStats(BaseModel):
     total: int = 0
     generating: int = 0
@@ -270,7 +274,6 @@ class AdminQueueTaskOut(BaseModel):
     args_repr: str
     queue: str
     state: str
-    worker: str | None = None
     started_at: float | None = None
     ref_id: int | None = None
     position: int | None = None
@@ -283,81 +286,18 @@ class AdminQueueSummaryOut(BaseModel):
     sample: list[AdminQueueTaskOut]
 
 
-class AdminWorkerOut(BaseModel):
-    name: str
-    status: str
-    active_count: int
-    processed: int | None = None
-    pool: str | None = None
-
-
-class AdminWorkerPoolOut(BaseModel):
-    name: str
-    pool_implementation: str = ""
-    max_concurrency: int | None = None
-    process_count: int | None = None
-    writes: dict[str, Any] | None = None
-
-
-class AdminWorkerControlOut(BaseModel):
-    mode: str
-    systemd_unit: str | None = None
-    systemd_active: bool | None = None
-    pools: list[AdminWorkerPoolOut] = []
-    total_processes: int = 0
-    max_concurrency: int | None = None
-    pool_max_limit: int = 8
-    can_pool_grow: bool = False
-    can_pool_shrink: bool = False
-    can_restart: bool = False
-    autoscale_running: bool = False
-    autoscale_enabled: bool = False
-    autoscale_pid: int | None = None
-    autoscale_workers: int = 0
-    bounds_min: int = 1
-    bounds_max: int = 3
-    bounds_source: str = "env"
-
-
-class AdminAutoscalePatch(BaseModel):
-    min_workers: int | None = None
-    max_workers: int | None = None
-    enabled: bool | None = None
-
-
-class AdminWorkerActionOut(BaseModel):
-    ok: bool
-    action: str | None = None
-    n: int | None = None
-    unit: str | None = None
-    message: str | None = None
-    pid: int | None = None
-    stopped: bool | None = None
-    already_running: bool | None = None
-    bounds_min: int | None = None
-    bounds_max: int | None = None
-    bounds_source: str | None = None
-    autoscale_enabled: bool | None = None
-    control: AdminWorkerControlOut | None = None
-
-
 class AdminQueuesOut(BaseModel):
     ok: bool
     redis_ok: bool
-    use_celery: bool
-    worker_queues: str
     unacked: int
     total_pending: int
     active_count: int
     reserved_count: int
-    workers_online: int
     queues: list[AdminQueueSummaryOut]
     pending_tasks: list[AdminQueueTaskOut]
     active_tasks: list[AdminQueueTaskOut]
     reserved_tasks: list[AdminQueueTaskOut]
-    workers: list[AdminWorkerOut]
-    worker_control: AdminWorkerControlOut | None = None
-    autoscale: dict[str, float | int]
+    runtime: dict[str, float | int | str]
     fetched_at: str
 
 
@@ -375,6 +315,11 @@ class AdminUserOut(BaseModel):
     created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def normalize_phone(cls, value: Any) -> str:
+        return str(value or "")
 
 
 class AdminUserListOut(BaseModel):

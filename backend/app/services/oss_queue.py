@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 from typing import Any
@@ -53,19 +54,23 @@ def enqueue_oss_upload(local_url: str) -> bool:
         logger.warning("oss enqueue redis unavailable, caller should sync-upload", exc_info=True)
         raise
 
-    try:
-        from app.workers.tasks import upload_media_task
+    asyncio.create_task(_upload_local_url_background(url))
+    logger.info("oss upload enqueued %s → background", url)
+    return True
 
-        queue = (settings.oss_upload_queue or "oss").strip() or "oss"
-        upload_media_task.apply_async(args=[url], queue=queue)
-        logger.info("oss upload enqueued %s → queue=%s", url, queue)
-        return True
-    except Exception:
-        try:
-            _redis().delete(key)
-        except Exception:  # noqa: BLE001
-            pass
-        raise
+
+async def _upload_local_url_background(local_url: str) -> None:
+    """Upload one local static asset and backfill all DB references."""
+    try:
+        oss_url = await asyncio.to_thread(upload_local_url_sync, local_url)
+        if not oss_url:
+            clear_enqueue_marker(local_url)
+            return
+        await backfill_media_url(local_url, oss_url)
+        clear_enqueue_marker(local_url)
+    except Exception:  # noqa: BLE001
+        clear_enqueue_marker(local_url)
+        logger.exception("background oss upload failed url=%s", local_url)
 
 
 def clear_enqueue_marker(local_url: str) -> None:

@@ -7,6 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.schemas_tasks import TaskRunBriefOut
+
 
 class DramaProjectCreate(BaseModel):
     title: str = Field(default="未命名漫剧", max_length=200)
@@ -97,6 +99,7 @@ class DramaEpisodeOut(BaseModel):
     params: dict | None = None
     project_id: int
     fragments: list[DramaFragmentOut] = Field(default_factory=list)
+    active_tasks: list[TaskRunBriefOut] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -116,6 +119,7 @@ class DramaProjectOut(BaseModel):
     # script | canvas
     workflow: str = "script"
     usage: DramaProjectUsageStats = Field(default_factory=lambda: DramaProjectUsageStats())
+    active_tasks: list[TaskRunBriefOut] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -134,6 +138,7 @@ class DramaProjectListItem(BaseModel):
     # script | canvas
     workflow: str = "script"
     usage: DramaProjectUsageStats = Field(default_factory=lambda: DramaProjectUsageStats())
+    active_tasks: list[TaskRunBriefOut] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 

@@ -47,12 +47,6 @@ python -m venv .venv
 pip install -r requirements.txt
 
 uvicorn app.main:app --host 0.0.0.0 --port 8000
-
-# 另开终端 — 固定并发
-celery -A app.workers.celery_app.celery_app worker -Q drama,oss,video,pipeline -l info --concurrency=2
-
-# 或 Windows 动态加减进程
-python -m app.workers.autoscale
 ```
 
 ## 4. 前端
@@ -77,7 +71,7 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env.prod down
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env.prod down -v
 ```
 
-Worker 伸缩：改 Celery `--concurrency`，或跑 `python -m app.workers.autoscale`（按队列积压加减本机进程）。
+任务并发：通过 `backend/.env` 中的 `TASK_RUNTIME_MAX_CONCURRENCY`、`TASK_USER_MAX_CONCURRENCY` 调整统一任务平台并发。
 
 ## OSS（成片 / 分镜 / 前端）
 

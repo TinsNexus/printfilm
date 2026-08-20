@@ -208,37 +208,15 @@ async def run_image_tool(
     return {"kind": "image", "urls": [url], "status": "succeeded"}
 
 
-def _redis_ok() -> bool:
-    try:
-        import redis
-
-        r = redis.Redis.from_url(
-            get_settings().redis_url,
-            decode_responses=True,
-            socket_connect_timeout=2,
-            socket_timeout=2,
-        )
-        return bool(r.ping())
-    except Exception:  # noqa: BLE001
-        return False
-
-
 def _dispatch_tool_image(run_id: int) -> str:
-    """投递工具生图 Celery 任务；不可用时在进程内 asyncio 执行。"""
-    settings = get_settings()
-    if settings.use_celery and _redis_ok():
-        from app.workers.tasks import tool_image_task
-        from app.workers.queues import PIPELINE_QUEUE
-
-        result = tool_image_task.apply_async(args=[run_id], queue=PIPELINE_QUEUE)
-        return str(result.id)
+    """启动工具生图后台任务。"""
     import asyncio
 
     asyncio.create_task(execute_image_tool_run(run_id))
     return f"local-{run_id}"
 
 
-# 提交生图任务：立即返回 task_id，实际生成在 Celery / 后台执行
+# 提交生图任务：立即返回 task_id，实际生成在后台执行
 async def enqueue_image_tool(
     db: AsyncSession,
     user: User,
@@ -279,7 +257,7 @@ async def enqueue_image_tool(
     }
 
 
-# Worker / 进程内：执行已入队的生图任务并回写 tool_runs
+# 后台执行已入队的生图任务并回写 tool_runs
 async def execute_image_tool_run(run_id: int) -> dict:
     from app.database import AsyncSessionLocal
 
@@ -331,7 +309,7 @@ async def execute_image_tool_run(run_id: int) -> dict:
             return {"ok": False, "run_id": run_id, "error": row.error}
 
 
-# 轮询生图 Celery 任务（或本地 fallback）状态
+# 轮询工具生图任务状态。
 async def poll_image_tool_task(db: AsyncSession, user: User, task_id: str) -> dict:
     stmt = select(ToolRun).where(ToolRun.user_id == user.id, ToolRun.task_id == task_id)
     row = (await db.execute(stmt)).scalar_one_or_none()
@@ -348,33 +326,6 @@ async def poll_image_tool_task(db: AsyncSession, user: User, task_id: str) -> di
             "urls": [],
             "error": row.error or "生成失败",
         }
-
-    if task_id.startswith("local-"):
-        return {"status": "running", "kind": "image", "urls": []}
-
-    try:
-        from celery.result import AsyncResult
-
-        from app.workers.celery_app import celery_app
-
-        async_result = AsyncResult(task_id, app=celery_app)
-        state = async_result.state or "PENDING"
-        if state in {"PENDING", "STARTED", "RETRY"}:
-            return {"status": "running", "kind": "image", "urls": []}
-        if state == "SUCCESS":
-            row = await hydrate_tool_run_urls(db, row)
-            if row.status == "succeeded" and row.urls:
-                return {"status": "succeeded", "kind": "image", "urls": list(row.urls or [])}
-            return {"status": "running", "kind": "image", "urls": []}
-        if state == "FAILURE":
-            err = str(async_result.result or row.error or "生成失败")[:512]
-            if row.status != "failed":
-                row.status = "failed"
-                row.error = err
-                await db.flush()
-            return {"status": "failed", "kind": "image", "urls": [], "error": err}
-    except Exception:  # noqa: BLE001
-        logger.exception("poll_image_tool_task celery state failed task=%s", task_id)
 
     return {"status": "running", "kind": "image", "urls": []}
 

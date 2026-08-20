@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.config import get_settings
+from app.services.logical_model_router import resolve_logical_model_id, resolve_upstream_model
 
 # SeedreamAspectRatio 支持的比例
 SeedreamAspectRatio = str
@@ -36,11 +37,14 @@ SEEDREAM_SIZE_MAP: dict[str, dict[str, str]] = {
 def resolve_seedream_model_endpoint(model_id: str | None) -> str:
     settings = get_settings()
     mid = (model_id or "").strip().lower()
+    logical_id = resolve_logical_model_id("image", model_id)
+    routed = resolve_upstream_model("image", logical_id)
+    if routed and routed != logical_id:
+        return routed
     if mid in {"", "seedream-5.0", "seedream-5", "5.0"}:
-        return settings.model_image
+        return resolve_upstream_model("image", "seedream-5.0") or settings.model_image
     if mid in {"seedream-4.5", "seedream-4", "4.5"}:
-        return (settings.model_image_45 or "").strip() or settings.model_image
-    # 已是 endpoint / 其它模型名则原样使用
+        return resolve_upstream_model("image", "seedream-4.5") or (settings.model_image_45 or "").strip() or settings.model_image
     return model_id or settings.model_image
 
 

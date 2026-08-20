@@ -152,7 +152,6 @@ class PipelineJob(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
     stage: Mapped[str] = mapped_column(String(32))
-    celery_task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     progress: Mapped[int] = mapped_column(Integer, default=0)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     error_msg: Mapped[str | None] = mapped_column(Text, nullable=True)

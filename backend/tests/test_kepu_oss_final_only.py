@@ -22,9 +22,7 @@ def test_skip_intermediates_keeps_shot_files_local(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(
         "app.services.storage.get_settings",
-        lambda: type(
-            "S", (), {"oss_upload_async": True, "use_celery": True, "public_base_url": ""}
-        )(),
+        lambda: type("S", (), {"oss_upload_async": True, "public_base_url": ""})(),
     )
 
     with storage.skip_oss_intermediates():
@@ -48,9 +46,7 @@ def test_skip_intermediates_still_uploads_final_mp4(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(
         "app.services.storage.get_settings",
-        lambda: type(
-            "S", (), {"oss_upload_async": True, "use_celery": True, "public_base_url": ""}
-        )(),
+        lambda: type("S", (), {"oss_upload_async": True, "public_base_url": ""})(),
     )
 
     with storage.skip_oss_intermediates():

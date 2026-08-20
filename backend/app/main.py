@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, text
 
-from app.api import auth, billing, projects, templates, tools
+from app.api import auth, billing, projects, tasks, templates, tools
 from app.api import api_keys as user_api_keys
 from app.api.v1 import router as v1_router
 from app.api.admin import router as admin_router
@@ -16,6 +16,7 @@ from app.config import get_settings
 from app.database import AsyncSessionLocal, engine, init_db
 from app.logging_setup import configure_logging
 from app.models import Template, User
+from app.services.tasks.runtime import runtime_summary, start_task_runtime, stop_task_runtime
 from app.services.templates_seed import TEMPLATES
 
 settings = get_settings()
@@ -83,6 +84,7 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 app.include_router(auth.router, prefix="/api")
 app.include_router(templates.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
+app.include_router(tasks.router, prefix="/api")
 app.include_router(billing.router, prefix="/api")
 app.include_router(tools.router, prefix="/api")
 app.include_router(user_api_keys.router, prefix="/api")
@@ -95,6 +97,10 @@ app.include_router(admin_router, prefix="/api")
 async def on_startup() -> None:
     await init_db()
     await _migrate_sqlite()
+    async with AsyncSessionLocal() as db:
+        from app.services.model_settings import load_model_settings_cache
+
+        await load_model_settings_cache(db)
     await seed_templates()
     await bootstrap_admins()
     await seed_agent_skills()
@@ -104,6 +110,7 @@ async def on_startup() -> None:
         oss_svc.ensure_browser_cors()
     except Exception:  # noqa: BLE001
         pass
+    await start_task_runtime()
 
 
 @app.on_event("shutdown")
@@ -111,6 +118,7 @@ async def on_shutdown() -> None:
     """Release Postgres pool on uvicorn worker exit."""
     from app.database import dispose_engine
 
+    await stop_task_runtime()
     await dispose_engine()
 
 
@@ -212,6 +220,77 @@ async def _migrate_sqlite() -> None:
         if "drama_project_id" not in uecols:
             await conn.execute(text("ALTER TABLE usage_events ADD COLUMN drama_project_id INTEGER"))
 
+        # Task platform additive columns
+        if is_sqlite:
+            result = await conn.execute(text("PRAGMA table_info(task_runs)"))
+            trcols = {row[1] for row in result.fetchall()}
+            result = await conn.execute(
+                text(
+                    "CREATE TABLE IF NOT EXISTS task_steps ("
+                    "id INTEGER PRIMARY KEY, "
+                    "task_id INTEGER NOT NULL, "
+                    "step_key VARCHAR(64), "
+                    "step_type VARCHAR(64) DEFAULT 'job', "
+                    "status VARCHAR(32) DEFAULT 'pending', "
+                    "attempt_count INTEGER DEFAULT 0, "
+                    "provider_name VARCHAR(64), "
+                    "provider_task_id VARCHAR(128), "
+                    "input_payload JSON, "
+                    "output_payload JSON, "
+                    "error_code VARCHAR(64), "
+                    "error_message TEXT, "
+                    "next_poll_at DATETIME, "
+                    "started_at DATETIME, "
+                    "finished_at DATETIME, "
+                    "created_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+                    "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+                    "FOREIGN KEY(task_id) REFERENCES task_runs(id) ON DELETE CASCADE"
+                    ")"
+                )
+            )
+        else:
+            result = await conn.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'task_runs'"
+                )
+            )
+            trcols = {row[0] for row in result.fetchall()}
+        if "dedupe_key" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN dedupe_key VARCHAR(128)"))
+        if "batch_key" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN batch_key VARCHAR(128)"))
+        if "current_step_key" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN current_step_key VARCHAR(64)"))
+        if "current_step_status" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN current_step_status VARCHAR(32)"))
+        if "scheduled_at" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN scheduled_at DATETIME"))
+        if "next_action_at" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN next_action_at DATETIME"))
+        if "lease_token" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN lease_token VARCHAR(64)"))
+        if "lease_until" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN lease_until DATETIME"))
+
+        # Drop leftover worker-era columns that block the new task platform.
+        legacy_task_run_cols = (
+            "execution_phase",
+            "queue_name",
+            "worker_task_id",
+            "group_key",
+            "next_poll_at",
+            "lease_owner",
+            "lease_expires_at",
+            "attempt_count",
+            "attempt_limit",
+        )
+        for col in legacy_task_run_cols:
+            if col not in trcols:
+                continue
+            await conn.execute(text(f"DROP INDEX IF EXISTS ix_task_runs_{col}"))
+            await conn.execute(text(f"ALTER TABLE task_runs DROP COLUMN {col}"))
+
 
 async def bootstrap_admins() -> None:
     # Promote matching emails to admin (does not create users)
@@ -284,55 +363,13 @@ async def health() -> dict:
     from app.config import reload_settings
 
     s = reload_settings()
-    redis_ok = False
-    queue_pending = None
-    queue_unacked = None
-    queues_detail: dict[str, int] = {}
-    try:
-        import redis
-
-        from app.workers.queues import parse_worker_queues
-
-        r = redis.Redis.from_url(
-            s.redis_url, decode_responses=True, socket_connect_timeout=2, socket_timeout=2
-        )
-        redis_ok = bool(r.ping())
-        if redis_ok:
-            monitor = parse_worker_queues(
-                (s.celery_worker_queues or s.celery_autoscale_queue or "").strip() or None
-            )
-            for qname in monitor:
-                try:
-                    queues_detail[qname] = int(r.llen(qname) or 0)
-                except Exception:  # noqa: BLE001
-                    queues_detail[qname] = 0
-            queue_pending = sum(queues_detail.values())
-            try:
-                queue_unacked = int(r.hlen("unacked") or 0)
-            except Exception:  # noqa: BLE001
-                queue_unacked = None
-    except Exception:  # noqa: BLE001
-        redis_ok = False
     from app.database import pool_status
 
     return {
         "ok": True,
         "ark_mock": s.ark_mock,
-        "use_celery": s.use_celery,
         "db_pool": pool_status(),
-        "redis_ok": redis_ok,
-        "queue": {
-            "name": s.celery_worker_queues or s.celery_autoscale_queue,
-            "pending": queue_pending,
-            "unacked": queue_unacked,
-            "by_name": queues_detail,
-        },
-        "autoscale": {
-            "min": s.celery_autoscale_min,
-            "max": s.celery_autoscale_max,
-            "poll_sec": s.celery_autoscale_poll_sec,
-            "idle_sec": s.celery_autoscale_idle_sec,
-        },
+        "task_runtime": runtime_summary(),
         "models": {
             "llm": s.model_llm,
             "image": s.model_image,
