@@ -25,6 +25,14 @@ type EpisodeSummary = {
 
 // 读取分集 AI 分镜状态
 function readPlanStatus(ep: DramaEpisode): string {
+  const active = (ep.active_tasks || []).find((task) => task.task_type === 'fragment_plan')
+  if (
+    active &&
+    !active.cancel_requested &&
+    ['pending', 'leased', 'running', 'awaiting_poll', 'awaiting_review'].includes(active.status)
+  ) {
+    return 'generating'
+  }
   const st = ep.params?.fragment_plan_status
   return typeof st === 'string' ? st : ''
 }
@@ -32,6 +40,17 @@ function readPlanStatus(ep: DramaEpisode): string {
 // 汇总单集分镜与视频进度
 function summarizeEpisode(ep: DramaEpisode): EpisodeSummary {
   const frags = ep.fragments || []
+  const activeFragmentIds = new Set<number>()
+  for (const task of ep.active_tasks || []) {
+    if (
+      task.task_type === 'fragment_video' &&
+      typeof task.fragment_id === 'number' &&
+      !task.cancel_requested &&
+      ['pending', 'leased', 'running', 'awaiting_poll', 'awaiting_review'].includes(task.status)
+    ) {
+      activeFragmentIds.add(task.fragment_id)
+    }
+  }
   let videoDone = 0
   let videoRunning = 0
   let videoFailed = 0
@@ -41,7 +60,7 @@ function summarizeEpisode(ep: DramaEpisode): EpisodeSummary {
     totalSec += frag.duration_sec && frag.duration_sec > 0 ? frag.duration_sec : 8
     const st = readFragmentGenerationStatus(frag).status
     if (st === 'done') videoDone += 1
-    else if (st === 'queued' || st === 'running') videoRunning += 1
+    else if (st === 'queued' || st === 'running' || activeFragmentIds.has(frag.id)) videoRunning += 1
     else if (st === 'failed') videoFailed += 1
     if (!previewUrl) {
       const raw = (frag.cover || frag.video || '').trim()

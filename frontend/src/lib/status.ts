@@ -26,6 +26,17 @@ export function isRunning(status: string) {
   return RUNNING.has(status)
 }
 
+export function hasActiveTasks(project: {
+  active_tasks?: Array<{ status: string; cancel_requested?: boolean | null }> | null
+}) {
+  const activeStatuses = ['pending', 'leased', 'running', 'awaiting_poll', 'awaiting_review']
+  return Boolean(
+    project.active_tasks?.some(
+      (task) => !task.cancel_requested && activeStatuses.includes(task.status),
+    ),
+  )
+}
+
 /**
  * Prefer stage inferred from shot assets when status is still SCRIPTING
  * (e.g. continue-generate briefly labeled wrong, or worker lag).

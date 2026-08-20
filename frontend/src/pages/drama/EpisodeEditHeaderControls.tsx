@@ -274,7 +274,10 @@ export function EpisodeEditHeaderControls({
                     />
                     <span>
                       用上一镜尾帧衔接
-                      <em>有角色/场景参考时以参考图附带尾帧（不可与 first_frame 混用）</em>
+                      <em>
+                        默认关闭。开启后按镜序生成；关闭后默认并发生成。有角色/场景参考时以参考图附带尾帧（不可与
+                        first_frame 混用）
+                      </em>
                     </span>
                   </label>
                 </div>

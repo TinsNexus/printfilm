@@ -25,7 +25,7 @@ import {
   triggerBlobDownload,
   zipVideosClient,
 } from '../lib/clientDownload'
-import { isRunning, STATUS_CN, statusTone } from '../lib/status'
+import { hasActiveTasks, isRunning, STATUS_CN, statusTone } from '../lib/status'
 import { pageCountOf } from '../lib/pagination'
 import { formatDateTime, useI18n } from '../i18n'
 
@@ -110,7 +110,9 @@ export default function HistoryPage() {
   } | null>(null)
 
   const hasRunning = useMemo(
-    () => items.some((p) => isRunning(p.status) && p.progress < 100) || stats.generating > 0,
+    () =>
+      items.some((p) => (isRunning(p.status) && p.progress < 100) || hasActiveTasks(p)) ||
+      stats.generating > 0,
     [items, stats.generating],
   )
 

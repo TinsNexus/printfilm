@@ -148,6 +148,22 @@ export type Project = {
   created_at: string
   updated_at: string
   shots: Shot[]
+  active_tasks?: Array<{
+    id: number
+    domain: string
+    task_type: string
+    status: string
+    current_step_key?: string | null
+    current_step_status?: string | null
+    progress_percent?: number
+    cancel_requested?: boolean
+    provider_task_id?: string | null
+    error_message?: string | null
+    project_id?: number | null
+    shot_id?: number | null
+    created_at?: string
+    updated_at?: string
+  }>
 }
 
 export type User = {
@@ -388,6 +404,7 @@ export const api = {
         published?: boolean
         created_at: string
         updated_at?: string
+        active_tasks?: Project['active_tasks']
       }>
       meta: { page: number; page_size: number; total: number }
       stats: { total: number; generating: number; done: number; published: number }

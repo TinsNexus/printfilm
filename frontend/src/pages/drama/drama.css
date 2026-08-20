@@ -3203,102 +3203,6 @@
   border: 1px solid #e2e8f0;
 }
 
-.drama-storyboard-import {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.drama-storyboard-import-lede {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.5;
-  color: #475569;
-}
-
-.drama-storyboard-import-file {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 12px;
-  color: #0f172a;
-}
-
-.drama-storyboard-import-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-  font-size: 12px;
-}
-
-.drama-storyboard-import-row label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.drama-storyboard-import-row input {
-  width: 64px;
-  height: 30px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 0 8px;
-  font: inherit;
-}
-
-.drama-storyboard-import-row em {
-  font-style: normal;
-  color: #64748b;
-}
-
-.drama-storyboard-import-rhythm strong {
-  display: block;
-  margin-bottom: 8px;
-  font-size: 12px;
-}
-
-.drama-storyboard-import-rhythm-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.drama-storyboard-import-rhythm-chips button {
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid #e2e8f0;
-  border-radius: 999px;
-  background: #fff;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.drama-storyboard-import-rhythm-chips button.is-active {
-  border-color: #111;
-  background: #0f172a;
-  color: #fff;
-}
-
-.drama-storyboard-import-rhythm p,
-.drama-storyboard-import-note,
-.drama-storyboard-import-warn {
-  margin: 8px 0 0;
-  font-size: 12px;
-  line-height: 1.45;
-  color: #64748b;
-}
-
-.drama-storyboard-import-warn {
-  color: #9a3412;
-}
-
-.drama-storyboard-import-error {
-  margin: 0;
-  font-size: 12px;
-  color: #be123c;
-}
-
 .drama-ep-ref-strip {
   display: flex;
   gap: 8px;
@@ -4889,15 +4793,19 @@
 }
 
 .drama-gen-fab-item-main {
+  flex: 1;
   min-width: 0;
 }
 
 .drama-gen-fab-name {
-  display: block;
+  display: -webkit-box;
+  overflow: hidden;
   font-size: 13px;
   font-weight: 600;
   color: #111;
   line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .drama-gen-fab-type {
@@ -4932,11 +4840,12 @@
 
 .drama-gen-fab-foot {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   padding: 10px 14px 14px;
   border-top: 1px solid var(--drama-line, #e5e7eb);
   font-size: 11px;
+  line-height: 1.45;
   color: var(--drama-muted, #6b7280);
   flex-shrink: 0;
 }

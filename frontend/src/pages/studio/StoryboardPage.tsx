@@ -110,6 +110,15 @@ function boardStepIndex(project: Project) {
   return 3
 }
 
+function hasActiveUnifiedTasks(project: Project | null): boolean {
+  const activeStatuses = ['pending', 'leased', 'running', 'awaiting_poll', 'awaiting_review']
+  return Boolean(
+    project?.active_tasks?.some(
+      (task) => !task.cancel_requested && activeStatuses.includes(task.status),
+    ),
+  )
+}
+
 export default function StoryboardPage() {
   const { id } = useParams()
   const projectId = Number(id)
@@ -157,7 +166,7 @@ export default function StoryboardPage() {
     if (!project) return
     // Only poll while pipeline is actively running — idle checkpoints
     // (IMAGE_READY / VIDEO_READY / SCRIPT_READY) must not spin forever.
-    if (!isRunning(project.status)) return
+    if (!isRunning(project.status) && !hasActiveUnifiedTasks(project)) return
     const timer = setInterval(() => {
       api
         .getProject(project.id)
@@ -176,7 +185,7 @@ export default function StoryboardPage() {
     return () => document.removeEventListener('click', onDoc)
   }, [menuShotId])
 
-  const running = Boolean(project && isRunning(project.status))
+  const running = Boolean(project && (isRunning(project.status) || hasActiveUnifiedTasks(project)))
   const step = project ? boardStepIndex(project) : 3
   const totalDuration = useMemo(
     () => (project?.shots || []).reduce((s, x) => s + (Number(x.duration) || 0), 0),
