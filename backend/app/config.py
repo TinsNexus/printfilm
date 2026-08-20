@@ -15,13 +15,9 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite+aiosqlite:///./ai_movie.db"
     database_url_sync: str = "sqlite:///./ai_movie.db"
-    # Postgres 连接池（API / Celery 分角色，避免 max_connections 打满）
-    # PRINTFILM_DB_ROLE=api|celery 可覆盖自动探测；生产建议 API workers=1
-    db_pool_role: str = ""
+    # Postgres 连接池（统一任务平台 / API 共用）
     db_pool_size: int = 5
     db_max_overflow: int = 5
-    db_pool_size_celery: int = 2
-    db_max_overflow_celery: int = 3
     db_pool_recycle_sec: int = 1800
     db_pool_timeout_sec: int = 30
     redis_url: str = "redis://127.0.0.1:6379/0"
@@ -62,7 +58,7 @@ class Settings(BaseSettings):
     # Seedance 2.5 官方并发上限约 10
     pipeline_video_concurrency: int = 10
     pipeline_audio_concurrency: int = 4
-    # 单用户漫剧视频在途分镜上限（queued/running）；避免单个账号堆满长链任务
+    # 单用户漫剧视频并发上限（同时 submit/awaiting_poll）；超出部分保持 pending 排队
     drama_user_video_job_limit: int = 12
     # 单个分镜视频最大尝试次数；超过后直接失败，避免长时间卡在同一镜
     drama_fragment_max_attempts: int = 3
@@ -72,27 +68,14 @@ class Settings(BaseSettings):
     kepu_seedance_sfx_audio: bool = True
 
     ark_mock: bool = False
-    use_celery: bool = True
-
-    # Celery worker autoscaler (python -m app.workers.autoscale)
-    # Windows: each worker is solo/concurrency=1; scale by process count.
-    celery_autoscale_min: int = 1
-    celery_autoscale_max: int = 3
-    celery_autoscale_poll_sec: float = 5.0
-    celery_autoscale_idle_sec: float = 45.0
-    # 主监控队列（历史字段；未设 celery_worker_queues 时作 fallback）
-    celery_autoscale_queue: str = "pipeline"
-    # Worker 消费与 autoscale 监控的全部队列（逗号分隔）
-    celery_worker_queues: str = "drama,oss,video,pipeline"
-    # Admin pool_grow 上限
-    celery_pool_max: int = 8
-    # Prevent zombie tasks: hard kill hung workers; Redis redelivers after visibility_timeout
-    # 视频阶段包含多镜头/多重试（Seedance/合成/OSS回填），线上曾触发 soft time limit 导致 project 进度停在中间。
-    # 这里适当放大，确保在“可预期的失败重试窗口”内有足够时间完成状态回写/标记失败。
-    celery_task_soft_time_limit: int = 3600  # 60 min soft
-    celery_task_time_limit: int = 4500  # 75 min hard
-    celery_visibility_timeout: int = 5400  # 90 min — must be > time_limit
-    celery_stale_project_sec: int = 900  # redispatch RUNNING with no progress for 15 min
+    # 内置任务平台的进程内并发上限（全站 Worker 槽位）。
+    task_runtime_max_concurrency: int = 4
+    # 单用户同时进行中的 Worker 槽位（不含 awaiting_poll 注册项）。
+    task_user_max_concurrency: int = 4
+    # Selector 每轮并发非阻塞查询上游的上限（类似 NIO select 就绪 channel 批处理）。
+    task_poll_max_concurrency: int = 20
+    # 启动恢复时，running 任务超过该秒数无心跳才视为孤儿任务。
+    task_runtime_recover_grace_sec: int = 30
 
     max_shot_duration: int = 30
     default_preview_resolution: str = "480p"
@@ -159,7 +142,16 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    base = Settings()
+    try:
+        from app.services.model_settings import get_overlay_dict
+
+        overlay = get_overlay_dict()
+        if overlay:
+            return base.model_copy(update=overlay)
+    except Exception:  # noqa: BLE001
+        pass
+    return base
 
 
 def reload_settings() -> Settings:

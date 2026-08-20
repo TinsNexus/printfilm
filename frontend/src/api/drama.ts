@@ -80,6 +80,26 @@ export type DramaProjectUsageStats = {
   video_gens: number
 }
 
+export type DramaTaskBrief = {
+  id: number
+  domain: string
+  task_type: string
+  status: string
+  current_step_key?: string | null
+  current_step_status?: string | null
+  progress_percent?: number
+  cancel_requested?: boolean
+  provider_task_id?: string | null
+  error_message?: string | null
+  project_id?: number | null
+  drama_project_id?: number | null
+  episode_id?: number | null
+  fragment_id?: number | null
+  asset_id?: number | null
+  created_at?: string
+  updated_at?: string
+}
+
 export type DramaProject = {
   id: number
   user_id: number
@@ -94,6 +114,7 @@ export type DramaProject = {
   episode_count: number
   workflow?: 'script' | 'canvas'
   usage?: DramaProjectUsageStats
+  active_tasks?: DramaTaskBrief[]
 }
 
 export type DramaProjectListItem = {
@@ -109,6 +130,7 @@ export type DramaProjectListItem = {
   cover_pending?: boolean
   workflow?: 'script' | 'canvas'
   usage?: DramaProjectUsageStats
+  active_tasks?: DramaTaskBrief[]
 }
 
 export type DramaAsset = {
@@ -150,6 +172,7 @@ export type DramaEpisode = {
   params?: Record<string, unknown> | null
   project_id: number
   fragments: DramaFragment[]
+  active_tasks?: DramaTaskBrief[]
 }
 
 export type DramaScriptSummaryResult = {
@@ -356,10 +379,17 @@ export const dramaApi = {
       body: JSON.stringify({ fragments }),
     }),
   generateEpisode: (episodeId: number, fragment_ids?: number[]) =>
-    request<{ ok: boolean; fragment_ids: number[]; status: string }>(
-      `/api/drama/episodes/${episodeId}/generate`,
-      { method: 'POST', body: JSON.stringify({ fragment_ids }) },
-    ),
+    request<{
+      ok: boolean
+      fragment_ids: number[]
+      status: string
+      deferred_count?: number
+      user_job_limit?: number
+      remaining_not_queued?: number
+    }>(`/api/drama/episodes/${episodeId}/generate`, {
+      method: 'POST',
+      body: JSON.stringify({ fragment_ids }),
+    }),
   generateStatus: (episodeId: number) =>
     request<{
       episode_id: number
@@ -367,6 +397,7 @@ export const dramaApi = {
       failed: number
       running: number
       total: number
+      tasks: DramaTaskBrief[]
       fragments: Array<{ fragment_id: number; status: string; video?: string; cover?: string }>
     }>(`/api/drama/episodes/${episodeId}/generate_status`),
 

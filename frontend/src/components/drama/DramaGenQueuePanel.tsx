@@ -10,7 +10,6 @@ import {
   useDramaGenQueue,
   type DramaGenJob,
 } from '../../lib/dramaGenQueue'
-import { DRAMA_IMAGE_GEN_MAX_CONCURRENT } from '../../lib/dramaImageGenQueue'
 import '../../pages/drama/drama.css'
 
 const OPEN_STORAGE_KEY = 'drama-gen-queue-fab-open'
@@ -65,6 +64,19 @@ export function DramaGenQueuePanel() {
   )
   const failed = useMemo(() => queue.filter((j) => j.status === 'failed'), [queue])
 
+  // 列表按入队时间倒序（最新在上）；排队序号仍按先入先出
+  const sortedQueue = useMemo(
+    () => [...queue].sort((a, b) => b.createdAt - a.createdAt),
+    [queue],
+  )
+  const queuedOnly = useMemo(
+    () =>
+      queue
+        .filter((j) => j.status === 'queued' || j.status === 'running')
+        .sort((a, b) => a.createdAt - b.createdAt),
+    [queue],
+  )
+
   useEffect(() => {
     try {
       localStorage.setItem(OPEN_STORAGE_KEY, open ? '1' : '0')
@@ -106,11 +118,10 @@ export function DramaGenQueuePanel() {
 
   if (queue.length === 0) return null
 
-  const queuedOnly = queue.filter((j) => j.status === 'queued' || j.status === 'running')
-  const badgeCount = active.length > 0 ? active.length : failed.length > 0 ? failed.length : finished.length
+  const badgeCount = active.length
 
   return (
-    <div className="drama-gen-fab-root" aria-live="polite">
+    <div className="drama-gen-fab-root">
       {open ? (
         <div className="drama-gen-fab-panel" role="dialog" aria-label="生成队列">
           <header className="drama-gen-fab-head">
@@ -165,7 +176,7 @@ export function DramaGenQueuePanel() {
           </header>
 
           <ul className="drama-gen-fab-list">
-            {queue.map((job) => {
+            {sortedQueue.map((job) => {
               const queueIndex = queuedOnly.findIndex((j) => j.id === job.id)
               return (
                 <li key={job.id} className={`drama-gen-fab-item is-${job.status}`}>
@@ -184,7 +195,7 @@ export function DramaGenQueuePanel() {
                     <span className="drama-gen-fab-status">
                       {job.status === 'queued' && queueIndex >= 0
                         ? queuedOnly.length <= 1 || queueIndex === 0
-                          ? '等待 Worker'
+                          ? '排队中'
                           : `排队 #${queueIndex + 1}`
                         : STATUS_LABEL[job.status]}
                     </span>
@@ -203,9 +214,6 @@ export function DramaGenQueuePanel() {
           {active.length > 0 ? (
             <footer className="drama-gen-fab-foot">
               <span className="drama-gen-fab-foot-dot" aria-hidden />
-              图片走 pipeline 队列；分镜视频走独立 video 队列（Seedance 最多 10
-              路并行）。刷新后会按进行中状态恢复（图最多轮询{' '}
-              {DRAMA_IMAGE_GEN_MAX_CONCURRENT} 路）
             </footer>
           ) : null}
         </div>
