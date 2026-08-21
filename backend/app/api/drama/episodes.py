@@ -15,6 +15,7 @@ from app.deps import get_current_user
 from app.models import User
 from app.models_drama import DramaEpisode, DramaEpisodeFragment, DramaFragmentAssetRef
 from app.schemas_drama import (
+    DramaActivateVideoVersionRequest,
     DramaEpisodeOut,
     DramaFragmentOut,
     DramaGenerateRequest,
@@ -33,6 +34,7 @@ from app.services.drama.access import (
     match_fragments_for_generate,
 )
 from app.services.drama.generation import (
+    activate_fragment_video_version,
     collect_active_fragment_ids_from_tasks,
     fragment_generation_status,
     project_link_last_frame_enabled,
@@ -361,6 +363,33 @@ async def save_fragments(
     return await _episode_out_with_tasks(db, user, ep)
 
 
+@router.post("/fragments/{fragment_id}/activate_video_version")
+async def activate_video_version(
+    fragment_id: int,
+    body: DramaActivateVideoVersionRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """将分镜历史成片版本切换为当前预览/导出所用视频。"""
+    result = await db.execute(
+        select(DramaEpisodeFragment).where(DramaEpisodeFragment.id == fragment_id)
+    )
+    fragment = result.scalar_one_or_none()
+    if not fragment:
+        raise HTTPException(status_code=404, detail="分镜不存在")
+    await get_owned_episode(db, fragment.episode_id, user)
+    status = str(fragment_generation_status(fragment).get("status") or "")
+    if status in {"queued", "running", "generating"}:
+        raise HTTPException(status_code=409, detail="分镜正在生成，请完成后再切换版本")
+    try:
+        payload = activate_fragment_video_version(fragment, body.version_id.strip())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await db.commit()
+    await db.refresh(fragment)
+    return {"ok": True, **payload}
+
+
 @router.post("/episodes/{episode_id}/generate")
 async def generate_episode(
     episode_id: int,
@@ -504,7 +533,7 @@ async def generate_status(
             done += 1
         elif s == "failed":
             failed += 1
-        elif s in {"running", "queued"}:
+        elif s in {"running", "queued", "generating"}:
             running += 1
     return {
         "episode_id": episode_id,

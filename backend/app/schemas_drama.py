@@ -253,6 +253,11 @@ class DramaPlanFragmentsRequest(BaseModel):
     skill_ids: list[int] | None = None
 
 
+class DramaActivateVideoVersionRequest(BaseModel):
+    # version_id 历史成片版本 id（params.video_versions[].id）
+    version_id: str = Field(..., min_length=1, max_length=128)
+
+
 class DramaCanvasSaveRequest(BaseModel):
     project_id: int
     nodes: list[dict[str, Any]] = Field(default_factory=list)

@@ -11,7 +11,7 @@ export function LoginPage() {
    * password login password
    * loading submit state
    */
-  const [email, setEmail] = useState("demo@example.com");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -46,13 +46,11 @@ export function LoginPage() {
           <br />
           FILM
         </h1>
-        <p className="login-sub">管理用户、订单、项目与模板。同一套账号体系，仅管理员可进入。</p>
       </section>
 
       <section className="login-panel">
         <div className="login-form-wrap">
           <h2>登录后台</h2>
-          <p>使用已授权的管理员邮箱与密码</p>
           <form onSubmit={onSubmit}>
             <div className="login-field">
               <label htmlFor="email">邮箱</label>
@@ -74,14 +72,12 @@ export function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                placeholder="输入密码"
               />
             </div>
             <button className="login-submit" type="submit" disabled={loading}>
               {loading ? "验证中…" : "进入控制台"}
             </button>
           </form>
-          <p className="login-hint">本地演示账号已预填邮箱，密码见 README / 团队约定。</p>
         </div>
       </section>
     </div>

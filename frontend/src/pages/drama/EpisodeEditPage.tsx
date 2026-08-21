@@ -17,8 +17,11 @@ import {
   extractAssetIds,
   filterEpisodeAssets,
   formatFragLabel,
+  fragmentQueueBadgeLabel,
+  isFragmentGenerationBusy,
   normalizeAssetTab,
   readFragmentGenerationStatus,
+  readFragmentVideoVersions,
   resolveFragmentDurationSec,
   type AssetScope,
   type AssetTab,
@@ -140,8 +143,7 @@ function EpisodeEditInner() {
     }
     for (const frag of fragments) {
       if (!frag.id) continue
-      const status = readFragmentGenerationStatus(frag).status
-      if (['pending', 'leased', 'running', 'awaiting_poll', 'awaiting_review'].includes(status)) ids.add(frag.id)
+      if (isFragmentGenerationBusy(readFragmentGenerationStatus(frag).status)) ids.add(frag.id)
     }
     return ids
   }, [fragments, episode?.active_tasks])
@@ -149,6 +151,10 @@ function EpisodeEditInner() {
   const anyFragmentGenerating = generatingIds.size > 0
   // selectedIsGenerating 当前选中镜是否正在生成
   const selectedIsGenerating = Boolean(selected?.id && generatingIds.has(selected.id))
+  // selectedHasVideo 当前镜是否已有成片（用于「重新生成」文案）
+  const selectedHasVideo = Boolean(selected?.video)
+  // selectedVersions 当前镜历史成片
+  const selectedVersions = useMemo(() => readFragmentVideoVersions(selected), [selected])
   // selectedGenerateLocked 仅锁当前镜的「生成」按钮
   const selectedGenerateLocked = busy || selectedIsGenerating
   // generateAllLocked 仅提交入队时锁定，生成过程不阻塞编辑
@@ -543,21 +549,24 @@ function EpisodeEditInner() {
     }
 
     const fragLabel = formatFragLabel(selectedIndex, selectedDuration)
+    const isRegen = Boolean(selected.video)
     const ok = await dialog.confirm({
-      title: '生成分镜视频',
+      title: isRegen ? '重新生成分镜视频' : '生成分镜视频',
       message: formatDramaGateMessage(
         [],
         warnings,
-        linkLastFrame
-          ? `将保存并按镜序生成「${fragLabel}」。入队后可继续编辑；本镜会使用上一镜尾帧作衔接参考。`
-          : `将保存并生成「${fragLabel}」。入队后可继续编辑；当前未开启尾帧衔接，本镜会独立生成。`,
+        isRegen
+          ? `将保存并重新生成「${fragLabel}」。当前成片会保留为历史版本，入队后可在右下角队列查看进度。`
+          : linkLastFrame
+            ? `将保存并按镜序生成「${fragLabel}」。入队后可继续编辑；本镜会使用上一镜尾帧作衔接参考。`
+            : `将保存并生成「${fragLabel}」。入队后可继续编辑；当前未开启尾帧衔接，本镜会独立生成。`,
       ),
-      confirmText: warnings.length > 0 ? '仍要生成' : '开始生成',
+      confirmText: warnings.length > 0 ? '仍要生成' : isRegen ? '重新生成' : '开始生成',
     })
     if (!ok) return
     setBusy(true)
     setError('')
-    setStatus('保存并排队生成当前分镜…')
+    setStatus(isRegen ? '保存并重新排队生成…' : '保存并排队生成当前分镜…')
     try {
       const ep = await save()
       setBusy(true)
@@ -566,6 +575,20 @@ function EpisodeEditInner() {
         throw new Error('保存后未找到当前分镜，请刷新后重试')
       }
       await dramaApi.generateEpisode(eid, [frag.id])
+      // 乐观写入排队态，避免旧 video 把状态盖成已完成
+      setFragments((prev) =>
+        prev.map((f) =>
+          f.id === frag.id
+            ? {
+                ...f,
+                params: {
+                  ...(f.params || {}),
+                  generation: { status: 'queued', message: '已入队' },
+                },
+              }
+            : f,
+        ),
+      )
       enqueueEpisodeVideoJobs({
         projectId: pid,
         episodeId: eid,
@@ -577,8 +600,53 @@ function EpisodeEditInner() {
         fragmentIds: [frag.id],
       })
       setBusy(false)
+      setStatus(isRegen ? `「${fragLabel}」已重新入队，可在右下角查看队列` : `「${fragLabel}」已入队，可在右下角查看队列`)
+      ensureEpisodeVideoStatusPoll()
     } catch (err) {
+      setBusy(false)
       setError(err instanceof Error ? err.message : '生成失败')
+    }
+  }
+
+  // 切换历史成片为当前预览视频
+  async function activateVideoVersion(versionId: string) {
+    if (!selected?.id || selectedIsGenerating) return
+    const ok = await dialog.confirm({
+      title: '切换历史版本',
+      message: '将用该历史成片替换当前预览；当前成片会进入历史版本列表。',
+      confirmText: '切换',
+    })
+    if (!ok) return
+    setBusy(true)
+    setError('')
+    try {
+      const result = await dramaApi.activateFragmentVideoVersion(selected.id, versionId)
+      setFragments((prev) =>
+        prev.map((f) =>
+          f.id === selected.id
+            ? {
+                ...f,
+                video: result.video,
+                cover: result.cover || '',
+                params: {
+                  ...(f.params || {}),
+                  video_versions: result.video_versions,
+                  lastFrameUrl: result.lastFrameUrl || undefined,
+                  generation: {
+                    status: 'done',
+                    video: result.video,
+                    cover: result.cover,
+                    lastFrameUrl: result.lastFrameUrl,
+                  },
+                },
+              }
+            : f,
+        ),
+      )
+      setStatus('已切换历史版本')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '切换版本失败')
+    } finally {
       setBusy(false)
     }
   }
@@ -982,11 +1050,42 @@ function EpisodeEditInner() {
                   title={selectedIsGenerating ? '当前分镜正在生成' : undefined}
                   onClick={() => void generateSelected()}
                 >
-                  {selectedIsGenerating ? '生成中…' : busy ? '处理中…' : '生成'}
+                  {selectedIsGenerating
+                    ? '生成中…'
+                    : busy
+                      ? '处理中…'
+                      : selectedHasVideo
+                        ? '重新生成'
+                        : '生成'}
                 </button>
               </>
             )}
           </div>
+
+          {selectedVersions.length > 0 && selected?.id ? (
+            <div className="drama-ep-versions">
+              <span className="drama-ep-versions-label">历史版本</span>
+              <div className="drama-ep-versions-list">
+                {selectedVersions.map((ver, index) => {
+                  const cover = ver.cover ? resolveDramaMediaUrl(ver.cover) : ''
+                  const video = resolveDramaMediaUrl(ver.video)
+                  return (
+                    <button
+                      key={ver.id}
+                      type="button"
+                      className="drama-ep-version"
+                      disabled={busy || selectedIsGenerating}
+                      title="切换为当前成片"
+                      onClick={() => void activateVideoVersion(ver.id)}
+                    >
+                      {cover ? <img src={cover} alt="" /> : <video src={video} muted />}
+                      <em>v{selectedVersions.length - index}</em>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ) : null}
         </section>
 
         <EpisodeEditSidePane
@@ -1012,6 +1111,7 @@ function EpisodeEditInner() {
           {fragments.map((frag, index) => {
             const fragStatus = readFragmentGenerationStatus(frag).status
             const fragBusy = Boolean(frag.id && generatingIds.has(frag.id))
+            const badge = fragmentQueueBadgeLabel(fragBusy ? fragStatus || 'running' : fragStatus)
             const clipVideo = frag.video ? resolveDramaMediaUrl(frag.video) : ''
             const clipCover = frag.cover ? resolveDramaMediaUrl(frag.cover) : ''
             return (
@@ -1020,7 +1120,9 @@ function EpisodeEditInner() {
                 type="button"
                 className={`drama-ep-clip ${selectedIndex === index ? 'active' : ''}${
                   fragBusy ? ' is-generating' : ''
-                }${fragStatus === 'failed' ? ' is-failed' : ''}`}
+                }${fragStatus === 'queued' ? ' is-queued' : ''}${
+                  fragStatus === 'failed' ? ' is-failed' : ''
+                }`}
                 onClick={() => setSelectedIndex(index)}
               >
                 {clipCover ? (
@@ -1032,6 +1134,7 @@ function EpisodeEditInner() {
                     {fragBusy ? '…' : '+'}
                   </span>
                 )}
+                {badge ? <span className="drama-ep-clip-badge">{badge}</span> : null}
                 <em>{formatFragLabel(index, frag.duration_sec)}</em>
               </button>
               <div className="drama-ep-clip-ops">

@@ -407,6 +407,19 @@ export const dramaApi = {
       { method: 'POST' },
     ),
 
+  activateFragmentVideoVersion: (fragmentId: number, versionId: string) =>
+    request<{
+      ok: boolean
+      fragment_id: number
+      video: string
+      cover: string
+      lastFrameUrl?: string | null
+      video_versions: Array<Record<string, unknown>>
+    }>(`/api/drama/fragments/${fragmentId}/activate_video_version`, {
+      method: 'POST',
+      body: JSON.stringify({ version_id: versionId }),
+    }),
+
   cancelAllVideoJobs: () =>
     request<{ ok: boolean; purged: number; revoked: number; fragments: number }>(
       '/api/drama/cancel_video_jobs',

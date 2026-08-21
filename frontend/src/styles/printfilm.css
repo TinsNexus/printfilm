@@ -844,8 +844,14 @@
   margin-left: auto;
 }
 
-.pf-drama-create-panel {
-  margin-bottom: 1.5rem;
+.pf-drama-create-panel .drama-agent-ai-field {
+  margin-top: 2px;
+}
+
+.pf-drama-create-panel .drama-agent-tips {
+  margin: 0 18px 4px;
+  background: color-mix(in srgb, var(--pf-lime, #b6ff00) 10%, #fff);
+  border-color: color-mix(in srgb, var(--pf-lime, #b6ff00) 28%, var(--pf-line, #e5e7eb));
 }
 
 .pf-drama-create-panel .drama-agent-panel-head {

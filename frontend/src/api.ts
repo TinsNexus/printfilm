@@ -282,6 +282,12 @@ export const api = {
       body: JSON.stringify(body),
     })
   },
+  changePassword(body: { current_password: string; new_password: string }) {
+    return request<{ ok: boolean }>('/api/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    })
+  },
   async uploadAvatar(file: File) {
     const token = localStorage.getItem('token')
     const form = new FormData()

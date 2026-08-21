@@ -19,9 +19,9 @@ export default function AuthPage() {
   const [params] = useSearchParams()
   const nextPath = safeNextPath(params.get('next'), '/')
   const [mode, setMode] = useState<'login' | 'register'>('login')
-  const [email, setEmail] = useState('demo@example.com')
-  const [password, setPassword] = useState('demo1234')
-  const [nickname, setNickname] = useState('创作者')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [nickname, setNickname] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -51,7 +51,6 @@ export default function AuthPage() {
           <LanguageSwitch />
         </div>
         <h1>{mode === 'login' ? t('auth.loginTitle') : t('auth.registerTitle')}</h1>
-        <p className="lede">{t('auth.lede')}</p>
         <form onSubmit={onSubmit} className="stack">
           {mode === 'register' && (
             <label>

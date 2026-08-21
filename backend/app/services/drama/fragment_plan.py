@@ -30,11 +30,11 @@ logger = logging.getLogger(__name__)
 
 
 def build_asset_catalog(assets: list[Any]) -> list[dict[str, Any]]:
-    # 压缩资产目录给 LLM（角色带身份，场景仅名）
+    # 压缩资产目录给 LLM（角色/场景/道具；素材已停用）
     catalog: list[dict[str, Any]] = []
     for asset in assets:
         kind = str(getattr(asset, "type", "") or "")
-        if kind not in {"character", "scene"}:
+        if kind not in {"character", "scene", "prop"}:
             continue
         params = getattr(asset, "params", None) or {}
         if not isinstance(params, dict):
@@ -49,6 +49,51 @@ def build_asset_catalog(assets: list[Any]) -> list[dict[str, Any]]:
             }
         )
     return catalog
+
+
+def _coerce_name_list(raw: Any) -> list[str]:
+    # character_names / prop_names 等字段统一为去空白名称列表
+    if isinstance(raw, str):
+        return [p.strip() for p in re.split(r"[、，,/|]", raw) if p.strip()]
+    if isinstance(raw, list):
+        return [str(n).strip() for n in raw if str(n).strip()]
+    return []
+
+
+def _match_prop_material_bindings(
+    names: list[str],
+    candidates: list[Any],
+    *,
+    body_blob: str = "",
+) -> list[dict[str, Any]]:
+    # 按名匹配道具/素材；正文兜底扫描未点名但出现在行文中的资产
+    bindings: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for name in names:
+        asset = _find_asset_by_name(candidates, str(name))
+        if asset is None:
+            continue
+        aid = int(asset.id)
+        if aid in seen:
+            continue
+        seen.add(aid)
+        bindings.append(
+            {
+                "name": str(getattr(asset, "name", "") or name).strip() or str(name),
+                "assetId": aid,
+            }
+        )
+    if body_blob:
+        for asset in candidates:
+            name = str(getattr(asset, "name", "") or "").strip()
+            if not name or name not in body_blob:
+                continue
+            aid = int(asset.id)
+            if aid in seen:
+                continue
+            seen.add(aid)
+            bindings.append({"name": name, "assetId": aid})
+    return bindings
 
 
 def _build_character_bindings(
@@ -230,6 +275,11 @@ def normalize_llm_fragment_items(
     """
     character_assets = [a for a in assets if getattr(a, "type", "") == "character"]
     scene_assets = [a for a in assets if getattr(a, "type", "") == "scene"]
+    prop_material_assets = [
+        a
+        for a in assets
+        if str(getattr(a, "type", "") or "") in {"prop", "material", "none"}
+    ]
     summary_lookup = build_summary_character_lookup(summary)
     # introduced 本剧已介绍角色（含更早分集）
     introduced: set[str] = set(already_introduced or ())
@@ -254,13 +304,13 @@ def normalize_llm_fragment_items(
         if not lines:
             continue
         scene_name = str(item.get("scene_name") or item.get("sceneName") or "").strip() or None
-        raw_names = item.get("character_names") or item.get("characterNames") or []
-        if isinstance(raw_names, str):
-            character_names = [p.strip() for p in re.split(r"[、，,/|]", raw_names) if p.strip()]
-        elif isinstance(raw_names, list):
-            character_names = [str(n).strip() for n in raw_names if str(n).strip()]
-        else:
-            character_names = []
+        character_names = _coerce_name_list(
+            item.get("character_names") or item.get("characterNames") or []
+        )
+        prop_names = _coerce_name_list(item.get("prop_names") or item.get("propNames") or [])
+        material_names = _coerce_name_list(
+            item.get("material_names") or item.get("materialNames") or []
+        )
 
         # 正文未点名但 catalog 有的角色：从行文再扫一次资产名
         bindings = _build_character_bindings(
@@ -300,12 +350,24 @@ def normalize_llm_fragment_items(
             if aid not in matched_ids:
                 matched_ids.append(aid)
 
+        body_blob = "\n".join(lines)
+        prop_bindings = _match_prop_material_bindings(
+            [*prop_names, *material_names],
+            prop_material_assets,
+            body_blob=body_blob,
+        )
+        for pb in prop_bindings:
+            aid = int(pb["assetId"])
+            if aid not in matched_ids:
+                matched_ids.append(aid)
+
         body_lines: list[str] = []
         used = 0
         # timed_blocks 本 LLM 镜内各行 (时长, 文本行)；超软/硬上限时拆成多条 Fragment
         timed_blocks: list[tuple[int, list[str]]] = []
+        inject_bindings = [*bindings, *prop_bindings]
         for line in lines:
-            raw = _inject_character_mentions(line, bindings)
+            raw = _inject_character_mentions(line, inject_bindings)
             formatted = _format_narrative_line(raw)
             if scene_asset_id and scene_name and scene_name in formatted and f"@asset:{scene_asset_id}" not in formatted:
                 formatted = formatted.replace(scene_name, f"@asset:{scene_asset_id} {scene_name}", 1)
@@ -340,6 +402,18 @@ def normalize_llm_fragment_items(
                 aid = int(b["assetId"])
                 if aid not in matched_ids:
                     matched_ids.append(aid)
+
+            for pb in _match_prop_material_bindings(
+                [],
+                prop_material_assets,
+                body_blob=body_text,
+            ):
+                aid = int(pb["assetId"])
+                if aid not in matched_ids:
+                    matched_ids.append(aid)
+                # 已写入 body 的行若仍是裸名，在最终 content 里再注一次
+                body_text = _inject_character_mentions(body_text, [pb])
+                body_lines = body_text.split("\n") if body_text else body_lines
 
             is_opening = (
                 _truthy_opening_flag(item, index, allow_opening=allow_opening)

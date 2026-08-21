@@ -30,6 +30,7 @@ import { DramaProjectCardMenu } from './DramaProjectCardMenu'
 import './drama.css'
 
 const CREATIVE_MIN_LENGTH = 20
+const CREATIVE_MAX_LENGTH = 2000
 const CANVAS_PLACEHOLDER =
   '自由画布创作项目，稍后在画布中完善故事与资产。'
 
@@ -128,6 +129,10 @@ function DramaListInner() {
       setError(`故事内容至少 ${CREATIVE_MIN_LENGTH} 字`)
       return
     }
+    if (source.length > CREATIVE_MAX_LENGTH) {
+      setError(`故事内容请控制在 ${CREATIVE_MAX_LENGTH} 字以内`)
+      return
+    }
     setBusy(true)
     setError('')
     try {
@@ -174,7 +179,13 @@ function DramaListInner() {
 
   const selectionMode = selected.size > 0
   const storyLen = storyText.trim().length
-  const canGenerate = storyLen >= CREATIVE_MIN_LENGTH && !busy
+  const canGenerate = storyLen >= CREATIVE_MIN_LENGTH && storyLen <= CREATIVE_MAX_LENGTH && !busy
+  const charCountClass =
+    storyLen > CREATIVE_MAX_LENGTH
+      ? ' is-over'
+      : storyLen >= CREATIVE_MIN_LENGTH
+        ? ' is-ok'
+        : ''
 
   const filteredItems = items.filter((item) => {
     const canvas = isCanvasWorkflow(item)
@@ -355,20 +366,23 @@ function DramaListInner() {
               <label className="drama-agent-ai-label" htmlFor="drama-agent-story">
                 {t('dramaList.storyLabel')}
               </label>
-              <div className="drama-agent-ai-field">
+              <div className={`drama-agent-ai-field${storyText.trim() ? ' has-value' : ''}`}>
                 <textarea
                   id="drama-agent-story"
                   value={storyText}
-                  onChange={(e) => setStoryText(e.target.value)}
+                  onChange={(e) => setStoryText(e.target.value.slice(0, CREATIVE_MAX_LENGTH + 50))}
                   disabled={busy}
                   placeholder="在此输入你构想的故事内容：故事设定、主角特征、剧情脉络、最终结局等"
-                  rows={5}
+                  rows={7}
+                  maxLength={CREATIVE_MAX_LENGTH + 50}
                 />
                 <span
-                  className={`drama-agent-char-count${storyLen >= CREATIVE_MIN_LENGTH ? ' is-ok' : ''}`}
+                  className={`drama-agent-char-count${charCountClass}`}
                   aria-live="polite"
                 >
-                  {storyLen}/{CREATIVE_MIN_LENGTH}
+                  {storyLen}
+                  <span className="drama-agent-char-sep">/</span>
+                  {CREATIVE_MAX_LENGTH}
                 </span>
               </div>
               <div className="drama-agent-ai-footer">

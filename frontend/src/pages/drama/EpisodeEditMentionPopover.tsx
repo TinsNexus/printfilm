@@ -41,7 +41,6 @@ const TYPE_LABEL: Record<string, string> = {
   character: '角色',
   scene: '场景',
   prop: '道具',
-  material: '素材',
 }
 
 // 渲染 @ 引用弹层

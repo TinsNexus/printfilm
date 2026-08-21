@@ -377,7 +377,7 @@ function EpisodeStoryboardInner() {
         title="关联出境资产"
         size="lg"
       >
-        <p className="ep-storyboard-picker-hint">选择本镜出场的角色 / 场景 / 道具 / 素材</p>
+        <p className="ep-storyboard-picker-hint">选择本镜出场的角色 / 场景 / 道具</p>
         {pickerAssets.length === 0 ? (
           <p className="ep-storyboard-picker-empty">暂无可选资产，请先到资产画布生成</p>
         ) : (

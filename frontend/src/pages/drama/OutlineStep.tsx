@@ -6,7 +6,7 @@ import {
   type DramaProject,
   type DramaScript,
 } from '../../api/drama'
-import { IMAGE_STYLE_OPTIONS, type ImageStyleId } from '../../lib/dramaImageStyles'
+import { getImageStyleLabel, type ImageStyleId } from '../../lib/dramaImageStyles'
 import {
   getEpisodeContentStatus,
   getImageStyleId,
@@ -15,6 +15,7 @@ import {
   buildEpisodeContentUpdate,
 } from './dramaWorkspaceUtils'
 import { dialog } from '../../lib/dialog'
+import { DramaImageStyleModal } from './DramaImageStyleModal'
 
 type OutlineSectionKey = 'source' | 'summary' | 'episodes'
 
@@ -407,25 +408,21 @@ export function OutlineStep({
               <p className="drama-step-hero-sub">
                 {episodeCount ? `共 ${episodeCount} 集` : '集数待定'}
                 {imageStyleId
-                  ? ` · ${IMAGE_STYLE_OPTIONS.find((o) => o.id === imageStyleId)?.label || '已选风格'}`
+                  ? ` · ${getImageStyleLabel(imageStyleId) || '已选风格'}`
                   : ' · 未选画面风格'}
               </p>
             </div>
           </div>
-          <label className="drama-style-select drama-outline-style">
-            项目风格
-            <select
-              value={imageStyleId}
-              onChange={(e) => void handleStyleChange(e.target.value as ImageStyleId | '')}
-            >
-              <option value="">未选择</option>
-              {IMAGE_STYLE_OPTIONS.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="drama-outline-style">
+            <DramaImageStyleModal
+              variant="field"
+              fieldLabel="项目风格"
+              title="选择项目风格"
+              emptyLabel="未选择"
+              value={(imageStyleId as ImageStyleId | '') || ''}
+              onChange={(id) => void handleStyleChange(id)}
+            />
+          </div>
         </header>
 
         <div className="drama-accordions">

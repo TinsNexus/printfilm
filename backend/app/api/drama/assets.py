@@ -14,11 +14,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import User
-from app.models_drama import DramaAsset
+from app.models_drama import DramaAsset, DramaProject
 from app.schemas_drama import DramaAssetCreate, DramaAssetOut, DramaAssetUpdate, SeedAssetsFromScriptOut
 from app.services.drama.access import get_owned_drama_project
 from app.services.drama.jobs import dispatch_seed_assets_job
-from app.services.drama.seed import seed_assets_from_script
+from app.services.drama.seed import (
+    _asset_dedupe_key,
+    _normalize_asset_name,
+    purge_voice_like_character_assets,
+    seed_assets_from_script,
+)
 
 router = APIRouter()
 
@@ -31,7 +36,7 @@ async def list_assets(
     user: User = Depends(get_current_user),
 ) -> list[DramaAssetOut]:
     # Global library = all assets of user's drama projects; optional project filter
-    from app.models_drama import DramaProject
+    from app.services.drama.seed import merge_duplicate_library_assets
 
     q = (
         select(DramaAsset)
@@ -40,6 +45,12 @@ async def list_assets(
         .order_by(DramaAsset.updated_at.desc())
     )
     if project_id is not None:
+        await get_owned_drama_project(db, project_id, user)
+        # 进入资产库时顺带合并同名重复，并清掉误入角色的音色名
+        removed = await merge_duplicate_library_assets(db, int(project_id))
+        purged = await purge_voice_like_character_assets(db, int(project_id))
+        if removed or purged:
+            await db.commit()
         q = q.where(DramaAsset.project_id == project_id)
     rows = list((await db.execute(q)).scalars().all())
     if library_only:
@@ -60,6 +71,23 @@ async def create_asset(
     user: User = Depends(get_current_user),
 ) -> DramaAssetOut:
     await get_owned_drama_project(db, body.project_id, user)
+    # 同类型同名已存在则直接返回，避免手动/并发再造重复卡
+    want_name = _normalize_asset_name(body.name or "")
+    if want_name:
+        want_key = _asset_dedupe_key(body.type or "", want_name)
+        existing_rows = list(
+            (
+                await db.execute(
+                    select(DramaAsset).where(DramaAsset.project_id == body.project_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for row in existing_rows:
+            key = _asset_dedupe_key(row.type or "", _normalize_asset_name(row.name or ""))
+            if key == want_key:
+                return DramaAssetOut.model_validate(row)
     asset = DramaAsset(
         project_id=body.project_id,
         type=body.type,
@@ -222,14 +250,30 @@ async def seed_assets(
     project = await get_owned_drama_project(db, project_id, user, with_script=True)
     heavy = bool(refresh_prompts or reextract_props)
 
+    # 行锁：防止空库并发 seed 插入同名角色
+    locked = (
+        await db.execute(
+            select(DramaProject).where(DramaProject.id == project.id).with_for_update()
+        )
+    ).scalar_one()
+    params = dict(locked.params or {}) if isinstance(locked.params, dict) else {}
+    if str(params.get("assets_seed_status") or "") == "generating":
+        existing = list(
+            (await db.execute(select(DramaAsset).where(DramaAsset.project_id == locked.id)))
+            .scalars()
+            .all()
+        )
+        return SeedAssetsFromScriptOut(
+            assets=[DramaAssetOut.model_validate(a) for a in existing],
+            status="generating",
+            message="资产抽取进行中，请稍候刷新",
+        )
+
     if heavy:
-        params = dict(project.params or {}) if isinstance(project.params, dict) else {}
-        if str(params.get("assets_seed_status") or "") == "generating":
-            raise HTTPException(status_code=409, detail="资产抽取进行中，请稍候")
         params["assets_seed_status"] = "generating"
         params["assets_seed_generating_at"] = datetime.now(timezone.utc).isoformat()
         params.pop("assets_seed_error", None)
-        project.params = params
+        locked.params = params
         await db.commit()
         dispatch_seed_assets_job(
             project_id,
@@ -237,7 +281,7 @@ async def seed_assets(
             reextract_props=reextract_props,
         )
         existing = list(
-            (await db.execute(select(DramaAsset).where(DramaAsset.project_id == project.id)))
+            (await db.execute(select(DramaAsset).where(DramaAsset.project_id == locked.id)))
             .scalars()
             .all()
         )
@@ -247,17 +291,50 @@ async def seed_assets(
             message="资产抽取任务已提交，请稍候刷新",
         )
 
+    params["assets_seed_status"] = "generating"
+    params["assets_seed_generating_at"] = datetime.now(timezone.utc).isoformat()
+    params.pop("assets_seed_error", None)
+    locked.params = params
+    await db.commit()
     try:
+        # 重新加载带 script 的项目，避免过期状态
+        project = await get_owned_drama_project(db, project_id, user, with_script=True)
         result = await seed_assets_from_script(
             db,
             project,
             refresh_prompts=refresh_prompts,
             reextract_props=reextract_props,
         )
+        params = dict(project.params or {}) if isinstance(project.params, dict) else {}
+        params["assets_seed_status"] = "done"
+        params.pop("assets_seed_error", None)
+        params.pop("assets_seed_generating_at", None)
+        project.params = params
+        await db.commit()
     except ValueError as exc:
+        params = dict(project.params or {}) if isinstance(project.params, dict) else {}
+        params["assets_seed_status"] = "failed"
+        params["assets_seed_error"] = str(exc)[:500]
+        params.pop("assets_seed_generating_at", None)
+        project.params = params
+        await db.commit()
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
+        params = dict(project.params or {}) if isinstance(project.params, dict) else {}
+        params["assets_seed_status"] = "failed"
+        params["assets_seed_error"] = str(exc)[:500]
+        params.pop("assets_seed_generating_at", None)
+        project.params = params
+        await db.commit()
         raise HTTPException(status_code=502, detail=str(exc)[:500]) from exc
+    except Exception:
+        params = dict(project.params or {}) if isinstance(project.params, dict) else {}
+        params["assets_seed_status"] = "failed"
+        params["assets_seed_error"] = "资产抽取失败"
+        params.pop("assets_seed_generating_at", None)
+        project.params = params
+        await db.commit()
+        raise
     return SeedAssetsFromScriptOut(
         assets=[DramaAssetOut.model_validate(a) for a in result.assets],
         created_count=result.created_count,

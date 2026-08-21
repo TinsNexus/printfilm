@@ -33,18 +33,20 @@ import {
   dramaAssetNeedsImageGeneration,
 } from '../../lib/dramaAssetImage'
 
-type AssetTabKey = 'character' | 'scene' | 'prop' | 'material' | 'voice'
+type AssetTabKey = 'character' | 'scene' | 'prop' | 'voice'
 
 const ASSET_TABS: Array<{ key: AssetTabKey; label: string }> = [
   { key: 'character', label: '角色' },
   { key: 'scene', label: '场景' },
   { key: 'prop', label: '道具' },
-  { key: 'material', label: '素材' },
   { key: 'voice', label: '音色' },
 ]
 
 const PAGE_SIZE_DEFAULT = 12
 const PAGE_SIZE_OPTIONS = [12, 24, 36] as const
+
+// 跨 StrictMode 重挂载共享，避免空库并发 seed
+const seedingProjectIds = new Set<number>()
 
 type AssetsStepProps = {
   projectId: number
@@ -117,9 +119,14 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
           await dramaApi.listAssets(projectId, { libraryOnly: true }),
         )
         // 仅首次（资产库为空且已有剧本摘要）自动从剧本抽取；之后需手动点「重新抽取资产」
-        if (list.length === 0 && p?.script?.summary) {
-          const seededResult = await dramaApi.seedAssets(projectId)
-          list = normalizeAssetList(seededResult?.assets)
+        if (list.length === 0 && p?.script?.summary && !seedingProjectIds.has(projectId)) {
+          seedingProjectIds.add(projectId)
+          try {
+            const seededResult = await dramaApi.seedAssets(projectId)
+            list = normalizeAssetList(seededResult?.assets)
+          } finally {
+            seedingProjectIds.delete(projectId)
+          }
         }
         setAssets(list)
         resumeDramaImageGensFromAssets(projectId, list)
@@ -194,7 +201,6 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
   const filtered = assetList.filter((a) => {
     const t = (a.type || '').toLowerCase()
     if (tab === 'voice') return t === 'voice'
-    if (tab === 'material') return t === 'material' || t === 'none' || !t
     return t === tab
   })
   const selectedCharacterAssets = assetList.filter(
@@ -496,7 +502,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
     const ok = await dialog.confirm({
       title: '重新抽取资产',
       message:
-        '将按最新剧本摘要补全新角色/场景，并用 AI 为全部角色、场景、道具、素材重新生成完整生图提示词。已有图片/音色绑定不会删除，但重新生图时会使用新提示词。是否继续？',
+        '将按最新剧本摘要补全新角色/场景，并用 AI 为全部角色、场景、道具重新生成完整生图提示词。已有图片/音色绑定不会删除，但重新生图时会使用新提示词。是否继续？',
       confirmText: '开始抽取',
       tone: 'danger',
     })
@@ -532,7 +538,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
         const failed = seedStatus === 'failed'
         const parts = [`新建 ${created} 项`, `AI 刷新提示词 ${refreshed} 项`]
         if (propsUpdated > 0) {
-          parts.push(`更新道具/素材 ${propsUpdated} 项`)
+          parts.push(`更新道具 ${propsUpdated} 项`)
         }
         let detail = failed
           ? String(params.assets_seed_error || '抽取失败')
@@ -559,7 +565,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
       const llmErrors = Array.isArray(result.llm_errors) ? result.llm_errors : []
       const parts = [`新建 ${created} 项`, `AI 刷新提示词 ${refreshed} 项`]
       if (propsUpdated > 0) {
-        parts.push(`更新道具/素材 ${propsUpdated} 项`)
+        parts.push(`更新道具 ${propsUpdated} 项`)
       }
       let detail = `${parts.join('，')}。`
       if (created === 0 && refreshed === 0 && llmErrors.length === 0) {
@@ -728,7 +734,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
         </div>
       ) : null}
 
-      {loading ? <p className="drama-muted">正在从剧本抽取资产（含道具/素材）…</p> : null}
+      {loading ? <p className="drama-muted">正在从剧本抽取资产（含道具）…</p> : null}
 
       {!loading && filtered.length > 0 ? (
         <p className="drama-muted drama-assets-page-meta">

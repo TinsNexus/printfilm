@@ -81,8 +81,8 @@ export function EpisodeEditAssetPanel({
         {assets.length === 0 ? (
           <p className="drama-ep-empty">
             {scope === 'episode'
-              ? '本集暂无引用素材，可切换「全集」或点击资产插入脚本'
-              : '暂无素材，可打开分镜画布或前往资产画布添加'}
+              ? '本集暂无引用资产，可切换「全集」或点击资产插入脚本'
+              : '暂无资产，可打开分镜画布或前往资产画布添加'}
           </p>
         ) : (
           assets.map((asset) => {

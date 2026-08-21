@@ -7,7 +7,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import User, WalletLedger
-from app.schemas import LoginRequest, ProfileUpdateRequest, RegisterRequest, TokenResponse, UserOut
+from app.schemas import LoginRequest, ProfileUpdateRequest, RegisterRequest, TokenResponse, UserOut, ChangePasswordRequest
 from app.services import storage
 from app.services.auth import (
     create_access_token,
@@ -65,6 +65,22 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> Token
 @router.get("/me", response_model=UserOut)
 async def me(user: User = Depends(get_current_user)) -> User:
     return user
+
+
+@router.post("/change-password")
+async def change_password(
+    body: ChangePasswordRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, bool]:
+    """校验当前密码后写入新密码。"""
+    if not verify_password(body.current_password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="当前密码不正确")
+    if body.current_password == body.new_password:
+        raise HTTPException(status_code=400, detail="新密码不能与当前密码相同")
+    user.hashed_password = hash_password(body.new_password)
+    await db.commit()
+    return {"ok": True}
 
 
 @router.patch("/me", response_model=UserOut)

@@ -43,16 +43,33 @@ python deploy/scripts/deploy_kepu.py
 1. **本地** `frontend` / `admin` 执行 `npm ci && npm run build`（`VITE_API_BASE=` 空，同源）
 2. 打包源码 + 已构建的 `dist`（排除 `.venv` / `node_modules` / 生成媒体等）
 3. SSH 上传并解压到 `/opt/ai_movie`（保留远端 venv）
-4. 写入 compose env、`backend/.env`、systemd、nginx（含前台 + admin + `www.printfilm.com` / `admin.printfilm.com` 别名）
-5. `docker compose up -d`（Postgres/Redis）
+4. 写入 compose env、`backend/.env`、systemd
+5. **默认跳过** `docker compose`（不动 Postgres/Redis 容器）；仅 `SETUP_INFRA=1` 时才 up
 6. 远端 `pip install -r requirements.txt`（**不再**在服务器 npm build）
-7. 重启 `ai-movie-api` / `ai-movie-worker`，reload nginx
-8. 为 `admin.kepu.printfilm.com`、`www.printfilm.com`、`admin.printfilm.com` 申请/续签证书（certbot，幂等）
-9. 健康检查：`/api/health`、前台与后台首页（含别名域名）
+7. 重启 `ai-movie-api`（worker 默认停用；任务在 API 进程内调度）
+8. 健康检查：`/api/health`、前台与后台首页
+
+**默认不改 nginx、不跑 certbot、不动容器**（线上 HTTPS / 库已配好即可）。仅在需要时再开：
+
+```bash
+# 重写宝塔 vhost（静态根 / 反代）；已有 Let's Encrypt 证书则自动开 443
+set SETUP_NGINX=1
+python deploy/scripts/deploy_kepu_8136.py
+
+# 申请/续签证书 + 按证书写 443（可与 SETUP_NGINX 同开）
+set SETUP_TLS=1
+python deploy/scripts/deploy_kepu_8136.py
+
+# 仅当要重建/启动 Postgres+Redis 容器时
+set SETUP_INFRA=1
+python deploy/scripts/deploy_kepu_8136.py
+```
 
 已构建过 dist、只想重传时可设 `SKIP_LOCAL_BUILD=1`（需本地 `frontend/dist` 与 `admin/dist` 已存在）。
 
 `node_modules` 已存在时会**跳过 `npm ci`**（Windows 上 ci 常需 5–15 分钟）；需强制重装依赖时设 `FORCE_NPM_CI=1`。
+
+跳过 apt 装包：`SKIP_BOOTSTRAP=1`。
 
 **注意**：全量脚本会覆盖远端 `backend/.env` 为脚本内嵌模板。若线上临时改过密钥/回调，发布后核对 EPAY / CORS / OSS 等项。
 

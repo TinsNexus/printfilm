@@ -243,22 +243,51 @@ def _canvas(opts: ComposeOptions) -> tuple[int, int]:
 
 
 def _find_cjk_font() -> str | None:
-    """Return a path usable by drawtext fontfile=…"""
+    """Return a path usable by drawtext fontfile=…（优先环境变量与仓库内置字体）。"""
+    bundled = (
+        Path(__file__).resolve().parents[1] / "assets" / "fonts" / "NotoSansSC-Regular.otf"
+    )
     candidates = [
         os.environ.get("FRAMECUT_FONT"),
+        # 仓库内置（部署时可放入 backend/assets/fonts）
+        str(bundled) if bundled.exists() else None,
         r"C:\Windows\Fonts\msyhbd.ttc",
         r"C:\Windows\Fonts\msyh.ttc",
         r"C:\Windows\Fonts\simhei.ttf",
         r"C:\Windows\Fonts\simkai.ttf",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
-        "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+        # Ubuntu / Debian 常见路径
         "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.otf",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJKsc-Regular.otf",
+        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+        "/usr/share/fonts/truetype/arphic/uming.ttc",
         "/System/Library/Fonts/PingFang.ttc",
         "/System/Library/Fonts/STHeiti Light.ttc",
     ]
     for c in candidates:
         if c and Path(c).exists():
             return c
+    # fontconfig 兜底：解析中文字体文件路径
+    try:
+        import subprocess
+
+        out = subprocess.check_output(
+            ["fc-match", "-f", "%{file}", ":lang=zh-cn"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=3,
+        ).strip()
+        if out and Path(out).exists():
+            return out
+    except Exception:  # noqa: BLE001
+        pass
     return None
 
 
@@ -1063,9 +1092,13 @@ def compose_project(
     ffmpeg = _which("ffmpeg")
     output.parent.mkdir(parents=True, exist_ok=True)
     font = _find_cjk_font()
-    if opts.mode == "image_text" and not font:
-        logger.warning("No CJK font found; drawtext may fail for Chinese")
-
+    if not font:
+        logger.error(
+            "未找到中文字体，叠字/口播字幕会显示为方框；"
+            "请安装 fonts-wqy-zenhei 或设置 FRAMECUT_FONT"
+        )
+    elif opts.mode == "image_text":
+        logger.info("compose CJK font=%s", font)
     with tempfile.TemporaryDirectory(prefix="framecut_") as tmp:
         tmp_path = Path(tmp)
         segment_paths: list[Path] = []

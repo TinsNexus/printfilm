@@ -31,7 +31,7 @@ from app.services.drama.voice_synthesis import synthesize_voice_asset
 logger = logging.getLogger(__name__)
 
 # 分镜视频前需要参考图的资产类型
-IMAGE_REF_ASSET_TYPES = frozenset({"character", "scene", "prop"})
+IMAGE_REF_ASSET_TYPES = frozenset({"character", "scene", "prop", "material", "none"})
 
 
 # 统一解析项目参数里的布尔值，兼容历史字符串/数字写法
@@ -102,14 +102,134 @@ async def find_previous_episode_fragment(
 
 
 def fragment_generation_status(fragment: DramaEpisodeFragment) -> dict[str, Any]:
-    """读取分镜片段生成状态（done / running / failed / idle）。"""
+    """读取分镜片段生成状态（done / running / queued / failed / idle）。
+
+    重新生成时旧 video 仍在，优先信任 params.generation 的进行中状态。
+    """
     params = fragment.params or {}
     gen = params.get("generation") if isinstance(params, dict) else None
+    if isinstance(gen, dict):
+        status = str(gen.get("status") or "").strip().lower()
+        if status in {"queued", "running", "generating", "failed", "cancelled"}:
+            return dict(gen)
+        if status == "done":
+            out = dict(gen)
+            if fragment.video and not out.get("video"):
+                out["video"] = fragment.video
+            if fragment.cover and not out.get("cover"):
+                out["cover"] = fragment.cover
+            return out
     if fragment.video:
         return {"status": "done", "video": fragment.video, "cover": fragment.cover}
-    if isinstance(gen, dict):
-        return gen
     return {"status": "idle"}
+
+
+# 分镜视频版本上限（含当前成片前归档的历史 take）
+FRAGMENT_VIDEO_VERSION_LIMIT = 5
+
+
+# 归档当前成片到 params.video_versions（覆盖前调用）
+def archive_fragment_video_version(fragment: DramaEpisodeFragment) -> dict[str, Any] | None:
+    video = (fragment.video or "").strip()
+    if not video:
+        return None
+    from datetime import datetime, timezone
+
+    params = dict(fragment.params or {}) if isinstance(fragment.params, dict) else {}
+    last_frame = ""
+    for key in ("lastFrameUrl", "last_frame_url"):
+        raw = params.get(key)
+        if isinstance(raw, str) and raw.strip():
+            last_frame = raw.strip()
+            break
+    entry = {
+        "id": f"v_{int(datetime.now(timezone.utc).timestamp())}_{fragment.id}",
+        "video": video,
+        "cover": (fragment.cover or "").strip(),
+        "lastFrameUrl": last_frame or None,
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+        "source": "generate",
+    }
+    versions = params.get("video_versions")
+    if not isinstance(versions, list):
+        versions = []
+    # 去重：同一 video URL 不重复归档
+    versions = [
+        v
+        for v in versions
+        if isinstance(v, dict) and str(v.get("video") or "").strip() != video
+    ]
+    versions.insert(0, entry)
+    params["video_versions"] = versions[:FRAGMENT_VIDEO_VERSION_LIMIT]
+    fragment.params = params
+    return entry
+
+
+# 将历史版本切换为当前成片，并把原当前片压入版本列表
+def activate_fragment_video_version(
+    fragment: DramaEpisodeFragment,
+    version_id: str,
+) -> dict[str, Any]:
+    params = dict(fragment.params or {}) if isinstance(fragment.params, dict) else {}
+    versions_raw = params.get("video_versions")
+    if not isinstance(versions_raw, list):
+        raise ValueError("没有可切换的历史版本")
+    target: dict[str, Any] | None = None
+    remaining: list[dict[str, Any]] = []
+    for item in versions_raw:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("id") or "") == version_id and target is None:
+            target = dict(item)
+            continue
+        remaining.append(dict(item))
+    if not target or not str(target.get("video") or "").strip():
+        raise ValueError("指定版本不存在")
+
+    from datetime import datetime, timezone
+
+    current_video = (fragment.video or "").strip()
+    target_video = str(target.get("video") or "").strip()
+    if current_video and current_video != target_video:
+        last_frame = ""
+        for key in ("lastFrameUrl", "last_frame_url"):
+            raw = params.get(key)
+            if isinstance(raw, str) and raw.strip():
+                last_frame = raw.strip()
+                break
+        remaining.insert(
+            0,
+            {
+                "id": f"v_{int(datetime.now(timezone.utc).timestamp())}_{fragment.id}",
+                "video": current_video,
+                "cover": (fragment.cover or "").strip(),
+                "lastFrameUrl": last_frame or None,
+                "createdAt": datetime.now(timezone.utc).isoformat(),
+                "source": "replaced",
+            },
+        )
+
+    fragment.video = target_video[:1024]
+    fragment.cover = str(target.get("cover") or "")[:1024]
+    last_frame = str(target.get("lastFrameUrl") or "").strip() or None
+    write_fragment_last_frame_url(fragment, last_frame)
+    params = dict(fragment.params or {})
+    params["video_versions"] = remaining[:FRAGMENT_VIDEO_VERSION_LIMIT]
+    params["generation"] = {
+        "status": "done",
+        "video": fragment.video,
+        "cover": fragment.cover,
+        "lastFrameUrl": last_frame,
+        "restoredFrom": version_id,
+    }
+    fragment.params = params
+    return {
+        "fragment_id": fragment.id,
+        "video": fragment.video,
+        "cover": fragment.cover,
+        "lastFrameUrl": last_frame,
+        "video_versions": params["video_versions"],
+    }
 
 
 # 无对应平台任务时，把 queued/running 分镜恢复为 idle，避免假排队
@@ -939,6 +1059,8 @@ async def apply_fragment_video_assets(
     from app.services.ffmpeg_compose import extract_video_poster_frame
 
     settings = get_settings()
+    # 覆盖前归档旧成片，供版本切换
+    archive_fragment_video_version(fragment)
     video_url = storage_svc.republish_url(local_video, sync=True) or local_video
     cover_url = ""
     video_path = storage_svc.local_path_from_url(local_video)

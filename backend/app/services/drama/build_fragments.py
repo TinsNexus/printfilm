@@ -933,6 +933,11 @@ def build_fragments_from_episode_body(
     """
     character_assets = [a for a in assets if getattr(a, "type", "") == "character"]
     scene_assets = [a for a in assets if getattr(a, "type", "") == "scene"]
+    prop_material_assets = [
+        a
+        for a in assets
+        if str(getattr(a, "type", "") or "") in {"prop", "material", "none"}
+    ]
     scenes = split_episode_content_into_scenes(content)
     summary_lookup = build_summary_character_lookup(summary)
     script_bodies = list(episode_bodies or [])
@@ -990,6 +995,18 @@ def build_fragments_from_episode_body(
             character_bindings,
             introduced,
         ):
+            # 规则切分：正文里出现的道具/素材名注入 @asset 并写入 asset_ids
+            prop_bindings: list[dict[str, Any]] = []
+            for asset in prop_material_assets:
+                name = str(getattr(asset, "name", "") or "").strip()
+                if not name or name not in planned:
+                    continue
+                aid = int(asset.id)
+                prop_bindings.append({"name": name, "assetId": aid})
+                if aid not in matched_ids:
+                    matched_ids.append(aid)
+            if prop_bindings:
+                planned = _inject_character_mentions(planned, prop_bindings)
             fragments.append(
                 {
                     "content": planned,

@@ -38,7 +38,6 @@ const KIND_LABEL: Record<string, string> = {
   scene: '场景',
   prop: '道具',
   voice: '音色',
-  material: '素材',
 }
 
 export default function AssetLibraryPage() {
@@ -215,7 +214,7 @@ function AssetLibraryInner() {
             <div>
               <h1>资产管理</h1>
               <p className="pf-muted" style={{ margin: '0.35rem 0 0' }}>
-                按角色、场景、道具与音色浏览素材
+                按角色、场景、道具与音色浏览
               </p>
             </div>
             <div className="pf-drama-list-actions">

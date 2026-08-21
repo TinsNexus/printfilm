@@ -14,6 +14,7 @@ FRAGMENT_PLAN_SYSTEM_PROMPT = """你是短剧视频分镜导演，负责把「�
       "duration_sec": 12,
       "scene_name": "地点名或空字符串",
       "character_names": ["本镜出镜角色名"],
+      "prop_names": ["本镜出现的道具名"],
       "is_opening": false,
       "lines": [
         "空镜：环境建立描写",
@@ -51,6 +52,7 @@ FRAGMENT_PLAN_SYSTEM_PROMPT = """你是短剧视频分镜导演，负责把「�
 4. 禁止输出：### 场标题、出场人物行、【字幕】【BGM】【人物介绍】【片头】【背景介绍】、@asset、@duration。
     人物介绍叠字、首次出场去重、片头集号等由**系统后处理**写入，模型不要自行编排或猜测「谁该介绍」。
 5. character_names 只列本镜真正出镜、且在 lines 里被点到的角色名（与资产目录一致）；群演/兵丁/百姓等可省略。
+   prop_names 只列本镜画面或动作里真正出现、且在资产目录中的道具名；没有则输出空数组。不要输出 material_names / 素材。
    系统会按本剧更早分集 + 本集分镜顺序扫描，仅在角色**本剧第一次出现的那一镜**自动加介绍叠字。
 6. 环境建立空镜可独立成镜；对白密集处按情绪段落合并。
 7. 覆盖输入剧本的全部有效剧情，不要删减关键冲突与转折。
@@ -150,7 +152,7 @@ def build_fragment_plan_user_prompt(
             "【分集场记正文】",
             (episode_body or "").strip() or "（空）",
             "",
-            "【可用资产目录｜拆镜时 character_names / scene_name 尽量使用下列名称】",
+            "【可用资产目录｜拆镜时 character_names / scene_name / prop_names 尽量使用下列名称】",
         ]
     )
     if not asset_catalog:

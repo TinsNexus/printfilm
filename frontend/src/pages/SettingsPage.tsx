@@ -8,6 +8,7 @@ import MonthlyUsageCard from '../components/billing/MonthlyUsageCard'
 import UsageChargeRecords from '../components/billing/UsageChargeRecords'
 import ApiKeysPanel from './settings/ApiKeysPanel'
 import AccountProfileCard from './settings/AccountProfileCard'
+import ChangePasswordCard from './settings/ChangePasswordCard'
 import ComingSoon from '../components/ui/ComingSoon'
 import { dramaProjectEntryPath, formatDramaCardMeta } from '../lib/dramaWorkflow'
 import { STATUS_CN } from '../lib/status'
@@ -324,21 +325,7 @@ export default function SettingsPage() {
             </section>
           ) : null}
 
-          {tab === 'security' ? (
-            <section className="pf-settings-card">
-              <h1>{t('settings.tabs.security')}</h1>
-              <p className="pf-muted">{t('settings.securityLead')}</p>
-              <div className="pf-settings-fields">
-                <label>
-                  <span>{t('settings.loginEmail')}</span>
-                  <input value={user?.email || ''} readOnly />
-                </label>
-              </div>
-              <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" disabled>
-                {t('settings.changePassword')} <ComingSoon />
-              </button>
-            </section>
-          ) : null}
+          {tab === 'security' ? <ChangePasswordCard email={user?.email || ''} /> : null}
 
           {tab === 'api' ? <ApiKeysPanel /> : null}
 

@@ -212,7 +212,27 @@ async def fail_remaining_sequential_batch(
     return changed
 
 
-# 取消 payload 中分镜已删除或已有成片的 pending 任务，避免后台长期显示假排队。
+# 进行中的分镜生成状态（重新生成会保留旧 video，不能当「已完成」误取消）
+_ACTIVE_FRAGMENT_VIDEO_GEN = frozenset({"queued", "running", "generating"})
+
+
+# 判断 pending 分镜视频任务是否应作废；返回取消原因，None 表示保留。
+def stale_pending_fragment_video_reason(frags: list[Any]) -> str | None:
+    """分镜已删 → 作废；全有成片且无进行中 generation → 跳过重复；否则保留（含重新生成）。"""
+    from app.services.drama.generation import fragment_generation_status
+
+    if not frags:
+        return "分镜已变更，任务已作废"
+    if not all((getattr(frag, "video", None) or "").strip() for frag in frags):
+        return None
+    for frag in frags:
+        status = str(fragment_generation_status(frag).get("status") or "").lower()
+        if status in _ACTIVE_FRAGMENT_VIDEO_GEN:
+            return None
+    return "分镜已生成完成，跳过重复任务"
+
+
+# 取消 payload 中分镜已删除或已有成片（且非重新生成）的 pending 任务，避免假排队。
 async def reconcile_stale_pending_tasks(db: AsyncSession) -> int:
     stmt = select(TaskRun).where(
         TaskRun.status == "pending",
@@ -242,11 +262,8 @@ async def reconcile_stale_pending_tasks(db: AsyncSession) -> int:
             if frag is not None:
                 frags.append(frag)
 
-        if not frags:
-            reason = "分镜已变更，任务已作废"
-        elif all((frag.video or "").strip() for frag in frags):
-            reason = "分镜已生成完成，跳过重复任务"
-        else:
+        reason = stale_pending_fragment_video_reason(frags)
+        if not reason:
             continue
 
         task.status = "cancelled"

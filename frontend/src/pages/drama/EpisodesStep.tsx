@@ -60,7 +60,8 @@ function summarizeEpisode(ep: DramaEpisode): EpisodeSummary {
     totalSec += frag.duration_sec && frag.duration_sec > 0 ? frag.duration_sec : 8
     const st = readFragmentGenerationStatus(frag).status
     if (st === 'done') videoDone += 1
-    else if (st === 'queued' || st === 'running' || activeFragmentIds.has(frag.id)) videoRunning += 1
+    else if (st === 'queued' || st === 'running' || st === 'generating' || activeFragmentIds.has(frag.id))
+      videoRunning += 1
     else if (st === 'failed') videoFailed += 1
     if (!previewUrl) {
       const raw = (frag.cover || frag.video || '').trim()
