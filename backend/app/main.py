@@ -7,13 +7,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, text
 
-from app.api import auth, billing, projects, templates
+from app.api import auth, billing, projects, tasks, templates, tools
+from app.api import api_keys as user_api_keys
+from app.api.v1 import router as v1_router
 from app.api.admin import router as admin_router
 from app.api.drama import router as drama_router
 from app.config import get_settings
 from app.database import AsyncSessionLocal, engine, init_db
 from app.logging_setup import configure_logging
 from app.models import Template, User
+from app.services.tasks.runtime import runtime_summary, start_task_runtime, stop_task_runtime
 from app.services.templates_seed import TEMPLATES
 
 settings = get_settings()
@@ -58,10 +61,13 @@ async def log_requests(request: Request, call_next):
         or (request.method == "GET" and path.startswith("/api/drama/scripts/"))
         or (request.method == "GET" and path.startswith("/api/drama/assets"))
         or (request.method == "GET" and path.startswith("/api/projects/") and path.count("/") == 3)
+        or (request.method == "GET" and "/api/tools/tasks/" in path)
     )
     msg = f"{request.method} {path} → {response.status_code} ({elapsed_ms:.0f}ms)"
     if response.status_code >= 400:
         logger.warning(msg)
+    elif elapsed_ms >= 3000:
+        logger.warning("SLOW %s", msg)
     elif is_poll and elapsed_ms < 800:
         return response
     else:
@@ -78,7 +84,11 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 app.include_router(auth.router, prefix="/api")
 app.include_router(templates.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
+app.include_router(tasks.router, prefix="/api")
 app.include_router(billing.router, prefix="/api")
+app.include_router(tools.router, prefix="/api")
+app.include_router(user_api_keys.router, prefix="/api")
+app.include_router(v1_router, prefix="/api")
 app.include_router(drama_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
 
@@ -87,14 +97,29 @@ app.include_router(admin_router, prefix="/api")
 async def on_startup() -> None:
     await init_db()
     await _migrate_sqlite()
+    async with AsyncSessionLocal() as db:
+        from app.services.model_settings import load_model_settings_cache
+
+        await load_model_settings_cache(db)
     await seed_templates()
     await bootstrap_admins()
+    await seed_agent_skills()
     try:
         from app.services import oss as oss_svc
 
         oss_svc.ensure_browser_cors()
     except Exception:  # noqa: BLE001
         pass
+    await start_task_runtime()
+
+
+@app.on_event("shutdown")
+async def on_shutdown() -> None:
+    """Release Postgres pool on uvicorn worker exit."""
+    from app.database import dispose_engine
+
+    await stop_task_runtime()
+    await dispose_engine()
 
 
 async def _migrate_sqlite() -> None:
@@ -175,6 +200,10 @@ async def _migrate_sqlite() -> None:
             )
         if "role" not in ucols:
             await conn.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR(16) DEFAULT 'user'"))
+        if "avatar_url" not in ucols:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(512) DEFAULT ''"))
+        if "phone" not in ucols:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN phone VARCHAR(32) DEFAULT ''"))
 
         # UsageEvent.drama_project_id for drama module billing
         if is_sqlite:
@@ -190,6 +219,77 @@ async def _migrate_sqlite() -> None:
             uecols = {row[0] for row in result.fetchall()}
         if "drama_project_id" not in uecols:
             await conn.execute(text("ALTER TABLE usage_events ADD COLUMN drama_project_id INTEGER"))
+
+        # Task platform additive columns
+        if is_sqlite:
+            result = await conn.execute(text("PRAGMA table_info(task_runs)"))
+            trcols = {row[1] for row in result.fetchall()}
+            result = await conn.execute(
+                text(
+                    "CREATE TABLE IF NOT EXISTS task_steps ("
+                    "id INTEGER PRIMARY KEY, "
+                    "task_id INTEGER NOT NULL, "
+                    "step_key VARCHAR(64), "
+                    "step_type VARCHAR(64) DEFAULT 'job', "
+                    "status VARCHAR(32) DEFAULT 'pending', "
+                    "attempt_count INTEGER DEFAULT 0, "
+                    "provider_name VARCHAR(64), "
+                    "provider_task_id VARCHAR(128), "
+                    "input_payload JSON, "
+                    "output_payload JSON, "
+                    "error_code VARCHAR(64), "
+                    "error_message TEXT, "
+                    "next_poll_at DATETIME, "
+                    "started_at DATETIME, "
+                    "finished_at DATETIME, "
+                    "created_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+                    "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+                    "FOREIGN KEY(task_id) REFERENCES task_runs(id) ON DELETE CASCADE"
+                    ")"
+                )
+            )
+        else:
+            result = await conn.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'task_runs'"
+                )
+            )
+            trcols = {row[0] for row in result.fetchall()}
+        if "dedupe_key" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN dedupe_key VARCHAR(128)"))
+        if "batch_key" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN batch_key VARCHAR(128)"))
+        if "current_step_key" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN current_step_key VARCHAR(64)"))
+        if "current_step_status" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN current_step_status VARCHAR(32)"))
+        if "scheduled_at" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN scheduled_at DATETIME"))
+        if "next_action_at" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN next_action_at DATETIME"))
+        if "lease_token" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN lease_token VARCHAR(64)"))
+        if "lease_until" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN lease_until DATETIME"))
+
+        # Drop leftover worker-era columns that block the new task platform.
+        legacy_task_run_cols = (
+            "execution_phase",
+            "queue_name",
+            "worker_task_id",
+            "group_key",
+            "next_poll_at",
+            "lease_owner",
+            "lease_expires_at",
+            "attempt_count",
+            "attempt_limit",
+        )
+        for col in legacy_task_run_cols:
+            if col not in trcols:
+                continue
+            await conn.execute(text(f"DROP INDEX IF EXISTS ix_task_runs_{col}"))
+            await conn.execute(text(f"ALTER TABLE task_runs DROP COLUMN {col}"))
 
 
 async def bootstrap_admins() -> None:
@@ -212,42 +312,50 @@ async def bootstrap_admins() -> None:
             await db.commit()
 
 
-async def seed_templates() -> None:
-    """Upsert built-in templates; publish cover images to OSS when enabled."""
-    import logging
+async def seed_agent_skills() -> None:
+    """启动时把内置导演 Skill 同步进数据库。"""
+    from app.services.agent.store import seed_builtin_skills
 
+    async with AsyncSessionLocal() as db:
+        await seed_builtin_skills(db)
+
+
+def _publish_template_cover(cover: str, log: logging.Logger) -> str:
+    """把 /static 封面发到 OSS；失败则仍返回原路径。"""
     from app.services import storage
 
+    if not cover.startswith("/static/"):
+        return cover
+    local = storage.STATIC_ROOT / cover.removeprefix("/static/")
+    if not local.is_file():
+        log.warning("template cover missing on disk: %s", local)
+        return cover
+    try:
+        return storage.publish_local(local, sync=True)
+    except Exception:  # noqa: BLE001
+        log.exception("template cover OSS publish failed: %s", local)
+        return cover
+
+
+async def seed_templates() -> None:
+    """只插入缺失的内置模板；已有记录以管理后台为准，启动不再覆盖文案与配置。"""
     log = logging.getLogger("app.seed")
     async with AsyncSessionLocal() as db:
         for item in TEMPLATES:
             data = dict(item)
             existing = await db.get(Template, data["id"])
             cover = (data.get("preview_cover") or "").strip()
-            # Skip re-upload when DB already has a public URL (avoids blocking API startup).
-            if (
-                existing
-                and (existing.preview_cover or "").startswith(("http://", "https://"))
-                and cover.startswith("/static/")
-            ):
-                data["preview_cover"] = existing.preview_cover
-            elif cover.startswith("/static/"):
-                local = storage.STATIC_ROOT / cover.removeprefix("/static/")
-                if local.is_file():
-                    try:
-                        data["preview_cover"] = storage.publish_local(local, sync=True)
-                    except Exception:  # noqa: BLE001
-                        log.exception("template cover OSS publish failed: %s", local)
-                else:
-                    log.warning("template cover missing on disk: %s", local)
             if existing:
-                for k, v in data.items():
-                    setattr(existing, k, v)
-            else:
-                db.add(Template(**data))
+                # 已有模板不覆盖后台配置；仅当封面仍是本地路径时按库内路径补发 OSS
+                current = (existing.preview_cover or "").strip()
+                if not current.startswith(("http://", "https://")):
+                    published = _publish_template_cover(current or cover, log)
+                    if published.startswith(("http://", "https://")) and published != current:
+                        existing.preview_cover = published
+                continue
+            data["preview_cover"] = _publish_template_cover(cover, log)
+            db.add(Template(**data))
         await db.commit()
-        result = await db.execute(select(Template))
-        _ = result.scalars().all()
 
 
 @app.get("/api/health")
@@ -255,37 +363,13 @@ async def health() -> dict:
     from app.config import reload_settings
 
     s = reload_settings()
-    redis_ok = False
-    queue_pending = None
-    queue_unacked = None
-    try:
-        import redis
+    from app.database import pool_status
 
-        r = redis.Redis.from_url(
-            s.redis_url, decode_responses=True, socket_connect_timeout=2, socket_timeout=2
-        )
-        redis_ok = bool(r.ping())
-        if redis_ok:
-            q = (s.celery_autoscale_queue or "pipeline").strip() or "pipeline"
-            queue_pending = int(r.llen(q) or 0)
-            try:
-                queue_unacked = int(r.hlen("unacked") or 0)
-            except Exception:  # noqa: BLE001
-                queue_unacked = None
-    except Exception:  # noqa: BLE001
-        redis_ok = False
     return {
         "ok": True,
         "ark_mock": s.ark_mock,
-        "use_celery": s.use_celery,
-        "redis_ok": redis_ok,
-        "queue": {"name": s.celery_autoscale_queue, "pending": queue_pending, "unacked": queue_unacked},
-        "autoscale": {
-            "min": s.celery_autoscale_min,
-            "max": s.celery_autoscale_max,
-            "poll_sec": s.celery_autoscale_poll_sec,
-            "idle_sec": s.celery_autoscale_idle_sec,
-        },
+        "db_pool": pool_status(),
+        "task_runtime": runtime_summary(),
         "models": {
             "llm": s.model_llm,
             "image": s.model_image,

@@ -8,10 +8,15 @@ from app.services.seedance_segments import (
     build_segment_script,
     build_seedance_production_section,
     build_seedance_prompt,
+    estimate_narration_duration,
+    first_visual_prompt,
     narration_from_script,
     parse_beats_from_llm_shot,
     replace_duration_with_time_ranges,
+    replace_first_visual_in_script,
+    replace_narration_in_script,
     resolve_api_duration,
+    suggested_kepu_shot_range,
     sum_duration,
 )
 
@@ -28,7 +33,7 @@ def test_build_segment_script_and_time_ranges():
     assert "【BGM：" in script
     assert "@duration:4" in script
     assert "@duration:8" in script
-    assert "【旁白·慢速清晰·同步字幕】" in script
+    assert "【旁白·自然语速·同步字幕】" in script
     assert sum_duration(script) == 12
     timed = replace_duration_with_time_ranges(script)
     assert "00:00-00:04" in timed
@@ -68,6 +73,7 @@ def test_build_seedance_production_section_detects_vo():
     section = build_seedance_production_section(script)
     assert section.startswith(SEEDANCE_PRODUCTION_SECTION_HEADER)
     assert "第三人称旁白配音" in section
+    assert "自然偏快" in section
     assert "轻快专业" in section
 
 
@@ -91,15 +97,55 @@ def test_parse_beats_clamps_short_narration_duration():
     assert beats[1].duration <= 12
 
 
+def test_parse_beats_does_not_pad_short_narration_to_shot_max():
+    text = "质检痛点切入。"
+    est = estimate_narration_duration(text)
+    beats = parse_beats_from_llm_shot(
+        {
+            "segments": [
+                {"kind": "visual", "duration": 4, "text": "工位过肩打开质检看板"},
+                {"kind": "narration", "duration": 20, "text": text},
+            ]
+        }
+    )
+    assert beats[1].duration <= est + 1
+    assert beats[1].duration >= est
+    assert beats[1].duration < 12
+
+
+def test_suggested_kepu_shot_range_full_mode():
+    short = suggested_kepu_shot_range("工业AI平台简介", pipeline_mode="full")
+    medium = suggested_kepu_shot_range("字" * 250, pipeline_mode="full")
+    long = suggested_kepu_shot_range("字" * 500, pipeline_mode="full")
+    assert short == (6, 8)
+    assert medium == (7, 10)
+    assert long == (8, 10)
+
+
 def test_apply_segment_script_edit_fills_cues():
     out = apply_segment_script_edit(
-        "@duration:6\n过肩演示产品\n@duration:6\n【旁白·慢速清晰·同步字幕】一句话介绍能力",
+        "@duration:6\n过肩演示产品\n@duration:6\n【旁白·自然语速·同步字幕】一句话介绍能力",
         bgm_mood="冷静纪实",
     )
     assert out["duration"] == 12.0
     assert "【字幕：" in out["segment_script"]
     assert "【BGM：" in out["segment_script"]
     assert out["narration"]
+
+
+def test_replace_narration_and_visual_write_back_into_script():
+    script = (
+        "【字幕：全程简体中文字幕，旁白逐句同步烧录】\n"
+        "【BGM：轻快专业，音量低于人声】\n"
+        "@duration:4\n侧脸打开深色仪表盘\n"
+        f"@duration:8\n{NARRATION_PREFIX}旧旁白一句"
+    )
+    with_vo = replace_narration_in_script(script, "一句话给出方向和信心度。")
+    assert "旧旁白一句" not in with_vo
+    assert narration_from_script(with_vo) == "一句话给出方向和信心度。"
+    with_vis = replace_first_visual_in_script(with_vo, "过肩工位，大屏亮绿色看多信号")
+    assert first_visual_prompt(with_vis) == "过肩工位，大屏亮绿色看多信号"
+    assert "侧脸打开深色仪表盘" not in with_vis
 
 
 def test_empty_shot_misclassified_as_dialogue_is_rewritten():
@@ -152,3 +198,45 @@ def test_character_intro_cue_normalized_beside_character():
     section = build_seedance_production_section(fixed)
     assert "角色身旁" in section
     assert "禁止居中大标题" in section
+
+
+def test_build_seedance_production_section_ambient_only():
+    script = build_segment_script(
+        [
+            SegmentBeat(duration=4, kind="visual", text="过肩工位打开工作台"),
+            SegmentBeat(duration=8, kind="narration", text="很多人找开源工具却卡在接入"),
+        ],
+        bgm_mood="轻快专业",
+    )
+    section = build_seedance_production_section(script, ambient_only=True)
+    assert section.startswith(SEEDANCE_PRODUCTION_SECTION_HEADER)
+    assert "后期外部 TTS" in section
+    assert "禁止任何旁白" in section
+    assert "禁止任何 BGM" in section
+    assert "操作环境音" in section
+    assert "第三人称旁白配音" not in section
+    assert "轻快专业" not in section
+
+
+def test_build_seedance_prompt_ambient_only_rewrites_narration():
+    from app.services.seedance_segments import seedance_timeline_without_voice
+
+    script = build_segment_script(
+        [
+            SegmentBeat(duration=5, kind="visual", text="手部点击配置"),
+            SegmentBeat(duration=6, kind="narration", text="一键接入即可开始监控"),
+        ],
+        bgm_mood="轻快专业",
+    )
+    body = seedance_timeline_without_voice(script)
+    assert "手部点击配置" in body
+    assert "一键接入即可开始监控" not in body
+    assert "【BGM" not in body
+    assert "【字幕" not in body
+    assert "无配音仅环境音" in body
+
+    prompt = build_seedance_prompt(script, ambient_only=True)
+    assert "禁止任何旁白" in prompt
+    assert "一键接入即可开始监控" not in prompt
+    assert "00:00-00:05" in prompt
+    assert NARRATION_PREFIX not in prompt

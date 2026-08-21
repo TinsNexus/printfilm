@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import mimetypes
 from functools import lru_cache
+from io import BufferedIOBase
 from pathlib import Path
 
 from app.config import get_settings
@@ -47,10 +48,13 @@ def folder_prefix() -> str:
 
 
 def public_base() -> str:
+    """浏览器可访问的公网基址；内网上传 endpoint 不能出现在返回 URL 里。"""
     s = get_settings()
     if s.oss_public_base.strip():
         return s.oss_public_base.rstrip("/")
     ep = s.oss_endpoint.strip().removeprefix("https://").removeprefix("http://")
+    ep = ep.replace("-internal.aliyuncs.com", ".aliyuncs.com")
+    ep = ep.replace("-internal-accelerate.aliyuncs.com", ".aliyuncs.com")
     return f"https://{s.oss_bucket}.{ep}"
 
 
@@ -73,6 +77,17 @@ def ensure_browser_cors() -> None:
     for extra in (
         "https://kepu.printfilm.com",
         "http://kepu.printfilm.com",
+        "https://kepu.printtfilm.com",
+        "http://kepu.printtfilm.com",
+        "https://admin.kepu.printtfilm.com",
+        "http://admin.kepu.printtfilm.com",
+        "https://www.printfilm.com",
+        "http://www.printfilm.com",
+        "https://printfilm.com",
+        "http://printfilm.com",
+        "https://admin.kepu.printfilm.com",
+        "https://admin.printfilm.com",
+        "http://admin.printfilm.com",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:4173",
@@ -131,6 +146,14 @@ def upload_bytes(data: bytes, object_key: str, *, content_type: str = "applicati
     key = object_key.lstrip("/")
     headers = {"Content-Type": content_type, "x-oss-object-acl": "public-read"}
     _bucket().put_object(key, data, headers=headers)
+    return public_url(key)
+
+
+# 直接将文件对象流式上传到 OSS，避免先整文件读入内存。
+def upload_fileobj(fileobj: BufferedIOBase, object_key: str, *, content_type: str = "application/octet-stream") -> str:
+    key = object_key.lstrip("/")
+    headers = {"Content-Type": content_type, "x-oss-object-acl": "public-read"}
+    _bucket().put_object(key, fileobj, headers=headers)
     return public_url(key)
 
 

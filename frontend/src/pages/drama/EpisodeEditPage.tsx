@@ -17,19 +17,27 @@ import {
   extractAssetIds,
   filterEpisodeAssets,
   formatFragLabel,
+  fragmentQueueBadgeLabel,
+  isFragmentGenerationBusy,
   normalizeAssetTab,
   readFragmentGenerationStatus,
+  readFragmentVideoVersions,
   resolveFragmentDurationSec,
   type AssetScope,
   type AssetTab,
 } from './dramaEpisodeEditUtils'
-import { enqueueEpisodeVideoJobs, syncEpisodeVideoJobs } from '../../lib/dramaGenQueue'
+import {
+  enqueueEpisodeVideoJobs,
+  ensureEpisodeVideoStatusPoll,
+  subscribeEpisodeGenerateStatus,
+  syncEpisodeVideoJobs,
+} from '../../lib/dramaGenQueue'
 import {
   collectDramaGenerateGateIssues,
   formatDramaGateMessage,
 } from '../../lib/dramaEpisodeScriptValidate'
 import { dialog } from '../../lib/dialog'
-import { StoryboardGridImportModal } from '../../components/drama/StoryboardGridImportModal'
+import { FragmentPlanSkillModal } from '../../components/drama/FragmentPlanSkillModal'
 import { getImageStyleId } from './dramaWorkspaceUtils'
 import { EpisodeEditAssetPanel } from './EpisodeEditAssetPanel'
 import { EpisodeEditHeaderControls } from './EpisodeEditHeaderControls'
@@ -50,9 +58,30 @@ export default function EpisodeEditPage() {
 }
 
 function readFragmentPlanStatus(ep: DramaEpisode | null): string {
-  // 读取 episode.params 上的 AI 分镜状态
+  // 优先读取统一任务中心中的分镜规划任务；旧 params 状态作为兜底
+  const active = (ep?.active_tasks || []).find((task) => task.task_type === 'fragment_plan')
+  if (
+    active &&
+    !active.cancel_requested &&
+    ['pending', 'leased', 'running', 'awaiting_poll', 'awaiting_review'].includes(active.status)
+  ) {
+    return 'generating'
+  }
   const st = ep?.params?.fragment_plan_status
   return typeof st === 'string' ? st : ''
+}
+
+// 统一解析项目参数里的布尔值，兼容历史字符串/数字写法。
+function coerceProjectBool(value: unknown, defaultValue: boolean): boolean {
+  if (value == null) return defaultValue
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value !== 0
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (['1', 'true', 'yes', 'on'].includes(normalized)) return true
+    if (['0', 'false', 'no', 'off', ''].includes(normalized)) return false
+  }
+  return Boolean(value)
 }
 
 // 分集编辑页主体
@@ -82,38 +111,54 @@ function EpisodeEditInner() {
   const [modelId, setModelId] = useState('seedance-2.5')
   const [aspectRatio, setAspectRatio] = useState<(typeof RATIO_OPTIONS)[number]>('9:16')
   const [resolution, setResolution] = useState<(typeof RES_OPTIONS)[number]>('480p')
-  // linkLastFrame 是否用上一镜尾帧作本镜首帧（写入 project.params）
-  const [linkLastFrame, setLinkLastFrame] = useState(true)
+  // linkLastFrame 是否用上一镜尾帧作本镜首帧（写入 project.params，默认关闭）
+  const [linkLastFrame, setLinkLastFrame] = useState(false)
   // projectParams 项目 params 缓存，切换衔接开关时合并写回
   const [projectParams, setProjectParams] = useState<Record<string, unknown>>({})
-  // storyboardImportOpen 分镜板多宫格导入弹窗
-  const [storyboardImportOpen, setStoryboardImportOpen] = useState(false)
+  // planModalOpen AI 重新分镜确认（含 Skill 勾选）
+  const [planModalOpen, setPlanModalOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
   const [characterVoiceBusyIds, setCharacterVoiceBusyIds] = useState<Set<number>>(() => new Set())
-  const pollRef = useRef<number | null>(null)
+  const applyStatusRef = useRef<(st: Awaited<ReturnType<typeof dramaApi.generateStatus>>) => Awaited<
+    ReturnType<typeof dramaApi.generateStatus>
+  >>(() => ({ episode_id: 0, done: 0, failed: 0, running: 0, total: 0, tasks: [], fragments: [] }))
+  const reloadRef = useRef<() => Promise<void>>(async () => {})
 
   const selected = fragments[selectedIndex] || null
   const selectedDuration = selected?.duration_sec ?? 8
   // generatingIds 当前排队/生成中的分镜 id
   const generatingIds = useMemo(() => {
     const ids = new Set<number>()
+    for (const task of episode?.active_tasks || []) {
+      if (
+        task.task_type === 'fragment_video' &&
+        typeof task.fragment_id === 'number' &&
+        !task.cancel_requested &&
+        ['pending', 'leased', 'running', 'awaiting_poll', 'awaiting_review'].includes(task.status)
+      ) {
+        ids.add(task.fragment_id)
+      }
+    }
     for (const frag of fragments) {
       if (!frag.id) continue
-      const status = readFragmentGenerationStatus(frag).status
-      if (status === 'queued' || status === 'running') ids.add(frag.id)
+      if (isFragmentGenerationBusy(readFragmentGenerationStatus(frag).status)) ids.add(frag.id)
     }
     return ids
-  }, [fragments])
+  }, [fragments, episode?.active_tasks])
   // anyFragmentGenerating 本集是否有分镜在排队/生成（不锁编辑，仅锁批量生成）
   const anyFragmentGenerating = generatingIds.size > 0
   // selectedIsGenerating 当前选中镜是否正在生成
   const selectedIsGenerating = Boolean(selected?.id && generatingIds.has(selected.id))
+  // selectedHasVideo 当前镜是否已有成片（用于「重新生成」文案）
+  const selectedHasVideo = Boolean(selected?.video)
+  // selectedVersions 当前镜历史成片
+  const selectedVersions = useMemo(() => readFragmentVideoVersions(selected), [selected])
   // selectedGenerateLocked 仅锁当前镜的「生成」按钮
   const selectedGenerateLocked = busy || selectedIsGenerating
-  // generateAllLocked 全部生成：有任务进行中时禁止
-  const generateAllLocked = busy || anyFragmentGenerating
+  // generateAllLocked 仅提交入队时锁定，生成过程不阻塞编辑
+  const generateAllLocked = busy
   // planFragmentsLocked AI 重新分镜与视频生成互斥
   const planFragmentsLocked = busy || anyFragmentGenerating
   const selectedRefIds = useMemo(
@@ -146,15 +191,27 @@ function EpisodeEditInner() {
 
   // 持久化镜间衔接开关到项目 params
   async function handleLinkLastFrameChange(enabled: boolean) {
-    setLinkLastFrame(enabled)
+    const prevEnabled = linkLastFrame
+    const prevParams = projectParams
     const nextParams = { ...projectParams, linkLastFrame: enabled }
+    setLinkLastFrame(enabled)
     setProjectParams(nextParams)
     try {
       const updated = await dramaApi.updateProject(pid, { params: nextParams })
-      if (updated.params && typeof updated.params === 'object') {
-        setProjectParams(updated.params as Record<string, unknown>)
-      }
+      const updatedParams =
+        updated.params && typeof updated.params === 'object'
+          ? (updated.params as Record<string, unknown>)
+          : (nextParams as Record<string, unknown>)
+      setProjectParams(updatedParams)
+      setLinkLastFrame(coerceProjectBool(updatedParams.linkLastFrame ?? updatedParams.link_last_frame, enabled))
+      setStatus(
+        enabled
+          ? '已开启尾帧衔接：将按镜序生成，后一镜会等待上一镜尾帧'
+          : '已关闭尾帧衔接：将优先并发生成，各镜互不等待',
+      )
     } catch (err) {
+      setLinkLastFrame(prevEnabled)
+      setProjectParams(prevParams)
       setError(err instanceof Error ? err.message : '保存衔接设置失败')
     }
   }
@@ -172,14 +229,6 @@ function EpisodeEditInner() {
     () => filterEpisodeAssets(assets, assetScope, assetTab, referencedIds),
     [assets, assetScope, assetTab, referencedIds],
   )
-
-  // 停止轮询
-  function stopGeneratePolling() {
-    if (pollRef.current) {
-      window.clearInterval(pollRef.current)
-      pollRef.current = null
-    }
-  }
 
   // 应用后端生成进度并同步分镜状态 + 全局队列
   function applyGenerateStatus(st: Awaited<ReturnType<typeof dramaApi.generateStatus>>) {
@@ -247,32 +296,14 @@ function EpisodeEditInner() {
             cover: row.cover,
           }
         }),
+        taskItems: st.tasks,
       })
       return next
     })
     return st
   }
 
-  // 启动生成进度轮询（立刻拉一次，再每 3s）
-  function startGeneratePolling() {
-    stopGeneratePolling()
-    const tick = async () => {
-      try {
-        const st = applyGenerateStatus(await dramaApi.generateStatus(eid))
-        // 仅按「进行中/排队」判断；单条生成时 total 仍是全集数量
-        if (st.running === 0) {
-          stopGeneratePolling()
-          await reload()
-        }
-      } catch {
-        stopGeneratePolling()
-      }
-    }
-    void tick()
-    pollRef.current = window.setInterval(() => {
-      void tick()
-    }, 3000)
-  }
+  applyStatusRef.current = applyGenerateStatus
 
   // 进页检查是否有进行中的生成任务或 AI 分镜
   async function resumeGenerateIfNeeded() {
@@ -304,7 +335,7 @@ function EpisodeEditInner() {
         return
       }
       const st = applyGenerateStatus(await dramaApi.generateStatus(eid))
-      if (st.running > 0) startGeneratePolling()
+      if (st.running > 0) ensureEpisodeVideoStatusPoll()
     } catch {
       /* ignore */
     }
@@ -337,6 +368,19 @@ function EpisodeEditInner() {
     await resumeGenerateIfNeeded()
   }
 
+  reloadRef.current = reload
+
+  // 复用全局 generate_status 轮询，避免与 dramaGenQueue 重复请求
+  useEffect(() => {
+    return subscribeEpisodeGenerateStatus(async (episodeId, st) => {
+      if (episodeId !== eid) return
+      const result = applyStatusRef.current(st)
+      if (result.running === 0) {
+        await reloadRef.current()
+      }
+    })
+  }, [eid])
+
   useEffect(() => {
     if (!eid || !pid) return
     reload().catch((err) => setError(err instanceof Error ? err.message : '加载失败'))
@@ -356,7 +400,7 @@ function EpisodeEditInner() {
             : {}
         setProjectParams(params)
         const linkRaw = params.linkLastFrame ?? params.link_last_frame
-        if (typeof linkRaw === 'boolean') setLinkLastFrame(linkRaw)
+        setLinkLastFrame(coerceProjectBool(linkRaw, false))
         const ratio = String(params.aspect_ratio || '')
         if ((RATIO_OPTIONS as readonly string[]).includes(ratio)) {
           setAspectRatio(ratio as (typeof RATIO_OPTIONS)[number])
@@ -369,9 +413,6 @@ function EpisodeEditInner() {
       .catch(() => {
         /* ignore */
       })
-    return () => {
-      stopGeneratePolling()
-    }
   }, [eid, pid])
 
   // 更新当前分镜
@@ -464,6 +505,24 @@ function EpisodeEditInner() {
     }
   }
 
+  // 判断「全部生成」时是否可安全跳过：仅跳过未改动且已有成片的旧分镜
+  function shouldSkipGenerateAllFragment(frag: DramaFragment): boolean {
+    if (!frag.video || !frag.id) return false
+    const prev = (episode?.fragments || []).find((item) => item.id === frag.id)
+    if (!prev?.video) return false
+    const sameContent = (prev.content || '') === (frag.content || '')
+    const sameCover = (prev.cover || '') === (frag.cover || '')
+    const sameDuration =
+      resolveFragmentDurationSec(prev.content || '', prev.duration_sec) ===
+      resolveFragmentDurationSec(frag.content || '', frag.duration_sec)
+    const prevAssetIds = [...(prev.asset_ids || [])].sort((a, b) => a - b)
+    const nextAssetIds = [...(frag.asset_ids || [])].sort((a, b) => a - b)
+    const sameAssets =
+      prevAssetIds.length === nextAssetIds.length &&
+      prevAssetIds.every((id, index) => id === nextAssetIds[index])
+    return sameContent && sameCover && sameDuration && sameAssets
+  }
+
   // 仅生成当前选中分镜（save 会重建分镜 id，必须用保存后的 id）
   async function generateSelected() {
     if (!selected) {
@@ -490,19 +549,24 @@ function EpisodeEditInner() {
     }
 
     const fragLabel = formatFragLabel(selectedIndex, selectedDuration)
+    const isRegen = Boolean(selected.video)
     const ok = await dialog.confirm({
-      title: '生成分镜视频',
+      title: isRegen ? '重新生成分镜视频' : '生成分镜视频',
       message: formatDramaGateMessage(
         [],
         warnings,
-        `将保存当前编辑并排队生成「${fragLabel}」的视频，通常需要数分钟。是否继续？`,
+        isRegen
+          ? `将保存并重新生成「${fragLabel}」。当前成片会保留为历史版本，入队后可在右下角队列查看进度。`
+          : linkLastFrame
+            ? `将保存并按镜序生成「${fragLabel}」。入队后可继续编辑；本镜会使用上一镜尾帧作衔接参考。`
+            : `将保存并生成「${fragLabel}」。入队后可继续编辑；当前未开启尾帧衔接，本镜会独立生成。`,
       ),
-      confirmText: warnings.length > 0 ? '仍要生成' : '开始生成',
+      confirmText: warnings.length > 0 ? '仍要生成' : isRegen ? '重新生成' : '开始生成',
     })
     if (!ok) return
     setBusy(true)
     setError('')
-    setStatus('保存并排队生成当前分镜…')
+    setStatus(isRegen ? '保存并重新排队生成…' : '保存并排队生成当前分镜…')
     try {
       const ep = await save()
       setBusy(true)
@@ -511,6 +575,20 @@ function EpisodeEditInner() {
         throw new Error('保存后未找到当前分镜，请刷新后重试')
       }
       await dramaApi.generateEpisode(eid, [frag.id])
+      // 乐观写入排队态，避免旧 video 把状态盖成已完成
+      setFragments((prev) =>
+        prev.map((f) =>
+          f.id === frag.id
+            ? {
+                ...f,
+                params: {
+                  ...(f.params || {}),
+                  generation: { status: 'queued', message: '已入队' },
+                },
+              }
+            : f,
+        ),
+      )
       enqueueEpisodeVideoJobs({
         projectId: pid,
         episodeId: eid,
@@ -522,9 +600,53 @@ function EpisodeEditInner() {
         fragmentIds: [frag.id],
       })
       setBusy(false)
-      startGeneratePolling()
+      setStatus(isRegen ? `「${fragLabel}」已重新入队，可在右下角查看队列` : `「${fragLabel}」已入队，可在右下角查看队列`)
+      ensureEpisodeVideoStatusPoll()
     } catch (err) {
+      setBusy(false)
       setError(err instanceof Error ? err.message : '生成失败')
+    }
+  }
+
+  // 切换历史成片为当前预览视频
+  async function activateVideoVersion(versionId: string) {
+    if (!selected?.id || selectedIsGenerating) return
+    const ok = await dialog.confirm({
+      title: '切换历史版本',
+      message: '将用该历史成片替换当前预览；当前成片会进入历史版本列表。',
+      confirmText: '切换',
+    })
+    if (!ok) return
+    setBusy(true)
+    setError('')
+    try {
+      const result = await dramaApi.activateFragmentVideoVersion(selected.id, versionId)
+      setFragments((prev) =>
+        prev.map((f) =>
+          f.id === selected.id
+            ? {
+                ...f,
+                video: result.video,
+                cover: result.cover || '',
+                params: {
+                  ...(f.params || {}),
+                  video_versions: result.video_versions,
+                  lastFrameUrl: result.lastFrameUrl || undefined,
+                  generation: {
+                    status: 'done',
+                    video: result.video,
+                    cover: result.cover,
+                    lastFrameUrl: result.lastFrameUrl,
+                  },
+                },
+              }
+            : f,
+        ),
+      )
+      setStatus('已切换历史版本')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '切换版本失败')
+    } finally {
       setBusy(false)
     }
   }
@@ -536,17 +658,27 @@ function EpisodeEditInner() {
       return
     }
     if (generateAllLocked) {
-      setError('已有分镜正在生成，请等待完成后再试')
+      setError('正在提交，请稍候')
       return
     }
 
     const allBlocking: string[] = []
     const allWarnings: string[] = []
+    const doneIndices: number[] = []
     for (let i = 0; i < fragments.length; i++) {
+      if (shouldSkipGenerateAllFragment(fragments[i])) {
+        doneIndices.push(i)
+        continue
+      }
       const { blocking, warnings } = collectDramaGenerateGateIssues(fragments[i], assets)
       const label = formatFragLabel(i, fragments[i]?.duration_sec)
       for (const issue of blocking) allBlocking.push(`${label}：${issue.message}`)
       for (const issue of warnings) allWarnings.push(`${label}：${issue.message}`)
+    }
+    const pendingCount = fragments.length - doneIndices.length
+    if (pendingCount <= 0) {
+      setStatus('本集分镜已全部生成，已自动跳过')
+      return
     }
     if (allBlocking.length > 0) {
       setError(allBlocking[0] || '分镜脚本校验未通过')
@@ -564,7 +696,9 @@ function EpisodeEditInner() {
       message: formatDramaGateMessage(
         [],
         allWarnings.slice(0, 8).map((message) => ({ level: 'warn' as const, message })),
-        `将保存当前编辑并排队生成本集全部 ${fragments.length} 条分镜视频，耗时较长且会覆盖已有视频。是否继续？`,
+        linkLastFrame
+          ? `将按镜序排队生成剩余 ${pendingCount} 镜（已生成的 ${doneIndices.length} 镜会跳过）。入队后可继续编辑；后一镜会等待上一镜尾帧写好再开始。`
+          : `将并发生成剩余 ${pendingCount} 镜（已生成的 ${doneIndices.length} 镜会跳过）。入队后可继续编辑；各镜互不等待。`,
       ),
       confirmText: allWarnings.length > 0 ? '仍要全部生成' : '全部生成',
       tone: 'danger',
@@ -572,17 +706,24 @@ function EpisodeEditInner() {
     if (!ok) return
     setBusy(true)
     setError('')
-    setStatus(`保存并排队生成全部 ${fragments.length} 条…`)
+    setStatus(`保存并排队生成剩余 ${pendingCount} 条…`)
     try {
       const ep = await save()
       setBusy(true)
       const ids = (ep.fragments || [])
+        .filter((_, index) => !doneIndices.includes(index))
         .map((f) => f.id)
         .filter((id): id is number => typeof id === 'number' && id > 0)
       if (ids.length === 0) {
-        throw new Error('保存后没有可生成的分镜')
+        setStatus('保存后检测到分镜已全部生成，已自动跳过')
+        setBusy(false)
+        return
       }
-      await dramaApi.generateEpisode(eid, ids)
+      const genResult = await dramaApi.generateEpisode(eid, ids)
+      const queuedIds =
+        Array.isArray(genResult.fragment_ids) && genResult.fragment_ids.length > 0
+          ? genResult.fragment_ids
+          : ids
       enqueueEpisodeVideoJobs({
         projectId: pid,
         episodeId: eid,
@@ -591,10 +732,18 @@ function EpisodeEditInner() {
           id: f.id,
           sort_order: f.sort_order ?? i,
         })),
-        fragmentIds: ids,
+        fragmentIds: queuedIds,
       })
+      const deferred = Number(genResult.deferred_count || 0)
+      const limit = Number(genResult.user_job_limit || 0)
+      if (deferred > 0 && limit > 0) {
+        setStatus(
+          `已入队 ${queuedIds.length} 镜：最多同时生成 ${limit} 镜，另有 ${deferred} 镜排队等待`,
+        )
+      } else {
+        setStatus(`已入队 ${queuedIds.length} 镜，生成中…`)
+      }
       setBusy(false)
-      startGeneratePolling()
     } catch (err) {
       setError(err instanceof Error ? err.message : '全部生成失败')
       setBusy(false)
@@ -606,26 +755,27 @@ function EpisodeEditInner() {
     navigate(`/drama/projects/${pid}`, { state: { returnStep: 'episodes' } })
   }
 
-  // 单集 LLM 重新分镜：入队后轮询至完成
-  async function planFragmentsWithLlm() {
+  // 单集 LLM 重新分镜：确认并勾选 Skill 后入队
+  function planFragmentsWithLlm() {
     if (planFragmentsLocked) {
       setError('当前有视频生成任务进行中，请稍候再重新分镜')
       return
     }
-    const ok = await dialog.confirm({
-      title: 'AI 重新分镜',
-      message:
-        '将调用大模型按本集剧本重新规划分镜（覆盖现有分镜与已生成视频），通常需要数十秒，是否继续？',
-      confirmText: '开始分镜',
-      tone: 'danger',
-    })
-    if (!ok) return
+    setPlanModalOpen(true)
+  }
 
+  // 入队后轮询至完成
+  async function startPlanFragments(skillIds: number[]) {
+    setPlanModalOpen(false)
     setBusy(true)
     setError('')
     setStatus('AI 分镜规划中…')
     try {
-      await dramaApi.planEpisodeFragments(eid, { force: true, fallback_rules: true })
+      await dramaApi.planEpisodeFragments(eid, {
+        force: true,
+        fallback_rules: true,
+        skill_ids: skillIds,
+      })
       const started = Date.now()
       while (Date.now() - started < 10 * 60 * 1000) {
         await new Promise((r) => setTimeout(r, 2500))
@@ -752,14 +902,6 @@ function EpisodeEditInner() {
           <button
             type="button"
             className="drama-ep-btn-ghost"
-            disabled={busy}
-            onClick={() => setStoryboardImportOpen(true)}
-          >
-            导入分镜板
-          </button>
-          <button
-            type="button"
-            className="drama-ep-btn-ghost"
             disabled={planFragmentsLocked}
             onClick={() => void planFragmentsWithLlm()}
           >
@@ -771,7 +913,7 @@ function EpisodeEditInner() {
             disabled={generateAllLocked || fragments.length === 0}
             onClick={() => void generateAll()}
           >
-            {generateAllLocked ? '处理中…' : '全部生成'}
+            {busy ? '入队中…' : '全部生成'}
           </button>
         </div>
       </header>
@@ -862,6 +1004,10 @@ function EpisodeEditInner() {
                 ? '将使用上一镜尾帧作为衔接参考（与角色参考图一并提交）'
                 : '已开启镜间衔接：请先生成上一镜以获取尾帧'}
             </p>
+          ) : !linkLastFrame ? (
+            <p className="drama-ep-continuity-hint">
+              当前未开启尾帧衔接：分镜会独立并发生成，适合快速批量出片。
+            </p>
           ) : null}
 
           <div className="drama-ep-editor-actions">
@@ -904,11 +1050,42 @@ function EpisodeEditInner() {
                   title={selectedIsGenerating ? '当前分镜正在生成' : undefined}
                   onClick={() => void generateSelected()}
                 >
-                  {selectedIsGenerating ? '生成中…' : busy ? '处理中…' : '生成'}
+                  {selectedIsGenerating
+                    ? '生成中…'
+                    : busy
+                      ? '处理中…'
+                      : selectedHasVideo
+                        ? '重新生成'
+                        : '生成'}
                 </button>
               </>
             )}
           </div>
+
+          {selectedVersions.length > 0 && selected?.id ? (
+            <div className="drama-ep-versions">
+              <span className="drama-ep-versions-label">历史版本</span>
+              <div className="drama-ep-versions-list">
+                {selectedVersions.map((ver, index) => {
+                  const cover = ver.cover ? resolveDramaMediaUrl(ver.cover) : ''
+                  const video = resolveDramaMediaUrl(ver.video)
+                  return (
+                    <button
+                      key={ver.id}
+                      type="button"
+                      className="drama-ep-version"
+                      disabled={busy || selectedIsGenerating}
+                      title="切换为当前成片"
+                      onClick={() => void activateVideoVersion(ver.id)}
+                    >
+                      {cover ? <img src={cover} alt="" /> : <video src={video} muted />}
+                      <em>v{selectedVersions.length - index}</em>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ) : null}
         </section>
 
         <EpisodeEditSidePane
@@ -916,6 +1093,7 @@ function EpisodeEditInner() {
           playingFragmentId={playingFragmentId}
           onPlayingFragmentChange={handlePlayingFragmentChange}
           aspectRatio={aspectRatio}
+          episodeName={episode?.name || '本集'}
           onOpenStoryboard={openEpisodeStoryboard}
         />
       </div>
@@ -932,7 +1110,8 @@ function EpisodeEditInner() {
           </button>
           {fragments.map((frag, index) => {
             const fragStatus = readFragmentGenerationStatus(frag).status
-            const fragBusy = fragStatus === 'running' || fragStatus === 'queued'
+            const fragBusy = Boolean(frag.id && generatingIds.has(frag.id))
+            const badge = fragmentQueueBadgeLabel(fragBusy ? fragStatus || 'running' : fragStatus)
             const clipVideo = frag.video ? resolveDramaMediaUrl(frag.video) : ''
             const clipCover = frag.cover ? resolveDramaMediaUrl(frag.cover) : ''
             return (
@@ -941,7 +1120,9 @@ function EpisodeEditInner() {
                 type="button"
                 className={`drama-ep-clip ${selectedIndex === index ? 'active' : ''}${
                   fragBusy ? ' is-generating' : ''
-                }${fragStatus === 'failed' ? ' is-failed' : ''}`}
+                }${fragStatus === 'queued' ? ' is-queued' : ''}${
+                  fragStatus === 'failed' ? ' is-failed' : ''
+                }`}
                 onClick={() => setSelectedIndex(index)}
               >
                 {clipCover ? (
@@ -953,6 +1134,7 @@ function EpisodeEditInner() {
                     {fragBusy ? '…' : '+'}
                   </span>
                 )}
+                {badge ? <span className="drama-ep-clip-badge">{badge}</span> : null}
                 <em>{formatFragLabel(index, frag.duration_sec)}</em>
               </button>
               <div className="drama-ep-clip-ops">
@@ -977,25 +1159,11 @@ function EpisodeEditInner() {
         </div>
       </footer>
 
-      <StoryboardGridImportModal
-        open={storyboardImportOpen}
-        onClose={() => setStoryboardImportOpen(false)}
-        projectId={pid}
-        episodeId={eid}
-        fragments={fragments}
-        onImported={(next, uploaded) => {
-          setFragments(next)
-          setSelectedIndex(0)
-          setEditing(false)
-          setAssets((prev) => {
-            const byId = new Map(prev.map((a) => [a.id, a]))
-            for (const asset of uploaded) byId.set(asset.id, asset)
-            return Array.from(byId.values())
-          })
-          setStatus(
-            `分镜板已导入 · ${next.length} 镜 · 新增素材 ${uploaded.length}`,
-          )
-        }}
+      <FragmentPlanSkillModal
+        open={planModalOpen}
+        message="将调用大模型按本集剧本重新规划分镜（覆盖现有分镜与已生成视频），通常需要数十秒。可勾选本次使用的 Skill。"
+        onCancel={() => setPlanModalOpen(false)}
+        onConfirm={(skillIds) => void startPlanFragments(skillIds)}
       />
     </div>
   )

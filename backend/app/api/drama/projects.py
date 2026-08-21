@@ -10,20 +10,29 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import User
-from app.models_drama import DramaProject, DramaScript
+from app.models_drama import DramaEpisode, DramaProject, DramaScript
 from app.schemas_drama import (
     DramaProjectCreate,
     DramaProjectListItem,
     DramaProjectOut,
     DramaProjectUpdate,
+    DramaProjectUsageStats,
     DramaScriptOut,
 )
 from app.services.drama.access import get_owned_drama_project
+from app.services.drama.project_cover import resolve_drama_project_cover
+from app.services.drama.usage_stats import (
+    aggregate_drama_usage_by_project_ids,
+    empty_usage_stats,
+    get_drama_project_usage,
+)
+from app.services.drama.workflow import build_project_params, resolve_drama_workflow
 
 router = APIRouter()
 
 
-def _project_out(project: DramaProject) -> DramaProjectOut:
+def _project_out(project: DramaProject, usage: DramaProjectUsageStats | None = None) -> DramaProjectOut:
+    # 组装项目详情响应，附带用量统计
     script = None
     if project.script:
         script = DramaScriptOut.model_validate(project.script)
@@ -39,6 +48,8 @@ def _project_out(project: DramaProject) -> DramaProjectOut:
         script=script,
         asset_count=len(project.assets) if project.assets is not None else 0,
         episode_count=len(project.episodes) if project.episodes is not None else 0,
+        workflow=resolve_drama_workflow(project),
+        usage=usage or empty_usage_stats(),
     )
 
 
@@ -54,24 +65,34 @@ async def list_projects(
         .options(
             selectinload(DramaProject.script),
             selectinload(DramaProject.assets),
-            selectinload(DramaProject.episodes),
+            selectinload(DramaProject.episodes).selectinload(DramaEpisode.fragments),
         )
         .order_by(DramaProject.updated_at.desc())
     )
     rows = list(result.scalars().all())
-    return [
-        DramaProjectListItem(
-            id=p.id,
-            title=p.title,
-            description=p.description,
-            created_at=p.created_at,
-            updated_at=p.updated_at,
-            episode_count=len(p.episodes or []),
-            asset_count=len(p.assets or []),
-            has_script=p.script is not None,
+    usage_map = await aggregate_drama_usage_by_project_ids(
+        db, user_id=user.id, project_ids=[p.id for p in rows]
+    )
+    items: list[DramaProjectListItem] = []
+    for p in rows:
+        cover_url, cover_pending = resolve_drama_project_cover(p)
+        items.append(
+            DramaProjectListItem(
+                id=p.id,
+                title=p.title,
+                description=p.description,
+                created_at=p.created_at,
+                updated_at=p.updated_at,
+                episode_count=len(p.episodes or []),
+                asset_count=len(p.assets or []),
+                has_script=p.script is not None,
+                cover_url=cover_url,
+                cover_pending=cover_pending and not cover_url,
+                workflow=resolve_drama_workflow(p),
+                usage=usage_map.get(p.id) or empty_usage_stats(),
+            )
         )
-        for p in rows
-    ]
+    return items
 
 
 @router.post("/projects", response_model=DramaProjectOut)
@@ -87,15 +108,20 @@ async def create_project(
     title = (body.title or "").strip()
     if not title:
         title = source[:40] + ("…" if len(source) > 40 else "")
+    workflow = (body.workflow or "script").strip().lower()
+    if workflow not in ("script", "canvas"):
+        workflow = "script"
+    project_params = build_project_params(
+        workflow=workflow,
+        episode_count=body.episode_count,
+        image_style_id=body.image_style_id,
+        extra=body.params,
+    )
     project = DramaProject(
         user_id=user.id,
-        title=title or "未命名漫剧",
+        title=title or ("自由画布项目" if workflow == "canvas" else "未命名漫剧"),
         description=body.description,
-        params={
-            **(body.params or {}),
-            "episode_count": body.episode_count,
-            "image_style_id": body.image_style_id,
-        },
+        params=project_params,
     )
     db.add(project)
     await db.flush()
@@ -104,10 +130,11 @@ async def create_project(
         name=project.title,
         source=source,
         params={
-            "episode_count": body.episode_count,
+            "episode_count": project_params.get("episode_count") or body.episode_count,
             "image_style_id": body.image_style_id,
-            "summary_status": "pending",
-            "episode_content_status": "pending",
+            "summary_status": "skipped" if workflow == "canvas" else "pending",
+            "episode_content_status": "skipped" if workflow == "canvas" else "pending",
+            "workflow": workflow,
         },
     )
     db.add(script)
@@ -127,7 +154,8 @@ async def get_project(
     project = await get_owned_drama_project(
         db, project_id, user, with_script=True, with_assets=True, with_episodes=True
     )
-    return _project_out(project)
+    usage = await get_drama_project_usage(db, user_id=user.id, project_id=project.id)
+    return _project_out(project, usage)
 
 
 @router.patch("/projects/{project_id}", response_model=DramaProjectOut)
@@ -150,7 +178,8 @@ async def update_project(
     project = await get_owned_drama_project(
         db, project_id, user, with_script=True, with_assets=True, with_episodes=True
     )
-    return _project_out(project)
+    usage = await get_drama_project_usage(db, user_id=user.id, project_id=project.id)
+    return _project_out(project, usage)
 
 
 @router.delete("/projects/{project_id}")

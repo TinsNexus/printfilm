@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { useI18n } from '../../i18n'
 
 type ModalProps = {
   open: boolean
@@ -28,6 +29,7 @@ export default function Modal({
   footer,
   className = '',
 }: ModalProps) {
+  const { t } = useI18n()
   useEffect(() => {
     if (!open) return
     const prev = document.body.style.overflow
@@ -70,13 +72,13 @@ export default function Modal({
           .join(' ')}
         role="dialog"
         aria-modal="true"
-        aria-label={title || '对话框'}
+        aria-label={title || t('common.dialog')}
       >
         {title ? (
           <header className="pf-modal-head">
             <h3>{title}</h3>
             {dismissible ? (
-              <button type="button" className="pf-modal-close" onClick={onClose} aria-label="关闭">
+              <button type="button" className="pf-modal-close" onClick={onClose} aria-label={t('common.close')}>
                 ×
               </button>
             ) : null}

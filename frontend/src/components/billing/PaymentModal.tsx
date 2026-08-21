@@ -1,6 +1,7 @@
 import { useEffect, useEffectEvent, useState } from 'react'
 import QRCode from 'qrcode'
 import Modal from '../ui/Modal'
+import PaymentBrandIcon from './PaymentBrandIcon'
 import { api } from '../../api'
 
 export type PayCheckout = {
@@ -51,6 +52,19 @@ export default function PaymentModal({ open, checkout, onClose, onPaid }: Props)
     onPaid()
   })
 
+  /** 取消支付：关闭弹窗，并尽量把待支付订单置为 closed */
+  async function handleCancel() {
+    const tradeNo = checkout?.out_trade_no
+    if (tradeNo && status !== 'paid') {
+      try {
+        await api.closeBillingOrder(tradeNo)
+      } catch {
+        /* 忽略关闭失败，仍允许退出弹窗 */
+      }
+    }
+    onClose()
+  }
+
   useEffect(() => {
     if (!open || !checkout) return
     /*
@@ -98,6 +112,8 @@ export default function PaymentModal({ open, checkout, onClose, onPaid }: Props)
       if (left <= 0) {
         setStatus('expired')
         window.clearInterval(tick)
+        // 倒计时结束：后端自动关闭（拉取一次触发过期清理）
+        void api.getBillingOrder(checkout.out_trade_no).catch(() => undefined)
       }
     }, 250)
 
@@ -110,6 +126,10 @@ export default function PaymentModal({ open, checkout, onClose, onPaid }: Props)
           window.clearInterval(poll)
           window.clearInterval(tick)
           handlePaid()
+        } else if (order.status === 'closed') {
+          setStatus('expired')
+          window.clearInterval(poll)
+          window.clearInterval(tick)
         }
       } catch {
         /* ignore transient poll errors */
@@ -159,10 +179,10 @@ export default function PaymentModal({ open, checkout, onClose, onPaid }: Props)
       <div className="pf-pay-sheet">
         <header className="pf-pay-sheet-head">
           <div className="pf-pay-sheet-title">
-            <span className={`pf-pay-logo ${isAlipay ? 'alipay' : 'wxpay'}`} aria-hidden />
+            <PaymentBrandIcon brand={isAlipay ? 'alipay' : 'wxpay'} size="md" />
             <strong>{title}</strong>
           </div>
-          <button type="button" className="pf-pay-sheet-close" onClick={onClose} aria-label="关闭">
+          <button type="button" className="pf-pay-sheet-close" onClick={() => void handleCancel()} aria-label="关闭">
             ×
           </button>
         </header>
@@ -206,7 +226,7 @@ export default function PaymentModal({ open, checkout, onClose, onPaid }: Props)
         {error ? <p className="pf-error pf-pay-error">{error}</p> : null}
 
         <div className="pf-pay-actions">
-          <button type="button" className="pf-pay-btn ghost" onClick={onClose}>
+          <button type="button" className="pf-pay-btn ghost" onClick={() => void handleCancel()}>
             取消支付
           </button>
           <button

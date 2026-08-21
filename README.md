@@ -41,10 +41,6 @@ pip install -r requirements.txt
 copy .env.example .env   # 填 ARK_API_KEY；正式库见 deploy/.env.prod.example
 
 uvicorn app.main:app --reload --port 8000
-
-# 另开终端
-celery -A app.workers.celery_app.celery_app worker -Q pipeline -l info --concurrency=2
-# 或: python -m app.workers.autoscale
 ```
 
 ### 前端
@@ -79,15 +75,15 @@ npm run dev
 | `ARK_MOCK=false` | 关闭 mock |
 | `ARK_API_KEY` | 方舟 API Key |
 | `MODEL_LLM` / `MODEL_IMAGE` / `MODEL_VIDEO` / `MODEL_AUDIO` | 控制台推理接入点 ID |
-| `USE_CELERY=true` | 走 Celery；Redis 不通时自动 in-process |
+| `USE_CELERY` | 已废弃；当前任务平台默认由应用内 scheduler / executor 驱动 |
 
 素材：`backend/static/generated/p{id}/`；成片由 FFmpeg 合成。
 
 ## 架构摘要
 
 - FastAPI + PostgreSQL（Docker）/ 本地可 SQLite
-- Redis（Docker）：Celery broker + 进度
-- Celery worker / `autoscale`：宿主机进程
+- Redis（可选）：部分进度/基础设施可复用，已不再作为任务平台前提
+- 内置任务平台：`scheduler + executor + poller`（随 FastAPI 进程启动）
 - 前端：React + TS + Vite（用户端）
 - 管理后台：`admin/` React + shadcn/ui（端口 5174）
 

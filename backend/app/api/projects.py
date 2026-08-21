@@ -34,9 +34,15 @@ from app.schemas import (
     VoicePreviewRequest,
     WorkOut,
 )
+from app.schemas_tasks import TaskCreateRequest, TaskTargetBind
 from app.services import pipeline, storage
 from app.services.ark import get_ark
 from app.services.progress import redis_bridge, subscribe, unsubscribe
+from app.services.tasks.service import (
+    cancel_tasks_for_scope,
+    create_task,
+    list_active_tasks_for_owner,
+)
 from app.services.voices import ensure_voice_preview, list_voices
 
 router = APIRouter(tags=["projects"])
@@ -84,7 +90,101 @@ async def _get_owned_project(db: AsyncSession, project_id: int, user: User) -> P
     project = result.scalar_one_or_none()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
+    project.active_tasks = await list_active_tasks_for_owner(db, user.id, project_id=project.id)
+    runtime_status, runtime_progress, runtime_error = _project_runtime_view(project)
+    project.status = runtime_status
+    project.progress = runtime_progress
+    project.error_msg = runtime_error
     return project
+
+
+def _ensure_side_task_allowed(project: Project) -> None:
+    """重绘/重生/合成侧任务：流水线进行中时拒绝，避免与 Celery pipeline 冲突。"""
+    running = {
+        ProjectStatus.SCRIPTING,
+        ProjectStatus.IMAGING,
+        ProjectStatus.VIDEOING,
+        ProjectStatus.AUDIOING,
+        ProjectStatus.COMPOSING,
+        ProjectStatus.AUDITING,
+    }
+    if project.status in running:
+        raise HTTPException(status_code=409, detail="生成进行中，请稍后")
+
+
+# 用统一任务中心投影项目运行态，避免前端只依赖旧 Project.status。
+def _project_runtime_view(project: Project) -> tuple[str, int, str | None]:
+    active_tasks = list(getattr(project, "active_tasks", []) or [])
+    if not active_tasks:
+        return str(project.status), int(project.progress or 0), project.error_msg
+    task = active_tasks[0]
+    task_type = str(getattr(task, "task_type", "") or "")
+    status = str(getattr(task, "status", "") or "")
+    progress = int(getattr(task, "progress_percent", 0) or 0)
+    if task_type == "project_pipeline":
+        label = ProjectStatus.SCRIPTING
+    elif task_type == "shot_regen_image":
+        label = ProjectStatus.IMAGING
+    elif task_type == "shot_regen_video":
+        label = ProjectStatus.VIDEOING
+    elif task_type == "shot_regen_audio":
+        label = ProjectStatus.AUDIOING
+    elif task_type == "project_regen_audio":
+        label = ProjectStatus.AUDIOING
+    elif task_type == "project_compose_only":
+        label = ProjectStatus.COMPOSING
+    else:
+        label = str(project.status)
+    if status in {"failed", "cancelled"}:
+        return status.upper(), progress, getattr(task, "error_message", None) or project.error_msg
+    if status in {"pending", "leased", "running", "awaiting_poll", "cancel_requested"}:
+        return label, max(progress, int(project.progress or 0)), getattr(task, "error_message", None)
+    return str(project.status), int(project.progress or 0), project.error_msg
+
+
+# 为科普项目/镜头创建统一任务，由平台调度器自动执行
+async def _create_kepu_task(
+    db: AsyncSession,
+    user: User,
+    *,
+    project_id: int,
+    task_type: str,
+    shot_id: int | None = None,
+    payload: dict | None = None,
+) -> int:
+    targets = [TaskTargetBind(target_type="project", target_id=project_id)]
+    if shot_id is not None:
+        targets.append(TaskTargetBind(target_type="shot", target_id=shot_id))
+    task = await create_task(
+        db,
+        user,
+        TaskCreateRequest(
+            domain="kepu",
+            task_type=task_type,
+            dedupe_key=f"kepu:{task_type}:project:{project_id}:shot:{shot_id or 0}",
+            payload={"project_id": project_id, "shot_id": shot_id, **(payload or {})},
+            project_id=project_id,
+            shot_id=shot_id,
+            targets=targets,
+        ),
+    )
+    return int(task.id)
+
+
+# 批量读取项目活动任务，避免列表页逐项查询。
+async def list_active_tasks_for_user_rows(
+    db: AsyncSession,
+    user_id: int,
+    project_ids: list[int],
+) -> dict[int, list]:
+    by_project_id: dict[int, list] = {}
+    for project_id in project_ids:
+        by_project_id[int(project_id)] = await list_active_tasks_for_owner(
+            db,
+            user_id,
+            project_id=int(project_id),
+        )
+    return by_project_id
 
 
 @router.post("/projects", response_model=ProjectOut)
@@ -95,12 +195,9 @@ async def create_project(
 ) -> Project:
     from app.models import Template
 
-    from app.services.style_lock import template_prompt_defaults
-
     tpl = await db.get(Template, body.template_id)
     if not tpl or not tpl.is_active:
         raise HTTPException(status_code=400, detail="无效模板")
-    defaults = template_prompt_defaults(tpl)
     project = Project(
         user_id=user.id,
         template_id=body.template_id,
@@ -111,10 +208,10 @@ async def create_project(
         pipeline_mode=body.pipeline_mode,
         output_ratio=(body.output_ratio or "").strip(),
         voice_id=(body.voice_id or "").strip(),
-        # API 可省略；省略时从模板灌入，避免侧栏「内置提示词」全空
-        style_prompt=(body.style_prompt or "").strip() or defaults["style_prompt"],
-        character_prompt=(body.character_prompt or "").strip() or defaults["character_prompt"],
-        extra_prompt=(body.extra_prompt or "").strip() or defaults["extra_prompt"],
+        # 空则生成时读后台模板；不在创建时拷贝，避免后台改模板对已有项目不生效
+        style_prompt=(body.style_prompt or "").strip(),
+        character_prompt=(body.character_prompt or "").strip(),
+        extra_prompt=(body.extra_prompt or "").strip(),
         ref_image_url=body.ref_image_url,
         status=ProjectStatus.DRAFT,
     )
@@ -212,22 +309,26 @@ async def list_projects(
             )
         )
         published_ids = {int(x) for x in pub_result.scalars().all()}
+        active_tasks = await list_active_tasks_for_user_rows(db, user.id, [p.id for p in rows])
+        for project in rows:
+            project.active_tasks = active_tasks.get(int(project.id), [])
 
     items = [
         ProjectListItem(
             id=p.id,
             title=p.title,
             template_id=p.template_id,
-            status=p.status,
-            progress=int(p.progress or 0),
+            status=_project_runtime_view(p)[0],
+            progress=_project_runtime_view(p)[1],
             cover_url=p.cover_url,
             final_video_url=p.final_video_url,
-            error_msg=p.error_msg,
+            error_msg=_project_runtime_view(p)[2],
             pipeline_mode=p.pipeline_mode or "full",
             output_ratio=p.output_ratio or "",
             published=p.id in published_ids,
             created_at=p.created_at,
             updated_at=p.updated_at,
+            active_tasks=list(getattr(p, "active_tasks", []) or []),
         )
         for p in rows
     ]
@@ -377,23 +478,23 @@ async def update_project(
     if "template_id" in data:
         from app.models import Template
 
-        from app.services.style_lock import template_prompt_defaults
-
         tpl = await db.get(Template, data["template_id"])
         if not tpl or not tpl.is_active:
             raise HTTPException(status_code=400, detail="无效模板")
-        # 仅改模板时同步内置提示词；若请求已显式带 style/character/extra 则尊重客户端
-        defaults = template_prompt_defaults(tpl)
+        # 换模板后清空项目覆盖，后续生成跟随后台模板；请求显式带提示词则保留
         if "style_prompt" not in data:
-            data["style_prompt"] = defaults["style_prompt"]
+            data["style_prompt"] = ""
         if "character_prompt" not in data:
-            data["character_prompt"] = defaults["character_prompt"]
+            data["character_prompt"] = ""
         if "extra_prompt" not in data:
-            data["extra_prompt"] = defaults["extra_prompt"]
+            data["extra_prompt"] = ""
     if "cover_url" in data and data["cover_url"]:
         url = str(data["cover_url"]).strip()
         if not (url.startswith("/static/") or url.startswith("http://") or url.startswith("https://")):
             raise HTTPException(status_code=400, detail="无效封面地址")
+    for key in ("style_prompt", "character_prompt", "extra_prompt"):
+        if key in data:
+            data[key] = str(data[key] or "").strip()
     for k, v in data.items():
         setattr(project, k, v)
     await db.commit()
@@ -499,11 +600,8 @@ async def generate_project(
     else:
         # Continue: label the real next stage so UI never shows「拆分镜中」
         image_text = (project.pipeline_mode or "full") == "image_text"
-        from app.config import get_settings
-
-        native_audio = (not image_text) and bool(get_settings().kepu_seedance_generate_audio)
         has_images = all(bool(s.image_url or s.image_ark_url) for s in shots)
-        has_audio = True if native_audio else all(bool(s.audio_url) for s in shots)
+        has_audio = all(bool(s.audio_url) for s in shots)
         has_videos = all(bool(s.video_url) for s in shots)
         if not has_images or not has_audio:
             project.status = ProjectStatus.IMAGING
@@ -515,13 +613,25 @@ async def generate_project(
             project.status = ProjectStatus.COMPOSING
             project.progress = max(project.progress or 0, 88)
     await db.commit()
-    task_id = pipeline.start_pipeline(project_id)
-    # Persist celery id on a job row when available
-    if task_id and task_id != "in-process":
-        from app.models import PipelineJob
-
-        db.add(PipelineJob(project_id=project_id, stage="DISPATCH", progress=1, celery_task_id=task_id))
-        await db.commit()
+    task = await create_task(
+        db,
+        user,
+        TaskCreateRequest(
+            domain="kepu",
+            task_type="project_pipeline",
+            dedupe_key=f"kepu:project_pipeline:{project_id}:{int(bool(restart))}:{phase}",
+            payload={
+                "project_id": project_id,
+                "restart": bool(restart),
+                "phase": phase,
+                "pipeline_mode": project.pipeline_mode or "full",
+            },
+            project_id=project_id,
+            targets=[
+                TaskTargetBind(target_type="project", target_id=project_id),
+            ],
+        ),
+    )
     return await _get_owned_project(db, project_id, user)
 
 
@@ -543,6 +653,7 @@ async def cancel_project(
     if project.status not in running:
         raise HTTPException(status_code=400, detail="当前状态不可取消")
 
+    await cancel_tasks_for_scope(db, user.id, project_id=project_id)
     pipeline.cancel_pipeline(project_id)
     project.status = ProjectStatus.CANCELLED
     project.error_msg = "用户取消"
@@ -624,16 +735,26 @@ async def update_shot(
         raise HTTPException(status_code=404, detail="分镜不存在")
     data = body.model_dump(exclude_unset=True)
     if "segment_script" in data and data["segment_script"] is not None:
-        from app.services.seedance_segments import apply_segment_script_edit
+        from app.services.seedance_segments import (
+            apply_segment_script_edit,
+            replace_first_visual_in_script,
+            replace_narration_in_script,
+        )
 
         bgm = (getattr(project, "bgm_lock", None) or shot.bgm_mood or "").strip()
-        normalized = apply_segment_script_edit(str(data["segment_script"]), bgm_mood=bgm)
+        script = str(data["segment_script"])
+        # 弹窗旁白/首帧优先写回脚本，避免保存时被旧脚本盖掉
+        if "narration" in data and data["narration"] is not None:
+            script = replace_narration_in_script(script, str(data["narration"]))
+        if "img_prompt" in data and data["img_prompt"] is not None:
+            script = replace_first_visual_in_script(script, str(data["img_prompt"]))
+        normalized = apply_segment_script_edit(script, bgm_mood=bgm)
         data["segment_script"] = normalized["segment_script"]
         data["duration"] = normalized["duration"]
         data["video_prompt"] = normalized["video_prompt"]
         if normalized.get("narration"):
             data["narration"] = normalized["narration"]
-        if normalized.get("img_prompt") and "img_prompt" not in data:
+        if normalized.get("img_prompt"):
             data["img_prompt"] = normalized["img_prompt"]
     if "duration" in data and data["duration"] is not None:
         tpl = await db.get(Template, project.template_id)
@@ -665,67 +786,81 @@ async def update_shot(
     return shot
 
 
-@router.post("/projects/{project_id}/shots/{shot_id}/regen-image", response_model=ShotOut)
+@router.post("/projects/{project_id}/shots/{shot_id}/regen-image", response_model=ProjectOut)
 async def regen_image(
     project_id: int,
     shot_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> Shot:
-    await _get_owned_project(db, project_id, user)
-    try:
-        await pipeline.regen_shot_image(project_id, shot_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
-        msg = str(exc)
-        if "PolicyViolation" in msg or "SensitiveContent" in msg:
-            raise HTTPException(
-                status_code=400,
-                detail="画面提示词触发内容安全策略，请编辑分镜去掉品牌/人名后重试",
-            ) from exc
-        raise HTTPException(status_code=502, detail=msg[:500]) from exc
+) -> Project:
     project = await _get_owned_project(db, project_id, user)
-    shot = next(s for s in project.shots if s.id == shot_id)
-    return shot
+    _ensure_side_task_allowed(project)
+    shot = next((s for s in project.shots if s.id == shot_id), None)
+    if not shot:
+        raise HTTPException(status_code=404, detail="分镜不存在")
+    project.status = ProjectStatus.IMAGING
+    project.error_msg = None
+    await db.commit()
+    await _create_kepu_task(
+        db,
+        user,
+        project_id=project_id,
+        shot_id=shot_id,
+        task_type="shot_regen_image",
+    )
+    return await _get_owned_project(db, project_id, user)
 
 
-@router.post("/projects/{project_id}/shots/{shot_id}/regen-video", response_model=ShotOut)
+@router.post("/projects/{project_id}/shots/{shot_id}/regen-video", response_model=ProjectOut)
 async def regen_video(
     project_id: int,
     shot_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> Shot:
-    await _get_owned_project(db, project_id, user)
-    try:
-        await pipeline.regen_shot_video(project_id, shot_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=str(exc)[:500]) from exc
+) -> Project:
     project = await _get_owned_project(db, project_id, user)
-    shot = next(s for s in project.shots if s.id == shot_id)
-    return shot
+    _ensure_side_task_allowed(project)
+    if (project.pipeline_mode or "full") == "image_text":
+        raise HTTPException(status_code=400, detail="图文模式无需生成 AI 视频，请直接重新合成成片")
+    shot = next((s for s in project.shots if s.id == shot_id), None)
+    if not shot or not (shot.image_url or shot.image_ark_url):
+        raise HTTPException(status_code=400, detail="请先生成该镜画面")
+    project.status = ProjectStatus.VIDEOING
+    project.error_msg = None
+    await db.commit()
+    await _create_kepu_task(
+        db,
+        user,
+        project_id=project_id,
+        shot_id=shot_id,
+        task_type="shot_regen_video",
+    )
+    return await _get_owned_project(db, project_id, user)
 
 
-@router.post("/projects/{project_id}/shots/{shot_id}/regen-audio", response_model=ShotOut)
+@router.post("/projects/{project_id}/shots/{shot_id}/regen-audio", response_model=ProjectOut)
 async def regen_audio(
     project_id: int,
     shot_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> Shot:
-    await _get_owned_project(db, project_id, user)
-    try:
-        await pipeline.regen_shot_audio(project_id, shot_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=str(exc)[:500]) from exc
+) -> Project:
     project = await _get_owned_project(db, project_id, user)
-    shot = next(s for s in project.shots if s.id == shot_id)
-    return shot
+    _ensure_side_task_allowed(project)
+    shot = next((s for s in project.shots if s.id == shot_id), None)
+    if not shot:
+        raise HTTPException(status_code=404, detail="分镜不存在")
+    project.status = ProjectStatus.AUDIOING
+    project.error_msg = None
+    await db.commit()
+    await _create_kepu_task(
+        db,
+        user,
+        project_id=project_id,
+        shot_id=shot_id,
+        task_type="shot_regen_audio",
+    )
+    return await _get_owned_project(db, project_id, user)
 
 
 @router.post("/projects/{project_id}/regen-audio", response_model=ProjectOut)
@@ -752,12 +887,12 @@ async def regen_all_audio(
     project.error_msg = None
     project.final_video_url = None
     await db.commit()
-    try:
-        await pipeline.regen_project_audio_and_compose(project_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=str(exc)[:500]) from exc
+    await _create_kepu_task(
+        db,
+        user,
+        project_id=project_id,
+        task_type="project_regen_audio",
+    )
     return await _get_owned_project(db, project_id, user)
 
 
@@ -778,25 +913,20 @@ async def compose_only(
         ProjectStatus.AUDITING,
     }:
         raise HTTPException(status_code=409, detail="生成进行中，请稍后")
-    image_text = (project.pipeline_mode or "full") == "image_text"
-    from app.config import get_settings
-
-    native_audio = (not image_text) and bool(get_settings().kepu_seedance_generate_audio)
-    if native_audio:
-        if not project.shots or not any(s.video_url for s in project.shots):
-            raise HTTPException(status_code=400, detail="缺少镜头视频，无法拼接成片")
-    elif not project.shots or not any(s.image_url for s in project.shots):
-        raise HTTPException(status_code=400, detail="缺少分镜图，无法合成")
+    if not project.shots or not (
+        any(s.image_url for s in project.shots) or any(s.video_url for s in project.shots)
+    ):
+        raise HTTPException(status_code=400, detail="缺少分镜图或镜头视频，无法合成")
     project.status = ProjectStatus.COMPOSING
     project.progress = 90
     project.error_msg = None
     await db.commit()
-    try:
-        await pipeline.compose_only(project_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=str(exc)[:500]) from exc
+    await _create_kepu_task(
+        db,
+        user,
+        project_id=project_id,
+        task_type="project_compose_only",
+    )
     return await _get_owned_project(db, project_id, user)
 
 

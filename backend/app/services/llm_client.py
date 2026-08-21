@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 from app.config import get_settings
+from app.services.logical_model_router import resolve_logical_model, resolve_logical_model_id
 
 logger = logging.getLogger(__name__)
 
@@ -71,11 +72,19 @@ async def chat_completions(
     temperature: float = 0.6,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     timeout: float = 300.0,
+    response_format: dict[str, Any] | None = None,
 ) -> str:
     settings = get_settings()
-    api_key = resolve_llm_api_key()
-    model = (settings.model_llm or DEFAULT_LLM_MODEL).strip() or DEFAULT_LLM_MODEL
-    base = resolve_llm_base_url()
+    logical_id = resolve_logical_model_id("text", None)
+    route = resolve_logical_model("text", logical_id)
+    if route:
+        api_key = route.api_key
+        model = (route.upstream_model or DEFAULT_LLM_MODEL).strip() or DEFAULT_LLM_MODEL
+        base = route.base_url.rstrip("/") or resolve_llm_base_url()
+    else:
+        api_key = resolve_llm_api_key()
+        model = (settings.model_llm or DEFAULT_LLM_MODEL).strip() or DEFAULT_LLM_MODEL
+        base = resolve_llm_base_url()
     # kimi-k2.6 仅允许 temperature=0.6，其它值会 400
     effective_temperature = 0.6 if model.lower().startswith("kimi") else temperature
 
@@ -91,6 +100,8 @@ async def chat_completions(
     extra = _llm_extra_body(model)
     if extra:
         payload.update(extra)
+    if response_format:
+        payload["response_format"] = response_format
 
     logger.info(
         "调用文字 LLM model=%s base=%s user_len=%s max_tokens=%s",

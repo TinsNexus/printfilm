@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any, TypedDict
 
 from app.config import get_settings
+from app.services.logical_model_router import resolve_logical_model_id, resolve_upstream_model
 from app.models_drama import DramaAsset
 from app.services.drama.fragment_content_duration import (
     replace_duration_mentions_with_time_ranges,
@@ -365,7 +366,21 @@ def build_seedance_content_items(
 
 
 def resolve_seedance_model_endpoint(model_id: str | None) -> str:
-    return (model_id or "").strip() or get_settings().model_video
+    settings = get_settings()
+    raw = (model_id or "").strip()
+    logical_id = resolve_logical_model_id("video", model_id)
+    routed = resolve_upstream_model("video", logical_id)
+    if routed:
+        return routed
+    aliases = {
+        "seedance-2.5": settings.model_video,
+        "seedance-2": settings.model_video,
+        "seedance-1.5": settings.model_video,
+        "seedance-1": settings.model_video,
+    }
+    if not raw:
+        return settings.model_video
+    return aliases.get(raw.lower(), raw)
 
 
 def resolve_seedance_ratio(aspect_ratio: str | None) -> str:

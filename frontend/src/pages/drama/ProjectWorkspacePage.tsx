@@ -10,6 +10,8 @@ import {
   getNextProjectStep,
   type ProjectStepKey,
 } from '../../lib/dramaProjectSteps'
+import { formatDramaUsageBrief } from '../../lib/dramaUsage'
+import { isCanvasWorkflow } from '../../lib/dramaWorkflow'
 import { AssetsStep } from './AssetsStep'
 import { EpisodesStep } from './EpisodesStep'
 import { OutlineStep } from './OutlineStep'
@@ -53,9 +55,13 @@ function WorkspaceInner() {
   const canGoNext =
     nextStep !== null && (activeStep === 'outline' ? outlineReady : activeStep === 'assets')
 
-  // 加载项目
+  // 加载项目；自由画布项目强制进入画布页
   async function reload() {
     const p = await dramaApi.getProject(id)
+    if (isCanvasWorkflow(p)) {
+      navigate(`/drama/projects/${id}/canvas`, { replace: true })
+      return null
+    }
     setProject(p)
     setTitleDraft(p.title)
     return p
@@ -66,6 +72,7 @@ function WorkspaceInner() {
     setLoading(true)
     reload()
       .then((p) => {
+        if (!p) return
         if (!locationApplied.current) {
           const state = location.state as
             | { activeStep?: ProjectStepKey; returnStep?: ProjectStepKey }
@@ -87,6 +94,18 @@ function WorkspaceInner() {
     if (state?.activeStep) setActiveStep(state.activeStep)
     else if (state?.returnStep) setActiveStep(state.returnStep)
   }, [location.state])
+
+  // 切换步骤时刷新用量（生图/生视频后顶栏数字同步）
+  useEffect(() => {
+    if (!Number.isFinite(id) || id <= 0 || loading || !project) return
+    void dramaApi
+      .getProject(id)
+      .then((p) => {
+        setProject((prev) => (prev ? { ...prev, usage: p.usage } : p))
+      })
+      .catch(() => undefined)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅随步骤变化刷新
+  }, [activeStep, id])
 
   // 保存标题
   async function saveTitle() {
@@ -196,6 +215,11 @@ function WorkspaceInner() {
           </nav>
 
           <div className="drama-workspace-top-right">
+            {project.usage ? (
+              <span className="drama-usage-chip" title="本剧累计费用与生成次数">
+                {formatDramaUsageBrief(project.usage)}
+              </span>
+            ) : null}
             {nextStep ? (
               <button
                 type="button"

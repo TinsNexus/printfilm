@@ -31,22 +31,19 @@ export function PaginationBar({
 
   return (
     <div
-      className={cn(
-        "flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[#fafbfc] px-3 py-2.5 text-sm text-[#909399]",
-        className,
-      )}
+      className={cn("admin-pagination", className)}
     >
       <div className="flex flex-wrap items-center gap-3">
         <span>
-          共 <em className="not-italic font-semibold text-[#303133]">{total}</em> 条
-          <span className="mx-1.5 text-[#dcdfe6]">·</span>
+          共 <em className="not-italic font-semibold text-[var(--admin-text)]">{total}</em> 条
+          <span className="mx-1.5 text-[var(--admin-border)]">·</span>
           {from}-{to}
         </span>
         {onPageSizeChange && (
           <label className="flex items-center gap-1.5 text-xs">
             <span>每页</span>
             <select
-              className="h-7 rounded-md border border-[#dcdfe6] bg-white px-1.5 text-[#606266] outline-none focus:border-[#67c23a]"
+              className="admin-select !h-7 !min-w-[4rem] !text-xs"
               value={pageSize}
               onChange={(e) => onPageSizeChange(Number(e.target.value))}
             >

@@ -17,6 +17,13 @@
   background: #fff;
 }
 
+.auth-panel-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
 .auth-panel h1 {
   font-family: 'Space Grotesk', 'Noto Sans SC', sans-serif;
   font-size: 2rem;

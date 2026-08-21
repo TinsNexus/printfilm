@@ -82,6 +82,50 @@ def test_normalize_llm_injects_intro_once_for_important_cast():
     assert "【人物介绍·画面叠字·角色身旁】行刑兵" not in joined
 
 
+def test_normalize_llm_links_prop_and_material():
+    assets = [
+        SimpleNamespace(id=1, type="character", name="禹", params={"title": "治水", "roleType": "主角"}),
+        SimpleNamespace(id=10, type="scene", name="裂石崖", params={}),
+        SimpleNamespace(id=20, type="prop", name="开山斧", params={}),
+        SimpleNamespace(id=21, type="material", name="定海针", params={}),
+    ]
+    items = [
+        {
+            "duration_sec": 12,
+            "scene_name": "裂石崖",
+            "character_names": ["禹"],
+            "prop_names": ["开山斧"],
+            "material_names": ["定海针"],
+            "lines": [
+                "全景：禹右手握开山斧，左手持定海针立于裂石崖边。",
+            ],
+        },
+    ]
+    drafts = normalize_llm_fragment_items(items, assets)
+    assert len(drafts) == 1
+    content = drafts[0]["content"]
+    ids = drafts[0]["asset_ids"]
+    assert 20 in ids and 21 in ids and 1 in ids and 10 in ids
+    assert "@asset:20" in content
+    assert "@asset:21" in content
+
+
+def test_build_asset_catalog_excludes_material_and_voice():
+    from app.services.drama.fragment_plan import build_asset_catalog
+
+    assets = [
+        SimpleNamespace(id=1, type="character", name="禹", params={}),
+        SimpleNamespace(id=2, type="prop", name="开山斧", params={}),
+        SimpleNamespace(id=3, type="material", name="定海针", params={}),
+        SimpleNamespace(id=4, type="voice", name="旁白", params={}),
+    ]
+    catalog = build_asset_catalog(assets)
+    kinds = {c["type"] for c in catalog}
+    assert "character" in kinds and "prop" in kinds
+    assert "material" not in kinds
+    assert "voice" not in kinds
+
+
 def test_normalize_llm_splits_when_durations_exceed_hard_max():
     # LLM 把过多对白塞进一镜时，规范化须按 30s 硬上限拆成多条
     import re

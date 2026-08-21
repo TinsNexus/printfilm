@@ -1,7 +1,8 @@
 /** 将项目资产与已保存画布布局合并为 React Flow 节点/边 */
 import type { Edge, Node } from '@xyflow/react'
 import { resolveDramaMediaUrl, type DramaAsset } from '../../../api/drama'
-import { readVisualPrompt } from '../../../lib/dramaVisualPrompt'
+import { readEditableVisualPrompt } from '../../../lib/dramaVisualPrompt'
+import { readVideoGenerationOptions } from '../../../lib/dramaVideoGenerationOptions'
 import { readAssetVoiceBinding } from '../CharacterVoiceBindModal'
 import {
   CANVAS_NODE_DEFAULT_LABEL,
@@ -32,7 +33,9 @@ export function getCanvasNodeId(assetId: number) {
 export function buildNodeDataFromAsset(asset: DramaAsset): CanvasAssetNodeData {
   const kind = dramaAssetTypeToKind(asset.type)
   const params = (asset.params || {}) as Record<string, unknown>
-  const promptHint = readVisualPrompt(asset)
+  const promptHint = readEditableVisualPrompt(asset)
+  const videoOptions =
+    kind === 'video' ? readVideoGenerationOptions(params.videoOptions || params) : undefined
   const label =
     (typeof asset.name === 'string' && asset.name.trim()) || CANVAS_NODE_DEFAULT_LABEL[kind]
   const voice = kind === 'character' ? readAssetVoiceBinding(asset) : null
@@ -44,6 +47,7 @@ export function buildNodeDataFromAsset(asset: DramaAsset): CanvasAssetNodeData {
     mediaUrl: resolveDramaMediaUrl(asset.url || asset.cover) || null,
     textContent: kind === 'text' ? String(params.textContent || '') : undefined,
     promptHint,
+    videoOptions,
     characterName: kind === 'character' ? label : undefined,
     voiceLabel: voice?.label || null,
     voiceUrl: voice?.url || null,
@@ -77,26 +81,28 @@ function indexSavedLayout(rawNodes: unknown, rawEdges: unknown): SavedLayoutInde
 
 /**
  * 合并项目资产与已保存布局：
- * - 资产列表决定「有哪些节点」与媒体/文案
- * - 已保存布局提供位置与连线
- * - 尚无布局的资产按横向网格自动摆放（对齐参考「资产库编排」）
+ * - 普通项目：资产列表决定节点；已保存布局提供位置与连线
+ * - 自由画布：仅恢复「已保存在画布上」的资产节点，避免删除后刷新又冒出来
  */
 export function mergeAssetsWithCanvasLayout(
   assets: DramaAsset[],
   savedNodes: unknown,
   savedEdges: unknown,
+  options?: { freeCanvas?: boolean },
 ): { nodes: Node<CanvasAssetNodeData>[]; edges: Edge[] } {
+  const freeCanvas = Boolean(options?.freeCanvas)
   const saved = indexSavedLayout(savedNodes, savedEdges)
   const nodes: Node<CanvasAssetNodeData>[] = []
   let maxRight = 0
+  const assetById = new Map(assets.map((a) => [a.id, a]))
 
-  for (const asset of assets) {
-    const data = buildNodeDataFromAsset(asset)
-    const kind = data.kind
-    const size = CANVAS_NODE_SIZE[kind]
-    const savedNode = saved.byAssetId.get(asset.id)
-
-    if (savedNode) {
+  if (freeCanvas) {
+    /* 自由画布：只渲染布局里仍存在、且资产未删的节点（不按资产列表回补） */
+    for (const [assetId, savedNode] of saved.byAssetId) {
+      const asset = assetById.get(assetId)
+      if (!asset) continue
+      const data = buildNodeDataFromAsset(asset)
+      const size = CANVAS_NODE_SIZE[data.kind]
       nodes.push({
         ...savedNode,
         id: getCanvasNodeId(asset.id),
@@ -104,46 +110,77 @@ export function mergeAssetsWithCanvasLayout(
         data: {
           ...savedNode.data,
           ...data,
+          label: (savedNode.data.label as string) || data.label,
+          promptHint: data.promptHint || savedNode.data.promptHint || '',
+          videoOptions: data.videoOptions || savedNode.data.videoOptions,
           textContent:
-            kind === 'text'
+            data.kind === 'text'
               ? savedNode.data.textContent ?? data.textContent
               : data.textContent,
         },
       })
       maxRight = Math.max(maxRight, savedNode.position.x + size.width + 40)
-    } else {
-      nodes.push({
-        id: getCanvasNodeId(asset.id),
-        type: 'asset',
-        position: {
-          x: maxRight,
-          y: 80,
-        },
-        data,
-      })
-      maxRight += size.width + 40
     }
-  }
+    /* 无 assetId 的孤儿节点仍保留 */
+    for (const orphan of saved.orphanNodes) {
+      nodes.push(orphan)
+    }
+  } else {
+    for (const asset of assets) {
+      const data = buildNodeDataFromAsset(asset)
+      const kind = data.kind
+      const size = CANVAS_NODE_SIZE[kind]
+      const savedNode = saved.byAssetId.get(asset.id)
 
-  /* 无 assetId 的旧自由节点仍保留，排在资产行下方 */
-  for (const orphan of saved.orphanNodes) {
-    nodes.push({
-      ...orphan,
-      position: {
-        x: orphan.position.x,
-        y: Math.max(orphan.position.y, 420),
-      },
-    })
-  }
+      if (savedNode) {
+        nodes.push({
+          ...savedNode,
+          id: getCanvasNodeId(asset.id),
+          type: 'asset',
+          data: {
+            ...savedNode.data,
+            ...data,
+            textContent:
+              kind === 'text'
+                ? savedNode.data.textContent ?? data.textContent
+                : data.textContent,
+          },
+        })
+        maxRight = Math.max(maxRight, savedNode.position.x + size.width + 40)
+      } else {
+        nodes.push({
+          id: getCanvasNodeId(asset.id),
+          type: 'asset',
+          position: {
+            x: maxRight,
+            y: 80,
+          },
+          data,
+        })
+        maxRight += size.width + 40
+      }
+    }
 
-  /* 首次进入（无任何已保存位置）时整行横向排布 */
-  if (saved.byAssetId.size === 0 && assets.length > 0) {
-    let i = 0
-    for (const node of nodes) {
-      if (typeof node.data.assetId !== 'number') continue
-      const size = CANVAS_NODE_SIZE[node.data.kind]
-      node.position = { x: i * (size.width + 40), y: 80 }
-      i += 1
+    /* 无 assetId 的旧自由节点仍保留，排在资产行下方 */
+    for (const orphan of saved.orphanNodes) {
+      nodes.push({
+        ...orphan,
+        position: {
+          x: orphan.position.x,
+          y: Math.max(orphan.position.y, 420),
+        },
+      })
+    }
+
+    /* 首次进入（无任何已保存位置）时整行横向排布 */
+    if (saved.byAssetId.size === 0 && assets.length > 0) {
+      let i = 0
+      for (const node of nodes) {
+        if (typeof node.data.assetId !== 'number') continue
+        const size = CANVAS_NODE_SIZE[node.data.kind]
+        node.position = { x: i * (size.width + 40), y: 80 }
+        i += 1
+      }
     }
   }
 

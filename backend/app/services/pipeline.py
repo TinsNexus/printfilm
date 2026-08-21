@@ -1,4 +1,4 @@
-"""Pipeline orchestration — stages shared by in-process and Celery runners."""
+"""Pipeline orchestration — in-process runtime used by the task platform."""
 
 from __future__ import annotations
 
@@ -81,8 +81,6 @@ async def _record_usage_est(
             await db.commit()
     except Exception:  # noqa: BLE001
         logger.exception("billing record failed project=%s key=%s", project_id, billing_key)
-_celery_task_ids: dict[int, str] = {}
-
 # Seedream min pixels ~3686400; portrait 9:16 ≈ 1440x2560
 _IMAGE_SIZE_BY_RATIO = {
     "9:16": "1440x2560",
@@ -101,30 +99,8 @@ class PipelineCancelled(Exception):
 
 
 def start_pipeline(project_id: int) -> str:
-    """Dispatch to Celery when enabled+Redis up; else in-process asyncio."""
+    """Start one in-process pipeline task."""
     _cancelled.discard(project_id)
-    settings = get_settings()
-    if settings.use_celery and _redis_ok():
-        from app.workers.queue_dedupe import clear_pipeline_run_lock, purge_pipeline_queue_for_project
-        from app.workers.tasks import run_pipeline_task
-
-        # Drop stale queued copies + revoke last known task so continue never double-runs
-        old_id = _celery_task_ids.pop(project_id, None)
-        if old_id and old_id != "in-process":
-            try:
-                from app.workers.celery_app import celery_app
-
-                celery_app.control.revoke(old_id, terminate=True, signal="SIGTERM")
-            except Exception:  # noqa: BLE001
-                logger.warning("revoke previous task failed project=%s task=%s", project_id, old_id)
-        purge_pipeline_queue_for_project(project_id)
-        clear_pipeline_run_lock(project_id)
-
-        async_result = run_pipeline_task.apply_async(args=[project_id], queue="pipeline")
-        task_id = str(async_result.id)
-        _celery_task_ids[project_id] = task_id
-        return task_id
-
     if project_id in _running and not _running[project_id].done():
         return "in-process"
     _running[project_id] = asyncio.create_task(run_pipeline(project_id))
@@ -132,7 +108,7 @@ def start_pipeline(project_id: int) -> str:
 
 
 def cancel_pipeline(project_id: int) -> bool:
-    """Request cancel; best-effort stop in-process task / Celery worker."""
+    """Request cancel for one in-process pipeline task."""
     _cancelled.add(project_id)
     stopped = False
 
@@ -141,25 +117,6 @@ def cancel_pipeline(project_id: int) -> bool:
         task.cancel()
         stopped = True
 
-    celery_id = _celery_task_ids.pop(project_id, None)
-    if celery_id and celery_id != "in-process":
-        try:
-            from app.workers.celery_app import celery_app
-
-            celery_app.control.revoke(celery_id, terminate=True, signal="SIGTERM")
-            stopped = True
-        except Exception:  # noqa: BLE001
-            logger.warning("celery revoke failed project=%s task=%s", project_id, celery_id)
-
-    try:
-        from app.workers.queue_dedupe import clear_pipeline_run_lock, purge_pipeline_queue_for_project
-
-        if purge_pipeline_queue_for_project(project_id):
-            stopped = True
-        clear_pipeline_run_lock(project_id)
-    except Exception:  # noqa: BLE001
-        logger.exception("queue purge on cancel failed project=%s", project_id)
-
     return stopped
 
 
@@ -167,19 +124,93 @@ def is_cancelled(project_id: int) -> bool:
     return project_id in _cancelled
 
 
-def _redis_ok() -> bool:
-    try:
-        import redis
+# 单镜重生 / 合成等短任务的进程内异步执行。
+_regen_tasks: dict[str, asyncio.Task] = {}
 
-        r = redis.Redis.from_url(
-            get_settings().redis_url,
-            decode_responses=True,
-            socket_connect_timeout=2,
-            socket_timeout=2,
-        )
-        return bool(r.ping())
-    except Exception:  # noqa: BLE001
-        return False
+
+def _dispatch_side_task(
+    key: str,
+    *,
+    coro_factory,
+) -> str:
+    """Start one in-process side task."""
+    existing = _regen_tasks.get(key)
+    if existing and not existing.done():
+        return "in-process"
+
+    async def _runner() -> None:
+        try:
+            await coro_factory()
+        except Exception:  # noqa: BLE001
+            logger.exception("in-process side task failed key=%s", key)
+
+    _regen_tasks[key] = asyncio.create_task(_runner())
+    return "in-process"
+
+
+def dispatch_regen_image(project_id: int, shot_id: int) -> str:
+    """异步重绘单镜首帧图。"""
+    key = f"regen-image:{project_id}:{shot_id}"
+
+    async def _coro() -> None:
+        await regen_shot_image(project_id, shot_id)
+
+    return _dispatch_side_task(
+        key,
+        coro_factory=_coro,
+    )
+
+
+def dispatch_regen_video(project_id: int, shot_id: int) -> str:
+    """异步重生单镜 Seedance 视频。"""
+    key = f"regen-video:{project_id}:{shot_id}"
+
+    async def _coro() -> None:
+        await regen_shot_video(project_id, shot_id)
+
+    return _dispatch_side_task(
+        key,
+        coro_factory=_coro,
+    )
+
+
+def dispatch_regen_audio(project_id: int, shot_id: int) -> str:
+    """异步重配单镜旁白（整片连贯 TTS）。"""
+    key = f"regen-audio:{project_id}:{shot_id}"
+
+    async def _coro() -> None:
+        await regen_shot_audio(project_id, shot_id)
+
+    return _dispatch_side_task(
+        key,
+        coro_factory=_coro,
+    )
+
+
+def dispatch_regen_project_audio_and_compose(project_id: int) -> str:
+    """异步整片重配音并合成成片。"""
+    key = f"regen-all-audio:{project_id}"
+
+    async def _coro() -> None:
+        await regen_project_audio_and_compose(project_id)
+
+    return _dispatch_side_task(
+        key,
+        coro_factory=_coro,
+    )
+
+
+def dispatch_compose_only(project_id: int) -> str:
+    """异步仅合成成片（不重跑 AI 阶段）。"""
+    key = f"compose:{project_id}"
+
+    async def _coro() -> None:
+        await compose_only(project_id)
+
+    return _dispatch_side_task(
+        key,
+        coro_factory=_coro,
+    )
 
 
 def _is_image_text(project: Project) -> bool:
@@ -187,10 +218,15 @@ def _is_image_text(project: Project) -> bool:
 
 
 def _use_native_video_audio(project: Project | None = None) -> bool:
-    """科普 full 管线：用 Seedance generate_audio，跳过 TTS 与重合成。"""
+    """是否跳过 TTS、直拼 Seedance 口播。科普已改回外部合成，恒为 False。"""
+    return False
+
+
+def _kepu_seedance_sfx_audio(project: Project | None = None) -> bool:
+    """科普 full：向 Seedance 要操作/环境音效（不含口播与 BGM）。"""
     if project is not None and _is_image_text(project):
         return False
-    return bool(get_settings().kepu_seedance_generate_audio)
+    return bool(get_settings().kepu_seedance_sfx_audio)
 
 
 def _project_output_ratio(project: Project) -> str:
@@ -213,13 +249,14 @@ def _project_voice(project: Project) -> str:
 
 
 def clamp_shot_duration(duration: float, *, pipeline_mode: str, tpl_min: int, tpl_max: int) -> float:
+    """将单镜时长钳到模板区间；完整模式再压到科普节奏上限。"""
     settings = get_settings()
     if pipeline_mode == "image_text":
         lo = IMAGE_TEXT_DURATION_MIN
         hi = IMAGE_TEXT_DURATION_MAX
     else:
-        lo = max(1, tpl_min)
-        hi = min(max(tpl_max, lo), settings.max_shot_duration)
+        hi = min(max(tpl_max, 1), settings.max_shot_duration, segplan.KEPU_FULL_SHOT_DURATION_MAX)
+        lo = max(1, min(tpl_min, hi))
     return float(max(lo, min(float(duration), hi)))
 
 
@@ -341,7 +378,7 @@ async def _resume_plan(project_id: int) -> tuple[bool, bool, bool, bool]:
                 return False
             return not is_near_silent_audio(path)
 
-        # 模型配音模式不依赖 TTS；静图成片仍要整片配音
+        # 科普改回外部 TTS，成片前必须有旁白音轨
         has_audio = (
             True
             if native_audio
@@ -355,6 +392,7 @@ async def _resume_plan(project_id: int) -> tuple[bool, bool, bool, bool]:
         return image_text, skip_script, skip_assets, skip_videos
 
 
+@storage.without_intermediate_oss
 async def run_pipeline(project_id: int) -> None:
     try:
         await _ensure_not_cancelled(project_id)
@@ -421,9 +459,7 @@ async def run_pipeline(project_id: int) -> None:
                         "沿用已有分镜图与配音，开始合成"
                         if image_text
                         else (
-                            "沿用已有分镜图，继续生成带配音的 AI 视频"
-                            if _use_native_video_audio(project)
-                            else "沿用已有分镜图与配音，继续生成 AI 视频"
+                            "沿用已有分镜图与配音，继续生成 AI 视频"
                         )
                     ),
                 },
@@ -512,7 +548,6 @@ async def run_pipeline(project_id: int) -> None:
         raise
     finally:
         _cancelled.discard(project_id)
-        _celery_task_ids.pop(project_id, None)
         _running.pop(project_id, None)
 
 
@@ -558,7 +593,11 @@ async def _script_stage(project_id: int) -> None:
             d_min, d_max = IMAGE_TEXT_DURATION_MIN, IMAGE_TEXT_DURATION_MAX
         else:
             d_min = tpl.shot_duration_min
-            d_max = min(tpl.shot_duration_max, get_settings().max_shot_duration)
+            d_max = min(
+                tpl.shot_duration_max,
+                get_settings().max_shot_duration,
+                segplan.KEPU_FULL_SHOT_DURATION_MAX,
+            )
 
         style = _effective_style(project)
         extra = _effective_extra(project)
@@ -571,9 +610,10 @@ async def _script_stage(project_id: int) -> None:
             llm_system_addon=tpl.llm_system_addon,
             duration_min=d_min,
             duration_max=d_max,
-            max_shot_duration=d_max if image_text else get_settings().max_shot_duration,
+            max_shot_duration=d_max,
             pipeline_mode=mode,
-            character_hint=char_hint if consist == "character" else "",
+            # 用户角色限制在 diverse/style 下也必须进分镜，否则出镜人物会被模板默认成「过肩无脸」
+            character_hint=char_hint,
             extra_requirements=extra,
             consistency_mode=consist,
             output_ratio=_project_output_ratio(project),
@@ -581,6 +621,9 @@ async def _script_stage(project_id: int) -> None:
         plans = plans_result.shots
         if consist == "character":
             project.character_bible = _effective_character_bible(project, plans_result.character_bible)
+        elif char_hint:
+            # 多样人物：保留用户角色限制，不锁成同一张脸
+            project.character_bible = char_hint
         else:
             project.character_bible = "无固定人物，各镜独立场景"
         tpl_bgm = ""
@@ -735,7 +778,7 @@ def _db_write_lock() -> asyncio.Lock:
 
 
 async def _parallel_image_and_audio(project_id: int) -> None:
-    """Generate storyboard images; TTS only for image_text (full 用视频模型配音)。"""
+    """Generate storyboard images and continuous TTS (full 再并行图生视频)。"""
     await _set_status(project_id, ProjectStatus.IMAGING, 18, "PARALLEL_ASSETS")
     cfg = get_settings()
     ark = get_ark()
@@ -787,7 +830,7 @@ async def _parallel_image_and_audio(project_id: int) -> None:
     img_sem = asyncio.Semaphore(max(1, cfg.pipeline_image_concurrency))
     done_img = 0
     progress_lock = asyncio.Lock()
-    # 模型配音：跳过整片 TTS；静图成片仍合成连贯旁白
+    # 静图成片与完整模式都合成连贯旁白；已有音轨则跳过
     need_audio = (not native_audio) and (not _continuous_audio_ok(project_id))
 
     async def bump_images() -> None:
@@ -982,9 +1025,7 @@ async def _parallel_image_and_audio(project_id: int) -> None:
             "stage": "ASSETS_READY",
             "percent": 70 if image_text else 50,
             "message": (
-                "分镜图已完成，准备视频模型配音"
-                if native_audio
-                else "分镜图与整片配音已完成"
+                "分镜图与整片配音已完成"
             ),
         },
     )
@@ -1004,8 +1045,9 @@ async def _parallel_videos(project_id: int) -> None:
         )
         project = result.scalar_one()
         tpl = project.template
-        # 科普 full：以 KEPU_SEEDANCE_GENERATE_AUDIO 为准（忽略库内旧模板 False）
-        generate_audio = _use_native_video_audio(project)
+        # 科普 full：Seedance 出操作音效，口播改后期 TTS
+        generate_audio = _kepu_seedance_sfx_audio(project)
+        ambient_only = generate_audio
         consistency = template_consistency_mode(tpl) == "character" and bool(
             tpl.seedance_config.get("character_consistency", True)
         )
@@ -1063,6 +1105,7 @@ async def _parallel_videos(project_id: int) -> None:
                 style_prefix=style_prefix,
                 motion_bias=motion,
                 camera=str(meta.get("camera") or ""),
+                ambient_only=ambient_only,
             )
             dur = segplan.resolve_api_duration(
                 script,
@@ -1153,7 +1196,7 @@ async def _parallel_videos(project_id: int) -> None:
                     "total": total,
                     "percent": pct,
                     "message": (
-                        f"AI 视频+配音 {done}/{total}"
+                        f"AI 视频（含操作音效）{done}/{total}"
                         if generate_audio
                         else f"AI 视频 {done}/{total}"
                     ),
@@ -1266,7 +1309,8 @@ async def _video_stage(project_id: int) -> None:
         )
         project = result.scalar_one()
         tpl = project.template
-        generate_audio = _use_native_video_audio(project)
+        generate_audio = _kepu_seedance_sfx_audio(project)
+        ambient_only = generate_audio
         consistency = template_consistency_mode(tpl) == "character" and bool(
             tpl.seedance_config.get("character_consistency", True)
         )
@@ -1286,6 +1330,7 @@ async def _video_stage(project_id: int) -> None:
                 style_prefix=style_prefix,
                 motion_bias=motion,
                 camera=shot.camera or "",
+                ambient_only=ambient_only,
             )
             dur = segplan.resolve_api_duration(
                 script,
@@ -1449,7 +1494,9 @@ async def _compose_stage(project_id: int) -> None:
                 bgm_mood = (project.shots[0].bgm_mood or "").strip()
             if not bgm_mood and project.template and isinstance(project.template.audio_config, dict):
                 bgm_mood = str(project.template.audio_config.get("bgm_mood") or "").strip()
-            bgm_path = resolve_bgm_path(bgm_mood)
+            # 科普 full：不要后期 BGM；静图成片仍可叠配乐
+            bgm_path = None if mode != "image_text" else resolve_bgm_path(bgm_mood)
+            keep_video_sfx = _kepu_seedance_sfx_audio(project)
 
             await asyncio.to_thread(
                 compose_project,
@@ -1466,6 +1513,8 @@ async def _compose_stage(project_id: int) -> None:
                     caption_scale=_f("caption_scale", 1.25),
                     bgm_path=bgm_path,
                     bgm_volume=0.22,
+                    keep_video_sfx=keep_video_sfx,
+                    sfx_volume=0.22,
                 ),
             )
             project.final_video_url = storage.publish_local(out)
@@ -1483,6 +1532,7 @@ async def _compose_stage(project_id: int) -> None:
     await _settle_billing(project_id)
 
 
+@storage.without_intermediate_oss
 async def regen_shot_image(project_id: int, shot_id: int) -> None:
     """重绘单镜首帧图，并清掉该镜视频以便后续重生。"""
     ark = get_ark()
@@ -1523,6 +1573,7 @@ async def regen_shot_image(project_id: int, shot_id: int) -> None:
         await db.commit()
 
 
+@storage.without_intermediate_oss
 async def regen_shot_video(project_id: int, shot_id: int) -> None:
     ark = get_ark()
     async with AsyncSessionLocal() as db:
@@ -1537,7 +1588,7 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
         shot = next((s for s in project.shots if s.id == shot_id), None)
         if not shot or not (shot.image_url or shot.image_ark_url):
             raise ValueError("shot image required")
-        generate_audio = _use_native_video_audio(project)
+        generate_audio = _kepu_seedance_sfx_audio(project)
         motion = str(project.template.seedance_config.get("motion_bias", ""))
         consistency = template_consistency_mode(project.template) == "character" and bool(
             project.template.seedance_config.get("character_consistency", True)
@@ -1552,6 +1603,7 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
             style_prefix=_effective_style(project),
             motion_bias=motion,
             camera=shot.camera or "",
+            ambient_only=generate_audio,
         )
         dur = segplan.resolve_api_duration(
             script,
@@ -1579,6 +1631,7 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
         await db.commit()
 
 
+@storage.without_intermediate_oss
 async def regen_shot_audio(project_id: int, shot_id: int) -> None:
     """Re-TTS uses continuous full-film narration (editing one shot re-voices the whole track)."""
     async with AsyncSessionLocal() as db:
@@ -1603,15 +1656,28 @@ async def regen_shot_audio(project_id: int, shot_id: int) -> None:
         project_id, voice=voice, shot_rows=shots, force=True
     )
     async with AsyncSessionLocal() as db:
-        project = await db.get(Project, project_id)
+        result = await db.execute(
+            select(Project)
+            .where(Project.id == project_id)
+            .options(selectinload(Project.shots))
+        )
+        project = result.scalar_one_or_none()
         shot = await db.get(Shot, shot_id)
         if shot:
             shot.version += 1
         if project:
             project.final_video_url = None
+            shots = list(project.shots or [])
+            if _is_image_text(project):
+                project.status = ProjectStatus.IMAGE_READY
+            elif shots and all(s.video_url for s in shots):
+                project.status = ProjectStatus.VIDEO_READY
+            else:
+                project.status = ProjectStatus.IMAGE_READY
             await db.commit()
 
 
+@storage.without_intermediate_oss
 async def regen_project_audio_and_compose(project_id: int) -> None:
     """Force continuous re-TTS with current voice, then compose."""
     async with AsyncSessionLocal() as db:
@@ -1667,6 +1733,7 @@ async def regen_project_audio_and_compose(project_id: int) -> None:
     )
 
 
+@storage.without_intermediate_oss
 async def compose_only(project_id: int) -> None:
     await _compose_stage(project_id)
     async with AsyncSessionLocal() as db:

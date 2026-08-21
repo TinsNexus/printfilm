@@ -1,6 +1,10 @@
 from datetime import datetime
+from typing import Any
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+from app.schemas_common import PageMeta
+from app.schemas_tasks import TaskRunBriefOut
 
 
 # ---- Auth ----
@@ -30,8 +34,26 @@ class UserOut(BaseModel):
     plan: str = "free"
     billing_unlimited: bool = False
     role: str = "user"
+    avatar_url: str = ""
+    phone: str = ""
 
     model_config = {"from_attributes": True}
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def normalize_phone(cls, value: Any) -> str:
+        return str(value or "")
+
+
+class ProfileUpdateRequest(BaseModel):
+    nickname: str = Field(max_length=64)
+    email: str = Field(max_length=255)
+    phone: str = Field(default="", max_length=32)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=64)
+    new_password: str = Field(min_length=6, max_length=64)
 
 
 # ---- Templates ----
@@ -157,6 +179,7 @@ class ProjectOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     shots: list[ShotOut] = []
+    active_tasks: list[TaskRunBriefOut] = []
 
     model_config = {"from_attributes": True}
 
@@ -175,6 +198,7 @@ class ProjectListItem(BaseModel):
     published: bool = False
     created_at: datetime
     updated_at: datetime | None = None
+    active_tasks: list[TaskRunBriefOut] = []
 
     model_config = {"from_attributes": True}
 
@@ -228,12 +252,6 @@ class ProgressEvent(BaseModel):
 
 
 # ---- Admin ----
-class PageMeta(BaseModel):
-    page: int
-    page_size: int
-    total: int
-
-
 class ProjectListStats(BaseModel):
     total: int = 0
     generating: int = 0
@@ -254,6 +272,40 @@ class AdminStatsOut(BaseModel):
     project_status_counts: dict[str, int]
 
 
+class AdminQueueTaskOut(BaseModel):
+    task_id: str
+    task_name: str
+    label: str
+    args_repr: str
+    queue: str
+    state: str
+    started_at: float | None = None
+    ref_id: int | None = None
+    position: int | None = None
+
+
+class AdminQueueSummaryOut(BaseModel):
+    name: str
+    label: str
+    pending: int
+    sample: list[AdminQueueTaskOut]
+
+
+class AdminQueuesOut(BaseModel):
+    ok: bool
+    redis_ok: bool
+    unacked: int
+    total_pending: int
+    active_count: int
+    reserved_count: int
+    queues: list[AdminQueueSummaryOut]
+    pending_tasks: list[AdminQueueTaskOut]
+    active_tasks: list[AdminQueueTaskOut]
+    reserved_tasks: list[AdminQueueTaskOut]
+    runtime: dict[str, float | int | str]
+    fetched_at: str
+
+
 class AdminUserOut(BaseModel):
     id: int
     email: EmailStr
@@ -264,9 +316,15 @@ class AdminUserOut(BaseModel):
     plan: str
     billing_unlimited: bool
     role: str
+    phone: str = ""
     created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def normalize_phone(cls, value: Any) -> str:
+        return str(value or "")
 
 
 class AdminUserListOut(BaseModel):

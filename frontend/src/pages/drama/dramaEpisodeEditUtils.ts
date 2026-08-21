@@ -2,12 +2,11 @@
 import type { DramaAsset, DramaFragment } from '../../api/drama'
 
 export type AssetScope = 'episode' | 'series'
-export type AssetTab = 'character' | 'scene' | 'prop' | 'material'
+export type AssetTab = 'character' | 'scene' | 'prop'
 
 export const ASSET_TABS: Array<{ key: AssetTab; label: string }> = [
   { key: 'character', label: '角色' },
   { key: 'scene', label: '场景' },
-  { key: 'material', label: '素材' },
   { key: 'prop', label: '道具' },
 ]
 
@@ -84,7 +83,6 @@ export function normalizeAssetTab(type: string): AssetTab | null {
   if (t === 'character' || t === '角色') return 'character'
   if (t === 'scene' || t === '场景') return 'scene'
   if (t === 'prop' || t === '道具') return 'prop'
-  if (t === 'material' || t === '素材') return 'material'
   return null
 }
 
@@ -100,21 +98,79 @@ export function sumFragmentContentDuration(content: string): number {
   return total
 }
 
-// 解析分镜生成状态（params.generation 或已有 video）
+// 解析分镜生成状态（params.generation 优先于已有 video，支持重新生成）
 export function readFragmentGenerationStatus(
   frag: DramaFragment,
 ): { status: string; error?: string; message?: string; phase?: string } {
-  if (frag.video) return { status: 'done' }
   const gen = frag.params?.generation
   if (gen && typeof gen === 'object') {
     const row = gen as Record<string, unknown>
     const status = typeof row.status === 'string' ? row.status : 'idle'
-    const error = typeof row.error === 'string' ? row.error : undefined
-    const message = typeof row.message === 'string' ? row.message : undefined
-    const phase = typeof row.phase === 'string' ? row.phase : undefined
-    return { status, error, message, phase }
+    if (['queued', 'running', 'generating', 'failed', 'cancelled'].includes(status)) {
+      return {
+        status,
+        error: typeof row.error === 'string' ? row.error : undefined,
+        message: typeof row.message === 'string' ? row.message : undefined,
+        phase: typeof row.phase === 'string' ? row.phase : undefined,
+      }
+    }
+    if (status === 'done') {
+      return {
+        status: 'done',
+        message: typeof row.message === 'string' ? row.message : undefined,
+      }
+    }
   }
+  if (frag.video) return { status: 'done' }
   return { status: 'idle' }
+}
+
+// 是否处于排队/生成中
+export function isFragmentGenerationBusy(status: string): boolean {
+  return ['queued', 'running', 'generating', 'pending', 'leased', 'awaiting_poll', 'awaiting_review'].includes(
+    status,
+  )
+}
+
+export type FragmentVideoVersion = {
+  id: string
+  video: string
+  cover?: string
+  lastFrameUrl?: string | null
+  createdAt?: string
+  source?: string
+}
+
+// 读取分镜历史成片版本
+export function readFragmentVideoVersions(frag: DramaFragment | null | undefined): FragmentVideoVersion[] {
+  if (!frag?.params || typeof frag.params !== 'object') return []
+  const raw = (frag.params as Record<string, unknown>).video_versions
+  if (!Array.isArray(raw)) return []
+  const out: FragmentVideoVersion[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const row = item as Record<string, unknown>
+    const id = typeof row.id === 'string' ? row.id : ''
+    const video = typeof row.video === 'string' ? row.video.trim() : ''
+    if (!id || !video) continue
+    out.push({
+      id,
+      video,
+      cover: typeof row.cover === 'string' ? row.cover : '',
+      lastFrameUrl: typeof row.lastFrameUrl === 'string' ? row.lastFrameUrl : null,
+      createdAt: typeof row.createdAt === 'string' ? row.createdAt : undefined,
+      source: typeof row.source === 'string' ? row.source : undefined,
+    })
+  }
+  return out
+}
+
+// 分镜队列徽标文案
+export function fragmentQueueBadgeLabel(status: string): string {
+  if (status === 'queued' || status === 'pending' || status === 'leased') return '排队'
+  if (status === 'running' || status === 'generating' || status === 'awaiting_poll') return '生成中'
+  if (status === 'failed') return '失败'
+  return ''
 }
 
 // 保存前：有 @duration 标签时用合计值作为 duration_sec

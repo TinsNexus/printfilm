@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api, type PageMeta } from "@/api/client";
 import { PaginationBar } from "@/components/PaginationBar";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { PageHeader } from "@/components/ui/page";
 
 type DramaProjectRow = {
   id: number;
@@ -18,10 +18,6 @@ type ListRes = { items: DramaProjectRow[]; meta: PageMeta };
 
 /** Admin table listing drama projects with pagination */
 export function DramaProjectsPage() {
-  /*
-   * page current page
-   * data list response
-   */
   const [page, setPage] = useState(1);
   const [data, setData] = useState<ListRes | null>(null);
 
@@ -41,39 +37,38 @@ export function DramaProjectsPage() {
   }, [page]);
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold">漫剧项目</h1>
-        <p className="text-sm text-muted-foreground">查看用户创建的漫剧项目</p>
-      </div>
-      <div className="rounded-lg border bg-white">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>ID</TableHead>
-              <TableHead>标题</TableHead>
-              <TableHead>用户</TableHead>
-              <TableHead>创建时间</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {(data?.items || []).map((row) => (
-              <TableRow key={row.id}>
-                <TableCell>{row.id}</TableCell>
-                <TableCell>{row.title}</TableCell>
-                <TableCell>{row.user_email || row.user_id}</TableCell>
-                <TableCell>{row.created_at ? String(row.created_at).slice(0, 19) : "-"}</TableCell>
-              </TableRow>
+    <div className="admin-list-page">
+      <PageHeader description="查看用户创建的漫剧项目" />
+      <div className="admin-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>标题</th>
+              <th>用户</th>
+              <th>创建时间</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(data?.items ?? []).map((row) => (
+              <tr key={row.id}>
+                <td>{row.id}</td>
+                <td>{row.title}</td>
+                <td>{row.user_email ?? row.user_id}</td>
+                <td className="text-xs text-[var(--admin-muted)]">
+                  {row.created_at ? new Date(row.created_at).toLocaleString() : "—"}
+                </td>
+              </tr>
             ))}
-            {!data?.items?.length ? (
-              <TableRow>
-                <TableCell colSpan={4} className="text-center text-muted-foreground">
-                  暂无数据
-                </TableCell>
-              </TableRow>
+            {(data?.items.length ?? 0) === 0 ? (
+              <tr>
+                <td colSpan={4} className="!text-center text-[var(--admin-muted)]">
+                  暂无项目
+                </td>
+              </tr>
             ) : null}
-          </TableBody>
-        </Table>
+          </tbody>
+        </table>
       </div>
       {data?.meta ? (
         <PaginationBar

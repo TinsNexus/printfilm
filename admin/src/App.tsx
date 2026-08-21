@@ -6,6 +6,8 @@ import { LoginPage } from "@/pages/LoginPage";
 import { OrdersPage } from "@/pages/OrdersPage";
 import { ProjectsPage } from "@/pages/ProjectsPage";
 import { DramaProjectsPage } from "@/pages/DramaProjectsPage";
+import { QueuesPage } from "@/pages/QueuesPage";
+import { SettingsPage } from "@/pages/SettingsPage";
 import { TemplatesPage } from "@/pages/TemplatesPage";
 import { UsersPage } from "@/pages/UsersPage";
 import { WorksPage } from "@/pages/WorksPage";
@@ -34,6 +36,8 @@ export default function App() {
           <Route path="drama-projects" element={<DramaProjectsPage />} />
           <Route path="works" element={<WorksPage />} />
           <Route path="templates" element={<TemplatesPage />} />
+          <Route path="queues" element={<QueuesPage />} />
+          <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

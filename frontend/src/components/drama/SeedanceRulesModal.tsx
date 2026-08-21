@@ -231,13 +231,6 @@ export function SeedanceRulesModal({ open, onClose }: Props) {
               会按剧本与资产重新规划各镜脚本与 @duration 结构；进行中的视频生成需等待完成后再操作，以免状态冲突。空镜须用「空镜：…」等画面写法，勿写成对白。
             </p>
 
-            <h4>分镜板多宫格（路径 D）</h4>
-            <ul className="seedance-rules-list">
-              <li>顶栏「导入分镜板」：上传 N 宫格图并指定行列</li>
-              <li>≤4 格 → D-1 单镜多段时间戳；≥5 格 → D-2 每格一镜</li>
-              <li>可同时选择六式剪辑节奏（呼吸/心跳/海浪等）写入各段或各镜时长</li>
-              <li>正文自动注入「不复刻网格边框/编号/分隔线」约束</li>
-            </ul>
           </div>
         ) : null}
       </div>

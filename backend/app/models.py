@@ -47,6 +47,9 @@ class User(Base):
     billing_unlimited: Mapped[bool] = mapped_column(Boolean, default=False)
     # user | admin
     role: Mapped[str] = mapped_column(String(16), default="user")
+    avatar_url: Mapped[str] = mapped_column(String(512), default="")
+    # 联系手机，仅记录，不走短信验证
+    phone: Mapped[str] = mapped_column(String(32), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     projects: Mapped[list["Project"]] = relationship(back_populates="owner")
@@ -149,7 +152,6 @@ class PipelineJob(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
     stage: Mapped[str] = mapped_column(String(32))
-    celery_task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     progress: Mapped[int] = mapped_column(Integer, default=0)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     error_msg: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -226,3 +228,25 @@ class Order(Base):
     trade_no: Mapped[str | None] = mapped_column(String(128), nullable=True)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ToolRun(Base):
+    """独立创作工具一次生成记录，供个人中心回看。"""
+
+    __tablename__ = "tool_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    tool_id: Mapped[str] = mapped_column(String(16), index=True)
+    kind: Mapped[str] = mapped_column(String(16), default="image")
+    status: Mapped[str] = mapped_column(String(16), default="succeeded", index=True)
+    prompt: Mapped[str] = mapped_column(Text, default="")
+    preview_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    urls: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    task_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    params: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

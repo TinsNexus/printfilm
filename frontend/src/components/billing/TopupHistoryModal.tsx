@@ -32,7 +32,7 @@ function formatTime(iso?: string | null) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-/** 充值记录弹窗：列出近期订单与到账状态 */
+/** 充值记录弹窗：列出近期订单与到账状态（过期待支付由后台自动关闭） */
 export default function TopupHistoryModal({ open, onClose }: Props) {
   /*
    * orders 订单列表

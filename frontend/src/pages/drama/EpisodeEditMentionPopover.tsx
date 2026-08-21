@@ -1,7 +1,7 @@
 /** 分集编辑：输入 @ 时弹出的资产 / 时长 / 运镜选择层 */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Aperture, Clapperboard, LayoutGrid, Timer, User } from 'lucide-react'
+import { Aperture, Clapperboard, LayoutGrid, Search, Timer, User } from 'lucide-react'
 import { resolveDramaMediaUrl, type DramaAsset } from '../../api/drama'
 import {
   DRAMA_CAMERA_LEXICON,
@@ -41,7 +41,6 @@ const TYPE_LABEL: Record<string, string> = {
   character: '角色',
   scene: '场景',
   prop: '道具',
-  material: '素材',
 }
 
 // 渲染 @ 引用弹层
@@ -63,21 +62,36 @@ export function EpisodeEditMentionPopover({
   onClose,
 }: Props) {
   const panelRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
   const [tab, setTab] = useState<TabKey>('assets')
   const [toolsView, setToolsView] = useState<ToolsView>('list')
   const [customDuration, setCustomDuration] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const effectiveQuery = useMemo(() => {
+    const typed = searchQuery.trim() || query.trim()
+    return typed.toLowerCase()
+  }, [query, searchQuery])
 
   const filteredAssets = useMemo(() => {
-    const q = query.trim().toLowerCase()
     let list = assets
     if (scope === 'episode') {
       list = list.filter((a) => referencedIds.has(a.id))
       // 本集无引用时回退全剧，避免空列表无法插入
       if (list.length === 0) list = assets
     }
-    if (!q) return list
-    return list.filter((a) => (a.name || '').toLowerCase().includes(q) || String(a.id).includes(q))
-  }, [assets, query, referencedIds, scope])
+    if (!effectiveQuery) return list
+    return list.filter((a) => {
+      const name = (a.name || '').toLowerCase()
+      const typeKey = a.asset_type || a.type
+      const typeLabel = (TYPE_LABEL[typeKey] || typeKey || '').toLowerCase()
+      return (
+        name.includes(effectiveQuery) ||
+        typeLabel.includes(effectiveQuery) ||
+        String(a.id).includes(effectiveQuery)
+      )
+    })
+  }, [assets, effectiveQuery, referencedIds, scope])
 
   const filteredCamera = useMemo(
     () => filterDramaCameraLexicon(DRAMA_CAMERA_LEXICON, toolsView === 'camera' ? query : ''),
@@ -102,8 +116,32 @@ export function EpisodeEditMentionPopover({
       setTab('assets')
       setToolsView('list')
       setCustomDuration('')
+      setSearchQuery('')
     }
   }, [open])
+
+  useEffect(() => {
+    if (!open || tab !== 'assets') return
+    const t = window.setTimeout(() => searchRef.current?.focus(), 0)
+    return () => window.clearTimeout(t)
+  }, [open, tab])
+
+  useEffect(() => {
+    onActiveIndexChange(0)
+  }, [effectiveQuery, onActiveIndexChange, scope, tab])
+
+  useEffect(() => {
+    if (!open || tab !== 'assets') return
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== 'Enter' || filteredAssets.length === 0) return
+      const target = e.target as HTMLElement
+      if (!target.closest('.drama-ep-mention-pop-search')) return
+      e.preventDefault()
+      onSelectAsset(filteredAssets[Math.min(activeIndex, filteredAssets.length - 1)])
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [activeIndex, filteredAssets, onSelectAsset, open, tab])
 
   useEffect(() => {
     if (!open) return
@@ -200,6 +238,29 @@ export function EpisodeEditMentionPopover({
               全剧
             </button>
           </div>
+          <label className="drama-ep-mention-pop-search">
+            <Search size={14} strokeWidth={2} aria-hidden />
+            <input
+              ref={searchRef}
+              type="search"
+              value={searchQuery}
+              placeholder="搜索资产名称、类型…"
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onMouseDown={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault()
+                  onActiveIndexChange(Math.min(activeIndex + 1, Math.max(filteredAssets.length - 1, 0)))
+                } else if (e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  onActiveIndexChange(Math.max(activeIndex - 1, 0))
+                } else if (e.key === 'Escape') {
+                  e.preventDefault()
+                  onClose()
+                }
+              }}
+            />
+          </label>
           <div className="drama-ep-mention-pop-list">
             {filteredAssets.length === 0 ? (
               <p className="drama-ep-mention-pop-empty">无匹配资产</p>

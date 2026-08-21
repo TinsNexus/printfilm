@@ -302,3 +302,85 @@ def sku_by_id(sku_id: str) -> dict[str, Any] | None:
         if s["id"] == sku_id:
             return s
     return None
+
+
+# 待支付订单有效期（秒），与前端扫码倒计时一致
+ORDER_EXPIRE_SECONDS = 300
+
+
+async def close_expired_pending_orders(
+    db: AsyncSession,
+    *,
+    user_id: int | None = None,
+    out_trade_no: str | None = None,
+) -> int:
+    """将超时未支付的 pending 订单自动标为 closed，返回关闭条数。"""
+    from datetime import datetime, timedelta, timezone
+
+    from app.models import Order
+
+    now = datetime.now(timezone.utc)
+    stmt = select(Order).where(Order.status == "pending")
+    if user_id is not None:
+        stmt = stmt.where(Order.user_id == user_id)
+    if out_trade_no is not None:
+        stmt = stmt.where(Order.out_trade_no == out_trade_no)
+    rows = (await db.execute(stmt)).scalars().all()
+    closed = 0
+    for order in rows:
+        created = order.created_at
+        if created is None:
+            continue
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        age = (now - created).total_seconds()
+        if age < ORDER_EXPIRE_SECONDS:
+            continue
+        order.status = "closed"
+        closed += 1
+    if closed:
+        await db.commit()
+    return closed
+
+
+async def settle_usage_charge(
+    db: AsyncSession,
+    user: User,
+    charge_fen: int,
+    *,
+    ref_type: str = "api",
+    ref_id: str = "",
+) -> None:
+    """API 等即时扣费：余额不足时抛 ValueError。"""
+    if not billing_active(user):
+        return
+    need = max(0, int(charge_fen))
+    if need <= 0:
+        return
+    available = int(user.balance_fen or 0)
+    if available < need:
+        raise ValueError(f"余额不足：需要 ¥{need / 100:.2f}，当前 ¥{available / 100:.2f}，请先充值")
+    await _ledger(
+        db,
+        user,
+        -need,
+        "settle",
+        ref_type=ref_type,
+        ref_id=ref_id,
+        note="api_usage",
+    )
+    await db.flush()
+
+
+def billing_key_label(billing_key: str) -> str:
+    """把 billing_key 转成用户可读的能力名称。"""
+    key = (billing_key or "").strip().lower()
+    if key == "llm_chat":
+        return "LLM 对话"
+    if key == "seedream":
+        return "图片生成"
+    if key.startswith("seedance"):
+        return "视频生成"
+    if key == "tts":
+        return "语音合成"
+    return billing_key or "其他"

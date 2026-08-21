@@ -24,6 +24,8 @@ export type CanvasAssetNodeData = {
   mediaUrl?: string | null
   textContent?: string
   generating?: boolean
+  /** 视频节点 Seedance 生成参数 */
+  videoOptions?: Record<string, unknown>
   [key: string]: unknown
 }
 
@@ -35,11 +37,12 @@ export const CANVAS_UPLOADABLE_KINDS = new Set<CanvasNodeKind>([
   'video',
 ])
 
-/** 支持 AI 生图的节点类型 */
+/** 支持提示词 + AI 生成的节点类型 */
 export const CANVAS_GENERATABLE_KINDS = new Set<CanvasNodeKind>([
   'character',
   'scene',
   'image',
+  'video',
 ])
 
 /** 节点类型对应的 Drama asset_type */

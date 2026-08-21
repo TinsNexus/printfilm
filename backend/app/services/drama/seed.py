@@ -15,6 +15,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models_drama import (
     DramaAsset,
+    DramaAssetEpisode,
     DramaEpisode,
     DramaEpisodeFragment,
     DramaFragmentAssetRef,
@@ -28,6 +29,7 @@ from app.services.drama.build_fragments import (
     parse_cast_names,
     split_episode_content_into_scenes,
 )
+from app.services.drama.access import detach_task_fragment_refs
 from app.services.drama.extract_props_materials import extract_props_materials
 from app.services.drama.seed_asset_params import (
     build_character_params,
@@ -39,6 +41,264 @@ logger = logging.getLogger(__name__)
 
 # PROMPT_REFRESH_CONCURRENCY 并发生图提示词 LLM 数
 PROMPT_REFRESH_CONCURRENCY = 3
+
+# 资产库类型（不含 voice 等）
+LIBRARY_ASSET_TYPES = frozenset({"character", "scene", "prop", "material", "none"})
+
+# 纯音色占位名（不应建成角色）
+VOICE_ONLY_NAMES = frozenset({"音色", "声音", "语音", "旁白音色", "旁白声音", "voice"})
+
+# 名称尾部音色标记：如「李白音色」「现代科普旁白（声音）」
+VOICE_LIKE_NAME_RE = re.compile(
+    r"(?:音色|的声音|语音)$|"
+    r"[\(（]\s*(?:声音|音色|语音|旁白音色|voice)\s*[\)）]\s*$",
+    re.IGNORECASE,
+)
+
+
+def _normalize_asset_name(name: str) -> str:
+    """统一资产名空白，避免「张三」与「张三 」重复入库。"""
+    return re.sub(r"\s+", " ", (name or "").strip())
+
+
+def _is_voice_like_character_name(name: str) -> bool:
+    """判断名称是否为音色/声音标注，不应作为角色资产。"""
+    norm = _normalize_asset_name(name)
+    if not norm:
+        return False
+    if norm.lower() in VOICE_ONLY_NAMES or norm in VOICE_ONLY_NAMES:
+        return True
+    return bool(VOICE_LIKE_NAME_RE.search(norm))
+
+
+def _character_name_for_seed(name: str) -> str | None:
+    """规范化可建库的角色名；纯音色占位返回 None，带（声音）/音色后缀则还原基名。"""
+    norm = _normalize_asset_name(name)
+    if not norm:
+        return None
+    if norm.lower() in {x.lower() for x in VOICE_ONLY_NAMES} or norm in VOICE_ONLY_NAMES:
+        return None
+    if VOICE_LIKE_NAME_RE.search(norm):
+        base = _normalize_asset_name(VOICE_LIKE_NAME_RE.sub("", norm))
+        if not base or base in VOICE_ONLY_NAMES:
+            return None
+        return base
+    return norm
+
+
+def _asset_dedupe_key(asset_type: str, name: str) -> tuple[str, str]:
+    """(类型, 规范化名称) 作为去重键；none 与 material 视为同类。"""
+    kind = (asset_type or "").lower()
+    if kind == "none":
+        kind = "material"
+    return (kind, _normalize_asset_name(name))
+
+
+# 评分：优先保留有封面/URL、有音色绑定的资产；同分取更小 id（更早创建）
+def _duplicate_asset_keep_score(asset: DramaAsset) -> tuple[int, int, int]:
+    has_media = 1 if ((asset.cover or "").strip() or (asset.url or "").strip()) else 0
+    params = asset.params if isinstance(asset.params, dict) else {}
+    has_voice = 0
+    if isinstance(params.get("voiceAudio"), dict) and params["voiceAudio"]:
+        has_voice = 1
+    canvas = params.get("canvas") if isinstance(params.get("canvas"), dict) else {}
+    if isinstance(canvas.get("voiceAudio"), dict) and canvas["voiceAudio"]:
+        has_voice = 1
+    return (has_media, has_voice, -int(asset.id or 0))
+
+
+async def merge_duplicate_library_assets(db: AsyncSession, project_id: int) -> int:
+    """合并同项目内同类型同名库资产：引用改挂到保留项，删除重复行。"""
+    assets = list(
+        (
+            await db.execute(select(DramaAsset).where(DramaAsset.project_id == int(project_id)))
+        )
+        .scalars()
+        .all()
+    )
+    groups: dict[tuple[str, str], list[DramaAsset]] = {}
+    for asset in assets:
+        kind = (asset.type or "").lower()
+        if kind not in LIBRARY_ASSET_TYPES:
+            continue
+        name = _normalize_asset_name(asset.name or "")
+        if not name:
+            continue
+        groups.setdefault(_asset_dedupe_key(kind, name), []).append(asset)
+
+    removed = 0
+    for group in groups.values():
+        if len(group) < 2:
+            continue
+        ranked = sorted(group, key=_duplicate_asset_keep_score, reverse=True)
+        keep = ranked[0]
+        keep_id = int(keep.id)
+        for dup in ranked[1:]:
+            dup_id = int(dup.id)
+            refs = list(
+                (
+                    await db.execute(
+                        select(DramaFragmentAssetRef).where(
+                            DramaFragmentAssetRef.asset_id == dup_id
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for ref in refs:
+                exists = (
+                    await db.execute(
+                        select(DramaFragmentAssetRef.id).where(
+                            DramaFragmentAssetRef.fragment_id == ref.fragment_id,
+                            DramaFragmentAssetRef.asset_id == keep_id,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if exists is not None:
+                    await db.delete(ref)
+                else:
+                    ref.asset_id = keep_id
+            links = list(
+                (
+                    await db.execute(
+                        select(DramaAssetEpisode).where(DramaAssetEpisode.asset_id == dup_id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for link in links:
+                exists = (
+                    await db.execute(
+                        select(DramaAssetEpisode.id).where(
+                            DramaAssetEpisode.asset_id == keep_id,
+                            DramaAssetEpisode.episode_id == link.episode_id,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if exists is not None:
+                    await db.delete(link)
+                else:
+                    link.asset_id = keep_id
+            await db.delete(dup)
+            removed += 1
+            logger.info(
+                "合并重复资产 keep_id=%s removed_id=%s type=%s name=%s",
+                keep_id,
+                dup_id,
+                keep.type,
+                keep.name,
+            )
+    if removed:
+        await db.flush()
+    return removed
+
+
+async def _rebind_and_delete_asset(
+    db: AsyncSession,
+    *,
+    remove: DramaAsset,
+    keep_id: int | None,
+) -> None:
+    """删除资产前将其分镜引用/分集关联改挂到 keep_id（若有）。"""
+    remove_id = int(remove.id)
+    refs = list(
+        (
+            await db.execute(
+                select(DramaFragmentAssetRef).where(DramaFragmentAssetRef.asset_id == remove_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for ref in refs:
+        if keep_id is None:
+            await db.delete(ref)
+            continue
+        exists = (
+            await db.execute(
+                select(DramaFragmentAssetRef.id).where(
+                    DramaFragmentAssetRef.fragment_id == ref.fragment_id,
+                    DramaFragmentAssetRef.asset_id == keep_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if exists is not None:
+            await db.delete(ref)
+        else:
+            ref.asset_id = keep_id
+    links = list(
+        (
+            await db.execute(select(DramaAssetEpisode).where(DramaAssetEpisode.asset_id == remove_id))
+        )
+        .scalars()
+        .all()
+    )
+    for link in links:
+        if keep_id is None:
+            await db.delete(link)
+            continue
+        exists = (
+            await db.execute(
+                select(DramaAssetEpisode.id).where(
+                    DramaAssetEpisode.asset_id == keep_id,
+                    DramaAssetEpisode.episode_id == link.episode_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if exists is not None:
+            await db.delete(link)
+        else:
+            link.asset_id = keep_id
+    await db.delete(remove)
+
+
+async def purge_voice_like_character_assets(db: AsyncSession, project_id: int) -> int:
+    """清理误建为角色的音色名资产（如「某某（声音）」），引用尽量并回同名基角色。"""
+    assets = list(
+        (
+            await db.execute(select(DramaAsset).where(DramaAsset.project_id == int(project_id)))
+        )
+        .scalars()
+        .all()
+    )
+    # base_character_ids 规范化角色名 → 资产 id（非音色名）
+    base_character_ids: dict[str, int] = {}
+    for asset in assets:
+        if (asset.type or "").lower() != "character":
+            continue
+        name = _normalize_asset_name(asset.name or "")
+        if not name or _is_voice_like_character_name(name):
+            continue
+        prev = base_character_ids.get(name)
+        if prev is None or int(asset.id) < prev:
+            base_character_ids[name] = int(asset.id)
+
+    removed = 0
+    for asset in assets:
+        if (asset.type or "").lower() != "character":
+            continue
+        name = _normalize_asset_name(asset.name or "")
+        if not _is_voice_like_character_name(name):
+            continue
+        # 去掉尾部音色标记后尝试并回基角色
+        base = VOICE_LIKE_NAME_RE.sub("", name).strip()
+        base = _normalize_asset_name(base)
+        keep_id = base_character_ids.get(base) if base else None
+        if keep_id is not None and keep_id == int(asset.id):
+            keep_id = None
+        await _rebind_and_delete_asset(db, remove=asset, keep_id=keep_id)
+        removed += 1
+        logger.info(
+            "清理音色名角色资产 removed_id=%s name=%s keep_id=%s",
+            asset.id,
+            name,
+            keep_id,
+        )
+    if removed:
+        await db.flush()
+    return removed
 
 
 @dataclass
@@ -144,15 +404,33 @@ async def seed_assets_from_script(
 
     summary = script.summary if isinstance(script.summary, dict) else {}
     story_type = str(summary.get("storyType") or "").strip()
+    # 先合并历史并发 seed 留下的同名重复，并清掉误入角色的音色名
+    merged = await merge_duplicate_library_assets(db, int(project.id))
+    purged = await purge_voice_like_character_assets(db, int(project.id))
+    if merged or purged:
+        logger.info(
+            "seed 前清理资产 project_id=%s merged=%s voice_like_purged=%s",
+            project.id,
+            merged,
+            purged,
+        )
     existing = list(
         (await db.execute(select(DramaAsset).where(DramaAsset.project_id == project.id)))
         .scalars()
         .all()
     )
-    existing_names = {(a.name or "").strip() for a in existing if a.type in {"character", "scene"}}
-    has_prop = any((a.type or "") == "prop" for a in existing)
-    has_material = any((a.type or "") in {"material", "none"} for a in existing)
+    existing_by_key: dict[tuple[str, str], DramaAsset] = {}
+    for asset in existing:
+        name = _normalize_asset_name(asset.name or "")
+        if not name:
+            continue
+        key = _asset_dedupe_key(asset.type or "", name)
+        prev = existing_by_key.get(key)
+        if prev is None or _duplicate_asset_keep_score(asset) > _duplicate_asset_keep_score(prev):
+            existing_by_key[key] = asset
+
     project_params = dict(project.params or {}) if isinstance(project.params, dict) else {}
+    has_prop = any((a.type or "") == "prop" for a in existing)
     props_seeded = bool(project_params.get("props_materials_seeded"))
     if reextract_props:
         props_seeded = False
@@ -169,11 +447,6 @@ async def seed_assets_from_script(
         reextract_props,
         len(existing),
     )
-    existing_by_key = {
-        (a.type or "", (a.name or "").strip()): a
-        for a in existing
-        if (a.name or "").strip()
-    }
 
     # refresh：先把摘要人物/场景字段同步到已有资产
     if refresh_prompts:
@@ -181,7 +454,7 @@ async def seed_assets_from_script(
             if not isinstance(ch, dict):
                 continue
             name = str(ch.get("name") or "").strip()
-            asset = existing_by_key.get(("character", name))
+            asset = existing_by_key.get(_asset_dedupe_key("character", name))
             if asset:
                 asset.params = _merge_preserved_asset_params(
                     dict(asset.params or {}),
@@ -200,11 +473,12 @@ async def seed_assets_from_script(
             summary_by_name[name] = ch
     # cast_names 分集「出场人物」全量名单（补摘要遗漏）
     cast_names = _extract_cast_names_from_bodies(bodies)
-    # character_names 摘要 + 出场人物合并保序
+    # character_names 摘要 + 出场人物合并保序（跳过音色/声音标注名）
     character_names: list[str] = []
     for name in list(summary_by_name.keys()) + cast_names:
-        if name not in character_names:
-            character_names.append(name)
+        seed_name = _character_name_for_seed(name)
+        if seed_name and seed_name not in character_names:
+            character_names.append(seed_name)
 
     scene_names: list[str] = []
     for body in bodies:
@@ -219,7 +493,7 @@ async def seed_assets_from_script(
 
     if refresh_prompts:
         for scene in scene_names:
-            asset = existing_by_key.get(("scene", scene))
+            asset = existing_by_key.get(_asset_dedupe_key("scene", scene))
             if asset:
                 asset.params = _merge_preserved_asset_params(
                     dict(asset.params or {}),
@@ -227,63 +501,63 @@ async def seed_assets_from_script(
                 )
 
     for name in character_names:
-        if not name or name in existing_names:
+        norm = _character_name_for_seed(name)
+        if not norm:
             continue
-        ch = summary_by_name.get(name) or _character_stub_from_cast(
-            name, story_type, summary=summary, bodies=bodies,
+        char_key = _asset_dedupe_key("character", norm)
+        if char_key in existing_by_key:
+            continue
+        ch = summary_by_name.get(name) or summary_by_name.get(norm) or _character_stub_from_cast(
+            norm, story_type, summary=summary, bodies=bodies,
         )
         asset = DramaAsset(
             project_id=project.id,
             type="character",
             asset_type="image",
-            name=name,
+            name=norm,
             params=build_character_params(ch),
         )
         db.add(asset)
         created.append(asset)
-        existing_names.add(name)
-        existing_by_key[("character", name)] = asset
+        existing_by_key[char_key] = asset
 
     for scene in scene_names[:40]:
-        if scene in existing_names:
+        norm = _normalize_asset_name(scene)
+        if not norm:
+            continue
+        scene_key = _asset_dedupe_key("scene", norm)
+        if scene_key in existing_by_key:
             continue
         asset = DramaAsset(
             project_id=project.id,
             type="scene",
             asset_type="image",
-            name=scene,
-            params=build_scene_params(scene, story_type),
+            name=norm,
+            params=build_scene_params(norm, story_type),
         )
         db.add(asset)
         created.append(asset)
-        existing_names.add(scene)
-        existing_by_key[("scene", scene)] = asset
+        existing_by_key[scene_key] = asset
 
-    # 道具 / 素材：尚无该类资产、或强制重抽时调用 LLM
+    # 道具：尚无道具、或强制重抽时调用 LLM（素材已停用，不再创建）
     need_props = not has_prop
-    need_materials = not has_material
-    should_extract_props = not props_seeded and (
-        need_props or need_materials or reextract_props
-    )
+    should_extract_props = not props_seeded and (need_props or reextract_props)
     if should_extract_props:
         try:
             extracted = await extract_props_materials(summary=summary, episode_bodies=bodies)
         except Exception:
             if reextract_props:
                 raise
-            logger.exception("道具/素材 LLM 抽取失败 project_id=%s", project.id)
+            logger.exception("道具 LLM 抽取失败 project_id=%s", project.id)
             extracted = {"props": [], "materials": []}
-        prop_names = {(a.name or "").strip() for a in existing if a.type == "prop"}
-        material_names = {
-            (a.name or "").strip() for a in existing if (a.type or "") in {"material", "none"}
-        }
         if need_props or reextract_props:
             for item in extracted.get("props") or []:
-                name = str(item.get("name") or "").strip()
+                name = _normalize_asset_name(str(item.get("name") or ""))
                 visual = str(item.get("visualPrompt") or "").strip()
                 if not name:
                     continue
-                existing_asset = existing_by_key.get(("prop", name))
+                prop_key = _asset_dedupe_key("prop", name)
+                existing_asset = existing_by_key.get(prop_key)
                 if existing_asset and reextract_props and visual:
                     existing_asset.params = _merge_preserved_asset_params(
                         dict(existing_asset.params or {}),
@@ -291,7 +565,7 @@ async def seed_assets_from_script(
                     )
                     props_updated += 1
                     continue
-                if not name or name in prop_names or name in existing_names:
+                if prop_key in existing_by_key:
                     continue
                 asset = DramaAsset(
                     project_id=project.id,
@@ -302,39 +576,7 @@ async def seed_assets_from_script(
                 )
                 db.add(asset)
                 created.append(asset)
-                prop_names.add(name)
-                existing_names.add(name)
-                existing_by_key[("prop", name)] = asset
-        if need_materials or reextract_props:
-            for item in extracted.get("materials") or []:
-                name = str(item.get("name") or "").strip()
-                visual = str(item.get("visualPrompt") or "").strip()
-                if not name:
-                    continue
-                existing_asset = existing_by_key.get(("material", name)) or existing_by_key.get(
-                    ("none", name)
-                )
-                if existing_asset and reextract_props and visual:
-                    existing_asset.params = _merge_preserved_asset_params(
-                        dict(existing_asset.params or {}),
-                        build_named_image_params(visual, "16:9", kind="material"),
-                    )
-                    props_updated += 1
-                    continue
-                if not name or name in material_names or name in existing_names:
-                    continue
-                asset = DramaAsset(
-                    project_id=project.id,
-                    type="material",
-                    asset_type="image",
-                    name=name,
-                    params=build_named_image_params(visual, "16:9", kind="material"),
-                )
-                db.add(asset)
-                created.append(asset)
-                material_names.add(name)
-                existing_names.add(name)
-                existing_by_key[("material", name)] = asset
+                existing_by_key[prop_key] = asset
         project_params["props_materials_seeded"] = True
         project.params = project_params
 
@@ -519,6 +761,19 @@ async def seed_episodes_from_script(
     return await _reload_episodes(db, project.id)
 
 
+async def _list_episode_fragments(
+    db: AsyncSession,
+    episode_id: int,
+) -> list[DramaEpisodeFragment]:
+    # 显式查询分镜，避免 async 会话下 lazy load episode.fragments 触发 MissingGreenlet
+    result = await db.execute(
+        select(DramaEpisodeFragment)
+        .where(DramaEpisodeFragment.episode_id == episode_id)
+        .order_by(DramaEpisodeFragment.sort_order.asc())
+    )
+    return list(result.scalars().all())
+
+
 async def _replace_episode_fragments(
     db: AsyncSession,
     episode: DramaEpisode,
@@ -532,7 +787,7 @@ async def _replace_episode_fragments(
     continuation: bool = False,
 ) -> list[dict[str, Any]]:
     # 删除旧分镜并重建；preserve_protected 时保留已有视频/手改分镜
-    existing = list(episode.fragments or [])
+    existing = await _list_episode_fragments(db, episode.id)
     protected = (
         sorted(
             [f for f in existing if _fragment_is_protected(f)],
@@ -542,6 +797,8 @@ async def _replace_episode_fragments(
         else []
     )
     protected_ids = {int(f.id) for f in protected}
+    stale_ids = [int(f.id) for f in existing if int(f.id) not in protected_ids]
+    await detach_task_fragment_refs(db, stale_ids)
     for old in existing:
         if int(old.id) not in protected_ids:
             await db.delete(old)
@@ -710,7 +967,7 @@ def _episode_bodies(episode_content: Any) -> list[str]:
 
 
 def _extract_cast_names_from_bodies(bodies: list[str]) -> list[str]:
-    """从分集正文「出场人物：」行收集全部角色名（去重保序）。"""
+    """从分集正文「出场人物：」行收集全部角色名（去重保序，跳过音色标注）。"""
     # seen 已收录名
     seen: set[str] = set()
     # names 保序结果
@@ -721,9 +978,10 @@ def _extract_cast_names_from_bodies(bodies: list[str]) -> list[str]:
             if not match:
                 continue
             for name in parse_cast_names(match.group(1)):
-                if name not in seen:
-                    seen.add(name)
-                    names.append(name)
+                seed_name = _character_name_for_seed(name)
+                if seed_name and seed_name not in seen:
+                    seen.add(seed_name)
+                    names.append(seed_name)
     return names
 
 

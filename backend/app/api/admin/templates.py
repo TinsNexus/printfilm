@@ -17,6 +17,23 @@ from app.schemas import (
 router = APIRouter()
 
 
+@router.get("/templates/meta")
+async def templates_meta(
+    _admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    # 汇总全库分类标签（用于管理端筛选）
+    result = await db.execute(select(Template.category))
+    categories: set[str] = set()
+    for (cat_list,) in result.all():
+        if not isinstance(cat_list, list):
+            continue
+        for item in cat_list:
+            if isinstance(item, str) and item.strip():
+                categories.add(item.strip())
+    return {"categories": sorted(categories)}
+
+
 @router.get("/templates", response_model=AdminTemplateListOut)
 async def list_templates(
     page: int = Query(1, ge=1),

@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { PageHeader } from "@/components/ui/page";
 import { fenToYuan } from "@/lib/utils";
 import { ledgerKindLabel, orderStatusLabel, payTypeLabel } from "@/lib/statusLabels";
 
@@ -73,11 +74,8 @@ export function OrdersPage() {
   }, [ledgerPage]);
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="text-xl font-semibold text-[#303133]">订单与流水</h2>
-        <p className="mt-1 text-sm text-[#909399]">查看充值单与钱包流水</p>
-      </div>
+    <div className="admin-list-page">
+      <PageHeader description="查看充值单与钱包流水" />
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="orders">充值订单</TabsTrigger>

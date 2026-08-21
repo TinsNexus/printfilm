@@ -14,12 +14,13 @@ from app.models_drama import DramaAsset
 from app.schemas_drama import (
     DramaAssetOut,
     DramaImageGenerateRequest,
+    DramaVideoGenerateRequest,
     DramaVoiceGenerateRequest,
     DramaVoicePromptRequest,
 )
 from app.services.drama.access import get_owned_drama_project
 from app.services.drama.generation import generate_voice_asset_audio
-from app.services.drama.jobs import dispatch_asset_image_job
+from app.services.drama.jobs import dispatch_asset_image_job, dispatch_asset_video_job
 from app.services.drama.voice_prompt import suggest_voice_prompt_for_character
 
 router = APIRouter()
@@ -85,6 +86,64 @@ async def generate_image(
         "task_id": task_id,
         "asset_id": asset.id if asset else None,
         "asset": DramaAssetOut.model_validate(asset).model_dump() if asset else None,
+    }
+
+
+@router.post("/generation/video")
+async def generate_video(
+    body: DramaVideoGenerateRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    # 入队画布资产生视频；前端轮询资产 params.generation
+    project = await get_owned_drama_project(db, body.project_id, user, with_script=True)
+    asset = await db.get(DramaAsset, body.asset_id)
+    if not asset or asset.project_id != project.id:
+        raise HTTPException(status_code=404, detail="资产不存在")
+    prompt = (body.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="缺少 prompt")
+
+    params = dict(asset.params or {})
+    params["generation"] = {"status": "generating"}
+    params["visualPrompt"] = prompt
+    asset.params = params
+    await db.commit()
+    await db.refresh(asset)
+
+    style_id = (body.image_style_id or "").strip() or str(
+        (project.params or {}).get("image_style_id") or ""
+    ).strip() or None
+    task_id = dispatch_asset_video_job(
+        project.id,
+        user.id,
+        prompt,
+        asset.id,
+        model_id=body.model_id,
+        aspect_ratio=body.aspect_ratio,
+        resolution=body.resolution,
+        duration_sec=body.duration_sec,
+        image_style_id=style_id,
+        reference_asset_ids=body.reference_asset_ids,
+    )
+    logger.info(
+        "已入队资产生视频 project_id=%s asset_id=%s model=%s size=%s/%s duration=%s task_id=%s prompt_len=%s",
+        project.id,
+        asset.id,
+        body.model_id,
+        body.aspect_ratio,
+        body.resolution,
+        body.duration_sec,
+        task_id,
+        len(prompt),
+    )
+    return {
+        "ok": True,
+        "queued": True,
+        "status": "generating",
+        "task_id": task_id,
+        "asset_id": asset.id,
+        "asset": DramaAssetOut.model_validate(asset).model_dump(),
     }
 
 

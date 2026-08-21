@@ -3,12 +3,17 @@ import { Link } from "react-router-dom";
 import {
   Banknote,
   Clapperboard,
+  Layers,
   Receipt,
+  Settings,
   Shapes,
   Users,
   Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
+import { StatCard } from "@/components/admin/StatCard";
+import { PageSection } from "@/components/admin/PageSection";
+import { PageHeader } from "@/components/ui/page";
 import { api, type AdminOrder, type AdminStats, type PageMeta } from "@/api/client";
 import { fenToYuan } from "@/lib/utils";
 import { orderStatusLabel, payTypeLabel, projectStatusLabel } from "@/lib/statusLabels";
@@ -25,19 +30,15 @@ function statusClass(status: string): string {
   return "is-warn";
 }
 
-// Dashboard matching reference ops console
+// Dashboard overview
 export function DashboardPage() {
-  /*
-   * stats aggregate stats
-   * orders recent orders
-   */
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [orders, setOrders] = useState<AdminOrder[]>([]);
 
   useEffect(() => {
     Promise.all([
       api<AdminStats>("/api/admin/stats"),
-      api<OrderRes>("/api/admin/orders?page=1&page_size=5"),
+      api<OrderRes>("/api/admin/orders?page=1&page_size=8"),
     ])
       .then(([s, o]) => {
         setStats(s);
@@ -51,69 +52,52 @@ export function DashboardPage() {
   );
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-semibold text-[#303133]">仪表盘</h2>
-          <p className="mt-1 text-sm text-[#909399]">用户、订单与项目状态概览</p>
+    <div className="admin-page">
+      <PageHeader description="用户、订单与项目状态概览" />
+
+      <div className="admin-dashboard-top">
+        <StatCard label="用户总数" value={stats?.user_count ?? "—"} hint="总注册用户" icon={Users} />
+        <StatCard
+          label="累计已付"
+          value={stats ? `¥${fenToYuan(stats.order_paid_total_fen)}` : "—"}
+          hint="历史累计"
+          icon={Banknote}
+          tone="success"
+        />
+        <StatCard
+          label="今日已付"
+          value={stats ? `¥${fenToYuan(stats.order_paid_today_fen)}` : "—"}
+          hint="今日付款"
+          icon={Wallet}
+          tone="info"
+        />
+        <div className="admin-panel admin-stat-card tone-success">
+          <div className="admin-stat-label">项目状态</div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {statusEntries.length === 0 ? (
+              <span className="text-xs text-[var(--admin-muted)]">暂无数据</span>
+            ) : (
+              statusEntries.map(([status, count]) => (
+                <span key={status} className={`admin-status-pill !px-2 !py-1 !text-[11px] ${statusClass(status)}`}>
+                  {projectStatusLabel(status)} {count}
+                </span>
+              ))
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="admin-panel admin-stat-card">
-          <div className="admin-stat-icon">
-            <Users className="h-5 w-5" />
-          </div>
-          <div className="text-sm text-[#909399]">用户总数</div>
-          <div className="mt-2 text-3xl font-semibold tracking-tight">{stats?.user_count ?? "—"}</div>
-          <div className="mt-1 text-xs text-[#c0c4cc]">总注册用户</div>
-        </div>
-        <div className="admin-panel admin-stat-card">
-          <div className="admin-stat-icon">
-            <Banknote className="h-5 w-5" />
-          </div>
-          <div className="text-sm text-[#909399]">累计已付金额</div>
-          <div className="mt-2 text-3xl font-semibold tracking-tight">
-            ¥{stats ? fenToYuan(stats.order_paid_total_fen) : "—"}
-          </div>
-          <div className="mt-1 text-xs text-[#c0c4cc]">历史累计付款</div>
-        </div>
-        <div className="admin-panel admin-stat-card">
-          <div className="admin-stat-icon">
-            <Wallet className="h-5 w-5" />
-          </div>
-          <div className="text-sm text-[#909399]">今日已付金额</div>
-          <div className="mt-2 text-3xl font-semibold tracking-tight">
-            ¥{stats ? fenToYuan(stats.order_paid_today_fen) : "—"}
-          </div>
-          <div className="mt-1 text-xs text-[#c0c4cc]">今日付款金额</div>
-        </div>
-      </div>
-
-      <div className="admin-panel">
-        <div className="mb-3 text-sm font-medium text-[#303133]">项目状态分布</div>
-        <div className="flex flex-wrap gap-2">
-          {statusEntries.length === 0 ? (
-            <span className="text-sm text-[#909399]">暂无数据</span>
-          ) : (
-            statusEntries.map(([status, count]) => (
-              <span key={status} className={`admin-status-pill ${statusClass(status)}`}>
-                <span>{projectStatusLabel(status)}</span>
-                <strong className="font-semibold">{count}</strong>
-              </span>
-            ))
-          )}
-        </div>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-5">
-        <div className="admin-panel xl:col-span-3">
-          <div className="mb-3 flex items-center justify-between">
-            <div className="text-sm font-medium">最近订单</div>
-            <Link to="/orders" className="text-xs text-[#67c23a] hover:underline">
-              查看全部订单 →
+      <div className="admin-dashboard-body">
+        <PageSection
+          title="最近订单"
+          actions={
+            <Link to="/orders" className="admin-link">
+              全部 →
             </Link>
-          </div>
+          }
+          bodyClassName="!pt-0"
+          className="min-h-0"
+        >
           <div className="admin-table-wrap">
             <table>
               <thead>
@@ -129,7 +113,7 @@ export function DashboardPage() {
               <tbody>
                 {orders.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="!text-center text-[#909399]">
+                    <td colSpan={6} className="!text-center text-[var(--admin-muted)]">
                       暂无订单
                     </td>
                   </tr>
@@ -147,7 +131,7 @@ export function DashboardPage() {
                           {orderStatusLabel(o.status)}
                         </span>
                       </td>
-                      <td className="text-xs text-[#909399]">
+                      <td className="text-xs text-[var(--admin-muted)]">
                         {new Date(o.created_at).toLocaleString()}
                       </td>
                     </tr>
@@ -156,38 +140,44 @@ export function DashboardPage() {
               </tbody>
             </table>
           </div>
-        </div>
+        </PageSection>
 
-        <div className="admin-panel xl:col-span-2">
-          <div className="mb-3 text-sm font-medium">快捷操作</div>
-          <div className="grid grid-cols-2 gap-3">
-            <Link to="/templates" className="admin-quick-btn">
-              <Shapes className="h-4 w-4 text-[#67c23a]" />
-              模板管理
+        <PageSection title="快捷入口" bodyClassName="!pt-0">
+          <div className="grid grid-cols-2 gap-2">
+            <Link to="/templates" className="admin-quick-btn !flex-row !items-center !py-2.5">
+              <Shapes className="h-4 w-4" />
+              模板
             </Link>
-            <Link to="/orders" className="admin-quick-btn">
-              <Receipt className="h-4 w-4 text-[#67c23a]" />
-              充值记录
+            <Link to="/orders" className="admin-quick-btn !flex-row !items-center !py-2.5">
+              <Receipt className="h-4 w-4" />
+              订单
             </Link>
-            <Link to="/users" className="admin-quick-btn">
-              <Users className="h-4 w-4 text-[#67c23a]" />
-              用户列表
+            <Link to="/users" className="admin-quick-btn !flex-row !items-center !py-2.5">
+              <Users className="h-4 w-4" />
+              用户
             </Link>
-            <Link to="/projects" className="admin-quick-btn">
-              <Clapperboard className="h-4 w-4 text-[#67c23a]" />
-              项目管理
+            <Link to="/projects" className="admin-quick-btn !flex-row !items-center !py-2.5">
+              <Clapperboard className="h-4 w-4" />
+              项目
+            </Link>
+            <Link to="/settings" className="admin-quick-btn !flex-row !items-center !py-2.5">
+              <Settings className="h-4 w-4" />
+              配置
+            </Link>
+            <Link to="/queues" className="admin-quick-btn !flex-row !items-center !py-2.5">
+              <Layers className="h-4 w-4" />
+              任务
             </Link>
           </div>
-          <div className="mt-5 rounded-xl border border-[#ebeef5] bg-[#fafbfc] p-4">
-            <div className="mb-2 flex items-center justify-between text-sm">
-              <span className="font-medium">系统公告</span>
-              <span className="text-xs text-[#c0c4cc]">今天</span>
+          <div className="admin-notice">
+            <div className="admin-notice-title">
+              <span>系统公告</span>
             </div>
-            <p className="text-sm leading-relaxed text-[#606266]">
-              欢迎使用 PRINTFILM 管理后台。可在此管理用户额度、审核作品与模板上下架。
+            <p className="admin-notice-body !text-xs">
+              管理用户额度、审核作品与模板，并在任务中心监控统一任务平台。
             </p>
           </div>
-        </div>
+        </PageSection>
       </div>
     </div>
   );

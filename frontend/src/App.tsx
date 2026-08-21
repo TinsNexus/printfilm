@@ -4,6 +4,12 @@ import { DramaGenQueuePanel } from './components/drama/DramaGenQueuePanel'
 import AuthPage from './pages/AuthPage'
 import HistoryPage from './pages/HistoryPage'
 import HomePage from './pages/HomePage'
+import ToolsPage from './pages/ToolsPage'
+import ToolDetailPage from './pages/ToolDetailPage'
+import HelpPage from './pages/HelpPage'
+import { PrivacyPage, TermsPage } from './pages/LegalDocPage'
+import ContactPage from './pages/ContactPage'
+import SettingsPage from './pages/SettingsPage'
 import PricingPage from './pages/PricingPage'
 import StudioPage from './pages/StudioPage'
 import TemplatesPage from './pages/TemplatesPage'
@@ -27,6 +33,14 @@ export default function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/auth" element={<AuthPage />} />
         <Route path="/templates" element={<TemplatesPage />} />
+        <Route path="/tools" element={<ToolsPage />} />
+        <Route path="/tools/:toolId" element={<ToolDetailPage />} />
+        <Route path="/assets" element={<AssetLibraryPage />} />
+        <Route path="/help" element={<HelpPage />} />
+        <Route path="/terms" element={<TermsPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/contact" element={<ContactPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
         <Route path="/pricing" element={<PricingPage />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/studio/new" element={<CreateProjectPage />} />

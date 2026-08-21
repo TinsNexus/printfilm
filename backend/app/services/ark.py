@@ -17,6 +17,8 @@ from urllib.parse import urlparse
 import httpx
 
 from app.config import Settings, get_settings
+from app.schemas_routing import ResolvedModelRoute
+from app.services.logical_model_router import resolve_logical_model, resolve_logical_model_id
 from app.services import storage
 from app.services.ffmpeg_compose import is_near_silent_audio
 from app.services.llm_client import chat_completions
@@ -198,6 +200,27 @@ class ArkGateway:
             path = "/" + path
         return f"{base}{path}"
 
+    # 按逻辑路由解析 ARK 渠道凭证
+    def _resolve_ark_route(self, capability: str, model_id: str | None) -> ResolvedModelRoute | None:
+        logical_id = resolve_logical_model_id(capability, model_id)
+        return resolve_logical_model(capability, logical_id)
+
+    def _route_headers(self, route: ResolvedModelRoute | None = None) -> dict[str, str]:
+        if route and route.api_key:
+            return {
+                "Authorization": f"Bearer {route.api_key}",
+                "Content-Type": "application/json",
+            }
+        return self._headers()
+
+    def _route_url(self, path: str, route: ResolvedModelRoute | None = None) -> str:
+        if route and route.base_url:
+            base = route.base_url.rstrip("/")
+            if not path.startswith("/"):
+                path = "/" + path
+            return f"{base}{path}"
+        return self._url(path)
+
     async def chat_storyboard(
         self,
         source_text: str,
@@ -238,10 +261,22 @@ class ArkGateway:
             mode = "character"
 
         if mode == "diverse":
+            if (character_hint or "").strip():
+                person_rule = (
+                    "character_bible：概括用户人物设定（可换具体个人，但须同类）。"
+                    "【人物硬性】每镜必须出现符合用户人物设定的真人，面容清晰可见"
+                    "（三分之四侧脸或浅景深半身），禁止只拍手部、后脑勺、过肩无脸或空界面无人。"
+                    "img_prompt 须写清该镜人物族裔/发型/服装与可见面容角度，以及面前界面类型；各镜可换人。"
+                )
+            else:
+                person_rule = (
+                    "character_bible：填「无固定人物，各镜为独立系统/场景界面」。"
+                    "每镜 img_prompt 必须写清该镜独特的界面类型、布局分区、主色与信息层级，不要粘贴人物锁定。"
+                )
             consistency = (
                 "必须输出严格 JSON 对象（不要数组、不要 markdown、不要代码围栏）："
                 '{"character_bible":"...","shots":[...]}。'
-                "character_bible：填「无固定人物，各镜为独立系统/场景界面」。"
+                f"{person_rule}"
                 f"视觉气质仅作底线参考（不要被其颜色绑架）：{style_prefix}。"
                 f"{user_constraints}"
                 "【动态规划】先分析用户内容的领域、产品形态与使用场景，再决定色板与界面类型，"
@@ -249,7 +284,6 @@ class ArkGateway:
                 "配色与材质必须贴合内容（浅色SaaS、文档站、深色IDE、终端、架构图、白板均可），"
                 "禁止默认霓虹蓝/赛博大屏/蓝紫渐变HUD，禁止各镜画面雷同，禁止待办任务清单，"
                 "禁止同一仪表盘复制粘贴换字。"
-                "每镜 img_prompt 必须写清该镜独特的界面类型、布局分区、主色与信息层级，不要粘贴人物锁定。"
             )
         elif mode == "style":
             consistency = (
@@ -273,16 +307,19 @@ class ArkGateway:
                 "每镜 img_prompt 只写本镜场景与构图（景物、动作、光影），不要重复粘贴大段画风/人物锁定原文；"
                 "出现人物时用短句点出与 character_bible 一致的关键特征即可。"
             )
-        # shot_cap 单镜 duration 上限（秒），写入 prompt 与校验说明
+        # shot_cap 单镜 duration 上限（秒）；shot_lo/shot_hi 按文案字数动态拆镜数
         shot_cap = min(duration_max, max_shot_duration)
+        shot_lo, shot_hi = segplan.suggested_kepu_shot_range(source_text, pipeline_mode=pipeline_mode)
+        shot_range = f"{shot_lo}-{shot_hi}"
         # segment_rules 科普逐段脚本生产约束（对齐漫剧 cue，无 @asset）
         segment_rules = (
             "【segments 生产规范】"
-            "segments 必填；系统会落成 @duration +【字幕】/【BGM】/【旁白·慢速清晰·同步字幕】生产脚本，"
+            "segments 必填；系统会落成 @duration +【字幕】/【BGM】/【旁白·自然语速·同步字幕】生产脚本，"
             "因此 kind/text/duration 必须可直接消费。"
             "段序优先「画面→旁白」交替，首段尽量 kind=visual（保证首帧有料）；"
             "visual/action 的 text 必须含景别+主体动作+场景/界面类型，禁止空镜与模糊氛围词堆砌；"
-            "narration 的 text 为一句一事、可朗读口播，按约 3 字/秒估 duration；"
+            "narration 的 text 为一句一事、可朗读口播，按约 5 字/秒估 duration（语速自然偏快）；"
+            "旁白 duration 严格跟字数，最多多 1 秒呼吸，禁止把短句拉满到镜长上限或拖腔注水；"
             "单段 duration 3-12 秒，镜内各段之和约等于本镜 duration，且不超过 "
             f"{shot_cap} 秒。"
             "禁止真实商标/公司名/人名（改用泛称）。"
@@ -290,7 +327,7 @@ class ArkGateway:
         )
         if pipeline_mode == "image_text":
             diversity_note = (
-                "拆成 5-10 个分镜，每镜一个独立视觉场景；"
+                f"拆成 {shot_range} 个分镜，每镜一个独立视觉场景；"
                 + (
                     "画风气质可统一，但界面/场景构图必须明显不同。"
                     if mode != "character"
@@ -322,15 +359,15 @@ class ArkGateway:
             )
         else:
             diversity_note = (
-                "拆成 4-6 个分镜；各镜场景随内容变化，禁止雷同空镜。"
+                f"拆成 {shot_range} 个分镜，短镜快切，各镜场景随内容变化，禁止雷同空镜。"
                 if mode != "character"
-                else "画风与人物必须全片一致；倾向 4-6 镜。"
+                else f"画风与人物必须全片一致；拆成 {shot_range} 镜，短镜快切。"
             )
             system = (
                 "你是短视频分镜编剧。所有字段必须使用简体中文"
                 "（包括 title、text、img_prompt、video_prompt、camera、bgm、segments）。"
                 f"{consistency}{llm_system_addon}"
-                f"每镜 duration 在 {duration_min}-{shot_cap} 秒。"
+                f"每镜 duration 在 {duration_min}-{shot_cap} 秒，不要为凑满上限而注水。"
                 "shots 字段说明："
                 "shot(序号)、duration(秒)、"
                 "title(对本镜旁白的概括短标题，2-8字，语义完整；"
@@ -348,7 +385,7 @@ class ArkGateway:
             )
         user = (
             f"输入类型：{source_type}。请先理解内容与应用场景，再拆成精确到每一段的分镜"
-            f"（4-6 镜为佳，完整模式）：\n{source_text}"
+            f"（{shot_range} 镜，短镜快切，禁止拖腔注水）：\n{source_text}"
         )
         content = await chat_completions(system, user, temperature=0.6, timeout=120.0)
         return self._parse_storyboard(
@@ -428,8 +465,10 @@ class ArkGateway:
         prompt_hash_src: str,
         model: str | None = None,
     ) -> ImageResult:
+        route = self._resolve_ark_route("image", model)
+        upstream_model = route.upstream_model if route else ((model or "").strip() or self.settings.model_image)
         body: dict[str, Any] = {
-            "model": (model or "").strip() or self.settings.model_image,
+            "model": upstream_model,
             "prompt": full_prompt,
             "size": size or self.settings.ark_image_size,
             "response_format": "url",
@@ -443,8 +482,8 @@ class ArkGateway:
 
         async with httpx.AsyncClient(timeout=180.0) as client:
             resp = await client.post(
-                self._url("/images/generations"),
-                headers=self._headers(),
+                self._route_url("/images/generations", route),
+                headers=self._route_headers(route),
                 json=body,
             )
             if resp.status_code >= 400:
@@ -571,8 +610,10 @@ class ArkGateway:
         ]
         # 首帧/首尾帧生视频：ratio 必须省略，输出比例跟随首帧图
         # （传 ratio 会报 InvalidParameter.TaskTypeConstraint）
+        route = self._resolve_ark_route("video", self.settings.model_video)
+        video_model = route.upstream_model if route else self.settings.model_video
         body: dict[str, Any] = {
-            "model": self.settings.model_video,
+            "model": video_model,
             "content": content,
             "duration": self._seedance_duration(duration),
             "resolution": resolution,
@@ -592,16 +633,16 @@ class ArkGateway:
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(
-                self._url("/contents/generations/tasks"),
-                headers=self._headers(),
+                self._route_url("/contents/generations/tasks", route),
+                headers=self._route_headers(route),
                 json=body,
             )
             if resp.status_code >= 400 and prompt_as_json:
                 # Fallback: plain text prompt
                 body["content"][0]["text"] = plain
                 resp = await client.post(
-                    self._url("/contents/generations/tasks"),
-                    headers=self._headers(),
+                    self._route_url("/contents/generations/tasks", route),
+                    headers=self._route_headers(route),
                     json=body,
                 )
             if resp.status_code >= 400:
@@ -610,8 +651,8 @@ class ArkGateway:
                 if "ratio" in err_text.lower() and "ratio" in body:
                     body.pop("ratio", None)
                     resp = await client.post(
-                        self._url("/contents/generations/tasks"),
-                        headers=self._headers(),
+                        self._route_url("/contents/generations/tasks", route),
+                        headers=self._route_headers(route),
                         json=body,
                     )
             if resp.status_code >= 400:
@@ -619,8 +660,8 @@ class ArkGateway:
                 body["content"][1].pop("role", None)
                 body["ratio"] = "adaptive"
                 resp = await client.post(
-                    self._url("/contents/generations/tasks"),
-                    headers=self._headers(),
+                    self._route_url("/contents/generations/tasks", route),
+                    headers=self._route_headers(route),
                     json=body,
                 )
             if resp.status_code >= 400:
@@ -679,6 +720,7 @@ class ArkGateway:
                 project_id=project_id,
             )
         payload["duration"] = self._seedance_duration(payload.get("duration", 8))
+        route = self._resolve_ark_route("video", str(payload.get("model") or ""))
 
         logger.info(
             "Seedance multimodal create model=%s duration=%s items=%s",
@@ -689,8 +731,8 @@ class ArkGateway:
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(
-                self._url("/contents/generations/tasks"),
-                headers=self._headers(),
+                self._route_url("/contents/generations/tasks", route),
+                headers=self._route_headers(route),
                 json=payload,
             )
             if resp.status_code >= 400:
@@ -711,15 +753,60 @@ class ArkGateway:
         max_attempts: int = 2,
     ) -> tuple[str, str | None]:
         """创建 Seedance 多模态任务并等待完成；返回 (本地视频 URL, 可选本地尾帧 URL)。"""
+        def _is_audio_download_error(err: Exception) -> bool:
+            msg = str(err)
+            return "audio_url" in msg and "resource download failed" in msg
+
+        def _strip_reference_audio(src: dict[str, Any]) -> dict[str, Any] | None:
+            content = src.get("content")
+            if not isinstance(content, list):
+                return None
+            filtered: list[dict[str, Any]] = []
+            removed = False
+            for item in content:
+                if not isinstance(item, dict):
+                    filtered.append(item)
+                    continue
+                if item.get("type") == "audio_url" and item.get("role") == "reference_audio":
+                    removed = True
+                    continue
+                if item.get("type") == "text":
+                    text = str(item.get("text") or "")
+                    cleaned_lines = [
+                        line
+                        for line in text.splitlines()
+                        if "参考音频" not in line
+                        and "角色音色" not in line
+                        and "旁白音色" not in line
+                    ]
+                    filtered.append({**item, "text": "\n".join(cleaned_lines).strip()})
+                    continue
+                filtered.append(item)
+            if not removed:
+                return None
+            return {**src, "content": filtered}
+
         last_err: Exception | None = None
+        fallback_body = body
+        audio_fallback_used = False
         for _attempt in range(max_attempts):
             try:
-                task_id = await self.gen_video_seedance_body(body, project_id=project_id)
+                task_id = await self.gen_video_seedance_body(fallback_body, project_id=project_id)
                 return await self.wait_video_assets(
                     task_id, project_id=project_id, shot_no=shot_no
                 )
             except Exception as exc:  # noqa: BLE001
                 last_err = exc
+                if not audio_fallback_used and _is_audio_download_error(exc):
+                    stripped = _strip_reference_audio(fallback_body)
+                    if stripped:
+                        logger.warning(
+                            "Seedance reference_audio download failed; retry without audio refs project=%s shot=%s",
+                            project_id,
+                            shot_no,
+                        )
+                        fallback_body = stripped
+                        audio_fallback_used = True
         raise RuntimeError(str(last_err) if last_err else "Seedance multimodal failed")
 
     async def poll_task(self, task_id: str) -> TaskResult:
@@ -759,15 +846,48 @@ class ArkGateway:
                 await asyncio.sleep(self.settings.ark_video_poll_interval)
         return TaskResult(status="failed", error="poll timeout")
 
-    async def wait_video_assets(
+    async def fetch_task_once(self, task_id: str) -> TaskResult:
+        """单次查询 Seedance 任务，不阻塞等待。"""
+        if self.mock or task_id.startswith("mock-task-"):
+            return TaskResult(
+                status="succeeded",
+                url=f"/static/mock/video_{task_id[-8:]}.mp4",
+                last_frame_url=f"/static/mock/last_{task_id[-8:]}.jpg",
+            )
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                self._url(f"/contents/generations/tasks/{task_id}"),
+                headers=self._headers(),
+            )
+        if resp.status_code >= 400:
+            return TaskResult(status="failed", error=resp.text[:500])
+        data = resp.json()
+        status = str(data.get("status", "")).lower() or "running"
+        if status in {"succeeded", "success"}:
+            url = None
+            content = data.get("content")
+            if isinstance(content, dict):
+                url = content.get("video_url")
+            if not url:
+                url = data.get("video_url")
+            return TaskResult(
+                status="succeeded",
+                url=url,
+                last_frame_url=_extract_seedance_last_frame_url(data),
+            )
+        if status in {"failed", "cancelled", "canceled", "expired"}:
+            err = data.get("error") or data.get("message") or status
+            return TaskResult(status="failed", error=str(err))
+        return TaskResult(status="running")
+
+    async def save_video_assets_from_result(
         self,
-        task_id: str,
+        result: TaskResult,
         *,
         project_id: int,
         shot_no: int,
     ) -> tuple[str, str | None]:
-        """等待任务完成并落盘视频；若有尾帧则一并落盘。"""
-        result = await self.poll_task(task_id)
+        """将单次 poll 成功结果落盘为本地视频与可选尾帧。"""
         if result.status != "succeeded" or not result.url:
             raise RuntimeError(result.error or "video generation failed")
 
@@ -787,14 +907,24 @@ class ArkGateway:
                     frame_dest = storage.project_dir(project_id) / f"shot_{shot_no:03d}_last.jpg"
                     await storage.download_to(result.last_frame_url, frame_dest)
                     last_local = storage.publish_local(frame_dest)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "Seedance last frame download failed shot_no=%s err=%s",
-                    shot_no,
-                    exc,
-                )
-                last_local = None
+            except Exception:  # noqa: BLE001
+                logger.warning("failed to save last frame project=%s shot=%s", project_id, shot_no)
         return video_local, last_local
+
+    async def wait_video_assets(
+        self,
+        task_id: str,
+        *,
+        project_id: int,
+        shot_no: int,
+    ) -> tuple[str, str | None]:
+        """等待任务完成并落盘视频；若有尾帧则一并落盘。"""
+        result = await self.poll_task(task_id)
+        return await self.save_video_assets_from_result(
+            result,
+            project_id=project_id,
+            shot_no=shot_no,
+        )
 
     async def wait_video(
         self,
@@ -1178,7 +1308,11 @@ class ArkGateway:
             ]
         if len(chunks) < 3:
             chunks = chunks + ["补充画面过渡", "收尾总结"]
-        chunks = chunks[:10]
+        # shot_lo/shot_hi 与正式拆镜区间一致，避免 mock 仍只出 5 镜
+        shot_lo, shot_hi = segplan.suggested_kepu_shot_range(source_text, pipeline_mode=pipeline_mode)
+        chunks = chunks[:shot_hi]
+        while len(chunks) < shot_lo:
+            chunks.append("补充画面过渡")
         mid = (duration_min + duration_max) // 2
         if pipeline_mode == "image_text":
             mid = min(mid, max(duration_min, 3))

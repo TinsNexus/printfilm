@@ -148,6 +148,22 @@ export type Project = {
   created_at: string
   updated_at: string
   shots: Shot[]
+  active_tasks?: Array<{
+    id: number
+    domain: string
+    task_type: string
+    status: string
+    current_step_key?: string | null
+    current_step_status?: string | null
+    progress_percent?: number
+    cancel_requested?: boolean
+    provider_task_id?: string | null
+    error_message?: string | null
+    project_id?: number | null
+    shot_id?: number | null
+    created_at?: string
+    updated_at?: string
+  }>
 }
 
 export type User = {
@@ -159,6 +175,8 @@ export type User = {
   frozen_fen?: number
   plan?: string
   billing_unlimited?: boolean
+  avatar_url?: string
+  phone?: string
 }
 
 export type BillingSku = {
@@ -193,6 +211,24 @@ export type UsageSummary = {
   balance_yuan: number
   frozen_fen: number
   frozen_yuan: number
+}
+
+export type UsageChargeRecord = {
+  id: number
+  billing_key: string
+  billing_label: string
+  model: string
+  context: string
+  total_tokens: number
+  charge_fen: number
+  charge_yuan: number
+  estimated: boolean
+  created_at: string | null
+}
+
+export type UsageChargeList = {
+  items: UsageChargeRecord[]
+  meta: { page: number; page_size: number; total: number }
 }
 
 export type Wallet = {
@@ -239,6 +275,40 @@ export const api = {
   },
   me() {
     return request<User>('/api/auth/me')
+  },
+  updateProfile(body: { nickname: string; email: string; phone: string }) {
+    return request<User>('/api/auth/me', {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    })
+  },
+  changePassword(body: { current_password: string; new_password: string }) {
+    return request<{ ok: boolean }>('/api/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    })
+  },
+  async uploadAvatar(file: File) {
+    const token = localStorage.getItem('token')
+    const form = new FormData()
+    form.append('file', file)
+    const res = await fetch(`${API_BASE}/api/auth/avatar`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }))
+      const detail = err.detail
+      const message =
+        typeof detail === 'string'
+          ? detail
+          : Array.isArray(detail)
+            ? detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join('; ')
+            : res.statusText
+      throw new Error(message || '头像上传失败')
+    }
+    return res.json() as Promise<User>
   },
   templates() {
     return request<Template[]>('/api/templates')
@@ -340,6 +410,7 @@ export const api = {
         published?: boolean
         created_at: string
         updated_at?: string
+        active_tasks?: Project['active_tasks']
       }>
       meta: { page: number; page_size: number; total: number }
       stats: { total: number; generating: number; done: number; published: number }
@@ -388,17 +459,17 @@ export const api = {
     })
   },
   regenImage(projectId: number, shotId: number) {
-    return request<Shot>(`/api/projects/${projectId}/shots/${shotId}/regen-image`, {
+    return request<Project>(`/api/projects/${projectId}/shots/${shotId}/regen-image`, {
       method: 'POST',
     })
   },
   regenVideo(projectId: number, shotId: number) {
-    return request<Shot>(`/api/projects/${projectId}/shots/${shotId}/regen-video`, {
+    return request<Project>(`/api/projects/${projectId}/shots/${shotId}/regen-video`, {
       method: 'POST',
     })
   },
   regenAudio(projectId: number, shotId: number) {
-    return request<Shot>(`/api/projects/${projectId}/shots/${shotId}/regen-audio`, {
+    return request<Project>(`/api/projects/${projectId}/shots/${shotId}/regen-audio`, {
       method: 'POST',
     })
   },
@@ -454,11 +525,23 @@ export const api = {
       credit_fen: number
     }>(`/api/billing/orders/${encodeURIComponent(outTradeNo)}`)
   },
+  /** 关闭待支付订单 */
+  closeBillingOrder(outTradeNo: string) {
+    return request<{ out_trade_no: string; status: string }>(
+      `/api/billing/orders/${encodeURIComponent(outTradeNo)}/close`,
+      { method: 'POST' },
+    )
+  },
   listBillingOrders(limit = 50) {
     return request<{ orders: BillingOrder[] }>(`/api/billing/orders?limit=${limit}`)
   },
   usageSummary() {
     return request<UsageSummary>('/api/billing/usage/summary')
+  },
+  usageEvents(page = 1, pageSize = 20) {
+    return request<UsageChargeList>(
+      `/api/billing/usage/events?page=${page}&page_size=${pageSize}`,
+    )
   },
   eventsUrl(projectId: number) {
     return `${API_BASE}/api/projects/${projectId}/events`

@@ -1,42 +1,41 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { LayoutGrid, Loader2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { api, type AdminTemplate, type PageMeta } from "@/api/client";
+import { AdminChipFilter } from "@/components/admin/AdminChipFilter";
+import { AdminConfirmDialog } from "@/components/admin/AdminConfirmDialog";
+import { AdminFilterBar } from "@/components/admin/AdminFilterBar";
+import { AdminSearchInput } from "@/components/admin/AdminSearchInput";
+import { AdminSelect } from "@/components/admin/AdminSelect";
+import { TemplateCard } from "@/components/templates/TemplateCard";
+import {
+  TemplateEditorDialog,
+  type TemplateFormState,
+} from "@/components/templates/TemplateEditorDialog";
 import { PaginationBar } from "@/components/PaginationBar";
-import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
+import { TEMPLATE_PAGE_SIZE } from "@/lib/pagination";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { PageHeader } from "@/components/ui/page";
 
 type ListRes = { items: AdminTemplate[]; meta: PageMeta };
+type MetaRes = { categories: string[] };
 
-type FormState = {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-  preview_cover: string;
-  style_prefix: string;
-  negative_prompt: string;
-  default_ratio: string;
-  shot_duration_min: number;
-  shot_duration_max: number;
-  llm_system_addon: string;
-  sort_order: number;
-  is_active: boolean;
-  is_premium: boolean;
-};
+const STATUS_OPTIONS = [
+  { value: "", label: "全部状态" },
+  { value: "active", label: "已上架" },
+  { value: "inactive", label: "已下架" },
+  { value: "premium", label: "Premium" },
+];
 
-const emptyForm = (): FormState => ({
+const emptyForm = (): TemplateFormState => ({
   id: "",
   name: "",
   description: "",
   category: "",
   preview_cover: "",
   style_prefix: "",
+  character_prompt: "",
+  extra_prompt: "",
   negative_prompt: "",
   default_ratio: "16:9",
   shot_duration_min: 3,
@@ -47,46 +46,103 @@ const emptyForm = (): FormState => ({
   is_premium: false,
 });
 
-// Template CRUD with active / premium toggles
+// 从 seedream_config 读取角色/额外提示词
+function seedreamText(cfg: Record<string, unknown> | undefined, key: string): string {
+  const value = cfg?.[key];
+  return typeof value === "string" ? value : "";
+}
+
+// 模板管理：封面卡片网格 + 分类筛选 + 全局 UI 组件
 export function TemplatesPage() {
-  /*
-   * page current page
-   * data list response
-   * open dialog visibility
-   * editing existing template or null for create
-   * form form fields
-   * saving request in flight
-   */
   const [page, setPage] = useState(1);
   const [data, setData] = useState<ListRes | null>(null);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<AdminTemplate | null>(null);
-  const [form, setForm] = useState<FormState>(emptyForm());
+  const [form, setForm] = useState<TemplateFormState>(emptyForm());
   const [saving, setSaving] = useState(false);
+  const [q, setQ] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
-  // Load templates
+  // 加载模板分页列表
   async function load(nextPage = page) {
+    setLoading(true);
     try {
-      const params = new URLSearchParams({ page: String(nextPage), page_size: String(DEFAULT_PAGE_SIZE) });
+      const params = new URLSearchParams({
+        page: String(nextPage),
+        page_size: String(TEMPLATE_PAGE_SIZE),
+      });
       setData(await api<ListRes>(`/api/admin/templates?${params}`));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "加载失败");
+    } finally {
+      setLoading(false);
     }
   }
+
+  // 加载全库分类标签
+  async function loadMeta() {
+    try {
+      const meta = await api<MetaRes>("/api/admin/templates/meta");
+      setCategories(meta.categories ?? []);
+    } catch {
+      /* 分类元数据失败不阻塞列表 */
+    }
+  }
+
+  useEffect(() => {
+    void loadMeta();
+  }, []);
 
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
-  // Open create dialog
+  const categoryOptions = useMemo(() => {
+    const items = data?.items ?? [];
+    const countFor = (cat: string) =>
+      items.filter((t) => (t.category || []).includes(cat)).length;
+    return [
+      { value: "", label: "全部分类", count: items.length },
+      ...categories.map((cat) => ({
+        value: cat,
+        label: cat,
+        count: countFor(cat),
+      })),
+    ];
+  }, [categories, data?.items]);
+
+  const filteredItems = useMemo(() => {
+    const items = data?.items ?? [];
+    const keyword = q.trim().toLowerCase();
+    return items.filter((t) => {
+      if (statusFilter === "active" && !t.is_active) return false;
+      if (statusFilter === "inactive" && t.is_active) return false;
+      if (statusFilter === "premium" && !t.is_premium) return false;
+      if (categoryFilter && !(t.category || []).includes(categoryFilter)) return false;
+      if (!keyword) return true;
+      return (
+        t.id.toLowerCase().includes(keyword) ||
+        t.name.toLowerCase().includes(keyword) ||
+        (t.description || "").toLowerCase().includes(keyword) ||
+        (t.category || []).some((c) => c.toLowerCase().includes(keyword))
+      );
+    });
+  }, [data?.items, q, statusFilter, categoryFilter]);
+
+  // 打开新建弹窗
   function openCreate() {
     setEditing(null);
     setForm(emptyForm());
     setOpen(true);
   }
 
-  // Open edit dialog
+  // 打开编辑弹窗
   function openEdit(tpl: AdminTemplate) {
     setEditing(tpl);
     setForm({
@@ -96,6 +152,8 @@ export function TemplatesPage() {
       category: (tpl.category || []).join(","),
       preview_cover: tpl.preview_cover,
       style_prefix: tpl.style_prefix,
+      character_prompt: seedreamText(tpl.seedream_config, "character_prompt"),
+      extra_prompt: seedreamText(tpl.seedream_config, "extra_prompt"),
       negative_prompt: tpl.negative_prompt,
       default_ratio: tpl.default_ratio,
       shot_duration_min: tpl.shot_duration_min,
@@ -108,7 +166,7 @@ export function TemplatesPage() {
     setOpen(true);
   }
 
-  // Create or update template
+  // 创建或更新模板
   async function save() {
     setSaving(true);
     try {
@@ -133,6 +191,11 @@ export function TemplatesPage() {
             sort_order: form.sort_order,
             is_active: form.is_active,
             is_premium: form.is_premium,
+            seedream_config: {
+              ...(editing.seedream_config || {}),
+              character_prompt: form.character_prompt,
+              extra_prompt: form.extra_prompt,
+            },
           }),
         });
       } else {
@@ -140,10 +203,24 @@ export function TemplatesPage() {
         await api(`/api/admin/templates`, {
           method: "POST",
           body: JSON.stringify({
-            ...form,
             id: form.id.trim(),
+            name: form.name,
+            description: form.description,
             category,
-            seedream_config: {},
+            preview_cover: form.preview_cover,
+            style_prefix: form.style_prefix,
+            negative_prompt: form.negative_prompt,
+            default_ratio: form.default_ratio,
+            shot_duration_min: form.shot_duration_min,
+            shot_duration_max: form.shot_duration_max,
+            llm_system_addon: form.llm_system_addon,
+            sort_order: form.sort_order,
+            is_active: form.is_active,
+            is_premium: form.is_premium,
+            seedream_config: {
+              character_prompt: form.character_prompt,
+              extra_prompt: form.extra_prompt,
+            },
             seedance_config: {},
             audio_config: {},
             subtitle_config: {},
@@ -152,7 +229,7 @@ export function TemplatesPage() {
       }
       toast.success("已保存");
       setOpen(false);
-      await load();
+      await Promise.all([load(), loadMeta()]);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "保存失败");
     } finally {
@@ -160,7 +237,7 @@ export function TemplatesPage() {
     }
   }
 
-  // Toggle active / premium quickly
+  // 快捷切换上架 / Premium
   async function quickPatch(id: string, body: Partial<AdminTemplate>) {
     try {
       await api(`/api/admin/templates/${id}`, { method: "PATCH", body: JSON.stringify(body) });
@@ -170,73 +247,90 @@ export function TemplatesPage() {
     }
   }
 
-  // Delete template if unused
-  async function remove(id: string) {
-    if (!window.confirm(`确认删除模板 ${id}？`)) return;
+  // 确认删除模板
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      await api(`/api/admin/templates/${id}`, { method: "DELETE" });
+      await api(`/api/admin/templates/${deleteTarget}`, { method: "DELETE" });
       toast.success("已删除");
-      await load();
+      setDeleteTarget(null);
+      await Promise.all([load(), loadMeta()]);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "删除失败");
+    } finally {
+      setDeleting(false);
     }
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-semibold text-[#303133]">模板管理</h2>
-          <p className="mt-1 text-sm text-[#909399]">增删改、上下架与 premium</p>
+    <div className="admin-list-page">
+      <PageHeader
+        description="风格 / 角色 / 提示词以本页为准；已创建项目需在分镜页恢复模板后才会跟随。"
+        actions={
+          <Button onClick={openCreate} className="gap-2">
+            <Plus className="h-4 w-4" />
+            新建模板
+          </Button>
+        }
+      />
+
+      <AdminFilterBar
+        trailing={
+          <>
+            <LayoutGrid className="h-4 w-4" />
+            {filteredItems.length} / {data?.meta.total ?? 0} 项
+          </>
+        }
+      >
+        <AdminSearchInput
+          className="min-w-[220px] flex-1 max-w-md"
+          placeholder="搜索名称 / ID / 描述 / 分类"
+          value={q}
+          onChange={setQ}
+        />
+        <AdminSelect
+          className="w-36"
+          value={statusFilter}
+          options={STATUS_OPTIONS}
+          onChange={setStatusFilter}
+        />
+        <AdminChipFilter
+          label="分类"
+          value={categoryFilter}
+          options={categoryOptions}
+          onChange={setCategoryFilter}
+        />
+      </AdminFilterBar>
+
+      {loading ? (
+        <div className="template-grid-loading">
+          <Loader2 className="h-6 w-6 animate-spin text-[#67c23a]" />
+          <span>加载模板…</span>
         </div>
-        <Button onClick={openCreate}>新建模板</Button>
-      </div>
-      <div className="rounded-lg border bg-background">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>ID</TableHead>
-              <TableHead>名称</TableHead>
-              <TableHead>排序</TableHead>
-              <TableHead>上架</TableHead>
-              <TableHead>Premium</TableHead>
-              <TableHead></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {(data?.items ?? []).map((t) => (
-              <TableRow key={t.id}>
-                <TableCell className="font-mono text-xs">{t.id}</TableCell>
-                <TableCell>{t.name}</TableCell>
-                <TableCell>{t.sort_order}</TableCell>
-                <TableCell>
-                  <Switch
-                    checked={t.is_active}
-                    onCheckedChange={(v) => void quickPatch(t.id, { is_active: v })}
-                  />
-                </TableCell>
-                <TableCell>
-                  <Switch
-                    checked={t.is_premium}
-                    onCheckedChange={(v) => void quickPatch(t.id, { is_premium: v })}
-                  />
-                </TableCell>
-                <TableCell>
-                  <div className="flex gap-1">
-                    <Button size="sm" variant="outline" onClick={() => openEdit(t)}>
-                      编辑
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => void remove(t.id)}>
-                      删除
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-      {data && (
+      ) : filteredItems.length === 0 ? (
+        <div className="template-grid-empty">
+          <p>暂无匹配的模板</p>
+          <Button variant="outline" size="sm" onClick={openCreate}>
+            新建第一个模板
+          </Button>
+        </div>
+      ) : (
+        <div className="template-grid">
+          {filteredItems.map((t) => (
+            <TemplateCard
+              key={t.id}
+              template={t}
+              onEdit={openEdit}
+              onDelete={(id) => setDeleteTarget(id)}
+              onToggleActive={(id, v) => void quickPatch(id, { is_active: v })}
+              onTogglePremium={(id, v) => void quickPatch(id, { is_premium: v })}
+            />
+          ))}
+        </div>
+      )}
+
+      {data && data.meta.total > TEMPLATE_PAGE_SIZE && (
         <PaginationBar
           page={data.meta.page}
           pageSize={data.meta.page_size}
@@ -245,108 +339,29 @@ export function TemplatesPage() {
         />
       )}
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editing ? `编辑模板 · ${editing.id}` : "新建模板"}</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {!editing && (
-              <div className="space-y-2 sm:col-span-2">
-                <Label>ID</Label>
-                <Input value={form.id} onChange={(e) => setForm((f) => ({ ...f, id: e.target.value }))} />
-              </div>
-            )}
-            <div className="space-y-2 sm:col-span-2">
-              <Label>名称</Label>
-              <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label>描述</Label>
-              <Textarea
-                value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>分类（逗号分隔）</Label>
-              <Input
-                value={form.category}
-                onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>封面 URL</Label>
-              <Input
-                value={form.preview_cover}
-                onChange={(e) => setForm((f) => ({ ...f, preview_cover: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label>style_prefix</Label>
-              <Textarea
-                value={form.style_prefix}
-                onChange={(e) => setForm((f) => ({ ...f, style_prefix: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label>negative_prompt</Label>
-              <Textarea
-                value={form.negative_prompt}
-                onChange={(e) => setForm((f) => ({ ...f, negative_prompt: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>画幅</Label>
-              <Input
-                value={form.default_ratio}
-                onChange={(e) => setForm((f) => ({ ...f, default_ratio: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>排序</Label>
-              <Input
-                type="number"
-                value={form.sort_order}
-                onChange={(e) => setForm((f) => ({ ...f, sort_order: Number(e.target.value) }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>时长 min</Label>
-              <Input
-                type="number"
-                value={form.shot_duration_min}
-                onChange={(e) => setForm((f) => ({ ...f, shot_duration_min: Number(e.target.value) }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>时长 max</Label>
-              <Input
-                type="number"
-                value={form.shot_duration_max}
-                onChange={(e) => setForm((f) => ({ ...f, shot_duration_max: Number(e.target.value) }))}
-              />
-            </div>
-            <div className="flex items-center justify-between sm:col-span-1">
-              <Label>上架</Label>
-              <Switch
-                checked={form.is_active}
-                onCheckedChange={(v) => setForm((f) => ({ ...f, is_active: v }))}
-              />
-            </div>
-            <div className="flex items-center justify-between sm:col-span-1">
-              <Label>Premium</Label>
-              <Switch
-                checked={form.is_premium}
-                onCheckedChange={(v) => setForm((f) => ({ ...f, is_premium: v }))}
-              />
-            </div>
-          </div>
-          <Button className="mt-2 w-full" disabled={saving} onClick={() => void save()}>
-            {saving ? "保存中…" : "保存"}
-          </Button>
-        </DialogContent>
-      </Dialog>
+      <TemplateEditorDialog
+        open={open}
+        saving={saving}
+        editing={editing}
+        form={form}
+        categorySuggestions={categories}
+        onOpenChange={setOpen}
+        onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
+        onSave={() => void save()}
+      />
+
+      <AdminConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="删除模板"
+        description={deleteTarget ? `确认删除模板「${deleteTarget}」？已被项目引用的模板无法删除。` : undefined}
+        confirmLabel="删除"
+        loading={deleting}
+        destructive
+        onOpenChange={(next) => {
+          if (!next) setDeleteTarget(null);
+        }}
+        onConfirm={() => void confirmDelete()}
+      />
     </div>
   );
 }

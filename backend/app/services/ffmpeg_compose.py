@@ -51,13 +51,16 @@ class ComposeOptions:
     # One continuous TTS track for the whole film (preferred over per-shot audio)
     full_audio_path: Path | None = None
     # Overlay / caption sizing & layout (from template.subtitle_config)
-    subtitle_layout: str = "top"  # top | split (title top, subtitle bottom)
+    subtitle_layout: str = "top"  # top | split（标题在上；口播字幕始终底部）
     title_scale: float = 1.35
     sub_scale: float = 1.3
     caption_scale: float = 1.25
     # Optional continuous BGM under narration
     bgm_path: Path | None = None
     bgm_volume: float = 0.22
+    # 保留镜头视频里的操作音效，后期与 TTS 叠轨（科普 full）
+    keep_video_sfx: bool = False
+    sfx_volume: float = 0.22
 
 
 def allocate_durations_by_narration(
@@ -87,6 +90,34 @@ def allocate_durations_by_narration(
     head = [round(d, 3) for d in capped[:-1]]
     last = max(min_shot, round(total - sum(head), 3))
     return [*head, last]
+
+
+def _probe_has_audio(path: Path) -> bool:
+    """片源是否含音轨（操作音效/人声均算）。"""
+    ffprobe = shutil.which(get_settings().ffprobe_path) or shutil.which("ffprobe")
+    if not ffprobe or not path.exists():
+        return False
+    try:
+        proc = subprocess.run(
+            [
+                ffprobe,
+                "-v",
+                "error",
+                "-select_streams",
+                "a",
+                "-show_entries",
+                "stream=codec_type",
+                "-of",
+                "csv=p=0",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return bool((proc.stdout or "").strip())
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def probe_duration(path: Path) -> float | None:
@@ -212,22 +243,51 @@ def _canvas(opts: ComposeOptions) -> tuple[int, int]:
 
 
 def _find_cjk_font() -> str | None:
-    """Return a path usable by drawtext fontfile=…"""
+    """Return a path usable by drawtext fontfile=…（优先环境变量与仓库内置字体）。"""
+    bundled = (
+        Path(__file__).resolve().parents[1] / "assets" / "fonts" / "NotoSansSC-Regular.otf"
+    )
     candidates = [
         os.environ.get("FRAMECUT_FONT"),
+        # 仓库内置（部署时可放入 backend/assets/fonts）
+        str(bundled) if bundled.exists() else None,
         r"C:\Windows\Fonts\msyhbd.ttc",
         r"C:\Windows\Fonts\msyh.ttc",
         r"C:\Windows\Fonts\simhei.ttf",
         r"C:\Windows\Fonts\simkai.ttf",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
-        "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+        # Ubuntu / Debian 常见路径
         "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.otf",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJKsc-Regular.otf",
+        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+        "/usr/share/fonts/truetype/arphic/uming.ttc",
         "/System/Library/Fonts/PingFang.ttc",
         "/System/Library/Fonts/STHeiti Light.ttc",
     ]
     for c in candidates:
         if c and Path(c).exists():
             return c
+    # fontconfig 兜底：解析中文字体文件路径
+    try:
+        import subprocess
+
+        out = subprocess.check_output(
+            ["fc-match", "-f", "%{file}", ":lang=zh-cn"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=3,
+        ).strip()
+        if out and Path(out).exists():
+            return out
+    except Exception:  # noqa: BLE001
+        pass
     return None
 
 
@@ -567,7 +627,7 @@ def _overlay_drawtext(
     title_scale: float = 1.35,
     sub_scale: float = 1.3,
 ) -> str:
-    """Title + subtitle overlays. layout=split → title top / subtitle bottom (开源展示风)."""
+    """顶部标题叠字。split 也把副标题放在标题下方，底部留给口播字幕。"""
     title = _strip_caption_punct(title)
     subtitle = _strip_caption_punct(subtitle)
     title_cap = 14 if layout == "split" else 12
@@ -582,20 +642,14 @@ def _overlay_drawtext(
     title_size = max(34, min(52, int(w * 0.058 * max(0.8, title_scale))))
     sub_size = max(24, min(36, int(w * 0.042 * max(0.8, sub_scale))))
     title_y = int(h * 0.055)
-    if layout == "split":
-        sub_y = max(0, h - sub_size - int(h * 0.07))
-    else:
-        sub_y = title_y + title_size + int(h * 0.014)
+    sub_y = title_y + title_size + int(h * 0.014)
 
     parts: list[str] = []
-    # Soft vignette behind text
-    if layout == "split":
-        parts.append(f"drawbox=x=0:y=0:w={w}:h={int(h * 0.16)}:color=black@0.28:t=fill")
-        parts.append(
-            f"drawbox=x=0:y={h - int(h * 0.16)}:w={w}:h={int(h * 0.16)}:color=black@0.32:t=fill"
-        )
-    else:
-        parts.append(f"drawbox=x=0:y=0:w={w}:h={int(h * 0.2)}:color=black@0.22:t=fill")
+    if not title_e and not sub_e:
+        return ""
+    # Soft vignette behind title block (bottom is reserved for narration captions)
+    bar_h = int(h * 0.22) if layout == "split" else int(h * 0.2)
+    parts.append(f"drawbox=x=0:y=0:w={w}:h={bar_h}:color=black@0.22:t=fill")
 
     font_opt = f":fontfile='{_escape_fontfile(font)}'" if font else ""
 
@@ -611,6 +665,42 @@ def _overlay_drawtext(
             f"fontcolor=white:borderw=3:bordercolor=black@0.75:"
             f"x=(w-text_w)/2:y={sub_y}"
         )
+    return ",".join(parts)
+
+
+def build_video_caption_vf(
+    *,
+    narration: str,
+    duration: float,
+    w: int,
+    h: int,
+    font: str | None,
+    title: str = "",
+    subtitle: str = "",
+    subtitle_layout: str = "top",
+    title_scale: float = 1.35,
+    sub_scale: float = 1.3,
+    caption_scale: float = 1.25,
+) -> str:
+    """合成阶段字幕滤镜：顶部标题 + 底部口播，始终烧录（含 split 布局）。"""
+    parts: list[str] = []
+    overlay = _overlay_drawtext(
+        w,
+        h,
+        title,
+        subtitle,
+        font,
+        layout=subtitle_layout,
+        title_scale=title_scale,
+        sub_scale=sub_scale,
+    )
+    if overlay:
+        parts.append(overlay)
+    captions = _bottom_caption_drawtext(
+        narration, duration=duration, w=w, h=h, font=font, scale=caption_scale
+    )
+    if captions:
+        parts.append(captions)
     return ",".join(parts)
 
 
@@ -633,25 +723,21 @@ def _image_to_video_kenburns(
 ) -> None:
     ffmpeg = _which("ffmpeg")
     vf = _ken_burns_filter(w, h, duration, shot_no)
-    overlay = _overlay_drawtext(
-        w,
-        h,
-        title,
-        subtitle,
-        font,
-        layout=subtitle_layout,
+    captions = build_video_caption_vf(
+        narration=narration,
+        duration=duration,
+        w=w,
+        h=h,
+        font=font,
+        title=title,
+        subtitle=subtitle,
+        subtitle_layout=subtitle_layout,
         title_scale=title_scale,
         sub_scale=sub_scale,
+        caption_scale=caption_scale,
     )
-    if overlay:
-        vf = f"{vf},{overlay}"
-    # split 布局底部已是副标题，不再叠旁白滚动字幕以免抢戏
-    if subtitle_layout != "split":
-        captions = _bottom_caption_drawtext(
-            narration, duration=duration, w=w, h=h, font=font, scale=caption_scale
-        )
-        if captions:
-            vf = f"{vf},{captions}"
+    if captions:
+        vf = f"{vf},{captions}"
     _run(
         [
             ffmpeg,
@@ -690,48 +776,44 @@ def _burn_captions_on_video(
     subtitle_layout: str = "top",
     title_scale: float = 1.35,
     sub_scale: float = 1.3,
+    keep_audio: bool = False,
 ) -> None:
-    """Burn title/subtitle + timed bottom captions onto an existing video clip (full mode)."""
-    parts: list[str] = []
-    overlay = _overlay_drawtext(
-        w,
-        h,
-        title,
-        subtitle,
-        font,
-        layout=subtitle_layout,
+    """Burn title + timed bottom narration captions onto an existing video clip."""
+    vf = build_video_caption_vf(
+        narration=narration,
+        duration=duration,
+        w=w,
+        h=h,
+        font=font,
+        title=title,
+        subtitle=subtitle,
+        subtitle_layout=subtitle_layout,
         title_scale=title_scale,
         sub_scale=sub_scale,
+        caption_scale=caption_scale,
     )
-    if overlay:
-        parts.append(overlay)
-    # split 布局底部已是副标题，不再叠旁白滚动字幕以免抢戏
-    if subtitle_layout != "split":
-        captions = _bottom_caption_drawtext(
-            narration, duration=duration, w=w, h=h, font=font, scale=caption_scale
-        )
-        if captions:
-            parts.append(captions)
     ffmpeg = _which("ffmpeg")
-    if not parts:
+    if not vf:
         _run([ffmpeg, "-y", "-i", str(video_in), "-c", "copy", str(video_out)])
         return
-    _run(
-        [
-            ffmpeg,
-            "-y",
-            "-i",
-            str(video_in),
-            "-vf",
-            ",".join(parts),
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            "-an",
-            str(video_out),
-        ]
-    )
+    cmd = [
+        ffmpeg,
+        "-y",
+        "-i",
+        str(video_in),
+        "-vf",
+        vf,
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+    ]
+    if keep_audio and _probe_has_audio(video_in):
+        cmd.extend(["-c:a", "aac", "-ac", "2", "-ar", "44100"])
+    else:
+        cmd.append("-an")
+    cmd.append(str(video_out))
+    _run(cmd)
 
 
 
@@ -767,6 +849,7 @@ def _pad_or_trim_video(
     *,
     w: int,
     h: int,
+    keep_audio: bool = False,
 ) -> None:
     """Scale video to canvas and force exact duration: trim if longer, freeze-pad if shorter.
 
@@ -782,29 +865,73 @@ def _pad_or_trim_video(
         vf = f"{base_vf},tpad=stop_mode=clone:stop_duration={pad:.3f},format=yuv420p"
     else:
         vf = f"{base_vf},format=yuv420p"
-    _run(
-        [
-            ffmpeg,
-            "-y",
-            "-i",
-            str(src),
-            "-t",
-            f"{target:.3f}",
-            "-vf",
-            vf,
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            "-an",
-            str(dest),
-        ]
-    )
+    cmd = [
+        ffmpeg,
+        "-y",
+        "-i",
+        str(src),
+        "-t",
+        f"{target:.3f}",
+        "-vf",
+        vf,
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+    ]
+    if keep_audio and _probe_has_audio(src):
+        cmd.extend(["-af", "apad", "-c:a", "aac", "-ac", "2", "-ar", "44100"])
+    else:
+        cmd.append("-an")
+    cmd.append(str(dest))
+    _run(cmd)
 
 
-def _mux_shot(video: Path, audio: Path, duration: float, out: Path) -> None:
+def _mux_shot(
+    video: Path,
+    audio: Path,
+    duration: float,
+    out: Path,
+    *,
+    mix_video_sfx: bool = False,
+    sfx_volume: float = 0.22,
+) -> None:
+    """把镜头画面与配音封装；可选把视频里的操作音效压低叠在 TTS 下。"""
     ffmpeg = _which("ffmpeg")
     target = max(float(duration), 0.5)
+    if mix_video_sfx and _probe_has_audio(video):
+        vol = max(0.0, min(float(sfx_volume), 1.0))
+        _run(
+            [
+                ffmpeg,
+                "-y",
+                "-i",
+                str(video),
+                "-i",
+                str(audio),
+                "-filter_complex",
+                f"[0:a]volume={vol:.3f}[sfx];[1:a]volume=1.0[vo];"
+                "[sfx][vo]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]",
+                "-map",
+                "0:v:0",
+                "-map",
+                "[a]",
+                "-t",
+                f"{target:.3f}",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-ac",
+                "2",
+                "-ar",
+                "44100",
+                str(out),
+            ]
+        )
+        return
     _run(
         [
             ffmpeg,
@@ -827,34 +954,106 @@ def _mux_shot(video: Path, audio: Path, duration: float, out: Path) -> None:
     )
 
 
-def _mux_continuous_narration(merged: Path, narration: Path, output: Path) -> None:
-    """Attach full-film TTS; pad video with freeze if shorter so旁白不被裁切."""
+def _copy_fitted_clip(video: Path, duration: float, out: Path) -> None:
+    """把已对齐时长的镜头重封装成成片段，保留操作音效轨。"""
+    ffmpeg = _which("ffmpeg")
+    _run(
+        [
+            ffmpeg,
+            "-y",
+            "-i",
+            str(video),
+            "-t",
+            f"{max(duration, 0.5):.3f}",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-ac",
+            "2",
+            "-ar",
+            "44100",
+            str(out),
+        ]
+    )
+
+
+def _mux_continuous_narration(
+    merged: Path,
+    narration: Path,
+    output: Path,
+    *,
+    mix_video_sfx: bool = False,
+    sfx_volume: float = 0.22,
+) -> None:
+    """叠整片 TTS；可选把镜头操作音效压低混入。视频偏短时冻帧补齐，避免旁白被裁切。"""
     ffmpeg = _which("ffmpeg")
     vid_d = probe_duration(merged) or 0.0
     aud_d = probe_duration(narration) or 0.0
     video_in = merged
     tmp_pad: Path | None = None
+    keep_sfx = bool(mix_video_sfx and _probe_has_audio(merged))
     if aud_d > 0.5 and vid_d > 0.05 and aud_d > vid_d + 0.12:
         tmp_pad = merged.with_name(merged.stem + "_pad.mp4")
         pad = aud_d - vid_d
+        pad_cmd = [
+            ffmpeg,
+            "-y",
+            "-i",
+            str(merged),
+            "-vf",
+            f"tpad=stop_mode=clone:stop_duration={pad:.3f}",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+        ]
+        if keep_sfx:
+            pad_cmd.extend(["-af", "apad", "-c:a", "aac", "-ac", "2", "-ar", "44100"])
+        else:
+            pad_cmd.append("-an")
+        pad_cmd.append(str(tmp_pad))
+        _run(pad_cmd)
+        video_in = tmp_pad
+        keep_sfx = bool(mix_video_sfx and _probe_has_audio(video_in))
+    out_t = max(aud_d, vid_d, 0.5)
+    if keep_sfx:
+        vol = max(0.0, min(float(sfx_volume), 1.0))
         _run(
             [
                 ffmpeg,
                 "-y",
                 "-i",
-                str(merged),
-                "-vf",
-                f"tpad=stop_mode=clone:stop_duration={pad:.3f}",
+                str(video_in),
+                "-i",
+                str(narration),
+                "-filter_complex",
+                f"[0:a]volume={vol:.3f}[sfx];[1:a]volume=1.0[vo];"
+                "[sfx][vo]amix=inputs=2:duration=longest:dropout_transition=2:normalize=0[a]",
+                "-map",
+                "0:v:0",
+                "-map",
+                "[a]",
                 "-c:v",
                 "libx264",
                 "-pix_fmt",
                 "yuv420p",
-                "-an",
-                str(tmp_pad),
+                "-c:a",
+                "aac",
+                "-ac",
+                "2",
+                "-ar",
+                "44100",
+                "-t",
+                f"{out_t:.3f}",
+                "-movflags",
+                "+faststart",
+                str(output),
             ]
         )
-        video_in = tmp_pad
-    out_t = max(aud_d, vid_d, 0.5)
+        return
     _run(
         [
             ffmpeg,
@@ -893,13 +1092,19 @@ def compose_project(
     ffmpeg = _which("ffmpeg")
     output.parent.mkdir(parents=True, exist_ok=True)
     font = _find_cjk_font()
-    if opts.mode == "image_text" and not font:
-        logger.warning("No CJK font found; drawtext may fail for Chinese")
-
+    if not font:
+        logger.error(
+            "未找到中文字体，叠字/口播字幕会显示为方框；"
+            "请安装 fonts-wqy-zenhei 或设置 FRAMECUT_FONT"
+        )
+    elif opts.mode == "image_text":
+        logger.info("compose CJK font=%s", font)
     with tempfile.TemporaryDirectory(prefix="framecut_") as tmp:
         tmp_path = Path(tmp)
         segment_paths: list[Path] = []
         continuous = bool(opts.full_audio_path and opts.full_audio_path.exists())
+        keep_sfx = bool(opts.keep_video_sfx)
+        sfx_vol = float(opts.sfx_volume or 0.22)
 
         for shot in shots:
             seg = tmp_path / f"shot_{shot.shot_no:03d}.mp4"
@@ -960,6 +1165,7 @@ def compose_project(
                     shot.duration,
                     w=w,
                     h=h,
+                    keep_audio=keep_sfx,
                 )
                 _burn_captions_on_video(
                     raw_v,
@@ -975,6 +1181,7 @@ def compose_project(
                     subtitle_layout=opts.subtitle_layout or "top",
                     title_scale=opts.title_scale,
                     sub_scale=opts.sub_scale,
+                    keep_audio=keep_sfx,
                 )
             elif shot.image_path and shot.image_path.exists():
                 _image_to_video(shot.image_path, shot.duration, video, w=w, h=h)
@@ -1012,7 +1219,17 @@ def compose_project(
                     ]
                 )
 
-            _mux_shot(video, audio, shot.duration, seg)
+            if continuous and keep_sfx and _probe_has_audio(video):
+                _copy_fitted_clip(video, shot.duration, seg)
+            else:
+                _mux_shot(
+                    video,
+                    audio,
+                    shot.duration,
+                    seg,
+                    mix_video_sfx=keep_sfx and not continuous,
+                    sfx_volume=sfx_vol,
+                )
             segment_paths.append(seg)
 
         concat_list = tmp_path / "concat.txt"
@@ -1038,9 +1255,15 @@ def compose_project(
         )
 
         if continuous and opts.full_audio_path:
-            # Replace silent concat audio with one continuous narration track
+            # 整片 TTS 叠在镜头操作音效上（无音效则只保留旁白）
             voiced = tmp_path / "voiced.mp4"
-            _mux_continuous_narration(merged, opts.full_audio_path, voiced)
+            _mux_continuous_narration(
+                merged,
+                opts.full_audio_path,
+                voiced,
+                mix_video_sfx=keep_sfx,
+                sfx_volume=sfx_vol,
+            )
             staged = voiced
         else:
             staged = merged

@@ -6,6 +6,7 @@ import {
   IMAGE_STYLE_OPTIONS,
   type ImageStyleId,
 } from '../../../../lib/dramaImageStyles'
+import { DramaImageStylePreviewImg } from '../../../../components/drama/DramaImageStylePreviewImg'
 import {
   formatOutputSettingsLabel,
   GENERATION_ASPECT_RATIO_OPTIONS,
@@ -28,14 +29,6 @@ type DramaImageGenOptionsBarProps = {
 }
 
 type OpenPanel = 'style' | 'model' | 'output' | null
-
-/** 风格预览图 URL */
-function stylePreviewUrl(styleId: string): string {
-  const base = import.meta.env.BASE_URL.endsWith('/')
-    ? import.meta.env.BASE_URL
-    : `${import.meta.env.BASE_URL}/`
-  return `${base}image-styles/${styleId}.svg`
-}
 
 /** 渲染生图选项条：风格 · 模型 · 比例清晰度 */
 export function DramaImageGenOptionsBar({
@@ -120,7 +113,7 @@ export function DramaImageGenOptionsBar({
                     setOpen(null)
                   }}
                 >
-                  <img src={stylePreviewUrl(opt.id)} alt="" loading="lazy" />
+                  <DramaImageStylePreviewImg styleId={opt.id} alt={opt.label} loading="lazy" />
                   <span>{opt.label}</span>
                 </button>
               )

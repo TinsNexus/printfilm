@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -14,21 +15,42 @@ from app.deps import get_current_user
 from app.models import User
 from app.models_drama import DramaEpisode, DramaEpisodeFragment, DramaFragmentAssetRef
 from app.schemas_drama import (
+    DramaActivateVideoVersionRequest,
     DramaEpisodeOut,
     DramaFragmentOut,
     DramaGenerateRequest,
     DramaPlanFragmentsRequest,
     DramaSaveFragmentsRequest,
 )
-from app.services.drama.access import get_owned_drama_project, get_owned_episode
-from app.services.drama.generation import fragment_generation_status
+from app.schemas_tasks import TaskCreateRequest, TaskTargetBind
+from app.services.agent.compose import parse_skill_ids
+from app.services.drama.access import (
+    count_user_inflight_fragment_video_tasks,
+    detach_task_fragment_refs,
+    filter_valid_project_asset_ids,
+    get_owned_drama_project,
+    get_owned_episode,
+    load_episode_fragments,
+    match_fragments_for_generate,
+)
+from app.services.drama.generation import (
+    activate_fragment_video_version,
+    collect_active_fragment_ids_from_tasks,
+    fragment_generation_status,
+    project_link_last_frame_enabled,
+    reconcile_orphaned_fragment_generations,
+)
 from app.services.drama.jobs import (
     cancel_all_episode_video_jobs,
     cancel_episode_video_jobs,
-    dispatch_episode_fragment_plan_job,
-    dispatch_episode_generate_job,
 )
+from app.config import get_settings
 from app.services.drama.seed import seed_episodes_from_script
+from app.services.tasks.service import (
+    cancel_tasks_for_scope,
+    create_task,
+    list_active_tasks_for_owner,
+)
 
 router = APIRouter()
 logger = logging.getLogger("app.drama.episodes")
@@ -57,7 +79,82 @@ def _episode_out(ep: DramaEpisode) -> DramaEpisodeOut:
         params=ep.params,
         project_id=ep.project_id,
         fragments=[_fragment_out(f) for f in frags],
+        active_tasks=list(getattr(ep, "active_tasks", []) or []),
     )
+
+
+def _expand_episode_task_items(active_tasks: list) -> list[dict]:
+    """把平台任务展开成分集页可直接消费的任务摘要。"""
+    items: list[dict] = []
+    for task in active_tasks:
+        target_fragments = [
+            int(target.target_id)
+            for target in (getattr(task, "targets", []) or [])
+            if getattr(target, "target_type", "") == "fragment" and isinstance(target.target_id, int)
+        ]
+        if task.task_type == "fragment_video" and target_fragments:
+            for fragment_id in target_fragments:
+                items.append(
+                    {
+                        "id": task.id,
+                        "domain": task.domain,
+                        "task_type": task.task_type,
+                        "status": task.status,
+                        "current_step_key": task.current_step_key,
+                        "current_step_status": task.current_step_status,
+                        "progress_percent": task.progress_percent,
+                        "cancel_requested": task.cancel_requested,
+                        "provider_task_id": task.provider_task_id,
+                        "error_message": task.error_message,
+                        "project_id": task.project_id,
+                        "drama_project_id": task.drama_project_id,
+                        "episode_id": task.episode_id,
+                        "fragment_id": fragment_id,
+                        "asset_id": task.asset_id,
+                        "shot_id": task.shot_id,
+                        "created_at": task.created_at,
+                        "updated_at": task.updated_at,
+                    }
+                )
+            continue
+        items.append(
+            {
+                "id": task.id,
+                "domain": task.domain,
+                "task_type": task.task_type,
+                "status": task.status,
+                "current_step_key": task.current_step_key,
+                "current_step_status": task.current_step_status,
+                "progress_percent": task.progress_percent,
+                "cancel_requested": task.cancel_requested,
+                "provider_task_id": task.provider_task_id,
+                "error_message": task.error_message,
+                "project_id": task.project_id,
+                "drama_project_id": task.drama_project_id,
+                "episode_id": task.episode_id,
+                "fragment_id": task.fragment_id,
+                "asset_id": task.asset_id,
+                "shot_id": task.shot_id,
+                "created_at": task.created_at,
+                "updated_at": task.updated_at,
+            }
+        )
+    return items
+
+
+# 给分集挂上统一任务中心活动任务，便于查询侧逐步切换
+async def _episode_out_with_tasks(
+    db: AsyncSession,
+    user: User,
+    ep: DramaEpisode,
+) -> DramaEpisodeOut:
+    ep.active_tasks = await list_active_tasks_for_owner(
+        db,
+        user.id,
+        drama_project_id=ep.project_id,
+    )
+    ep.active_tasks = _expand_episode_task_items(list(ep.active_tasks or []))
+    return _episode_out(ep)
 
 
 @router.get("/episodes", response_model=list[DramaEpisodeOut])
@@ -75,7 +172,16 @@ async def list_episodes(
         )
         .order_by(DramaEpisode.id.asc())
     )
-    return [_episode_out(ep) for ep in result.scalars().all()]
+    episodes = list(result.scalars().all())
+    active_tasks = await list_active_tasks_for_owner(db, user.id, drama_project_id=project_id)
+    by_episode_id: dict[int, list] = {}
+    for task in active_tasks:
+        if task.episode_id is None:
+            continue
+        by_episode_id.setdefault(int(task.episode_id), []).append(task)
+    for ep in episodes:
+        ep.active_tasks = _expand_episode_task_items(by_episode_id.get(int(ep.id), []))
+    return [_episode_out(ep) for ep in episodes]
 
 
 @router.get("/episodes/{episode_id}", response_model=DramaEpisodeOut)
@@ -85,7 +191,7 @@ async def get_episode(
     user: User = Depends(get_current_user),
 ) -> DramaEpisodeOut:
     ep = await get_owned_episode(db, episode_id, user)
-    return _episode_out(ep)
+    return await _episode_out_with_tasks(db, user, ep)
 
 
 @router.post("/episodes/{episode_id}/plan_fragments", response_model=DramaEpisodeOut)
@@ -102,10 +208,10 @@ async def plan_episode_fragments(
 
     params = dict(ep.params or {})
     existing = str(params.get("fragment_plan_status") or "")
-    # force 时允许重入队（避免 Celery 丢任务后卡在 generating）
+    # force 时允许重入队（避免旧任务异常后卡在 generating）
     if existing == "generating" and not req.force:
         logger.info("单集分镜已在进行中 episode_id=%s", episode_id)
-        return _episode_out(ep)
+        return await _episode_out_with_tasks(db, user, ep)
     if existing == "generating" and req.force:
         logger.warning("单集分镜强制重入队 episode_id=%s prev_status=generating", episode_id)
 
@@ -125,23 +231,45 @@ async def plan_episode_fragments(
     params["fragment_plan_status"] = "generating"
     params.pop("fragment_plan_error", None)
     params["fragment_plan_mode"] = "llm"
+    if req.skill_ids is None:
+        params.pop("fragment_plan_skill_ids", None)
+    else:
+        params["fragment_plan_skill_ids"] = parse_skill_ids(req.skill_ids) or []
     ep.params = params
     await db.commit()
     await db.refresh(ep)
 
-    task_id = dispatch_episode_fragment_plan_job(
-        episode_id,
-        fallback_rules=bool(req.fallback_rules),
+    task = await create_task(
+        db,
+        user,
+        TaskCreateRequest(
+            domain="drama",
+            task_type="fragment_plan",
+            dedupe_key=f"drama:fragment_plan:episode:{episode_id}:force:{int(bool(req.force))}",
+            payload={
+                "project_id": ep.project_id,
+                "episode_id": episode_id,
+                "fallback_rules": bool(req.fallback_rules),
+                "force": bool(req.force),
+                "skill_ids": parse_skill_ids(req.skill_ids) if req.skill_ids is not None else None,
+            },
+            drama_project_id=ep.project_id,
+            episode_id=episode_id,
+            targets=[
+                TaskTargetBind(target_type="drama_project", target_id=ep.project_id),
+                TaskTargetBind(target_type="episode", target_id=episode_id),
+            ],
+        ),
     )
     logger.info(
-        "已入队单集 LLM 分镜 episode_id=%s force=%s task_id=%s",
+        "已创建单集 LLM 分镜任务 episode_id=%s force=%s task_id=%s",
         episode_id,
         req.force,
-        task_id,
+        task.id,
     )
     # 再取一次带 fragments 的 episode
     ep = await get_owned_episode(db, episode_id, user)
-    return _episode_out(ep)
+    return await _episode_out_with_tasks(db, user, ep)
 
 
 @router.post("/episodes/seed_from_script", response_model=list[DramaEpisodeOut])
@@ -179,7 +307,15 @@ async def seed_episodes(
         len(episodes),
         frag_total,
     )
-    return [_episode_out(ep) for ep in episodes]
+    active_tasks = await list_active_tasks_for_owner(db, user.id, drama_project_id=project_id)
+    by_episode_id: dict[int, list] = {}
+    for task in active_tasks:
+        if task.episode_id is None:
+            continue
+        by_episode_id.setdefault(int(task.episode_id), []).append(task)
+    for episode in episodes:
+        episode.active_tasks = _expand_episode_task_items(by_episode_id.get(int(episode.id), []))
+    return [_episode_out(episode) for episode in episodes]
 
 
 @router.post("/episodes/{episode_id}/fragments", response_model=DramaEpisodeOut)
@@ -190,31 +326,68 @@ async def save_fragments(
     user: User = Depends(get_current_user),
 ) -> DramaEpisodeOut:
     ep = await get_owned_episode(db, episode_id, user)
-    for old in list(ep.fragments or []):
-        await db.delete(old)
+    old_frag_ids = [int(f.id) for f in (ep.fragments or [])]
+    await detach_task_fragment_refs(db, old_frag_ids)
+    # 用 relationship 清空，保证会话内集合与库一致（delete 旧行但不从 ep.fragments 移除会导致返回旧 id）
+    ep.fragments.clear()
     await db.flush()
     for item in body.fragments:
         frag = DramaEpisodeFragment(
             episode_id=ep.id,
             sort_order=item.sort_order,
             content=item.content or "",
-            cover=item.cover or "",
-            video=item.video or "",
+            cover=(item.cover or "")[:1024],
+            video=(item.video or "")[:1024],
             duration_sec=item.duration_sec,
             params=item.params,
         )
-        db.add(frag)
+        ep.fragments.append(frag)
         await db.flush()
-        for aid in item.asset_ids:
+        asset_ids = await filter_valid_project_asset_ids(
+            db,
+            ep.project_id,
+            list(item.asset_ids or []),
+        )
+        for aid in asset_ids:
             db.add(DramaFragmentAssetRef(fragment_id=frag.id, asset_id=aid))
     await db.commit()
-    ep = await get_owned_episode(db, episode_id, user)
+    # expire_on_commit=False：必须重查，不能用会话里可能过期的 ep.fragments
+    frags = await load_episode_fragments(db, episode_id)
     logger.info(
-        "已保存分镜 episode_id=%s count=%s",
+        "已保存分镜 episode_id=%s count=%s ids=%s",
         episode_id,
-        len(body.fragments),
+        len(frags),
+        [f.id for f in frags],
     )
-    return _episode_out(ep)
+    ep.fragments = frags
+    return await _episode_out_with_tasks(db, user, ep)
+
+
+@router.post("/fragments/{fragment_id}/activate_video_version")
+async def activate_video_version(
+    fragment_id: int,
+    body: DramaActivateVideoVersionRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """将分镜历史成片版本切换为当前预览/导出所用视频。"""
+    result = await db.execute(
+        select(DramaEpisodeFragment).where(DramaEpisodeFragment.id == fragment_id)
+    )
+    fragment = result.scalar_one_or_none()
+    if not fragment:
+        raise HTTPException(status_code=404, detail="分镜不存在")
+    await get_owned_episode(db, fragment.episode_id, user)
+    status = str(fragment_generation_status(fragment).get("status") or "")
+    if status in {"queued", "running", "generating"}:
+        raise HTTPException(status_code=409, detail="分镜正在生成，请完成后再切换版本")
+    try:
+        payload = activate_fragment_video_version(fragment, body.version_id.strip())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await db.commit()
+    await db.refresh(fragment)
+    return {"ok": True, **payload}
 
 
 @router.post("/episodes/{episode_id}/generate")
@@ -224,50 +397,109 @@ async def generate_episode(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
-    # 入队 Celery / 进程内任务，前端用 generate_status 轮询
+    # 入队统一任务平台，前端用 generate_status 轮询
     ep = await get_owned_episode(db, episode_id, user)
-    await get_owned_drama_project(db, ep.project_id, user)
-    all_frags = sorted(ep.fragments or [], key=lambda f: f.sort_order)
-    if body.fragment_ids:
-        id_set = set(body.fragment_ids)
-        frags = [f for f in all_frags if f.id in id_set]
-    else:
-        frags = list(all_frags)
+    project = await get_owned_drama_project(db, ep.project_id, user)
+    all_frags = await load_episode_fragments(db, episode_id)
+    frags = match_fragments_for_generate(all_frags, body.fragment_ids)
     if not frags:
-        raise HTTPException(status_code=400, detail="没有可生成的分镜")
+        logger.warning(
+            "没有可生成的分镜 episode_id=%s requested=%s available=%s",
+            episode_id,
+            body.fragment_ids,
+            [f.id for f in all_frags],
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="没有可生成的分镜（保存后分镜已更新，请再点一次生成）",
+        )
 
-    # 已有分镜在排队/生成时，仅禁止重复提交同一分镜
-    busy_same = [
-        f.id
+    # 已在排队/生成的分镜跳过；其余按镜序入队（衔接时后一镜等上一镜尾帧）
+    idle_frags = [
+        f
         for f in frags
-        if fragment_generation_status(f).get("status") in {"queued", "running"}
+        if fragment_generation_status(f).get("status") not in {"queued", "running", "generating"}
     ]
-    if busy_same:
+    idle_frags.sort(key=lambda f: int(f.sort_order or 0))
+    if not idle_frags:
         raise HTTPException(
             status_code=409,
             detail="所选分镜正在生成，请等待完成后再试",
         )
 
-    frag_ids = [f.id for f in frags]
-    for f in frags:
+    # 全部入队；超过单用户并发上限的镜保持 pending 排队，由调度器按空位激活
+    limit = max(1, int(get_settings().drama_user_video_job_limit or 12))
+    inflight = await count_user_inflight_fragment_video_tasks(db, user.id)
+    activate_slots = max(0, limit - inflight)
+
+    sequential = project_link_last_frame_enabled(project)
+    frag_ids = [f.id for f in idle_frags]
+    batch_key = f"drama:episode:{episode_id}:video:{uuid.uuid4().hex[:12]}"
+    for f in idle_frags:
         params = dict(f.params or {})
         params["generation"] = {"status": "queued"}
         f.params = params
     await db.commit()
 
-    task_id = dispatch_episode_generate_job(episode_id, user.id, frag_ids)
+    created_tasks: list[int] = []
+    deferred_count = 0
+    for index, f in enumerate(idle_frags):
+        # 串行：仅首镜可激活；并行：仅前 activate_slots 镜立即执行，其余真正排队
+        if sequential:
+            defer_activation = index > 0 or activate_slots <= 0
+        else:
+            defer_activation = index >= activate_slots
+        if defer_activation:
+            deferred_count += 1
+        task = await create_task(
+            db,
+            user,
+            TaskCreateRequest(
+                domain="drama",
+                task_type="fragment_video",
+                dedupe_key=f"drama:fragment_video:fragment:{f.id}",
+                batch_key=batch_key,
+                defer_activation=defer_activation,
+                payload={
+                    "project_id": ep.project_id,
+                    "episode_id": episode_id,
+                    "fragment_ids": [f.id],
+                    "sequential": sequential,
+                    "batch_key": batch_key,
+                    "batch_index": index,
+                },
+                drama_project_id=ep.project_id,
+                episode_id=episode_id,
+                fragment_id=f.id,
+                targets=[
+                    TaskTargetBind(target_type="drama_project", target_id=ep.project_id),
+                    TaskTargetBind(target_type="episode", target_id=episode_id),
+                    TaskTargetBind(target_type="fragment", target_id=f.id, sort_order=index),
+                ],
+            ),
+        )
+        created_tasks.append(task.id)
     logger.info(
-        "已入队分集视频 episode_id=%s project_id=%s fragments=%s task_id=%s",
+        "已创建分集视频任务 episode_id=%s project_id=%s fragments=%s activated=%s deferred=%s task_ids=%s",
         episode_id,
         ep.project_id,
         len(frag_ids),
-        task_id,
+        len(frag_ids) - deferred_count,
+        deferred_count,
+        created_tasks,
     )
     return {
         "ok": True,
         "fragment_ids": frag_ids,
-        "status": "queued",
-        "task_id": task_id,
+        "status": "pending",
+        "task_id": created_tasks[0] if created_tasks else None,
+        "task_ids": created_tasks,
+        "batch_key": batch_key,
+        "provider_task_id": None,
+        "user_active_jobs": inflight + (len(frag_ids) - deferred_count),
+        "user_job_limit": limit,
+        "deferred_count": deferred_count,
+        "remaining_not_queued": 0,
     }
 
 
@@ -278,6 +510,17 @@ async def generate_status(
     user: User = Depends(get_current_user),
 ) -> dict:
     ep = await get_owned_episode(db, episode_id, user)
+    active_tasks = await list_active_tasks_for_owner(
+        db,
+        user.id,
+        drama_project_id=ep.project_id,
+    )
+    episode_tasks = [task for task in active_tasks if task.episode_id == episode_id]
+    await reconcile_orphaned_fragment_generations(
+        db,
+        list(ep.fragments or []),
+        collect_active_fragment_ids_from_tasks(episode_tasks),
+    )
     items = []
     done = 0
     failed = 0
@@ -290,7 +533,7 @@ async def generate_status(
             done += 1
         elif s == "failed":
             failed += 1
-        elif s in {"running", "queued"}:
+        elif s in {"running", "queued", "generating"}:
             running += 1
     return {
         "episode_id": episode_id,
@@ -298,6 +541,10 @@ async def generate_status(
         "failed": failed,
         "running": running,
         "total": len(items),
+        "tasks": [
+            item
+            for item in _expand_episode_task_items(episode_tasks)
+        ],
         "fragments": items,
     }
 
@@ -311,6 +558,14 @@ async def cancel_generate_episode(
     """取消本集全部分镜视频生成（排队/进行中）。"""
     ep = await get_owned_episode(db, episode_id, user)
     await get_owned_drama_project(db, ep.project_id, user)
+    await cancel_tasks_for_scope(
+        db,
+        user.id,
+        domain="drama",
+        task_type="fragment_video",
+        drama_project_id=ep.project_id,
+        episode_id=episode_id,
+    )
     result = await cancel_episode_video_jobs(episode_id)
     logger.info(
         "已取消分集视频 episode_id=%s project_id=%s result=%s",
@@ -323,9 +578,11 @@ async def cancel_generate_episode(
 
 @router.post("/cancel_video_jobs")
 async def cancel_all_video_jobs(
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
     """取消当前用户触发的全部漫剧分镜视频任务。"""
+    await cancel_tasks_for_scope(db, user.id, domain="drama", task_type="fragment_video")
     result = await cancel_all_episode_video_jobs()
     logger.info("已取消全部视频任务 user_id=%s result=%s", user.id, result)
     return result

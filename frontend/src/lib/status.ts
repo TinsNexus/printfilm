@@ -1,3 +1,6 @@
+import { getActiveLocale } from '../i18n/detect'
+import { messages } from '../i18n/messages'
+
 export const RUNNING = new Set([
   'SCRIPTING',
   'IMAGING',
@@ -8,27 +11,30 @@ export const RUNNING = new Set([
   'PARALLEL_ASSETS',
 ])
 
-export const STATUS_CN: Record<string, string> = {
-  DRAFT: '草稿',
-  SCRIPTING: '拆分镜中',
-  SCRIPT_READY: '分镜待确认',
-  IMAGING: '出图中',
-  IMAGE_READY: '分镜图完成',
-  VIDEOING: '生成带配音视频',
-  VIDEO_READY: '镜头视频完成',
-  AUDIOING: '生成配音',
-  COMPOSING: '拼接成片',
-  AUDITING: '审核中',
-  DONE: '已完成',
-  FAILED: '失败',
-  CANCELLED: '已取消',
-  REJECTED: '未通过',
-  PARALLEL_ASSETS: '出图中',
-  ASSETS_READY: '素材就绪',
-}
+// 按当前界面语言取状态文案（兼容旧的 STATUS_CN[code] 写法）
+export const STATUS_CN: Record<string, string> = new Proxy(
+  {},
+  {
+    get(_target, prop: string) {
+      const map = messages[getActiveLocale()].status as Record<string, string>
+      return map[prop] || prop
+    },
+  },
+)
 
 export function isRunning(status: string) {
   return RUNNING.has(status)
+}
+
+export function hasActiveTasks(project: {
+  active_tasks?: Array<{ status: string; cancel_requested?: boolean | null }> | null
+}) {
+  const activeStatuses = ['pending', 'leased', 'running', 'awaiting_poll', 'awaiting_review']
+  return Boolean(
+    project.active_tasks?.some(
+      (task) => !task.cancel_requested && activeStatuses.includes(task.status),
+    ),
+  )
 }
 
 /**
@@ -74,14 +80,15 @@ export function statusTone(status: string): 'ok' | 'bad' | 'run' | 'idle' {
 }
 
 /** Per-shot statuses from pipeline */
-export const SHOT_STATUS_CN: Record<string, string> = {
-  PENDING: '等待中',
-  IMAGE_READY: '图已生成',
-  VIDEO_READY: '视频已生成',
-  AUDIO_READY: '已完成',
-  DONE: '已完成',
-  FAILED: '失败',
-}
+export const SHOT_STATUS_CN: Record<string, string> = new Proxy(
+  {},
+  {
+    get(_target, prop: string) {
+      const map = messages[getActiveLocale()].shotStatus as Record<string, string>
+      return map[prop] || STATUS_CN[prop] || prop
+    },
+  },
+)
 
 export function shotStatusLabel(status: string) {
   return SHOT_STATUS_CN[status] || STATUS_CN[status] || status

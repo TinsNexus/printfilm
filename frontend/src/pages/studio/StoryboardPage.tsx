@@ -4,7 +4,6 @@ import { api, defaultsFromTemplate } from '../../api'
 import type { Project, Shot, Template } from '../../api'
 import AppShell from '../../components/layout/AppShell'
 import Stepper from '../../components/ui/Stepper'
-import ComingSoon from '../../components/ui/ComingSoon'
 import {
   IconChevronLeft,
   IconDownload,
@@ -31,7 +30,11 @@ import {
 import {
   SEGMENT_SCRIPT_PLACEHOLDER,
   SHOT_DURATION_MAX,
+  firstVisualFromScript,
+  narrationFromScript,
   parseSegmentScript,
+  replaceFirstVisualInScript,
+  replaceNarrationInScript,
   validateSegmentScriptDuration,
 } from '../../lib/segmentDuration'
 
@@ -107,6 +110,15 @@ function boardStepIndex(project: Project) {
   return 3
 }
 
+function hasActiveUnifiedTasks(project: Project | null): boolean {
+  const activeStatuses = ['pending', 'leased', 'running', 'awaiting_poll', 'awaiting_review']
+  return Boolean(
+    project?.active_tasks?.some(
+      (task) => !task.cancel_requested && activeStatuses.includes(task.status),
+    ),
+  )
+}
+
 export default function StoryboardPage() {
   const { id } = useParams()
   const projectId = Number(id)
@@ -154,7 +166,7 @@ export default function StoryboardPage() {
     if (!project) return
     // Only poll while pipeline is actively running — idle checkpoints
     // (IMAGE_READY / VIDEO_READY / SCRIPT_READY) must not spin forever.
-    if (!isRunning(project.status)) return
+    if (!isRunning(project.status) && !hasActiveUnifiedTasks(project)) return
     const timer = setInterval(() => {
       api
         .getProject(project.id)
@@ -173,7 +185,7 @@ export default function StoryboardPage() {
     return () => document.removeEventListener('click', onDoc)
   }, [menuShotId])
 
-  const running = Boolean(project && isRunning(project.status))
+  const running = Boolean(project && (isRunning(project.status) || hasActiveUnifiedTasks(project)))
   const step = project ? boardStepIndex(project) : 3
   const totalDuration = useMemo(
     () => (project?.shots || []).reduce((s, x) => s + (Number(x.duration) || 0), 0),
@@ -247,6 +259,7 @@ export default function StoryboardPage() {
         ? '继续生成视频'
         : '继续生成'
 
+  // 工作台进度：完整模式要镜头视频 + 外部 TTS，静图模式只配音合成
   const progressItems = useMemo(() => {
     if (!project) return []
     const list = project.shots || []
@@ -266,7 +279,7 @@ export default function StoryboardPage() {
     ]
     if (full) {
       items.push({
-        label: `视频模型配音 (${vids}/${list.length || 0})`,
+        label: `镜头视频 (${vids}/${list.length || 0})`,
         done:
           list.length > 0 &&
           (vids === list.length ||
@@ -274,12 +287,13 @@ export default function StoryboardPage() {
         run: stage === 'VIDEOING',
         pct: stage === 'VIDEOING' ? project.progress : undefined,
       })
-    } else {
-      items.push({
-        label: `配音合成 (${auds}/${list.length || 0})`,
-        done: list.length > 0 && auds === list.length,
-      })
     }
+    items.push({
+      label: `配音合成 (${auds}/${list.length || 0})`,
+      done: list.length > 0 && auds === list.length,
+      run: stage === 'AUDIOING',
+      pct: stage === 'AUDIOING' ? project.progress : undefined,
+    })
     items.push({
       label: full ? '镜头拼接' : '成片渲染',
       done: Boolean(project.final_video_url) || project.status === 'DONE',
@@ -465,8 +479,7 @@ export default function StoryboardPage() {
     if (!project) return
     setBusy(true)
     try {
-      await api.regenImage(project.id, shot.id)
-      setProject(await api.getProject(project.id))
+      setProject(await api.regenImage(project.id, shot.id))
     } catch (err) {
       setError(err instanceof Error ? err.message : '重绘失败')
     } finally {
@@ -478,8 +491,7 @@ export default function StoryboardPage() {
     if (!project) return
     setBusy(true)
     try {
-      await api.regenVideo(project.id, shot.id)
-      setProject(await api.getProject(project.id))
+      setProject(await api.regenVideo(project.id, shot.id))
     } catch (err) {
       setError(err instanceof Error ? err.message : '重生视频失败')
     } finally {
@@ -491,8 +503,7 @@ export default function StoryboardPage() {
     if (!project) return
     setBusy(true)
     try {
-      await api.regenAudio(project.id, shot.id)
-      setProject(await api.getProject(project.id))
+      setProject(await api.regenAudio(project.id, shot.id))
     } catch (err) {
       setError(err instanceof Error ? err.message : '重配音失败')
     } finally {
@@ -504,6 +515,44 @@ export default function StoryboardPage() {
     setEditFocus(focus)
     setEditing({ ...shot })
     setMenuShotId(null)
+  }
+
+  // 改旁白时同步写入脚本旁白段
+  function patchEditingNarration(value: string) {
+    if (!editing) return
+    const script = editing.segment_script || editing.video_prompt || ''
+    const next = replaceNarrationInScript(script, value)
+    setEditing({
+      ...editing,
+      narration: value,
+      segment_script: next,
+      video_prompt: next,
+    })
+  }
+
+  // 改首帧画面时同步写入脚本第一段 visual
+  function patchEditingVisual(value: string) {
+    if (!editing) return
+    const script = editing.segment_script || editing.video_prompt || ''
+    const next = replaceFirstVisualInScript(script, value)
+    setEditing({
+      ...editing,
+      img_prompt: value,
+      segment_script: next,
+      video_prompt: next,
+    })
+  }
+
+  // 改脚本时回填旁白与首帧画面
+  function patchEditingScript(value: string) {
+    if (!editing) return
+    setEditing({
+      ...editing,
+      segment_script: value,
+      video_prompt: value,
+      narration: narrationFromScript(value),
+      img_prompt: firstVisualFromScript(value) || editing.img_prompt,
+    })
   }
 
   async function saveShot() {
@@ -538,19 +587,43 @@ export default function StoryboardPage() {
     }
   }
 
+  // 保存项目提示词；与后台模板相同则清空覆盖
   async function saveProjectPrompts() {
     if (!project || !promptEdit) return
     setBusy(true)
     try {
+      const d = promptDefaults
+      const styleOut = promptEdit.style_prompt.trim()
+      const charOut = promptEdit.character_prompt.trim()
+      const extraOut = promptEdit.extra_prompt.trim()
       const updated = await api.updateProject(project.id, {
-        style_prompt: promptEdit.style_prompt,
-        character_prompt: promptEdit.character_prompt,
-        extra_prompt: promptEdit.extra_prompt,
+        style_prompt: d && styleOut === d.style_prompt ? '' : styleOut,
+        character_prompt: d && charOut === d.character_prompt ? '' : charOut,
+        extra_prompt: d && extraOut === d.extra_prompt ? '' : extraOut,
       })
       setProject(updated)
       setPromptEdit(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : '保存提示词失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // 清空项目覆盖，后续生成跟随后台模板
+  async function restoreTemplatePrompts() {
+    if (!project) return
+    setBusy(true)
+    try {
+      const updated = await api.updateProject(project.id, {
+        style_prompt: '',
+        character_prompt: '',
+        extra_prompt: '',
+      })
+      setProject(updated)
+      setPromptEdit(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '恢复模板失败')
     } finally {
       setBusy(false)
     }
@@ -791,7 +864,7 @@ title="用当前镜头重新拼接"
           <div className="pf-prompt-panel">
             <h4>内置提示词</h4>
             <p className="pf-muted" style={{ fontSize: '0.72rem', margin: '0 0 0.45rem' }}>
-              点击可查看并修改，影响后续重生成
+              默认来自管理后台模板。此处修改只覆盖本项目，后续重生成才生效。
             </p>
             {(
               [
@@ -836,9 +909,7 @@ title="用当前镜头重新拼接"
               </div>
             </article>
             <article className="pf-create-col">
-              <h3>
-                结构摘要 <ComingSoon label="示例聚合" />
-              </h3>
+              <h3>结构摘要</h3>
               <ul className="pf-meta-list">
                 {structure.length ? (
                   structure.map((s) => (
@@ -1130,7 +1201,7 @@ title="用当前镜头重新拼接"
           </section>
         </div>
 
-        <aside className="pf-create-col">
+        <aside className="pf-create-col pf-board-settings">
           <h3>生成进度</h3>
           <ul className="pf-progress-list">
             {progressItems.map((item) => (
@@ -1263,6 +1334,9 @@ title="用当前镜头重新拼接"
                 value={editing.overlay_title || ''}
                 onChange={(e) => setEditing({ ...editing, overlay_title: e.target.value })}
               />
+              <span className="pf-muted" style={{ fontSize: '0.75rem', marginTop: 4, display: 'block' }}>
+                分镜列表名称；图文成片会叠到画面顶部
+              </span>
             </label>
             <label>
               副标题
@@ -1270,17 +1344,20 @@ title="用当前镜头重新拼接"
                 value={editing.overlay_subtitle || ''}
                 onChange={(e) => setEditing({ ...editing, overlay_subtitle: e.target.value })}
               />
+              <span className="pf-muted" style={{ fontSize: '0.75rem', marginTop: 4, display: 'block' }}>
+                图文成片叠字；AI 视频成片不烧这行，只作分镜说明
+              </span>
             </label>
             <label>
               旁白
               <textarea
                 autoFocus={editFocus === 'narration'}
                 value={editing.narration}
-                onChange={(e) => setEditing({ ...editing, narration: e.target.value })}
+                onChange={(e) => patchEditingNarration(e.target.value)}
                 rows={3}
               />
               <span className="pf-muted" style={{ fontSize: '0.75rem', marginTop: 4, display: 'block' }}>
-                保存后将按脚本中旁白段回写
+                会同步到下方脚本旁白段，配音与视频按脚本生成
               </span>
             </label>
             <label>
@@ -1288,11 +1365,11 @@ title="用当前镜头重新拼接"
               <textarea
                 autoFocus={editFocus === 'img_prompt'}
                 value={editing.img_prompt}
-                onChange={(e) => setEditing({ ...editing, img_prompt: e.target.value })}
+                onChange={(e) => patchEditingVisual(e.target.value)}
                 rows={3}
               />
               <span className="pf-muted" style={{ fontSize: '0.75rem', marginTop: 4, display: 'block' }}>
-                保存后将按脚本首段画面回写
+                会同步到脚本首段画面，出图与视频都用这一段
               </span>
             </label>
             <label>
@@ -1300,13 +1377,7 @@ title="用当前镜头重新拼接"
               <textarea
                 autoFocus={editFocus === 'segment_script' || editFocus === ''}
                 value={editing.segment_script || editing.video_prompt || ''}
-                onChange={(e) =>
-                  setEditing({
-                    ...editing,
-                    segment_script: e.target.value,
-                    video_prompt: e.target.value,
-                  })
-                }
+                onChange={(e) => patchEditingScript(e.target.value)}
                 rows={10}
                 placeholder={SEGMENT_SCRIPT_PLACEHOLDER}
               />
@@ -1388,7 +1459,7 @@ title="用当前镜头重新拼接"
           <div className="modal pf-prompt-modal" onClick={(e) => e.stopPropagation()}>
             <h3>项目内置提示词</h3>
             <p className="pf-muted" style={{ fontSize: '0.8rem', marginTop: 0 }}>
-              修改后对后续「重生成画面/视频」生效；已生成的镜头需点重生成才会更新。
+              默认跟随后台模板。保存为与模板相同的内容会自动清除覆盖；已生成镜头需点重生成才会更新。
             </p>
             <label>
               风格提示词
@@ -1415,7 +1486,7 @@ title="用当前镜头重新拼接"
                 rows={2}
               />
             </label>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
               <button
                 type="button"
                 className="pf-btn pf-btn-lime"
@@ -1423,6 +1494,14 @@ title="用当前镜头重新拼接"
                 onClick={saveProjectPrompts}
               >
                 保存
+              </button>
+              <button
+                type="button"
+                className="pf-btn pf-btn-ghost"
+                disabled={busy}
+                onClick={() => void restoreTemplatePrompts()}
+              >
+                恢复后台模板
               </button>
               <button type="button" className="pf-btn pf-btn-ghost" onClick={() => setPromptEdit(null)}>
                 取消

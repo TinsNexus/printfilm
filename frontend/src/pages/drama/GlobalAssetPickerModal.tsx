@@ -1,10 +1,11 @@
 /** 全局资产库选择弹窗：跨项目挑选图片资产（导入或应用到节点） */
 import { useEffect, useMemo, useState } from 'react'
 import { dramaApi, resolveDramaMediaUrl, type DramaAsset } from '../../api/drama'
+import { filterDramaLibraryAssets, isDramaLibraryAsset } from '../../lib/dramaLibraryAssets'
 import Modal from '../../components/ui/Modal'
 import './drama.css'
 
-export type GlobalAssetTabKey = 'character' | 'scene' | 'prop' | 'material' | 'voice' | 'all'
+export type GlobalAssetTabKey = 'character' | 'scene' | 'prop' | 'voice' | 'all'
 
 type Props = {
   open: boolean
@@ -26,16 +27,15 @@ const TABS: Array<{ key: GlobalAssetTabKey; label: string }> = [
   { key: 'character', label: '角色' },
   { key: 'scene', label: '场景' },
   { key: 'prop', label: '道具' },
-  { key: 'material', label: '素材' },
   { key: 'voice', label: '音色' },
 ]
 
 // 资产是否匹配 Tab
 function matchAssetTab(asset: DramaAsset, tab: GlobalAssetTabKey): boolean {
+  if (!isDramaLibraryAsset(asset)) return false
   if (tab === 'all') return true
   const t = (asset.type || '').toLowerCase()
   if (tab === 'voice') return t === 'voice'
-  if (tab === 'material') return t === 'material' || t === 'none' || !t
   return t === tab
 }
 
@@ -81,8 +81,8 @@ export function GlobalAssetPickerModal({
     setError('')
     setLoading(true)
     dramaApi
-      .listAssets()
-      .then(setAllAssets)
+      .listAssets(undefined, { libraryOnly: true })
+      .then((rows) => setAllAssets(filterDramaLibraryAssets(rows)))
       .catch((err) => setError(err instanceof Error ? err.message : '加载资产库失败'))
       .finally(() => setLoading(false))
   }, [open, defaultTab])
@@ -93,7 +93,7 @@ export function GlobalAssetPickerModal({
       if (!hasMedia(asset)) return false
       if (allowedTypes?.length) {
         const t = (asset.type || '').toLowerCase()
-        if (!allowedTypes.includes(t) && !(allowedTypes.includes('material') && (t === 'none' || !t))) {
+        if (!allowedTypes.includes(t)) {
           return false
         }
       } else if (!matchAssetTab(asset, tab)) {
@@ -245,5 +245,5 @@ export async function importGlobalAssetToProject(
 export function canvasKindToLibraryTypes(kind: string): string[] {
   if (kind === 'character') return ['character']
   if (kind === 'scene') return ['scene']
-  return ['prop', 'material', 'none', 'image']
+  return ['prop', 'image']
 }

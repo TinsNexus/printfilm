@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { api, type UsageSummary } from '../api'
+import { api } from '../api'
 import type { Project } from '../api'
 import AppShell from '../components/layout/AppShell'
 import PillTabs from '../components/ui/PillTabs'
+import Pagination from '../components/ui/Pagination'
 import StatCard from '../components/ui/StatCard'
 import {
   IconClapper,
@@ -24,7 +25,9 @@ import {
   triggerBlobDownload,
   zipVideosClient,
 } from '../lib/clientDownload'
-import { isRunning, STATUS_CN, statusTone } from '../lib/status'
+import { hasActiveTasks, isRunning, STATUS_CN, statusTone } from '../lib/status'
+import { pageCountOf } from '../lib/pagination'
+import { formatDateTime, useI18n } from '../i18n'
 
 type HistoryItem = Omit<Project, 'shots'> & {
   published?: boolean
@@ -35,28 +38,19 @@ type HistoryItem = Omit<Project, 'shots'> & {
   updated_at?: string
 }
 
-const PAGE_SIZE = 8
+type HistoryTab = 'all' | 'draft' | 'running' | 'done' | 'published'
 
-const TAB_STATUS: Record<string, 'all' | 'draft' | 'running' | 'done' | 'published'> = {
-  全部: 'all',
-  草稿: 'draft',
-  生成中: 'running',
-  已完成: 'done',
-  已发布: 'published',
+const PAGE_SIZE_DEFAULT = 8
+
+const TAB_STATUS: Record<HistoryTab, 'all' | 'draft' | 'running' | 'done' | 'published'> = {
+  all: 'all',
+  draft: 'draft',
+  running: 'running',
+  done: 'done',
+  published: 'published',
 }
 
-const TYPE_OPTIONS: Array<{ value: '' | 'full' | 'image_text'; label: string }> = [
-  { value: '', label: '全部类型' },
-  { value: 'full', label: '成片视频' },
-  { value: 'image_text', label: '图文视频' },
-]
-
-/** 格式化 token 数量，过大时用 k/M 缩写 */
-function formatTokens(n: number) {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`
-  if (n >= 10_000) return `${(n / 1000).toFixed(n >= 100_000 ? 0 : 1)}k`
-  return n.toLocaleString('zh-CN')
-}
+const HISTORY_TABS: HistoryTab[] = ['all', 'draft', 'running', 'done', 'published']
 
 function canDownload(p: HistoryItem) {
   return p.status === 'DONE' && Boolean(p.final_video_url)
@@ -73,6 +67,7 @@ function statusBadgeClass(status: string) {
 
 export default function HistoryPage() {
   const nav = useNavigate()
+  const { t, m, locale } = useI18n()
   /*
    * items 当前页项目
    * total 筛选后总数（后端）
@@ -89,7 +84,7 @@ export default function HistoryPage() {
    * q 搜索框
    * debouncedQ 防抖后的搜索词
    * page 页码
-   * usage 本月用量
+   * pageSize 每页条数
    * preview 预览弹层
    */
   const [items, setItems] = useState<HistoryItem[]>([])
@@ -102,12 +97,12 @@ export default function HistoryPage() {
   const [packing, setPacking] = useState(false)
   const [packProgress, setPackProgress] = useState('')
   const [selected, setSelected] = useState<Set<number>>(new Set())
-  const [tab, setTab] = useState('全部')
+  const [tab, setTab] = useState<HistoryTab>('all')
   const [typeMode, setTypeMode] = useState<'' | 'full' | 'image_text'>('')
   const [q, setQ] = useState('')
   const [debouncedQ, setDebouncedQ] = useState('')
   const [page, setPage] = useState(1)
-  const [usage, setUsage] = useState<UsageSummary | null>(null)
+  const [pageSize, setPageSize] = useState(PAGE_SIZE_DEFAULT)
   const [preview, setPreview] = useState<{
     url: string
     title: string
@@ -115,7 +110,9 @@ export default function HistoryPage() {
   } | null>(null)
 
   const hasRunning = useMemo(
-    () => items.some((p) => isRunning(p.status) && p.progress < 100) || stats.generating > 0,
+    () =>
+      items.some((p) => (isRunning(p.status) && p.progress < 100) || hasActiveTasks(p)) ||
+      stats.generating > 0,
     [items, stats.generating],
   )
 
@@ -129,7 +126,7 @@ export default function HistoryPage() {
     try {
       const res = await api.listProjects({
         page,
-        page_size: PAGE_SIZE,
+        page_size: pageSize,
         status: TAB_STATUS[tab] || 'all',
         q: debouncedQ,
         pipeline_mode: typeMode,
@@ -143,7 +140,7 @@ export default function HistoryPage() {
         return new Set([...prev].filter((id) => ids.has(id)))
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : '加载失败')
+      setError(err instanceof Error ? err.message : t('common.loadFailed'))
     } finally {
       setLoading(false)
     }
@@ -159,17 +156,13 @@ export default function HistoryPage() {
       for (const t of list) map[t.id] = t.name
       setTemplates(map)
     })
-    api
-      .usageSummary()
-      .then(setUsage)
-      .catch(() => setUsage(null))
   }, [nav])
 
   useEffect(() => {
     setLoading(true)
     load().catch(() => undefined)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional reload keys
-  }, [page, tab, typeMode, debouncedQ])
+  }, [page, pageSize, tab, typeMode, debouncedQ])
 
   useEffect(() => {
     if (!hasRunning) return
@@ -178,13 +171,13 @@ export default function HistoryPage() {
     }, 2000)
     return () => clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasRunning, page, tab, typeMode, debouncedQ])
+  }, [hasRunning, page, pageSize, tab, typeMode, debouncedQ])
 
   useEffect(() => {
     setPage(1)
-  }, [tab, debouncedQ, typeMode])
+  }, [tab, debouncedQ, typeMode, pageSize])
 
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const pageCount = pageCountOf(total, pageSize)
   const pageItems = items
 
   // 筛选后若当前页超出范围则回退
@@ -209,10 +202,10 @@ export default function HistoryPage() {
 
   async function remove(id: number) {
     const ok = await dialog.confirm({
-      title: '删除项目',
-      message: '确定删除该项目？素材与成片将一并清除。',
-      confirmText: '删除',
-      cancelText: '取消',
+      title: t('history.deleteTitle'),
+      message: t('history.deleteMessage'),
+      confirmText: t('common.delete'),
+      cancelText: t('common.cancel'),
       tone: 'danger',
     })
     if (!ok) return
@@ -221,7 +214,7 @@ export default function HistoryPage() {
       await api.deleteProject(id)
       await load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : '删除失败')
+      setError(err instanceof Error ? err.message : t('history.deleteFailed'))
     } finally {
       setBusyId(null)
     }
@@ -238,7 +231,7 @@ export default function HistoryPage() {
         projectId: p.id,
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : '下载失败')
+      setError(err instanceof Error ? err.message : t('history.downloadFailed'))
     } finally {
       setBusyId(null)
     }
@@ -255,7 +248,7 @@ export default function HistoryPage() {
         projectId: preview.projectId,
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : '下载失败')
+      setError(err instanceof Error ? err.message : t('history.downloadFailed'))
     } finally {
       setBusyId(null)
     }
@@ -277,7 +270,7 @@ export default function HistoryPage() {
       )
       triggerBlobDownload(blob, filename)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '打包失败')
+      setError(err instanceof Error ? err.message : t('history.packFailed'))
     } finally {
       setPacking(false)
       setPackProgress('')
@@ -289,59 +282,47 @@ export default function HistoryPage() {
     else nav(`/studio/${p.id}`)
   }
 
-  function pageButtons() {
-    const buttons: (number | '…')[] = []
-    if (pageCount <= 7) {
-      for (let i = 1; i <= pageCount; i++) buttons.push(i)
-      return buttons
-    }
-    buttons.push(1)
-    if (page > 3) buttons.push('…')
-    for (let i = Math.max(2, page - 1); i <= Math.min(pageCount - 1, page + 1); i++) buttons.push(i)
-    if (page < pageCount - 2) buttons.push('…')
-    buttons.push(pageCount)
-    return buttons
-  }
-
   return (
-    <AppShell active="history" wide>
+    <AppShell active="kepu" wide>
       <div className="pf-history-head">
         <div>
-          <h1>我的项目</h1>
-          <p>管理你的 AI 视频创作项目，继续编辑或发布你的作品。</p>
+          <h1>{t('history.title')}</h1>
+          <p>{t('history.lead')}</p>
         </div>
-        <button type="button" className="pf-btn pf-btn-lime pf-btn-icon" onClick={() => nav('/studio/new')}>
-          <IconPlus size={16} />
-          新建项目
-        </button>
-        <Link to="/studio/new" className="pf-btn pf-btn-sm" style={{ marginLeft: 8 }}>
-          新建科普
-        </Link>
+        <div className="pf-history-head-actions">
+          <button type="button" className="pf-btn pf-btn-lime pf-btn-icon" onClick={() => nav('/studio/new')}>
+            <IconPlus size={16} />
+            {t('history.newKepu')}
+          </button>
+          <Link to="/drama" className="pf-btn pf-btn-ghost pf-btn-sm">
+            {t('history.goDrama')}
+          </Link>
+        </div>
       </div>
 
       <div className="pf-stats">
         <StatCard
-          label="总作品数"
+          label={t('history.statTotal')}
           value={stats.total}
           trend="—"
           icon={<IconClapper size={18} />}
         />
         <StatCard
-          label="生成中"
+          label={t('history.statRunning')}
           value={stats.generating}
-          trend={stats.generating ? '正在生成中' : '暂无任务'}
+          trend={stats.generating ? t('history.runningNow') : t('history.noTask')}
           icon={<IconRefresh size={18} />}
         />
         <StatCard
-          label="已完成"
+          label={t('history.statDone')}
           value={stats.done}
           trend="—"
           icon={<IconSend size={18} />}
         />
         <StatCard
-          label="本月时长"
+          label={t('history.statDuration')}
           value="—"
-          trend="额度统计即将推出"
+          trend={t('history.durationSoon')}
           icon={<IconClock size={18} />}
         />
       </div>
@@ -350,30 +331,31 @@ export default function HistoryPage() {
         <section className="pf-history-main">
           <div className="pf-history-filters">
             <PillTabs
-              items={['全部', '草稿', '生成中', '已完成', '已发布']}
-              value={tab}
-              onChange={setTab}
-              ariaLabel="项目状态"
+              items={HISTORY_TABS.map((id) => m.history.tabs[id])}
+              value={m.history.tabs[tab]}
+              onChange={(label) => {
+                const next = HISTORY_TABS.find((id) => m.history.tabs[id] === label)
+                if (next) setTab(next)
+              }}
+              ariaLabel={t('history.statusAria')}
             />
             <div className="pf-history-filter-right">
               <select
                 className="pf-type-select"
                 value={typeMode}
-                aria-label="项目类型"
+                aria-label={t('history.typeAria')}
                 onChange={(e) => setTypeMode(e.target.value as '' | 'full' | 'image_text')}
               >
-                {TYPE_OPTIONS.map((opt) => (
-                  <option key={opt.value || 'all'} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
+                <option value="">{t('history.typeAll')}</option>
+                <option value="full">{t('history.typeFull')}</option>
+                <option value="image_text">{t('history.typeImageText')}</option>
               </select>
               <label className="pf-search-field">
                 <IconSearch size={15} />
                 <input
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
-                  placeholder="搜索项目名称"
+                  placeholder={t('history.searchPlaceholder')}
                 />
               </label>
             </div>
@@ -388,15 +370,15 @@ export default function HistoryPage() {
             >
               <IconDownload size={15} />
               {packing
-                ? `打包中 ${packProgress}…`
-                : `打包下载 (${selectedDownloadable.length})`}
+                ? t('history.packing', { progress: packProgress })
+                : t('history.packDownload', { count: selectedDownloadable.length })}
             </button>
           </div>
 
           {error ? <p className="pf-error">{error}</p> : null}
-          {loading ? <p className="pf-muted">加载中…</p> : null}
+          {loading ? <p className="pf-muted">{t('common.loading')}</p> : null}
           {!loading && total === 0 ? (
-            <div className="pf-history-empty">暂无项目，点击「新建项目」开始创作</div>
+            <div className="pf-history-empty">{t('history.empty')}</div>
           ) : null}
 
           <div className="pf-project-list">
@@ -405,7 +387,6 @@ export default function HistoryPage() {
               const ratio =
                 p.output_ratio || (p.pipeline_mode === 'image_text' ? '9:16' : '16:9')
               const tplName = templates[p.template_id] || p.template_id
-              const when = new Date(p.updated_at || p.created_at).toLocaleString()
               return (
                 <article key={p.id} className="pf-project-card">
                   <label className="pf-project-check">
@@ -424,7 +405,7 @@ export default function HistoryPage() {
                     {p.cover_url ? (
                       <img src={api.assetUrl(p.cover_url, p.updated_at)} alt="" />
                     ) : (
-                      <div className="ph">无封面</div>
+                      <div className="ph">{t('history.noCover')}</div>
                     )}
                     {isRunning(p.status) ? (
                       <span className="pf-thumb-progress">{p.progress}%</span>
@@ -433,14 +414,17 @@ export default function HistoryPage() {
                   <div className="pf-project-info">
                     <h3>
                       {p.title}
-                      {p.published ? <span className="pf-badge ok" style={{ marginLeft: 8 }}>已发布</span> : null}
+                      {p.published ? <span className="pf-badge ok" style={{ marginLeft: 8 }}>{t('history.published')}</span> : null}
                     </h3>
                     <div className="pf-project-meta">
                       <span className={`pf-badge ${badge}`}>
                         {STATUS_CN[p.status] || p.status}
                       </span>
                       <span className="pf-muted">
-                        模板 {tplName} · {when}
+                        {t('history.templateMeta', {
+                          name: tplName,
+                          when: formatDateTime(p.updated_at || p.created_at, locale),
+                        })}
                       </span>
                     </div>
                     {isRunning(p.status) ? (
@@ -454,7 +438,7 @@ export default function HistoryPage() {
                   <div className="pf-project-actions">
                     <button type="button" className="pf-btn-text" onClick={() => continueEdit(p)}>
                       <IconEdit size={14} />
-                      继续编辑
+                      {t('history.continueEdit')}
                     </button>
                     <button
                       type="button"
@@ -470,7 +454,7 @@ export default function HistoryPage() {
                       }
                     >
                       <IconEye size={14} />
-                      预览
+                      {t('common.preview')}
                     </button>
                     <button
                       type="button"
@@ -479,17 +463,17 @@ export default function HistoryPage() {
                       onClick={() => downloadOne(p)}
                     >
                       <IconDownload size={14} />
-                      {busyId === p.id ? '下载中…' : '下载'}
+                      {busyId === p.id ? t('common.downloading') : t('common.download')}
                     </button>
-                    <button type="button" className="pf-btn-text" disabled title="即将推出">
+                    <button type="button" className="pf-btn-text" disabled title={t('common.comingSoon')}>
                       <IconCopy size={14} />
-                      复制
+                      {t('common.copy')}
                     </button>
                     <button
                       type="button"
                       className="pf-icon-btn danger"
                       disabled={busyId === p.id}
-                      title="删除"
+                      title={t('common.delete')}
                       onClick={() => remove(p.id)}
                     >
                       <IconTrash size={16} />
@@ -501,91 +485,20 @@ export default function HistoryPage() {
           </div>
 
           {total > 0 ? (
-            <div className="pf-pagination">
-              <button
-                type="button"
-                className="pf-page-btn"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-              >
-                ‹
-              </button>
-              {pageButtons().map((b, i) =>
-                b === '…' ? (
-                  <span key={`e-${i}`} className="pf-page-ellipsis">
-                    …
-                  </span>
-                ) : (
-                  <button
-                    key={b}
-                    type="button"
-                    className={page === b ? 'pf-page-btn active' : 'pf-page-btn'}
-                    onClick={() => setPage(b)}
-                  >
-                    {b}
-                  </button>
-                ),
-              )}
-              <button
-                type="button"
-                className="pf-page-btn"
-                disabled={page >= pageCount}
-                onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-              >
-                ›
-              </button>
-            </div>
+            <Pagination
+              page={page}
+              pageCount={pageCount}
+              total={total}
+              pageSize={pageSize}
+              onPageSizeChange={(size) => {
+                setPageSize(size)
+                setPage(1)
+              }}
+              onChange={setPage}
+              ariaLabel={t('history.pagination')}
+            />
           ) : null}
         </section>
-
-        <aside className="pf-history-side">
-          <div className="pf-side-box">
-            <h3>本月使用情况</h3>
-            <p className="pf-side-desc">按上游 token 实际用量计费</p>
-
-            <div className="pf-usage-row">
-              <span>Token 用量</span>
-              <span className="pf-usage-val">{formatTokens(usage?.tokens ?? 0)}</span>
-            </div>
-            <div className="pf-meter">
-              <i
-                style={{
-                  width: `${Math.min(100, Math.log10((usage?.tokens || 0) + 1) * 18)}%`,
-                }}
-              />
-            </div>
-
-            <div className="pf-usage-row">
-              <span>本月费用</span>
-              <span className="pf-usage-val">¥{(usage?.charge_yuan ?? 0).toFixed(2)}</span>
-            </div>
-            <div className="pf-meter">
-              <i
-                style={{
-                  width: `${Math.min(100, (usage?.charge_fen || 0) / 20)}%`,
-                }}
-              />
-            </div>
-
-            <div className="pf-usage-row">
-              <span>可用余额</span>
-              <span className="pf-usage-val">¥{(usage?.balance_yuan ?? 0).toFixed(2)}</span>
-            </div>
-            {(usage?.frozen_fen ?? 0) > 0 ? (
-              <div className="pf-usage-row">
-                <span>冻结中</span>
-                <span className="pf-muted">¥{(usage?.frozen_yuan ?? 0).toFixed(2)}</span>
-              </div>
-            ) : null}
-
-            <div className="pf-usage-foot">
-              <span className="pf-muted">调用 {usage?.calls ?? 0} 次</span>
-              <Link to="/pricing" className="pf-link">
-                去充值 →
-              </Link>
-            </div>
-          </div>
-        </aside>
       </div>
 
       {preview ? (
@@ -608,14 +521,14 @@ export default function HistoryPage() {
                   onClick={downloadPreview}
                 >
                   <IconDownload size={14} />
-                  {busyId === preview.projectId ? '下载中…' : '下载'}
+                  {busyId === preview.projectId ? t('common.downloading') : t('common.download')}
                 </button>
                 <button
                   type="button"
                   className="pf-btn pf-btn-ghost pf-btn-sm"
                   onClick={() => setPreview(null)}
                 >
-                  关闭
+                  {t('common.close')}
                 </button>
               </div>
             </div>

@@ -325,6 +325,8 @@ export function resumeDramaImageGensFromAssets(
 ): void {
   for (const asset of assets) {
     if (asset.project_id !== projectId) continue
+    /* 视频资产走 Seedance 队列，避免刷新后误 POST 生图 */
+    if ((asset.type || '').toLowerCase() === 'video') continue
     const status = readGenerationStatus(asset)
     if (status !== 'generating') continue
     if (isDramaAssetImageBusy(asset.id)) continue

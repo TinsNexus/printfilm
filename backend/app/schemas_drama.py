@@ -7,6 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.schemas_tasks import TaskRunBriefOut
+
 
 class DramaProjectCreate(BaseModel):
     title: str = Field(default="未命名漫剧", max_length=200)
@@ -14,6 +16,8 @@ class DramaProjectCreate(BaseModel):
     source: str = Field(default="", description="原始创意文案")
     episode_count: int = Field(default=12, ge=1, le=120)
     image_style_id: str = Field(default="")
+    # script=大纲分集流程；canvas=自由画布
+    workflow: str = Field(default="script", description="script | canvas")
     params: dict[str, Any] | None = None
 
 
@@ -50,14 +54,29 @@ class DramaAssetOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class DramaProjectUsageStats(BaseModel):
+    """单部漫剧累计用量：费用与生图/生视频次数。"""
+
+    charge_fen: int = 0
+    charge_yuan: float = 0.0
+    cost_fen: int = 0
+    cost_yuan: float = 0.0
+    tokens: int = 0
+    calls: int = 0
+    image_gens: int = 0
+    video_gens: int = 0
+
+
 class SeedAssetsFromScriptOut(BaseModel):
     """从剧本抽取/刷新资产的结果统计。"""
 
-    assets: list[DramaAssetOut]
+    assets: list[DramaAssetOut] = Field(default_factory=list)
     created_count: int = 0
     prompts_refreshed: int = 0
     props_updated: int = 0
     llm_errors: list[str] = Field(default_factory=list)
+    status: str = "done"
+    message: str | None = None
 
 
 class DramaFragmentOut(BaseModel):
@@ -80,6 +99,7 @@ class DramaEpisodeOut(BaseModel):
     params: dict | None = None
     project_id: int
     fragments: list[DramaFragmentOut] = Field(default_factory=list)
+    active_tasks: list[TaskRunBriefOut] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -96,6 +116,10 @@ class DramaProjectOut(BaseModel):
     script: DramaScriptOut | None = None
     asset_count: int = 0
     episode_count: int = 0
+    # script | canvas
+    workflow: str = "script"
+    usage: DramaProjectUsageStats = Field(default_factory=lambda: DramaProjectUsageStats())
+    active_tasks: list[TaskRunBriefOut] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -109,6 +133,12 @@ class DramaProjectListItem(BaseModel):
     episode_count: int = 0
     asset_count: int = 0
     has_script: bool = False
+    cover_url: str | None = None
+    cover_pending: bool = False
+    # script | canvas
+    workflow: str = "script"
+    usage: DramaProjectUsageStats = Field(default_factory=lambda: DramaProjectUsageStats())
+    active_tasks: list[TaskRunBriefOut] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -163,6 +193,20 @@ class DramaImageGenerateRequest(BaseModel):
     resolution: str | None = None
 
 
+class DramaVideoGenerateRequest(BaseModel):
+    project_id: int
+    asset_id: int
+    prompt: str
+    # 前端短名 seedance-2.5 / seedance-1.5，或完整接入点
+    model_id: str | None = None
+    aspect_ratio: str | None = None
+    resolution: str | None = None
+    duration_sec: int | None = None
+    image_style_id: str | None = None
+    # 画布连线带入的参考资产（与正文 @asset:id 合并）
+    reference_asset_ids: list[int] = Field(default_factory=list)
+
+
 class DramaVoicePromptRequest(BaseModel):
     project_id: int
     asset_id: int
@@ -205,6 +249,13 @@ class DramaPlanFragmentsRequest(BaseModel):
     force: bool = True
     # fallback_rules LLM 失败时是否回退规则切分
     fallback_rules: bool = True
+    # skill_ids 本次注入的 Agent Skill；None 表示全部启用，[] 表示不注入
+    skill_ids: list[int] | None = None
+
+
+class DramaActivateVideoVersionRequest(BaseModel):
+    # version_id 历史成片版本 id（params.video_versions[].id）
+    version_id: str = Field(..., min_length=1, max_length=128)
 
 
 class DramaCanvasSaveRequest(BaseModel):

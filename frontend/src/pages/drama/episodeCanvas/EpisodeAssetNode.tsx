@@ -1,4 +1,4 @@
-/** 出境资产节点：缩略图卡片，连线到分镜视频 */
+/** 出境资产节点：缩略图卡片，可关联多个分镜 */
 import { memo } from 'react'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import { X } from 'lucide-react'
@@ -8,22 +8,18 @@ type Props = NodeProps<Node<EpisodeAssetNodeData>> & {
   onUnlinkAsset?: (fragmentId: number, assetId: number) => void
 }
 
-// 渲染出境资产节点
+// 渲染出境资产节点（同一资产全局只显示一张卡片）
 function EpisodeAssetNodeComponent({ data, selected, onUnlinkAsset }: Props) {
+  const links = data.linkedFragments || []
+
   return (
     <div className={`ep-asset-node${selected ? ' is-selected' : ''}`}>
       <div className="ep-asset-node-head">
         <span>{data.typeLabel}</span>
-        {selected ? (
-          <button
-            type="button"
-            className="ep-asset-node-unlink nodrag nopan"
-            aria-label={`取消关联 ${data.name}`}
-            title="取消关联"
-            onClick={() => onUnlinkAsset?.(data.fragmentId, data.assetId)}
-          >
-            <X size={12} strokeWidth={2.2} />
-          </button>
+        {links.length > 1 ? (
+          <span className="ep-asset-node-count" title="关联分镜数">
+            {links.length} 镜
+          </span>
         ) : null}
       </div>
       <div className="ep-asset-node-thumb">
@@ -34,6 +30,23 @@ function EpisodeAssetNodeComponent({ data, selected, onUnlinkAsset }: Props) {
         )}
       </div>
       <div className="ep-asset-node-name">{data.name}</div>
+      {selected && links.length > 0 ? (
+        <div className="ep-asset-node-links nodrag nopan">
+          {links.map((link) => (
+            <button
+              key={link.fragmentId}
+              type="button"
+              className="ep-asset-node-unlink-chip"
+              aria-label={`取消 ${link.label} 的关联`}
+              title={`取消 ${link.label} 的关联`}
+              onClick={() => onUnlinkAsset?.(link.fragmentId, data.assetId)}
+            >
+              {link.label}
+              <X size={11} strokeWidth={2.4} aria-hidden />
+            </button>
+          ))}
+        </div>
+      ) : null}
       <Handle className="ep-frag-handle" type="source" position={Position.Right} />
     </div>
   )

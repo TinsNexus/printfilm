@@ -69,6 +69,37 @@ export type DramaEpisodeBody = {
   body?: string
 }
 
+export type DramaProjectUsageStats = {
+  charge_fen: number
+  charge_yuan: number
+  cost_fen: number
+  cost_yuan: number
+  tokens: number
+  calls: number
+  image_gens: number
+  video_gens: number
+}
+
+export type DramaTaskBrief = {
+  id: number
+  domain: string
+  task_type: string
+  status: string
+  current_step_key?: string | null
+  current_step_status?: string | null
+  progress_percent?: number
+  cancel_requested?: boolean
+  provider_task_id?: string | null
+  error_message?: string | null
+  project_id?: number | null
+  drama_project_id?: number | null
+  episode_id?: number | null
+  fragment_id?: number | null
+  asset_id?: number | null
+  created_at?: string
+  updated_at?: string
+}
+
 export type DramaProject = {
   id: number
   user_id: number
@@ -81,6 +112,9 @@ export type DramaProject = {
   script?: DramaScript | null
   asset_count: number
   episode_count: number
+  workflow?: 'script' | 'canvas'
+  usage?: DramaProjectUsageStats
+  active_tasks?: DramaTaskBrief[]
 }
 
 export type DramaProjectListItem = {
@@ -92,6 +126,11 @@ export type DramaProjectListItem = {
   episode_count: number
   asset_count: number
   has_script: boolean
+  cover_url?: string | null
+  cover_pending?: boolean
+  workflow?: 'script' | 'canvas'
+  usage?: DramaProjectUsageStats
+  active_tasks?: DramaTaskBrief[]
 }
 
 export type DramaAsset = {
@@ -111,6 +150,8 @@ export type SeedAssetsResult = {
   prompts_refreshed: number
   props_updated: number
   llm_errors: string[]
+  status?: string
+  message?: string | null
 }
 
 export type DramaFragment = {
@@ -131,6 +172,7 @@ export type DramaEpisode = {
   params?: Record<string, unknown> | null
   project_id: number
   fragments: DramaFragment[]
+  active_tasks?: DramaTaskBrief[]
 }
 
 export type DramaScriptSummaryResult = {
@@ -165,6 +207,8 @@ export type DramaImageGenerateResult = {
   asset?: DramaAsset | null
 }
 
+export type DramaVideoGenerateResult = DramaImageGenerateResult
+
 export type DramaVoicePromptResult = {
   ok: boolean
   voice_prompt: string
@@ -186,6 +230,7 @@ export const dramaApi = {
     source?: string
     episode_count?: number
     image_style_id?: string
+    workflow?: 'script' | 'canvas'
   }) =>
     request<DramaProject>('/api/drama/projects', { method: 'POST', body: JSON.stringify(body) }),
   getProject: (id: number) => request<DramaProject>(`/api/drama/projects/${id}`),
@@ -195,7 +240,16 @@ export const dramaApi = {
     request<{ ok: boolean }>(`/api/drama/projects/${id}`, { method: 'DELETE' }),
 
   getScript: (projectId: number) => request<DramaScript>(`/api/drama/scripts/${projectId}`),
-  updateScript: (projectId: number, body: { image_style_id?: string; [key: string]: unknown }) =>
+  updateScript: (
+    projectId: number,
+    body: {
+      image_style_id?: string
+      summary?: Record<string, unknown>
+      episode_content?: unknown
+      source?: string
+      name?: string
+    },
+  ) =>
     request<DramaScript>(`/api/drama/scripts/${projectId}`, {
       method: 'PATCH',
       body: JSON.stringify(body),
@@ -227,9 +281,13 @@ export const dramaApi = {
       body: JSON.stringify({ message, project_id }),
     }),
 
-  listAssets: async (projectId?: number) => {
+  listAssets: async (projectId?: number, options?: { libraryOnly?: boolean }) => {
+    const params = new URLSearchParams()
+    if (projectId != null) params.set('project_id', String(projectId))
+    if (options?.libraryOnly) params.set('library_only', 'true')
+    const query = params.toString()
     const list = await request<DramaAsset[]>(
-      projectId != null ? `/api/drama/assets?project_id=${projectId}` : '/api/drama/assets',
+      query ? `/api/drama/assets?${query}` : '/api/drama/assets',
     )
     return Array.isArray(list) ? list : []
   },
@@ -278,6 +336,8 @@ export const dramaApi = {
       prompts_refreshed: result?.prompts_refreshed ?? 0,
       props_updated: result?.props_updated ?? 0,
       llm_errors: Array.isArray(result?.llm_errors) ? result.llm_errors : [],
+      status: result?.status ?? 'done',
+      message: result?.message ?? null,
     }
   },
 
@@ -290,15 +350,16 @@ export const dramaApi = {
       { method: 'POST' },
     ),
   /** 单集 AI（LLM）重新分镜；轮询 episode.params.fragment_plan_status */
-  planEpisodeFragments: (
+    planEpisodeFragments: (
     episodeId: number,
-    body?: { force?: boolean; fallback_rules?: boolean },
+    body?: { force?: boolean; fallback_rules?: boolean; skill_ids?: number[] },
   ) =>
     request<DramaEpisode>(`/api/drama/episodes/${episodeId}/plan_fragments`, {
       method: 'POST',
       body: JSON.stringify({
         force: body?.force ?? true,
         fallback_rules: body?.fallback_rules ?? true,
+        skill_ids: body?.skill_ids,
       }),
     }),
   saveFragments: (
@@ -318,10 +379,17 @@ export const dramaApi = {
       body: JSON.stringify({ fragments }),
     }),
   generateEpisode: (episodeId: number, fragment_ids?: number[]) =>
-    request<{ ok: boolean; fragment_ids: number[]; status: string }>(
-      `/api/drama/episodes/${episodeId}/generate`,
-      { method: 'POST', body: JSON.stringify({ fragment_ids }) },
-    ),
+    request<{
+      ok: boolean
+      fragment_ids: number[]
+      status: string
+      deferred_count?: number
+      user_job_limit?: number
+      remaining_not_queued?: number
+    }>(`/api/drama/episodes/${episodeId}/generate`, {
+      method: 'POST',
+      body: JSON.stringify({ fragment_ids }),
+    }),
   generateStatus: (episodeId: number) =>
     request<{
       episode_id: number
@@ -329,6 +397,7 @@ export const dramaApi = {
       failed: number
       running: number
       total: number
+      tasks: DramaTaskBrief[]
       fragments: Array<{ fragment_id: number; status: string; video?: string; cover?: string }>
     }>(`/api/drama/episodes/${episodeId}/generate_status`),
 
@@ -337,6 +406,19 @@ export const dramaApi = {
       `/api/drama/episodes/${episodeId}/cancel_generate`,
       { method: 'POST' },
     ),
+
+  activateFragmentVideoVersion: (fragmentId: number, versionId: string) =>
+    request<{
+      ok: boolean
+      fragment_id: number
+      video: string
+      cover: string
+      lastFrameUrl?: string | null
+      video_versions: Array<Record<string, unknown>>
+    }>(`/api/drama/fragments/${fragmentId}/activate_video_version`, {
+      method: 'POST',
+      body: JSON.stringify({ version_id: versionId }),
+    }),
 
   cancelAllVideoJobs: () =>
     request<{ ok: boolean; purged: number; revoked: number; fragments: number }>(
@@ -356,6 +438,22 @@ export const dramaApi = {
     resolution?: string
   }) =>
     request<DramaImageGenerateResult>('/api/drama/generation/image', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  generateVideo: (body: {
+    project_id: number
+    asset_id: number
+    prompt: string
+    model_id?: string
+    aspect_ratio?: string
+    resolution?: string
+    duration_sec?: number
+    image_style_id?: string
+    reference_asset_ids?: number[]
+  }) =>
+    request<DramaVideoGenerateResult>('/api/drama/generation/video', {
       method: 'POST',
       body: JSON.stringify(body),
     }),

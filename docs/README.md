@@ -11,6 +11,7 @@ PRINTFILM（ai_movie）产品与工程文档。
 | [EPISODE_RULES.md](./EPISODE_RULES.md) | **漫剧分集主规范**（开幕/拆镜/脚本/资产/Seedance/门禁/后续清单） |
 | [SEEDANCE_2_5.md](./SEEDANCE_2_5.md) | Seedance 2.5 公开参数 / 参考素材上限 / 本仓库映射 |
 | [SHOT_SPLITTING.md](./SHOT_SPLITTING.md) | 拆分镜头操作指南（Fragment / Beat、空镜 vs 口播） |
+| [VOZEB_PRO_DRAMA_OPTIMIZATION.md](./VOZEB_PRO_DRAMA_OPTIMIZATION.md) | **VOZEB-PRO 对照分析**（分镜 / 用户任务 / 提交发布，对 `ai_movie` 的优化建议） |
 | [PLACEHOLDER_BACKLOG.md](./PLACEHOLDER_BACKLOG.md) | **占位 / 待开发功能总表**（ComingSoon、禁用入口、建议优先级） |
 | [PRINTFILM_UI_ROADMAP.md](./PRINTFILM_UI_ROADMAP.md) | UI 还原对照：路由、已接线能力、视觉约定 |
 | [PRINTFILM_UI_DESIGN_PROMPTS.md](./PRINTFILM_UI_DESIGN_PROMPTS.md) | 多产品平台 UI 生图提示词（壳 / 工作台 / 漫剧 / 科普 / 工具） |

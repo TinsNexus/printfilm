@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.database import get_db
 from app.deps import get_current_user
-from app.models import Order, UsageEvent, User
+from app.models import Order, Project, UsageEvent, User
 from app.services import billing, epay
 
 logger = logging.getLogger(__name__)
@@ -74,6 +74,8 @@ async def create_order(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
+    # 下单前先清理该用户已过期的待支付单
+    await billing.close_expired_pending_orders(db, user_id=user.id)
     sku = billing.sku_by_id(body.sku_id)
     if not sku:
         raise HTTPException(status_code=400, detail="未知充值包")
@@ -119,7 +121,7 @@ async def create_order(
         "payurl": mapi.get("payurl") or "",
         "img": mapi.get("img") or "",
         "qr_payload": mapi.get("qr_payload") or "",
-        "expire_seconds": 300,
+        "expire_seconds": billing.ORDER_EXPIRE_SECONDS,
         "submit_url": epay.submit_url(fields),
     }
 
@@ -158,13 +160,71 @@ async def usage_summary(
     }
 
 
+@router.get("/usage/events")
+async def usage_events(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> dict:
+    """分页返回当前用户的按次扣费记录（新→旧）。"""
+    from app.models_drama import DramaProject
+
+    count_stmt = select(func.count()).select_from(UsageEvent).where(UsageEvent.user_id == user.id)
+    total = int((await db.execute(count_stmt)).scalar_one() or 0)
+
+    stmt = (
+        select(UsageEvent, Project.title, DramaProject.title)
+        .outerjoin(Project, UsageEvent.project_id == Project.id)
+        .outerjoin(DramaProject, UsageEvent.drama_project_id == DramaProject.id)
+        .where(UsageEvent.user_id == user.id)
+        .order_by(UsageEvent.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    rows = (await db.execute(stmt)).all()
+
+    items = []
+    for ev, kepu_title, drama_title in rows:
+        if drama_title:
+            context = f"漫剧 · {drama_title}"
+        elif kepu_title:
+            context = f"科普 · {kepu_title}"
+        elif ev.project_id:
+            context = f"科普 · 项目 #{ev.project_id}"
+        elif ev.drama_project_id:
+            context = f"漫剧 · 项目 #{ev.drama_project_id}"
+        else:
+            context = "工具创作"
+        charge_fen = int(ev.charge_fen or 0)
+        items.append(
+            {
+                "id": ev.id,
+                "billing_key": ev.billing_key,
+                "billing_label": billing.billing_key_label(ev.billing_key),
+                "model": ev.model or "",
+                "context": context,
+                "total_tokens": int(ev.total_tokens or 0),
+                "charge_fen": charge_fen,
+                "charge_yuan": round(charge_fen / 100, 2),
+                "estimated": bool(ev.estimated),
+                "created_at": ev.created_at.isoformat() if ev.created_at else None,
+            }
+        )
+    return {
+        "items": items,
+        "meta": {"page": page, "page_size": page_size, "total": total},
+    }
+
+
 @router.get("/orders")
 async def list_orders(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
     limit: int = Query(50, ge=1, le=100),
 ) -> dict:
-    """充值订单列表（新→旧）。"""
+    """充值订单列表（新→旧）；返回前自动关闭过期待支付单。"""
+    await billing.close_expired_pending_orders(db, user_id=user.id)
     result = await db.execute(
         select(Order)
         .where(Order.user_id == user.id)
@@ -198,6 +258,7 @@ async def get_order(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
+    await billing.close_expired_pending_orders(db, user_id=user.id, out_trade_no=out_trade_no)
     result = await db.execute(select(Order).where(Order.out_trade_no == out_trade_no))
     order = result.scalar_one_or_none()
     if not order or order.user_id != user.id:
@@ -210,6 +271,28 @@ async def get_order(
         "pay_type": order.pay_type,
         "paid_at": order.paid_at.isoformat() if order.paid_at else None,
     }
+
+
+@router.post("/orders/{out_trade_no}/close")
+async def close_order(
+    out_trade_no: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """用户主动取消支付时关闭待支付订单（过期订单由系统自动关闭）。"""
+    result = await db.execute(select(Order).where(Order.out_trade_no == out_trade_no))
+    order = result.scalar_one_or_none()
+    if not order or order.user_id != user.id:
+        raise HTTPException(status_code=404, detail="订单不存在")
+    if order.status == "paid":
+        raise HTTPException(status_code=400, detail="已支付订单无法关闭")
+    if order.status == "closed":
+        return {"out_trade_no": order.out_trade_no, "status": "closed"}
+    if order.status != "pending":
+        raise HTTPException(status_code=400, detail="当前状态不可关闭")
+    order.status = "closed"
+    await db.commit()
+    return {"out_trade_no": order.out_trade_no, "status": "closed"}
 
 
 def _notify_success(params: dict) -> bool:

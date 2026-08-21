@@ -11,7 +11,7 @@ type Props = {
 /** 渲染画布页顶部工具栏 */
 export function CanvasTopBar({ variant = 'fullscreen' }: Props) {
   const navigate = useNavigate()
-  const { saveStatusVisible, projectId } = useCanvasStore()
+  const { saveStatusVisible, projectId, freeCanvasMode } = useCanvasStore()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const embedded = variant === 'embedded'
 
@@ -26,6 +26,10 @@ export function CanvasTopBar({ variant = 'fullscreen' }: Props) {
               aria-label="返回"
               title="返回"
               onClick={() => {
+                if (freeCanvasMode) {
+                  navigate('/drama')
+                  return
+                }
                 if (window.history.length > 1) navigate(-1)
                 else navigate(`/drama/projects/${projectId}`)
               }}
@@ -33,7 +37,9 @@ export function CanvasTopBar({ variant = 'fullscreen' }: Props) {
               <ChevronLeft size={20} strokeWidth={1.8} />
             </button>
           )}
-          <span className="fc-topbar-title">{embedded ? '资产画布' : '资产库编排'}</span>
+          <span className="fc-topbar-title">
+            {embedded ? '资产画布' : freeCanvasMode ? '自由画布' : '资产库编排'}
+          </span>
           {saveStatusVisible ? (
             <span className="fc-save-pill">
               <span className="fc-save-dot" />
@@ -70,7 +76,9 @@ export function CanvasTopBar({ variant = 'fullscreen' }: Props) {
       {settingsOpen ? (
         <div className="fc-settings-pop" role="dialog" aria-label="画布设置">
           <strong>画布设置</strong>
-          布局与项目资产会自动同步保存。上传走 OSS；合成时按需拉本地缓存。
+          {freeCanvasMode
+            ? '在画布上添加节点、连线并生成图片与视频。布局与资产会自动保存。'
+            : '布局与项目资产会自动同步保存。上传走 OSS；合成时按需拉本地缓存。'}
           <div style={{ marginTop: 10 }}>
             <button
               type="button"

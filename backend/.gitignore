@@ -7,5 +7,4 @@ ai_movie.db
 *.egg-info/
 .pytest_cache/
 data/
-.celery_autoscale/
 static/mock/image_*.svg

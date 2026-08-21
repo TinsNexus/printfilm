@@ -1,7 +1,8 @@
 # PRINTFILM 部署（Docker 只跑库与缓存）
 
 > **生产站点发布（kepu.printfilm.com / admin）** 请以 [docs/DEPLOY.md](../docs/DEPLOY.md) 为准；每次发布写 [docs/releases/](../docs/releases/)。  
-> 本文仅描述 Postgres/Redis compose 与本机跑 API 的补充说明。**不要**用 OSS 上传前端 dist 代替机器发布。
+> 本文仅描述 Postgres/Redis compose 与本机跑 API 的补充说明。**不要**用 OSS 上传前端 dist 代替机器发布。  
+> 杭州全量脚本：`deploy/scripts/deploy_kepu_8136.py`。默认**不**改 nginx / **不**跑 certbot / **不**动 Postgres·Redis 容器；改站点设 `SETUP_NGINX=1`，签证书设 `SETUP_TLS=1`，重建中间件设 `SETUP_INFRA=1`。
 
 ## 分工
 
@@ -22,6 +23,8 @@ docker compose -f deploy/docker-compose.yml ps
 
 容器名：`ai-movie-pg`、`ai-movie-redis`。与 kepu（5432/6379）隔离。
 
+Postgres / Redis 端口均映射为 `0.0.0.0`（便于本机直连调试）。公网暴露有风险，仅受控调试时使用，并确认强密码与云安全组。常规发布默认**不**执行 `docker compose`（见 `SETUP_INFRA=1`）。
+
 ## 2. 配置应用
 
 将 `deploy/.env.prod` 中的 `DATABASE_URL` / `REDIS_URL` / `ARK_*` 等写入 `backend/.env`（密码与 compose 一致）。
@@ -37,6 +40,16 @@ USE_CELERY=true
 
 需本机已安装：Python 3.12、FFmpeg（PATH）、Node.js。
 
+**中文字幕字体（必装）**：科普成片用 FFmpeg `drawtext` 烧录叠字/口播字幕。Ubuntu 示例：
+
+```bash
+sudo apt-get install -y fonts-wqy-zenhei fonts-wqy-microhei fontconfig
+# 可选：写入 backend/.env
+# FRAMECUT_FONT=/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc
+```
+
+缺字体时字幕会显示为「方框」（□），需装字体后**重新合成**该项目成片。
+
 ## 3. 启动 API + Worker
 
 ```bash
@@ -47,12 +60,6 @@ python -m venv .venv
 pip install -r requirements.txt
 
 uvicorn app.main:app --host 0.0.0.0 --port 8000
-
-# 另开终端 — 固定并发
-celery -A app.workers.celery_app.celery_app worker -Q pipeline,oss -l info --concurrency=2
-
-# 或 Windows 动态加减进程
-python -m app.workers.autoscale
 ```
 
 ## 4. 前端
@@ -77,7 +84,7 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env.prod down
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env.prod down -v
 ```
 
-Worker 伸缩：改 Celery `--concurrency`，或跑 `python -m app.workers.autoscale`（按队列积压加减本机进程）。
+任务并发：通过 `backend/.env` 中的 `TASK_RUNTIME_MAX_CONCURRENCY`、`TASK_USER_MAX_CONCURRENCY` 调整统一任务平台并发。
 
 ## OSS（成片 / 分镜 / 前端）
 

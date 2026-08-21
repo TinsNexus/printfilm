@@ -3,6 +3,7 @@
 When OSS is enabled:
 - Default (async): return /static URL immediately and enqueue upload+DB backfill.
 - sync=True: upload inline (template seed, celery unavailable, etc.).
+- skip_oss_intermediates(): 科普流水线只上传 final.mp4，分镜图/配音/镜头视频留本地。
 FFmpeg always reads local files.
 """
 
@@ -11,11 +12,20 @@ from __future__ import annotations
 import base64
 import logging
 import mimetypes
+from contextlib import contextmanager
+from contextvars import ContextVar
+from functools import wraps
 from pathlib import Path
+from typing import Any, Callable, Iterator, TypeVar
 
 import httpx
 
 from app.config import get_settings
+
+# 科普成片文件名：仅此文件在 skip_oss_intermediates 下仍入 OSS
+_KEPU_FINAL_NAMES = frozenset({"final.mp4"})
+# True 时 publish_local 跳过中间文件的异步 OSS 入队
+_skip_oss_intermediates: ContextVar[bool] = ContextVar("skip_oss_intermediates", default=False)
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +35,12 @@ GENERATED_ROOT = STATIC_ROOT / "generated"
 
 def project_dir(project_id: int) -> Path:
     path = GENERATED_ROOT / f"p{project_id}"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def user_dir(user_id: int) -> Path:
+    path = GENERATED_ROOT / "users" / f"u{user_id}"
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -109,13 +125,57 @@ def rel_static_url(path: Path) -> str:
 
 
 def is_local_static_url(url: str | None) -> bool:
+    """True when url points at media under backend/static (relative or site /static/)."""
     if not url:
         return False
     if url.startswith("/static/"):
         return True
     settings = get_settings()
-    prefix = settings.public_base_url.rstrip("/") + "/static/"
-    return url.startswith(prefix)
+    base = settings.public_base_url.rstrip("/")
+    if url.startswith(f"{base}/static/"):
+        return True
+    # 历史拼写错误域名、本地调试地址
+    for host in ("kepu.printfilm.com", "kepu.printtfilm.com", "127.0.0.1:8000", "localhost:8000"):
+        for scheme in ("https://", "http://"):
+            if url.startswith(f"{scheme}{host}/static/"):
+                return True
+    local = local_path_from_url(url)
+    if local and local.is_file():
+        try:
+            local.resolve().relative_to(STATIC_ROOT.resolve())
+            return True
+        except ValueError:
+            return False
+    return False
+
+
+@contextmanager
+def skip_oss_intermediates() -> Iterator[None]:
+    """科普流水线：中间分镜不入 OSS 队列，成片 final.mp4 仍上传。"""
+    token = _skip_oss_intermediates.set(True)
+    try:
+        yield
+    finally:
+        _skip_oss_intermediates.reset(token)
+
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def without_intermediate_oss(fn: F) -> F:
+    """装饰科普入口：调用期间跳过中间文件异步 OSS 上传。"""
+
+    @wraps(fn)
+    async def _wrapped(*args: Any, **kwargs: Any):
+        with skip_oss_intermediates():
+            return await fn(*args, **kwargs)
+
+    return _wrapped  # type: ignore[return-value]
+
+
+def is_kepu_final_media(path: Path) -> bool:
+    """是否为科普最终成片文件（当前仅 final.mp4）。"""
+    return Path(path).name.lower() in _KEPU_FINAL_NAMES
 
 
 def upload_local_sync(path: Path, *, retries: int = 2) -> str:
@@ -146,9 +206,12 @@ def upload_local_sync(path: Path, *, retries: int = 2) -> str:
 def publish_local(path: Path, *, sync: bool = False, retries: int = 2) -> str:
     """Publish media for the frontend.
 
-    Default: return /static URL immediately; when OSS+Celery async is on, enqueue
+    Default: return /static URL immediately; when OSS async is on, enqueue
     upload and DB backfill. Use sync=True for startup seeds or when immediate OSS
     URL is required.
+
+    科普 skip_oss_intermediates 下：非 final.mp4 的异步上传会被跳过；sync=True
+    仍上传（Seedance 参考图需要公网 https）。
     """
     path = Path(path)
     if not path.is_file():
@@ -160,11 +223,15 @@ def publish_local(path: Path, *, sync: bool = False, retries: int = 2) -> str:
     if not oss_svc.oss_enabled():
         return local_url
 
+    # 科普中间文件：异步不入队；显式 sync 仍走公网（方舟拉参考图）
+    skip_mid = _skip_oss_intermediates.get() and not is_kepu_final_media(path)
+    if skip_mid and not sync:
+        return local_url
+
     settings = get_settings()
     want_async = (
         not sync
         and bool(settings.oss_upload_async)
-        and bool(settings.use_celery)
     )
     if want_async:
         try:
@@ -184,7 +251,9 @@ def publish_local(path: Path, *, sync: bool = False, retries: int = 2) -> str:
 
 def republish_url(url: str | None, *, sync: bool = True) -> str | None:
     """If url is a local /static path and file exists, upload to OSS and return new URL."""
-    if not url or not is_local_static_url(url):
+    if not url:
+        return url
+    if not is_local_static_url(url):
         return url
     from app.services import oss as oss_svc
 

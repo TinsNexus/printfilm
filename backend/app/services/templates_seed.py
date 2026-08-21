@@ -35,7 +35,7 @@ TEMPLATES: list[dict] = [
         ),
         "default_ratio": "9:16",
         "shot_duration_min": 5,
-        "shot_duration_max": 16,
+        "shot_duration_max": 12,
         "llm_system_addon": (
             "这是开源/产品展示片。先【分析】用户文案：项目类型、核心能力、典型用户与使用路径，"
             "再规划分镜与视觉，不要套固定蓝光大屏。"
@@ -96,12 +96,12 @@ TEMPLATES: list[dict] = [
         ),
         "default_ratio": "16:9",
         "shot_duration_min": 6,
-        "shot_duration_max": 20,
+        "shot_duration_max": 12,
         "llm_system_addon": (
-            "这是开源「真人工作场景」片。先分析项目能力与使用路径，再拆 4-6 镜。"
+            "这是开源「真人工作场景」片。先分析项目能力与使用路径，再按内容拆多镜短镜。"
             "【硬性】每镜必须出现真人在工位操作系统（侧脸/过肩/手部焦点，少正脸特写）。"
             "【逐段】每镜必须输出 segments 数组：交替 visual（景别+动作+界面类型）与 narration（口播）；"
-            "单段 duration 3-12 秒，镜内合计不超过 20 秒；旁白按约 3 字/秒估时长。"
+            "单段 duration 3-12 秒，镜内合计不超过 12 秒；旁白按约 5 字/秒估时长，禁止拖腔注水。"
             "【节拍】痛点工位→接入配置→核心工作台→流程结果→协作/部署；构图与操作动作禁止雷同。"
             "title=模块短名，subtitle=卖点句，bgm 全片统一为轻快专业。"
         ),
@@ -149,7 +149,7 @@ TEMPLATES: list[dict] = [
         "negative_prompt": "卡通，动漫，赛璐璐，二次元，棚拍浓妆，CGI假人，霓虹赛博，画面文字水印",
         "default_ratio": "9:16",
         "shot_duration_min": 5,
-        "shot_duration_max": 18,
+        "shot_duration_max": 12,
         "llm_system_addon": (
             "真人街访/口播节奏。每镜输出 segments：建立环境 visual → narration 口播 → 反应/细节 visual。"
             "人物外形全片一致；少正脸极端特写。title 短、subtitle 观点句。"
@@ -185,7 +185,7 @@ TEMPLATES: list[dict] = [
         "negative_prompt": "卡通，动漫，赛璐璐，二次元，空桌无手，霓虹赛博，画面乱码文字水印",
         "default_ratio": "16:9",
         "shot_duration_min": 5,
-        "shot_duration_max": 18,
+        "shot_duration_max": 12,
         "llm_system_addon": (
             "桌面演示片。每镜 segments 必须含手部操作 visual + narration；"
             "景别在全桌建立、手部特写、屏幕内容之间切换，禁止各镜雷同。"
