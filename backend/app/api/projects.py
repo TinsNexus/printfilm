@@ -9,14 +9,15 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sse_starlette.sse import EventSourceResponse
 
 from app.database import get_db
 from app.deps import get_current_user
-from app.models import Project, ProjectStatus, Shot, User, Work
+from app.models import Project, ProjectStatus, Shot, UsageEvent, User, Work
+from app.models_tasks import TaskRun
 from app.schemas import (
     ContentExpandOut,
     ContentExpandRequest,
@@ -99,7 +100,7 @@ async def _get_owned_project(db: AsyncSession, project_id: int, user: User) -> P
 
 
 def _ensure_side_task_allowed(project: Project) -> None:
-    """重绘/重生/合成侧任务：流水线进行中时拒绝，避免与 Celery pipeline 冲突。"""
+    """重绘/重生/合成侧任务：流水线进行中时拒绝，避免与进行中任务冲突。"""
     running = {
         ProjectStatus.SCRIPTING,
         ProjectStatus.IMAGING,
@@ -110,6 +111,23 @@ def _ensure_side_task_allowed(project: Project) -> None:
     }
     if project.status in running:
         raise HTTPException(status_code=409, detail="生成进行中，请稍后")
+
+
+# COMPOSING 且无进行中任务时视为拼接已失败卡住，允许重新发起
+async def _ensure_compose_allowed(db: AsyncSession, user: User, project: Project) -> None:
+    active = await list_active_tasks_for_owner(db, user.id, project_id=project.id)
+    if active:
+        raise HTTPException(status_code=409, detail="生成进行中，请稍后")
+    running = {
+        ProjectStatus.SCRIPTING,
+        ProjectStatus.IMAGING,
+        ProjectStatus.VIDEOING,
+        ProjectStatus.AUDIOING,
+        ProjectStatus.AUDITING,
+    }
+    if project.status in running:
+        raise HTTPException(status_code=409, detail="生成进行中，请稍后")
+    # COMPOSING / FAILED / VIDEO_READY / DONE 等均可重试拼接（无 active task）
 
 
 # 用统一任务中心投影项目运行态，避免前端只依赖旧 Project.status。
@@ -667,6 +685,7 @@ async def delete_project(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
+    """Delete a kepu project after detaching billing/task FK rows that block CASCADE."""
     project = await _get_owned_project(db, project_id, user)
     running = {
         ProjectStatus.SCRIPTING,
@@ -678,6 +697,15 @@ async def delete_project(
     }
     if project.status in running:
         pipeline.cancel_pipeline(project_id)
+        await cancel_tasks_for_scope(db, user.id, project_id=project_id)
+
+    # Keep billing/task history; only clear project FK so DELETE projects can succeed.
+    await db.execute(
+        update(UsageEvent).where(UsageEvent.project_id == project.id).values(project_id=None)
+    )
+    await db.execute(
+        update(TaskRun).where(TaskRun.project_id == project.id).values(project_id=None)
+    )
 
     # Remove published work if any
     work_result = await db.execute(select(Work).where(Work.project_id == project.id))
@@ -904,15 +932,7 @@ async def compose_only(
 ) -> Project:
     """Recompose final video from existing images/audio/(videos)."""
     project = await _get_owned_project(db, project_id, user)
-    if project.status in {
-        ProjectStatus.SCRIPTING,
-        ProjectStatus.IMAGING,
-        ProjectStatus.VIDEOING,
-        ProjectStatus.AUDIOING,
-        ProjectStatus.COMPOSING,
-        ProjectStatus.AUDITING,
-    }:
-        raise HTTPException(status_code=409, detail="生成进行中，请稍后")
+    await _ensure_compose_allowed(db, user, project)
     if not project.shots or not (
         any(s.image_url for s in project.shots) or any(s.video_url for s in project.shots)
     ):

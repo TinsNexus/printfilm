@@ -1,4 +1,4 @@
-"""pending 分镜视频任务作废判定：重新生成不得因旧 video 被误取消。"""
+"""pending/在途分镜视频任务作废判定：重新生成不得因旧 video 被误取消。"""
 
 from types import SimpleNamespace
 
@@ -28,4 +28,4 @@ def test_stale_reason_keep_when_no_video_yet():
 
 
 def test_stale_reason_deleted_fragments():
-    assert stale_pending_fragment_video_reason([]) == "分镜已变更，任务已作废"
+    assert stale_pending_fragment_video_reason([]) == "分镜已变更，请重新生成"

@@ -140,6 +140,22 @@ async def _fail_task(db, task, exc: Exception) -> None:
                 "error": task.error_message,
             }
             frag.params = params
+    # 科普拼接/流水线失败时同步项目态，避免卡在 COMPOSING 等 running 状态无法重试
+    if task.domain == "kepu" and task.project_id:
+        from app.models import Project, ProjectStatus
+
+        running = {
+            ProjectStatus.SCRIPTING,
+            ProjectStatus.IMAGING,
+            ProjectStatus.VIDEOING,
+            ProjectStatus.AUDIOING,
+            ProjectStatus.COMPOSING,
+            ProjectStatus.AUDITING,
+        }
+        project = await db.get(Project, int(task.project_id))
+        if project and project.status in running:
+            project.status = ProjectStatus.FAILED
+            project.error_msg = (task.error_message or str(exc))[:2000]
     payload = task.payload if isinstance(task.payload, dict) else {}
     if payload.get("sequential") and task.batch_key:
         from app.services.tasks.service import fail_remaining_sequential_batch

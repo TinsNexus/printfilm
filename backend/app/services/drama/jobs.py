@@ -34,6 +34,7 @@ from app.services.drama.agents import (
 from app.services.drama.asset_video import generate_asset_video
 from app.services.drama.generation import (
     apply_fragment_video_assets,
+    build_failed_generation_params,
     deserialize_fragment_video_prepared,
     fragment_generation_status,
     generate_asset_image,
@@ -620,7 +621,10 @@ async def _fail_remaining_fragment_videos(fragment_ids: list[int], error: str) -
             status = str(gen.get("status") or "")
             if status not in ACTIVE_VIDEO_GEN_STATUSES:
                 continue
-            params["generation"] = {"status": "failed", "error": error[:500]}
+            params["generation"] = build_failed_generation_params(
+                gen if isinstance(gen, dict) else None,
+                error,
+            )
             frag.params = params
             changed += 1
         if changed:
@@ -766,12 +770,12 @@ async def _generate_one_fragment_video(
             attempts = prev_attempts + 1
             if attempts > max_attempts:
                 params["generation_attempts"] = prev_attempts
-                params["generation"] = {
-                    "status": "failed",
-                    "error": f"分镜重试超过上限（{max_attempts} 次）",
-                    "attempts": prev_attempts,
-                    "attempt_limit": max_attempts,
-                }
+                params["generation"] = build_failed_generation_params(
+                    gen if isinstance(gen, dict) else None,
+                    f"分镜重试超过上限（{max_attempts} 次）",
+                    attempts=prev_attempts,
+                    attempt_limit=max_attempts,
+                )
                 frag.params = params
                 await db.commit()
                 logger.warning(
@@ -821,13 +825,14 @@ async def _generate_one_fragment_video(
                 return True
             except Exception as exc:  # noqa: BLE001
                 params = dict(frag.params or {})
+                prev_gen = params.get("generation") if isinstance(params.get("generation"), dict) else None
                 params["generation_attempts"] = attempts
-                params["generation"] = {
-                    "status": "failed",
-                    "error": str(exc)[:500],
-                    "attempts": attempts,
-                    "attempt_limit": max_attempts,
-                }
+                params["generation"] = build_failed_generation_params(
+                    prev_gen if isinstance(prev_gen, dict) else None,
+                    str(exc),
+                    attempts=attempts,
+                    attempt_limit=max_attempts,
+                )
                 frag.params = params
                 await db.commit()
                 logger.exception(
@@ -955,12 +960,12 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
         attempts = prev_attempts + 1 if nio_phase == "prepare" else int(payload.get("generation_attempts") or prev_attempts + 1)
         if nio_phase == "prepare" and attempts > max_attempts:
             params = dict(frag.params or {})
-            params["generation"] = {
-                "status": "failed",
-                "error": f"分镜重试超过上限（{max_attempts} 次）",
-                "attempts": prev_attempts,
-                "attempt_limit": max_attempts,
-            }
+            params["generation"] = build_failed_generation_params(
+                gen if isinstance(gen, dict) else None,
+                f"分镜重试超过上限（{max_attempts} 次）",
+                attempts=prev_attempts,
+                attempt_limit=max_attempts,
+            )
             frag.params = params
             await db.commit()
             raise RuntimeError(params["generation"]["error"])
@@ -1076,8 +1081,14 @@ async def poll_fragment_video_task(task_id: int) -> None:
         poll_interval = max(1.0, float(get_settings().ark_video_poll_interval or 8.0))
         now = datetime.now(UTC)
 
-        if _is_episode_video_cancelled(episode_id):
+        if task.cancel_requested or _is_episode_video_cancelled(episode_id):
             await _fail_task(db, task, RuntimeError("任务已取消"))
+            return
+
+        # 分镜已删/重建：直接作废，勿继续轮询或写回（用户应按当前分镜重新生成）
+        frag_probe = await db.get(DramaEpisodeFragment, fragment_id) if fragment_id > 0 else None
+        if fragment_id <= 0 or frag_probe is None:
+            await _fail_task(db, task, RuntimeError("分镜已变更，请重新生成"))
             return
 
         result = await get_ark().fetch_task_once(task.provider_task_id)
@@ -1091,12 +1102,13 @@ async def poll_fragment_video_task(task_id: int) -> None:
             frag = await db.get(DramaEpisodeFragment, fragment_id)
             if frag:
                 params = dict(frag.params or {})
-                params["generation"] = {
-                    "status": "failed",
-                    "error": str(result.error or "上游生成失败")[:500],
-                    "attempts": attempts,
-                    "attempt_limit": attempt_limit,
-                }
+                prev_gen = params.get("generation") if isinstance(params.get("generation"), dict) else None
+                params["generation"] = build_failed_generation_params(
+                    prev_gen if isinstance(prev_gen, dict) else None,
+                    str(result.error or "上游生成失败"),
+                    attempts=attempts,
+                    attempt_limit=attempt_limit,
+                )
                 frag.params = params
             await _fail_task(db, task, RuntimeError(result.error or "上游生成失败"))
             return
@@ -1105,7 +1117,7 @@ async def poll_fragment_video_task(task_id: int) -> None:
         user = await db.get(User, user_id)
         frag = await db.get(DramaEpisodeFragment, fragment_id)
         if not ep or not ep.project or not user or not frag:
-            await _fail_task(db, task, RuntimeError("分镜上下文丢失"))
+            await _fail_task(db, task, RuntimeError("分镜已变更，请重新生成"))
             return
 
         task.current_step_status = "finalizing"

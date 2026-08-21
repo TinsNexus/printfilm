@@ -31,6 +31,9 @@ import {
   ensureEpisodeVideoStatusPoll,
   subscribeEpisodeGenerateStatus,
   syncEpisodeVideoJobs,
+  useDramaGenQueue,
+  videoJobId,
+  type DramaGenJob,
 } from '../../lib/dramaGenQueue'
 import {
   collectDramaGenerateGateIssues,
@@ -38,14 +41,25 @@ import {
 } from '../../lib/dramaEpisodeScriptValidate'
 import { dialog } from '../../lib/dialog'
 import { FragmentPlanSkillModal } from '../../components/drama/FragmentPlanSkillModal'
+import { DramaGenTaskDetail } from '../../components/drama/DramaGenTaskDetail'
+import { CircleAlert } from 'lucide-react'
+import { useDramaImageGenQueue } from '../../hooks/useDramaImageGenQueue'
+import { enqueueDramaImageGen } from '../../lib/dramaImageGenQueue'
+import { defaultOptionsForAssetKind } from '../../lib/dramaGenerationOptions'
+import { dramaAssetImageGenButtonLabel } from '../../lib/dramaAssetImage'
+import { readVisualPrompt } from '../../lib/dramaVisualPrompt'
+import { generateAndBindCharacterVoice } from '../../lib/characterVoiceGenerate'
 import { getImageStyleId } from './dramaWorkspaceUtils'
 import { EpisodeEditAssetPanel } from './EpisodeEditAssetPanel'
 import { EpisodeEditHeaderControls } from './EpisodeEditHeaderControls'
 import { EpisodeEditPromptEditor } from './EpisodeEditPromptEditor'
 import { EpisodeEditReferenceStrip } from './EpisodeEditReferenceStrip'
 import { EpisodeEditSidePane } from './EpisodeEditSidePane'
-import { readAssetVoiceBinding } from './CharacterVoiceBindModal'
-import { generateAndBindCharacterVoice } from '../../lib/characterVoiceGenerate'
+import {
+  CharacterVoiceBindModal,
+  readAssetVoiceBinding,
+} from './CharacterVoiceBindModal'
+import { DramaAssetDetailModal } from './DramaAssetDetailModal'
 import RequireAuth from './RequireAuth'
 import './drama.css'
 
@@ -121,6 +135,17 @@ function EpisodeEditInner() {
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
   const [characterVoiceBusyIds, setCharacterVoiceBusyIds] = useState<Set<number>>(() => new Set())
+  /*
+   * detailAsset 左侧资产详情（编辑/重新生成/上传）
+   * voiceBindAsset 音色绑定弹窗目标
+   * imageGenQueue 全局生图队列快照
+   */
+  const [detailAsset, setDetailAsset] = useState<DramaAsset | null>(null)
+  const [voiceBindAsset, setVoiceBindAsset] = useState<DramaAsset | null>(null)
+  /** failReasonJob 底部分镜感叹号打开的失败原因 */
+  const [failReasonJob, setFailReasonJob] = useState<DramaGenJob | null>(null)
+  const imageGenQueue = useDramaImageGenQueue()
+  const dramaGenQueue = useDramaGenQueue()
   const applyStatusRef = useRef<(st: Awaited<ReturnType<typeof dramaApi.generateStatus>>) => Awaited<
     ReturnType<typeof dramaApi.generateStatus>
   >>(() => ({ episode_id: 0, done: 0, failed: 0, running: 0, total: 0, tasks: [], fragments: [] }))
@@ -469,7 +494,7 @@ function EpisodeEditInner() {
     })
   }
 
-  // 保存全部分镜（标记为用户已编辑，避免自动重切覆盖）
+  // 保存全部分镜（带 id 更新，避免每次重建 id 打断在途生成；标记 user_edited 防自动重切覆盖）
   async function save() {
     setBusy(true)
     setError('')
@@ -482,6 +507,7 @@ function EpisodeEditInner() {
               ? (f.params as Record<string, unknown>)
               : {}
           return {
+            id: typeof f.id === 'number' && f.id > 0 ? f.id : undefined,
             sort_order: i,
             content: f.content,
             cover: f.cover,
@@ -523,7 +549,7 @@ function EpisodeEditInner() {
     return sameContent && sameCover && sameDuration && sameAssets
   }
 
-  // 仅生成当前选中分镜（save 会重建分镜 id，必须用保存后的 id）
+  // 仅生成当前选中分镜（保存按 id 更新，生成前仍用保存后返回的 id）
   async function generateSelected() {
     if (!selected) {
       setError('请先选择一条分镜')
@@ -823,18 +849,93 @@ function EpisodeEditInner() {
     setEditing(true)
   }
 
-  // 从关联条跳到对应分类
+  // 从关联条跳到对应分类并打开资产详情
   function focusLinkedAsset(assetId: number) {
     const asset = assets.find((a) => a.id === assetId)
     if (!asset) return
     const tab = normalizeAssetTab(asset.type)
     if (tab) setAssetTab(tab)
     setAssetScope('series')
+    if ((asset.type || '').toLowerCase() !== 'voice') {
+      setDetailAsset(asset)
+    }
   }
 
-  // 更新角色资产（音色绑定后刷新列表）
+  // 更新资产（音色绑定 / 上传 / 生图后刷新列表与详情）
   function handleCharacterUpdated(updated: DramaAsset) {
     setAssets((prev) => prev.map((a) => (a.id === updated.id ? updated : a)))
+    setDetailAsset((prev) => (prev?.id === updated.id ? updated : prev))
+  }
+
+  // 当前排队/生成中的资产生图 id
+  const imageBusyIds = useMemo(() => {
+    const ids = new Set<number>()
+    for (const job of imageGenQueue) {
+      if (job.status === 'queued' || job.status === 'running') ids.add(job.assetId)
+    }
+    return ids
+  }, [imageGenQueue])
+
+  // 详情弹窗生图按钮文案
+  function assetImageGenLabel(asset: DramaAsset): string {
+    const job = imageGenQueue.find(
+      (j) =>
+        j.assetId === asset.id && (j.status === 'queued' || j.status === 'running'),
+    )
+    let queueLabel: string | null = null
+    if (job) {
+      if (job.status === 'running') queueLabel = '生成中…'
+      else {
+        const queuedOnly = imageGenQueue.filter(
+          (j) => j.status === 'queued' || j.status === 'running',
+        )
+        const pos = queuedOnly.findIndex((j) => j.id === job.id) + 1
+        queueLabel = pos > 1 ? `排队 #${pos}` : '排队中…'
+      }
+    }
+    return dramaAssetImageGenButtonLabel(asset, queueLabel)
+  }
+
+  // 将资产生图加入全局队列
+  function enqueueAssetImage(asset: DramaAsset) {
+    if (imageBusyIds.has(asset.id)) return
+    const options = {
+      ...defaultOptionsForAssetKind(asset.type),
+      image_style_id: videoStyleId || undefined,
+    }
+    void enqueueDramaImageGen({
+      projectId: pid,
+      assetId: asset.id,
+      assetName: asset.name || undefined,
+      assetType: asset.type,
+      prompt: readVisualPrompt(asset),
+      options,
+    })
+      .then((updated) => handleCharacterUpdated(updated))
+      .catch((err) => setError(err instanceof Error ? err.message : '生图失败'))
+  }
+
+  // 打开分镜失败原因（优先队列任务，否则用分镜 params.generation.error）
+  function openFragmentFailReason(frag: DramaFragment, index: number) {
+    if (!frag.id) return
+    const fromQueue = dramaGenQueue.find(
+      (j) => j.id === videoJobId(frag.id!) || (j.kind === 'video' && j.targetId === frag.id),
+    )
+    const gen = readFragmentGenerationStatus(frag)
+    const title = `${episode?.name || '本集'} · ${formatFragLabel(index, frag.duration_sec)}`
+    setFailReasonJob({
+      id: fromQueue?.id || videoJobId(frag.id),
+      kind: 'video',
+      projectId: pid,
+      targetId: frag.id,
+      episodeId: eid || undefined,
+      taskId: fromQueue?.taskId,
+      title: fromQueue?.title || title,
+      subtype: '分镜视频',
+      status: 'failed',
+      error: fromQueue?.error || gen.error || '生成失败',
+      createdAt: fromQueue?.createdAt || Date.now(),
+    })
   }
 
   // 一键 AI 生成角色音色并绑定（各角色独立 busy，互不阻塞）
@@ -931,9 +1032,11 @@ function EpisodeEditInner() {
           tab={assetTab}
           assets={filteredAssets}
           activeIds={selectedRefIds}
+          imageBusyIds={imageBusyIds}
           onScopeChange={setAssetScope}
           onTabChange={setAssetTab}
           onOpenCanvas={openEpisodeStoryboard}
+          onOpenAsset={setDetailAsset}
           onMention={mentionAsset}
           onGenerateVoice={(asset) => void handleGenerateCharacterVoice(asset)}
           voiceBusyIds={characterVoiceBusyIds}
@@ -1109,34 +1212,55 @@ function EpisodeEditInner() {
             +
           </button>
           {fragments.map((frag, index) => {
-            const fragStatus = readFragmentGenerationStatus(frag).status
+            const genInfo = readFragmentGenerationStatus(frag)
+            const fragStatus = genInfo.status
             const fragBusy = Boolean(frag.id && generatingIds.has(frag.id))
             const badge = fragmentQueueBadgeLabel(fragBusy ? fragStatus || 'running' : fragStatus)
             const clipVideo = frag.video ? resolveDramaMediaUrl(frag.video) : ''
             const clipCover = frag.cover ? resolveDramaMediaUrl(frag.cover) : ''
+            const showFailHint = fragStatus === 'failed' && !fragBusy
             return (
             <div key={`${frag.id}-${index}`} className="drama-ep-clip-wrap">
-              <button
-                type="button"
-                className={`drama-ep-clip ${selectedIndex === index ? 'active' : ''}${
+              <div
+                className={`drama-ep-clip-shell ${selectedIndex === index ? 'active' : ''}${
                   fragBusy ? ' is-generating' : ''
                 }${fragStatus === 'queued' ? ' is-queued' : ''}${
                   fragStatus === 'failed' ? ' is-failed' : ''
                 }`}
-                onClick={() => setSelectedIndex(index)}
               >
-                {clipCover ? (
-                  <img src={clipCover} alt="" />
-                ) : clipVideo ? (
-                  <video src={clipVideo} muted />
-                ) : (
-                  <span className="drama-ep-clip-empty">
-                    {fragBusy ? '…' : '+'}
-                  </span>
-                )}
-                {badge ? <span className="drama-ep-clip-badge">{badge}</span> : null}
-                <em>{formatFragLabel(index, frag.duration_sec)}</em>
-              </button>
+                <button
+                  type="button"
+                  className="drama-ep-clip"
+                  onClick={() => setSelectedIndex(index)}
+                >
+                  {clipCover ? (
+                    <img src={clipCover} alt="" />
+                  ) : clipVideo ? (
+                    <video src={clipVideo} muted />
+                  ) : (
+                    <span className="drama-ep-clip-empty">
+                      {fragBusy ? '…' : showFailHint ? (
+                        <CircleAlert size={22} strokeWidth={2} aria-hidden />
+                      ) : (
+                        '+'
+                      )}
+                    </span>
+                  )}
+                  {badge ? <span className="drama-ep-clip-badge">{badge}</span> : null}
+                  <em>{formatFragLabel(index, frag.duration_sec)}</em>
+                </button>
+                {showFailHint ? (
+                  <button
+                    type="button"
+                    className="drama-ep-clip-fail-btn"
+                    title="查看失败原因"
+                    aria-label={`查看片段 ${index + 1} 失败原因`}
+                    onClick={() => openFragmentFailReason(frag, index)}
+                  >
+                    <CircleAlert size={14} strokeWidth={2.25} aria-hidden />
+                  </button>
+                ) : null}
+              </div>
               <div className="drama-ep-clip-ops">
                 <button type="button" aria-label="插入" onClick={() => insertFrag(index + 1)} disabled={busy}>
                   +
@@ -1165,6 +1289,40 @@ function EpisodeEditInner() {
         onCancel={() => setPlanModalOpen(false)}
         onConfirm={(skillIds) => void startPlanFragments(skillIds)}
       />
+
+      {detailAsset && (detailAsset.type || '').toLowerCase() !== 'voice' ? (
+        <DramaAssetDetailModal
+          asset={detailAsset}
+          open
+          busy={imageBusyIds.has(detailAsset.id)}
+          genLabel={assetImageGenLabel(detailAsset)}
+          onClose={() => setDetailAsset(null)}
+          onUpdated={handleCharacterUpdated}
+          onGenerate={(a) => enqueueAssetImage(a)}
+          onBindVoice={(a) => setVoiceBindAsset(a)}
+          onError={(message) => setError(message)}
+        />
+      ) : null}
+
+      {voiceBindAsset ? (
+        <CharacterVoiceBindModal
+          asset={voiceBindAsset}
+          projectId={pid}
+          open
+          onClose={() => setVoiceBindAsset(null)}
+          onBound={(updated) => {
+            handleCharacterUpdated(updated)
+            setVoiceBindAsset(null)
+          }}
+          onError={(message) => setError(message)}
+        />
+      ) : null}
+
+      {failReasonJob ? (
+        <div className="drama-ep-fail-reason-pop">
+          <DramaGenTaskDetail job={failReasonJob} onClose={() => setFailReasonJob(null)} />
+        </div>
+      ) : null}
     </div>
   )
 }

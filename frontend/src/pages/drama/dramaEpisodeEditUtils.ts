@@ -107,9 +107,17 @@ export function readFragmentGenerationStatus(
     const row = gen as Record<string, unknown>
     const status = typeof row.status === 'string' ? row.status : 'idle'
     if (['queued', 'running', 'generating', 'failed', 'cancelled'].includes(status)) {
+      const surface = typeof row.error === 'string' ? row.error : undefined
+      const root = typeof row.root_error === 'string' ? row.root_error.trim() : ''
+      const error =
+        status === 'failed' &&
+        root &&
+        (!surface || /重试超过|超过重试/.test(surface))
+          ? root
+          : surface
       return {
         status,
-        error: typeof row.error === 'string' ? row.error : undefined,
+        error,
         message: typeof row.message === 'string' ? row.message : undefined,
         phase: typeof row.phase === 'string' ? row.phase : undefined,
       }

@@ -170,6 +170,40 @@ def _extract_seedance_last_frame_url(data: dict[str, Any]) -> str | None:
     return None
 
 
+# 将 Seedance 创建失败响应转为可读中文（保留关键 code 便于前端匹配）
+def _format_seedance_create_error(
+    status_code: int,
+    body: str,
+    content_labels: list[str] | None = None,
+) -> str:
+    text = (body or "")[:800]
+    if any(
+        k in text
+        for k in ("PrivacyInformation", "InputImageSensitive", "SensitiveContentDetected", "real person")
+    ):
+        m = re.search(r"content\[(\d+)\]", text, re.I)
+        idx = int(m.group(1)) if m else -1
+        label = ""
+        if idx >= 0 and content_labels and idx < len(content_labels):
+            label = str(content_labels[idx] or "").strip()
+        if label:
+            return (
+                f"参考图疑似真人：{label}（content[{idx}]，PrivacyInformation），"
+                "请更换该形象为动漫或插画后重试"
+            )
+        if idx >= 0:
+            return (
+                f"参考图疑似真人（提交内容第 {idx + 1} 项 / content[{idx}]，PrivacyInformation），"
+                "请更换对应角色/场景形象为动漫或插画后重试"
+            )
+        return "参考图疑似真人（PrivacyInformation），请更换角色/场景形象为动漫或插画后重试"
+    if "InputTextSensitive" in text or "text sensitive" in text.lower():
+        return "分镜文案未通过内容审核，请修改敏感表述后重试"
+    if "resource download failed" in text and "audio" in text.lower():
+        return "参考音频无法下载，请检查角色音色绑定后重试"
+    return f"Seedance create error {status_code}: {text}"
+
+
 @dataclass
 class ImageResult:
     local_url: str
@@ -665,7 +699,7 @@ class ArkGateway:
                     json=body,
                 )
             if resp.status_code >= 400:
-                raise RuntimeError(f"Seedance create error {resp.status_code}: {resp.text[:800]}")
+                raise RuntimeError(_format_seedance_create_error(resp.status_code, resp.text))
             data = resp.json()
 
         task_id = data.get("id") or data.get("task_id")
@@ -704,6 +738,7 @@ class ArkGateway:
         body: dict[str, Any],
         *,
         project_id: int = 0,
+        content_labels: list[str] | None = None,
     ) -> str:
         """提交 Seedance 多模态请求体（参考图 + reference_audio）。"""
         if self.mock:
@@ -736,7 +771,13 @@ class ArkGateway:
                 json=payload,
             )
             if resp.status_code >= 400:
-                raise RuntimeError(f"Seedance create error {resp.status_code}: {resp.text[:800]}")
+                raise RuntimeError(
+                    _format_seedance_create_error(
+                        resp.status_code,
+                        resp.text,
+                        content_labels=content_labels,
+                    )
+                )
             data = resp.json()
 
         task_id = data.get("id") or data.get("task_id")
@@ -751,6 +792,7 @@ class ArkGateway:
         project_id: int,
         shot_no: int,
         max_attempts: int = 2,
+        content_labels: list[str] | None = None,
     ) -> tuple[str, str | None]:
         """创建 Seedance 多模态任务并等待完成；返回 (本地视频 URL, 可选本地尾帧 URL)。"""
         def _is_audio_download_error(err: Exception) -> bool:
@@ -791,7 +833,11 @@ class ArkGateway:
         audio_fallback_used = False
         for _attempt in range(max_attempts):
             try:
-                task_id = await self.gen_video_seedance_body(fallback_body, project_id=project_id)
+                task_id = await self.gen_video_seedance_body(
+                    fallback_body,
+                    project_id=project_id,
+                    content_labels=content_labels,
+                )
                 return await self.wait_video_assets(
                     task_id, project_id=project_id, shot_no=shot_no
                 )

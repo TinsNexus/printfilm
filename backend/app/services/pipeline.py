@@ -16,10 +16,12 @@ from app.models import PipelineJob, Project, ProjectStatus, Shot, ShotStatus
 from app.services.ark import get_ark
 from app.services.ffmpeg_compose import (
     ComposeOptions,
+    FfmpegInterrupted,
     ShotMedia,
     allocate_durations_by_narration,
     compose_project,
     concat_native_videos,
+    is_ffmpeg_interrupted_error,
     is_near_silent_audio,
     probe_duration,
 )
@@ -38,6 +40,9 @@ from app.services import seedance_segments as segplan
 from app.services.bgm import resolve_bgm_path
 
 logger = logging.getLogger(__name__)
+
+# 成片 FFmpeg 被 SIGTERM 打断时的自动重试次数
+_COMPOSE_SIGTERM_MAX_ATTEMPTS = 3
 
 _running: dict[int, asyncio.Task] = {}
 _cancelled: set[int] = set()
@@ -528,11 +533,16 @@ async def run_pipeline(project_id: int) -> None:
             )
             return
         logger.exception("pipeline failed project=%s", project_id)
+        fail_msg = (
+            "FFmpeg 被系统中断（signal 15），请点击重新拼接"
+            if is_ffmpeg_interrupted_error(exc)
+            else str(exc)[:2000]
+        )
         async with AsyncSessionLocal() as db:
             project = await db.get(Project, project_id)
             if project:
                 project.status = ProjectStatus.FAILED
-                project.error_msg = str(exc)[:2000]
+                project.error_msg = fail_msg
                 await db.commit()
         await _settle_billing(project_id)
         await publish_progress(
@@ -540,7 +550,7 @@ async def run_pipeline(project_id: int) -> None:
             {
                 "event": "failed",
                 "stage": "PIPELINE",
-                "message": str(exc),
+                "message": fail_msg,
                 "retryable": True,
                 "code": "PIPELINE_ERROR",
             },
@@ -1427,7 +1437,10 @@ async def _compose_stage(project_id: int) -> None:
                     "message": f"拼接 {len(video_paths)} 段带配音视频…",
                 },
             )
-            await asyncio.to_thread(concat_native_videos, video_paths, out)
+            await _run_ffmpeg_compose_with_retry(
+                project_id,
+                lambda: concat_native_videos(video_paths, out),
+            )
             project.final_video_url = storage.publish_local(out)
             if project.status != ProjectStatus.CANCELLED:
                 project.status = ProjectStatus.AUDITING
@@ -1498,23 +1511,25 @@ async def _compose_stage(project_id: int) -> None:
             bgm_path = None if mode != "image_text" else resolve_bgm_path(bgm_mood)
             keep_video_sfx = _kepu_seedance_sfx_audio(project)
 
-            await asyncio.to_thread(
-                compose_project,
-                media,
-                out,
-                ComposeOptions(
-                    ratio=ratio,
-                    mode=mode,
-                    resolution_mode=project.resolution_mode or "preview",
-                    full_audio_path=full_audio,
-                    subtitle_layout=subtitle_layout,
-                    title_scale=_f("title_scale", 1.35),
-                    sub_scale=_f("sub_scale", 1.3),
-                    caption_scale=_f("caption_scale", 1.25),
-                    bgm_path=bgm_path,
-                    bgm_volume=0.22,
-                    keep_video_sfx=keep_video_sfx,
-                    sfx_volume=0.22,
+            await _run_ffmpeg_compose_with_retry(
+                project_id,
+                lambda: compose_project(
+                    media,
+                    out,
+                    ComposeOptions(
+                        ratio=ratio,
+                        mode=mode,
+                        resolution_mode=project.resolution_mode or "preview",
+                        full_audio_path=full_audio,
+                        subtitle_layout=subtitle_layout,
+                        title_scale=_f("title_scale", 1.35),
+                        sub_scale=_f("sub_scale", 1.3),
+                        caption_scale=_f("caption_scale", 1.25),
+                        bgm_path=bgm_path,
+                        bgm_volume=0.22,
+                        keep_video_sfx=keep_video_sfx,
+                        sfx_volume=0.22,
+                    ),
                 ),
             )
             project.final_video_url = storage.publish_local(out)
@@ -1530,6 +1545,58 @@ async def _compose_stage(project_id: int) -> None:
             project.progress = 100
             await db.commit()
     await _settle_billing(project_id)
+
+
+# FFmpeg 合成：遇到 SIGTERM 自动重试，避免部署重启等打断直接落失败
+async def _run_ffmpeg_compose_with_retry(project_id: int, work) -> None:
+    last_exc: BaseException | None = None
+    for attempt in range(1, _COMPOSE_SIGTERM_MAX_ATTEMPTS + 1):
+        try:
+            await asyncio.to_thread(work)
+            return
+        except FfmpegInterrupted as exc:
+            last_exc = exc
+            if attempt >= _COMPOSE_SIGTERM_MAX_ATTEMPTS:
+                break
+            logger.warning(
+                "compose interrupted by SIGTERM, retry %s/%s project=%s",
+                attempt,
+                _COMPOSE_SIGTERM_MAX_ATTEMPTS,
+                project_id,
+            )
+            await publish_progress(
+                project_id,
+                {
+                    "event": "progress",
+                    "stage": "COMPOSING",
+                    "percent": 93,
+                    "message": f"合成被中断，正在自动重试（{attempt}/{_COMPOSE_SIGTERM_MAX_ATTEMPTS}）…",
+                },
+            )
+            await asyncio.sleep(float(attempt) * 2.0)
+        except Exception as exc:  # noqa: BLE001
+            # 历史错误文案里也可能带 signal 15
+            if is_ffmpeg_interrupted_error(exc) and attempt < _COMPOSE_SIGTERM_MAX_ATTEMPTS:
+                last_exc = exc
+                logger.warning(
+                    "compose looks SIGTERM-interrupted, retry %s/%s project=%s",
+                    attempt,
+                    _COMPOSE_SIGTERM_MAX_ATTEMPTS,
+                    project_id,
+                )
+                await publish_progress(
+                    project_id,
+                    {
+                        "event": "progress",
+                        "stage": "COMPOSING",
+                        "percent": 93,
+                        "message": f"合成被中断，正在自动重试（{attempt}/{_COMPOSE_SIGTERM_MAX_ATTEMPTS}）…",
+                    },
+                )
+                await asyncio.sleep(float(attempt) * 2.0)
+                continue
+            raise
+    raise last_exc or RuntimeError("FFmpeg 合成失败")
 
 
 @storage.without_intermediate_oss
@@ -1719,31 +1786,69 @@ async def regen_project_audio_and_compose(project_id: int) -> None:
         },
     )
 
-    await _compose_stage(project_id)
+    try:
+        await _compose_stage(project_id)
+        async with AsyncSessionLocal() as db:
+            project = await db.get(Project, project_id)
+            if project and project.status != ProjectStatus.CANCELLED:
+                project.status = ProjectStatus.DONE
+                project.progress = 100
+                project.error_msg = None
+                await db.commit()
+        await publish_progress(
+            project_id,
+            {"event": "done", "percent": 100, "video_url": await _final_url(project_id)},
+        )
+    except (PipelineCancelled, asyncio.CancelledError):
+        raise
+    except Exception as exc:  # noqa: BLE001
+        await _fail_project_compose(project_id, exc)
+        raise
+
+
+# 拼接失败时把项目落成 FAILED，避免长期卡在 COMPOSING 无法点「重新拼接」
+async def _fail_project_compose(project_id: int, exc: Exception) -> None:
+    raw = str(exc)
+    if is_ffmpeg_interrupted_error(exc):
+        msg = "FFmpeg 被系统中断（signal 15），请点击重新拼接"
+    else:
+        msg = raw[:2000]
+    logger.error("compose failed project=%s: %s", project_id, msg[:500])
     async with AsyncSessionLocal() as db:
         project = await db.get(Project, project_id)
-        if project and project.status != ProjectStatus.CANCELLED:
-            project.status = ProjectStatus.DONE
-            project.progress = 100
-            project.error_msg = None
+        if project and project.status != ProjectStatus.DONE:
+            project.status = ProjectStatus.FAILED
+            project.error_msg = msg
             await db.commit()
     await publish_progress(
         project_id,
-        {"event": "done", "percent": 100, "video_url": await _final_url(project_id)},
+        {
+            "event": "failed",
+            "stage": "COMPOSING",
+            "message": msg,
+            "retryable": True,
+            "code": "COMPOSE_ERROR",
+        },
     )
 
 
 @storage.without_intermediate_oss
 async def compose_only(project_id: int) -> None:
-    await _compose_stage(project_id)
-    async with AsyncSessionLocal() as db:
-        project = await db.get(Project, project_id)
-        if project and project.status != ProjectStatus.CANCELLED:
-            project.status = ProjectStatus.DONE
-            project.progress = 100
-            project.error_msg = None
-            await db.commit()
-    await publish_progress(
-        project_id,
-        {"event": "done", "percent": 100, "video_url": await _final_url(project_id)},
-    )
+    try:
+        await _compose_stage(project_id)
+        async with AsyncSessionLocal() as db:
+            project = await db.get(Project, project_id)
+            if project and project.status != ProjectStatus.CANCELLED:
+                project.status = ProjectStatus.DONE
+                project.progress = 100
+                project.error_msg = None
+                await db.commit()
+        await publish_progress(
+            project_id,
+            {"event": "done", "percent": 100, "video_url": await _final_url(project_id)},
+        )
+    except (PipelineCancelled, asyncio.CancelledError):
+        raise
+    except Exception as exc:  # noqa: BLE001
+        await _fail_project_compose(project_id, exc)
+        raise

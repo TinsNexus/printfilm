@@ -15,6 +15,9 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+# FFmpeg 被 SIGTERM 打断时的可读错误（部署重启 / 进程被杀等）
+FFMPEG_INTERRUPTED_MSG = "FFmpeg 被系统中断（signal 15），将自动重试合成"
+
 # Punctuation removed from on-screen captions (TTS narration keeps original)
 _CAPTION_PUNCT_RE = re.compile(
     r"[，。！？；：、,.!?;:…··〜～「」『』【】（）\(\)\[\]\"'“”‘’《》〈〉"
@@ -177,11 +180,42 @@ def is_near_silent_audio(path: Path, *, max_db: float = -70.0) -> bool:
         return False
 
 
+def is_ffmpeg_interrupted_error(exc_or_text: BaseException | str | None) -> bool:
+    """判断是否为 FFmpeg SIGTERM / signal 15 打断（可自动重试）。"""
+    text = str(exc_or_text or "")
+    if not text:
+        return False
+    if FFMPEG_INTERRUPTED_MSG in text:
+        return True
+    low = text.lower()
+    if "signal 15" in low or "sigterm" in low:
+        return True
+    if "exiting normally, received signal 15" in low:
+        return True
+    return False
+
+
+class FfmpegInterrupted(RuntimeError):
+    """FFmpeg 进程被 SIGTERM 打断，合成可自动重试。"""
+
+
 def _run(cmd: list[str]) -> None:
     logger.info("ffmpeg: %s", " ".join(cmd))
     proc = subprocess.run(cmd, capture_output=True, text=True)
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr[-2000:] or proc.stdout[-2000:] or "ffmpeg failed")
+    if proc.returncode == 0:
+        return
+    stderr = proc.stderr or ""
+    stdout = proc.stdout or ""
+    combined = f"{stderr}\n{stdout}"
+    # -15 / 143(128+15) / Windows 等价：进程被 SIGTERM
+    if proc.returncode in (-15, 143) or is_ffmpeg_interrupted_error(combined):
+        logger.warning(
+            "ffmpeg interrupted by SIGTERM returncode=%s cmd=%s",
+            proc.returncode,
+            " ".join(cmd[:6]),
+        )
+        raise FfmpegInterrupted(FFMPEG_INTERRUPTED_MSG)
+    raise RuntimeError(stderr[-2000:] or stdout[-2000:] or "ffmpeg failed")
 
 
 def _which(bin_name: str) -> str:
@@ -859,9 +893,11 @@ def _pad_or_trim_video(
     ffmpeg = _which("ffmpeg")
     target = max(float(duration), 0.5)
     src_dur = probe_duration(src) or 0.0
-    base_vf = f"{_scale_pad(w, h).replace(',format=yuv420p', '')},fps=24"
+    # Reset PTS before fps/tpad. Seedance clips often have a wild timebase;
+    # tpad then writes 100h+ timestamps and OOM on trailer.
+    base_vf = f"{_scale_pad(w, h).replace(',format=yuv420p', '')},setpts=PTS-STARTPTS,fps=24"
     if src_dur > 0.05 and src_dur + 0.08 < target:
-        pad = target - src_dur
+        pad = min(target - src_dur, 120.0)
         vf = f"{base_vf},tpad=stop_mode=clone:stop_duration={pad:.3f},format=yuv420p"
     else:
         vf = f"{base_vf},format=yuv420p"
@@ -997,14 +1033,16 @@ def _mux_continuous_narration(
     keep_sfx = bool(mix_video_sfx and _probe_has_audio(merged))
     if aud_d > 0.5 and vid_d > 0.05 and aud_d > vid_d + 0.12:
         tmp_pad = merged.with_name(merged.stem + "_pad.mp4")
-        pad = aud_d - vid_d
+        pad = min(aud_d - vid_d, 120.0)
         pad_cmd = [
             ffmpeg,
             "-y",
             "-i",
             str(merged),
             "-vf",
-            f"tpad=stop_mode=clone:stop_duration={pad:.3f}",
+            f"setpts=PTS-STARTPTS,fps=24,tpad=stop_mode=clone:stop_duration={pad:.3f}",
+            "-t",
+            f"{aud_d:.3f}",
             "-c:v",
             "libx264",
             "-pix_fmt",
@@ -1246,10 +1284,22 @@ def compose_project(
                 "concat",
                 "-safe",
                 "0",
+                "-fflags",
+                "+genpts",
                 "-i",
                 str(concat_list),
-                "-c",
-                "copy",
+                "-vf",
+                "setpts=PTS-STARTPTS,fps=24",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-ac",
+                "2",
+                "-ar",
+                "44100",
                 str(merged),
             ]
         )

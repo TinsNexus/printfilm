@@ -119,6 +119,16 @@ function hasActiveUnifiedTasks(project: Project | null): boolean {
   )
 }
 
+/** 有任务平台数据时以 active_tasks 为准；COMPOSING 无任务视为拼接失败残留，可重试 */
+function isProjectBusy(project: Project | null): boolean {
+  if (!project) return false
+  if (hasActiveUnifiedTasks(project)) return true
+  if (Array.isArray(project.active_tasks) && project.active_tasks.length === 0) {
+    return false
+  }
+  return isRunning(project.status)
+}
+
 export default function StoryboardPage() {
   const { id } = useParams()
   const projectId = Number(id)
@@ -166,7 +176,7 @@ export default function StoryboardPage() {
     if (!project) return
     // Only poll while pipeline is actively running — idle checkpoints
     // (IMAGE_READY / VIDEO_READY / SCRIPT_READY) must not spin forever.
-    if (!isRunning(project.status) && !hasActiveUnifiedTasks(project)) return
+    if (!isProjectBusy(project)) return
     const timer = setInterval(() => {
       api
         .getProject(project.id)
@@ -174,7 +184,7 @@ export default function StoryboardPage() {
         .catch(() => undefined)
     }, 1500)
     return () => clearInterval(timer)
-  }, [project?.id, project?.status])
+  }, [project?.id, project?.status, project?.active_tasks])
 
   useEffect(() => {
     if (menuShotId == null) return
@@ -185,7 +195,7 @@ export default function StoryboardPage() {
     return () => document.removeEventListener('click', onDoc)
   }, [menuShotId])
 
-  const running = Boolean(project && (isRunning(project.status) || hasActiveUnifiedTasks(project)))
+  const running = isProjectBusy(project)
   const step = project ? boardStepIndex(project) : 3
   const totalDuration = useMemo(
     () => (project?.shots || []).reduce((s, x) => s + (Number(x.duration) || 0), 0),
@@ -232,7 +242,7 @@ export default function StoryboardPage() {
    */
   const videosReady =
     !isFullPipeline ||
-    ['VIDEO_READY', 'COMPOSING', 'AUDITING', 'DONE'].includes(project?.status || '') ||
+    ['VIDEO_READY', 'COMPOSING', 'AUDITING', 'DONE', 'FAILED'].includes(project?.status || '') ||
     (shots.length > 0 && vidDone === shots.length)
   const readyToCompose = assetsReady && videosReady
   const needsVideos = isFullPipeline && assetsReady && !videosReady

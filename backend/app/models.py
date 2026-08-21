@@ -182,7 +182,9 @@ class UsageEvent(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True, index=True)
+    project_id: Mapped[int | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     # Drama module billing ref (mutually exclusive with kepu project_id when set)
     drama_project_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     shot_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

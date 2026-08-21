@@ -20,6 +20,7 @@ from app.services.drama.build_seedance_generate_body import (
     ASSET_MENTION_TOKEN_PATTERN,
     build_seedance_generate_body,
     build_seedance_reference_catalog,
+    describe_seedance_content_slots,
     drama_asset_to_payload,
     read_asset_voice_audio_url,
 )
@@ -105,13 +106,20 @@ def fragment_generation_status(fragment: DramaEpisodeFragment) -> dict[str, Any]
     """读取分镜片段生成状态（done / running / queued / failed / idle）。
 
     重新生成时旧 video 仍在，优先信任 params.generation 的进行中状态。
+    失败时若表面是「重试超限」，优先露出 root_error（如参考图审核）。
     """
     params = fragment.params or {}
     gen = params.get("generation") if isinstance(params, dict) else None
     if isinstance(gen, dict):
         status = str(gen.get("status") or "").strip().lower()
         if status in {"queued", "running", "generating", "failed", "cancelled"}:
-            return dict(gen)
+            out = dict(gen)
+            if status == "failed":
+                err = str(out.get("error") or "")
+                root = str(out.get("root_error") or "").strip()
+                if root and ("重试超过" in err or "超过重试" in err or not err):
+                    out["error"] = root
+            return out
         if status == "done":
             out = dict(gen)
             if fragment.video and not out.get("video"):
@@ -122,6 +130,52 @@ def fragment_generation_status(fragment: DramaEpisodeFragment) -> dict[str, Any]
     if fragment.video:
         return {"status": "done", "video": fragment.video, "cover": fragment.cover}
     return {"status": "idle"}
+
+
+# 是否为「重试超限」包装句（不含真实根因）
+def _is_retry_limit_error(text: str) -> bool:
+    t = (text or "").strip()
+    return bool(t) and ("重试超过" in t or "超过重试" in t)
+
+
+# 组装失败态 generation：保留 root_error，避免被重试超限覆盖
+def build_failed_generation_params(
+    prev_gen: dict[str, Any] | None,
+    error: str,
+    *,
+    attempts: int | None = None,
+    attempt_limit: int | None = None,
+) -> dict[str, Any]:
+    msg = str(error or "生成失败")[:500]
+    prev = prev_gen if isinstance(prev_gen, dict) else {}
+    prev_root = str(prev.get("root_error") or "").strip()
+    prev_err = str(prev.get("error") or "").strip()
+    kept_root = ""
+    if prev_root and not _is_retry_limit_error(prev_root):
+        kept_root = prev_root[:500]
+    elif prev_err and not _is_retry_limit_error(prev_err):
+        kept_root = prev_err[:500]
+
+    root = kept_root
+    if not _is_retry_limit_error(msg):
+        root = msg
+    elif not root:
+        root = msg
+
+    display = msg
+    if _is_retry_limit_error(msg) and root and not _is_retry_limit_error(root):
+        display = f"{msg}：{root[:400]}"
+
+    out: dict[str, Any] = {
+        "status": "failed",
+        "error": display[:500],
+        "root_error": root[:500],
+    }
+    if attempts is not None:
+        out["attempts"] = attempts
+    if attempt_limit is not None:
+        out["attempt_limit"] = attempt_limit
+    return out
 
 
 # 分镜视频版本上限（含当前成片前归档的历史 take）
@@ -793,10 +847,16 @@ async def generate_fragment_video(
                 "continuity_first_frame_url": continuity_url,
             }
         )
+        content_labels = describe_seedance_content_slots(
+            ref_payloads,
+            continuity_url,
+            has_text=bool((prompt or "").strip()),
+        )
         local_video, local_last_frame = await ark.gen_and_wait_seedance_body(
             body,
             project_id=project.id,
             shot_no=fragment.id,
+            content_labels=content_labels,
         )
     elif image_url:
         ratio = str((project.params or {}).get("aspect_ratio") or "").strip() or "9:16"
@@ -883,6 +943,7 @@ class FragmentVideoPrepared:
     ratio: str = "9:16"
     resolution: str = "480p"
     generate_audio: bool = True
+    content_labels: list[str] | None = None
 
 
 @dataclass
@@ -966,6 +1027,11 @@ async def prepare_fragment_video_for_submit(
             duration=duration,
             ratio=ratio,
             resolution=resolution,
+            content_labels=describe_seedance_content_slots(
+                ref_payloads,
+                continuity_url,
+                has_text=bool((prompt or "").strip()),
+            ),
         )
 
     ark = get_ark()
@@ -992,7 +1058,11 @@ async def submit_prepared_fragment_video(
 ) -> str:
     ark = get_ark()
     if prepared.submit_mode == "seedance_body" and prepared.seedance_body:
-        return await ark.gen_video_seedance_body(prepared.seedance_body, project_id=project_id)
+        return await ark.gen_video_seedance_body(
+            prepared.seedance_body,
+            project_id=project_id,
+            content_labels=prepared.content_labels,
+        )
     if prepared.submit_mode == "i2v" and prepared.image_url:
         return await ark.gen_video_i2v(
             prepared.image_url,
@@ -1015,10 +1085,17 @@ def serialize_fragment_video_prepared(prepared: FragmentVideoPrepared) -> dict[s
         "ratio": prepared.ratio,
         "resolution": prepared.resolution,
         "generate_audio": prepared.generate_audio,
+        "content_labels": prepared.content_labels,
     }
 
 
 def deserialize_fragment_video_prepared(raw: dict[str, Any]) -> FragmentVideoPrepared:
+    labels_raw = raw.get("content_labels")
+    labels = (
+        [str(x) for x in labels_raw if str(x).strip()]
+        if isinstance(labels_raw, list)
+        else None
+    )
     return FragmentVideoPrepared(
         submit_mode=str(raw.get("submit_mode") or ""),
         seedance_body=raw.get("seedance_body") if isinstance(raw.get("seedance_body"), dict) else None,
@@ -1028,6 +1105,7 @@ def deserialize_fragment_video_prepared(raw: dict[str, Any]) -> FragmentVideoPre
         ratio=str(raw.get("ratio") or "9:16"),
         resolution=str(raw.get("resolution") or "480p"),
         generate_audio=bool(raw.get("generate_audio", True)),
+        content_labels=labels,
     )
 
 

@@ -38,7 +38,9 @@ class TaskRun(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     result_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True, index=True)
+    project_id: Mapped[int | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     drama_project_id: Mapped[int | None] = mapped_column(
         ForeignKey("drama_projects.id"), nullable=True, index=True
     )

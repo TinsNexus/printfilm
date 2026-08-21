@@ -175,6 +175,47 @@ def build_seedance_reference_catalog(
     return catalog
 
 
+_KIND_ZH = {
+    "character": "角色",
+    "scene": "场景",
+    "prop": "道具",
+    "narration": "旁白",
+}
+
+
+# 按 content[] 下标生成可读标签（与 build_seedance_content_items 顺序一致）
+def describe_seedance_content_slots(
+    reference: list[dict[str, Any]] | None,
+    continuity_first_frame_url: str | None = None,
+    *,
+    has_text: bool = True,
+) -> list[str]:
+    catalog = build_seedance_reference_catalog(reference)
+    asset_by_id = {
+        int(asset["id"]): asset
+        for asset in (reference or [])
+        if isinstance(asset, dict) and asset.get("id") is not None
+    }
+    labels: list[str] = []
+    if has_text:
+        labels.append("分镜文案")
+    for image in catalog.images:
+        asset = asset_by_id.get(image.asset_id) or {}
+        kind = str(asset.get("type") or "").lower()
+        kind_zh = _KIND_ZH.get(kind, "参考图")
+        name = str(asset.get("name") or "").strip() or f"资产#{image.asset_id}"
+        labels.append(f"{kind_zh}「{name}」")
+    for audio in catalog.audios:
+        asset = asset_by_id.get(audio.asset_id) or {}
+        kind = str(asset.get("type") or "").lower()
+        kind_zh = _KIND_ZH.get(kind, "音色")
+        name = str(asset.get("name") or "").strip() or f"资产#{audio.asset_id}"
+        labels.append(f"{kind_zh}音色「{name}」")
+    if (continuity_first_frame_url or "").strip():
+        labels.append("上一镜尾帧")
+    return labels
+
+
 # 正文中的 @asset 替换文案
 def format_body_asset_mention(name: str, image_index: int | None) -> str:
     if image_index is not None:

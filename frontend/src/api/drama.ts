@@ -365,6 +365,7 @@ export const dramaApi = {
   saveFragments: (
     episodeId: number,
     fragments: Array<{
+      id?: number
       sort_order: number
       content: string
       cover?: string

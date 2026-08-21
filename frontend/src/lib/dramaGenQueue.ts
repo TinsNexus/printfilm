@@ -13,6 +13,8 @@ export type DramaGenJob = {
   /** 资产 id 或分镜 id */
   targetId: number
   episodeId?: number
+  /** 统一任务平台 task_runs.id，用于打开详情 */
+  taskId?: number
   title: string
   /** 子类型文案：角色 / 场景 / 分镜视频 等 */
   subtype: string
@@ -71,7 +73,8 @@ function snapshotsEqual(a: DramaGenJob[], b: DramaGenJob[]): boolean {
       x.message !== y.message ||
       x.error !== y.error ||
       x.finishedAt !== y.finishedAt ||
-      x.title !== y.title
+      x.title !== y.title ||
+      x.taskId !== y.taskId
     ) {
       return false
     }
@@ -140,7 +143,8 @@ function jobDisplayEqual(a: DramaGenJob, b: DramaGenJob): boolean {
     a.status === b.status &&
     a.message === b.message &&
     a.error === b.error &&
-    a.finishedAt === b.finishedAt
+    a.finishedAt === b.finishedAt &&
+    a.taskId === b.taskId
   )
 }
 
@@ -172,6 +176,7 @@ export function upsertDramaGenJob(
     projectId: patch.projectId,
     targetId: patch.targetId,
     episodeId: patch.episodeId,
+    taskId: patch.taskId ?? prev?.taskId,
     title: patch.title,
     subtype: patch.subtype,
     status,
@@ -326,10 +331,16 @@ export function syncEpisodeVideoJobs(input: {
   const fragLabel = (fragId: number) => resolveFragmentLabel(fragId, input.fragments)
 
   const activeTaskByFragmentId = new Map<number, FragmentTaskItem>()
+  // 每个分镜取最新一条平台任务（含失败），供队列绑定 taskId / 错误文案
+  const latestTaskByFragmentId = new Map<number, FragmentTaskItem>()
   for (const task of input.taskItems || []) {
     if (task.task_type !== 'fragment_video') continue
-    if (task.cancel_requested) continue
     if (typeof task.fragment_id !== 'number') continue
+    const prev = latestTaskByFragmentId.get(task.fragment_id)
+    if (!prev || (task.id || 0) > (prev.id || 0)) {
+      latestTaskByFragmentId.set(task.fragment_id, task)
+    }
+    if (task.cancel_requested) continue
     if (!['pending', 'leased', 'running', 'awaiting_poll', 'awaiting_review'].includes(task.status))
       continue
     activeTaskByFragmentId.set(task.fragment_id, task)
@@ -340,6 +351,8 @@ export function syncEpisodeVideoJobs(input: {
     const jobId = videoJobId(item.fragment_id)
     const existing = jobs.find((j) => j.id === jobId)
     const activeTask = activeTaskByFragmentId.get(item.fragment_id)
+    const latestTask = latestTaskByFragmentId.get(item.fragment_id)
+    const boundTaskId = activeTask?.id ?? latestTask?.id ?? existing?.taskId
     if (shouldSkipFinishedResync(jobId, raw, existing, Boolean(activeTask))) {
       continue
     }
@@ -353,6 +366,7 @@ export function syncEpisodeVideoJobs(input: {
             projectId: input.projectId,
             targetId: item.fragment_id,
             episodeId: input.episodeId,
+            taskId: activeTask.id,
             title: resolveVideoJobTitle(existing, input.episodeName, fragLabel(item.fragment_id)),
             subtype: '分镜视频',
             status: activeTask.status === 'pending' || activeTask.status === 'leased' ? 'queued' : 'running',
@@ -375,10 +389,11 @@ export function syncEpisodeVideoJobs(input: {
             projectId: existing.projectId,
             targetId: existing.targetId,
             episodeId: existing.episodeId,
+            taskId: boundTaskId,
             title: existing.title,
             subtype: existing.subtype,
             status: 'failed',
-            error: '任务已中断，请重新生成',
+            error: latestTask?.error_message || '任务已中断，请重新生成',
           },
           { silent: true },
         )
@@ -391,6 +406,12 @@ export function syncEpisodeVideoJobs(input: {
     else if (raw === 'queued') status = 'queued'
     else status = 'running'
 
+    const errText =
+      raw === 'cancelled'
+        ? '已取消'
+        : item.error ||
+          (status === 'failed' ? latestTask?.error_message || undefined : undefined)
+
     upsertDramaGenJob(
       {
         id: videoJobId(item.fragment_id),
@@ -398,11 +419,12 @@ export function syncEpisodeVideoJobs(input: {
         projectId: input.projectId,
         targetId: item.fragment_id,
         episodeId: input.episodeId,
+        taskId: boundTaskId,
         title: resolveVideoJobTitle(existing, input.episodeName, fragLabel(item.fragment_id)),
         subtype: '分镜视频',
         status,
         message: item.message || (item.phase === 'assets' ? '生成参考图…' : undefined),
-        error: raw === 'cancelled' ? '已取消' : item.error,
+        error: errText,
       },
       { silent: true },
     )

@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Clapperboard, ImageIcon, Layers, Octagon, Trash2, X } from 'lucide-react'
 import { dramaApi } from '../../api/drama'
+import { DramaGenTaskDetail } from './DramaGenTaskDetail'
+import { formatDramaGenError } from '../../lib/dramaGenError'
 import {
   clearFinishedDramaGenJobs,
   ensureEpisodeVideoStatusPoll,
@@ -53,6 +55,7 @@ function JobKindIcon({ kind }: { kind: DramaGenJob['kind'] }) {
 export function DramaGenQueuePanel() {
   const queue = useDramaGenQueue()
   const [open, setOpen] = useState(readOpenPreference)
+  const [detailJob, setDetailJob] = useState<DramaGenJob | null>(null)
 
   const active = useMemo(
     () => queue.filter((j) => j.status === 'queued' || j.status === 'running'),
@@ -99,12 +102,24 @@ export function DramaGenQueuePanel() {
     }
   }, [active])
 
+  // 详情随队列刷新同步同一 job
+  useEffect(() => {
+    if (!detailJob) return
+    const latest = queue.find((j) => j.id === detailJob.id)
+    if (!latest) {
+      setDetailJob(null)
+      return
+    }
+    if (latest !== detailJob) setDetailJob(latest)
+  }, [queue, detailJob])
+
   const toggleOpen = useCallback(() => {
     setOpen((prev) => !prev)
   }, [])
 
   const close = useCallback(() => {
     setOpen(false)
+    setDetailJob(null)
   }, [])
 
   const cancelAllVideo = useCallback(async () => {
@@ -124,98 +139,120 @@ export function DramaGenQueuePanel() {
     <div className="drama-gen-fab-root">
       {open ? (
         <div className="drama-gen-fab-panel" role="dialog" aria-label="生成队列">
-          <header className="drama-gen-fab-head">
-            <div className="drama-gen-fab-title">
-              <Layers size={18} strokeWidth={1.75} aria-hidden />
-              <div>
-                <strong>生成队列</strong>
-                <span>
-                  {active.length > 0
-                    ? `${active.length} 项进行中`
-                    : failed.length > 0
-                      ? `${failed.length} 项失败`
-                      : finished.length > 0
-                        ? '全部完成'
-                        : ''}
-                </span>
-              </div>
-            </div>
-            <div className="drama-gen-fab-actions">
-              {active.some((j) => j.kind === 'video') ? (
-                <button
-                  type="button"
-                  className="drama-gen-fab-icon-btn"
-                  onClick={cancelAllVideo}
-                  title="取消全部视频任务"
-                  aria-label="取消全部视频任务"
-                >
-                  <Octagon size={16} />
-                </button>
-              ) : null}
-              {finished.length > 0 ? (
-                <button
-                  type="button"
-                  className="drama-gen-fab-icon-btn"
-                  onClick={clearFinishedDramaGenJobs}
-                  title="清空已结束"
-                  aria-label="清空已结束"
-                >
-                  <Trash2 size={16} />
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className="drama-gen-fab-icon-btn"
-                onClick={close}
-                title="关闭队列"
-                aria-label="关闭队列"
-              >
-                <X size={18} />
-              </button>
-            </div>
-          </header>
-
-          <ul className="drama-gen-fab-list">
-            {sortedQueue.map((job) => {
-              const queueIndex = queuedOnly.findIndex((j) => j.id === job.id)
-              return (
-                <li key={job.id} className={`drama-gen-fab-item is-${job.status}`}>
-                  <div className="drama-gen-fab-item-head">
-                    <div className="drama-gen-fab-item-main">
-                      <span className="drama-gen-fab-kind">
-                        <JobKindIcon kind={job.kind} />
-                        <em>{job.kind === 'video' ? '视频' : '图片'}</em>
-                      </span>
-                      <span className="drama-gen-fab-name">{job.title}</span>
-                      <span className="drama-gen-fab-type">{jobTypeLabel(job)}</span>
-                      {job.message && (job.status === 'queued' || job.status === 'running') ? (
-                        <span className="drama-gen-fab-msg">{job.message}</span>
-                      ) : null}
-                    </div>
-                    <span className="drama-gen-fab-status">
-                      {job.status === 'queued' && queueIndex >= 0
-                        ? queuedOnly.length <= 1 || queueIndex === 0
-                          ? '排队中'
-                          : `排队 #${queueIndex + 1}`
-                        : STATUS_LABEL[job.status]}
+          {detailJob ? (
+            <DramaGenTaskDetail job={detailJob} onClose={() => setDetailJob(null)} />
+          ) : (
+            <>
+              <header className="drama-gen-fab-head">
+                <div className="drama-gen-fab-title">
+                  <Layers size={18} strokeWidth={1.75} aria-hidden />
+                  <div>
+                    <strong>生成队列</strong>
+                    <span>
+                      {active.length > 0
+                        ? `${active.length} 项进行中`
+                        : failed.length > 0
+                          ? `${failed.length} 项失败`
+                          : finished.length > 0
+                            ? '全部完成'
+                            : ''}
                     </span>
                   </div>
-                  {job.status === 'failed' && job.error ? (
-                    <p className="drama-gen-fab-error">{job.error}</p>
+                </div>
+                <div className="drama-gen-fab-actions">
+                  {active.some((j) => j.kind === 'video') ? (
+                    <button
+                      type="button"
+                      className="drama-gen-fab-icon-btn"
+                      onClick={cancelAllVideo}
+                      title="取消全部视频任务"
+                      aria-label="取消全部视频任务"
+                    >
+                      <Octagon size={16} />
+                    </button>
                   ) : null}
-                  {(job.status === 'queued' || job.status === 'running') && (
-                    <div className="drama-gen-fab-bar" aria-hidden />
-                  )}
-                </li>
-              )
-            })}
-          </ul>
+                  {finished.length > 0 ? (
+                    <button
+                      type="button"
+                      className="drama-gen-fab-icon-btn"
+                      onClick={clearFinishedDramaGenJobs}
+                      title="清空已结束"
+                      aria-label="清空已结束"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="drama-gen-fab-icon-btn"
+                    onClick={close}
+                    title="关闭队列"
+                    aria-label="关闭队列"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </header>
 
-          {active.length > 0 ? (
-            <footer className="drama-gen-fab-foot">
-              <span className="drama-gen-fab-foot-dot" aria-hidden />
-            </footer>
-          ) : null}
+              <ul className="drama-gen-fab-list">
+                {sortedQueue.map((job) => {
+                  const queueIndex = queuedOnly.findIndex((j) => j.id === job.id)
+                  const errView = job.status === 'failed' ? formatDramaGenError(job.error) : null
+                  return (
+                    <li key={job.id}>
+                      <button
+                        type="button"
+                        className={`drama-gen-fab-item is-${job.status} is-clickable`}
+                        onClick={() => setDetailJob(job)}
+                      >
+                        <div className="drama-gen-fab-item-head">
+                          <div className="drama-gen-fab-item-main">
+                            <span className="drama-gen-fab-kind">
+                              <JobKindIcon kind={job.kind} />
+                              <em>{job.kind === 'video' ? '视频' : '图片'}</em>
+                            </span>
+                            <span className="drama-gen-fab-name">{job.title}</span>
+                            <span className="drama-gen-fab-type">{jobTypeLabel(job)}</span>
+                            {job.message && (job.status === 'queued' || job.status === 'running') ? (
+                              <span className="drama-gen-fab-msg">{job.message}</span>
+                            ) : null}
+                          </div>
+                          <span className="drama-gen-fab-status">
+                            {job.status === 'queued' && queueIndex >= 0
+                              ? queuedOnly.length <= 1 || queueIndex === 0
+                                ? '排队中'
+                                : `排队 #${queueIndex + 1}`
+                              : STATUS_LABEL[job.status]}
+                          </span>
+                        </div>
+                        {errView ? (
+                          <div className="drama-gen-fab-error-block">
+                            <p className="drama-gen-fab-error-title">{errView.title}</p>
+                            <p className="drama-gen-fab-error">{errView.message}</p>
+                            {errView.suggestion ? (
+                              <p className="drama-gen-fab-error-tip">{errView.suggestion}</p>
+                            ) : null}
+                            <span className="drama-gen-fab-open-hint">查看原因</span>
+                          </div>
+                        ) : (
+                          <span className="drama-gen-fab-open-hint">查看详情</span>
+                        )}
+                        {(job.status === 'queued' || job.status === 'running') && (
+                          <div className="drama-gen-fab-bar" aria-hidden />
+                        )}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+
+              {active.length > 0 ? (
+                <footer className="drama-gen-fab-foot">
+                  <span className="drama-gen-fab-foot-dot" aria-hidden />
+                </footer>
+              ) : null}
+            </>
+          )}
         </div>
       ) : null}
 

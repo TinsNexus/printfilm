@@ -214,15 +214,41 @@ async def fail_remaining_sequential_batch(
 
 # 进行中的分镜生成状态（重新生成会保留旧 video，不能当「已完成」误取消）
 _ACTIVE_FRAGMENT_VIDEO_GEN = frozenset({"queued", "running", "generating"})
+# 分镜删除后需立即作废的在途态（含 awaiting_poll，避免上游成功后报「上下文丢失」）
+_STALE_FRAGMENT_VIDEO_STATUSES = frozenset(
+    {"pending", "leased", "running", "awaiting_poll", "cancel_requested"}
+)
+_STALE_FRAGMENT_REASON = "分镜已变更，请重新生成"
 
 
-# 判断 pending 分镜视频任务是否应作废；返回取消原因，None 表示保留。
+# 从任务列与 payload 解析关联分镜 id。
+def task_fragment_ids(task: TaskRun) -> list[int]:
+    ids: list[int] = []
+    if task.fragment_id:
+        try:
+            ids.append(int(task.fragment_id))
+        except (TypeError, ValueError):
+            pass
+    payload = task.payload if isinstance(task.payload, dict) else {}
+    raw_ids = payload.get("fragment_ids") or []
+    if isinstance(raw_ids, list):
+        for item in raw_ids:
+            try:
+                fid = int(item)
+            except (TypeError, ValueError):
+                continue
+            if fid > 0 and fid not in ids:
+                ids.append(fid)
+    return ids
+
+
+# 判断分镜视频任务是否应作废；返回取消原因，None 表示保留。
 def stale_pending_fragment_video_reason(frags: list[Any]) -> str | None:
     """分镜已删 → 作废；全有成片且无进行中 generation → 跳过重复；否则保留（含重新生成）。"""
     from app.services.drama.generation import fragment_generation_status
 
     if not frags:
-        return "分镜已变更，任务已作废"
+        return _STALE_FRAGMENT_REASON
     if not all((getattr(frag, "video", None) or "").strip() for frag in frags):
         return None
     for frag in frags:
@@ -232,10 +258,64 @@ def stale_pending_fragment_video_reason(frags: list[Any]) -> str | None:
     return "分镜已生成完成，跳过重复任务"
 
 
-# 取消 payload 中分镜已删除或已有成片（且非重新生成）的 pending 任务，避免假排队。
+# 将任务标记为因分镜变更而取消（立即终态，不走 cancel_requested）。
+async def _mark_task_cancelled_stale(db: AsyncSession, task: TaskRun, reason: str, now: datetime) -> None:
+    task.status = "cancelled"
+    task.cancel_requested = True
+    task.error_code = "stale_fragment_ref"
+    task.error_message = reason[:500]
+    task.finished_at = now
+    task.next_action_at = None
+    task.lease_token = None
+    task.lease_until = None
+    await append_task_event(
+        db,
+        task.id,
+        event_type="task.cancelled",
+        status=task.status,
+        phase=task.current_step_key,
+        message=reason[:500],
+    )
+
+
+# 分镜删除/重切时作废仍引用旧 id 的在途 fragment_video（含轮询中），勿重试旧任务。
+async def cancel_fragment_video_tasks_for_fragments(
+    db: AsyncSession,
+    fragment_ids: list[int],
+    *,
+    reason: str = _STALE_FRAGMENT_REASON,
+) -> int:
+    ids = [int(x) for x in fragment_ids if int(x) > 0]
+    if not ids:
+        return 0
+    id_set = set(ids)
+    stmt = select(TaskRun).where(
+        TaskRun.domain == "drama",
+        TaskRun.task_type == "fragment_video",
+        TaskRun.status.in_(tuple(_STALE_FRAGMENT_VIDEO_STATUSES)),
+    )
+    rows = list((await db.execute(stmt)).scalars().all())
+    changed = 0
+    now = datetime.now(UTC)
+    for task in rows:
+        refs = task_fragment_ids(task)
+        if not refs or not id_set.intersection(refs):
+            continue
+        await _mark_task_cancelled_stale(db, task, reason, now)
+        changed += 1
+    if changed:
+        logger.info(
+            "cancelled stale fragment_video tasks count=%s fragment_ids=%s",
+            changed,
+            ids[:20],
+        )
+    return changed
+
+
+# 取消 payload 中分镜已删除或已有成片（且非重新生成）的在途任务，避免假排队与上下文丢失。
 async def reconcile_stale_pending_tasks(db: AsyncSession) -> int:
     stmt = select(TaskRun).where(
-        TaskRun.status == "pending",
+        TaskRun.status.in_(tuple(_STALE_FRAGMENT_VIDEO_STATUSES)),
         TaskRun.domain == "drama",
         TaskRun.task_type == "fragment_video",
     )
@@ -243,17 +323,12 @@ async def reconcile_stale_pending_tasks(db: AsyncSession) -> int:
     changed = 0
     now = datetime.now(UTC)
     for task in rows:
-        payload = task.payload if isinstance(task.payload, dict) else {}
-        raw_ids = payload.get("fragment_ids") or []
-        if not isinstance(raw_ids, list):
-            continue
-        frag_ids: list[int] = []
-        for item in raw_ids:
-            try:
-                frag_ids.append(int(item))
-            except (TypeError, ValueError):
-                continue
+        frag_ids = task_fragment_ids(task)
         if not frag_ids:
+            # fragment_id 已被 detach、payload 也无 id → 无法回写，直接作废
+            if task.status in {"awaiting_poll", "running", "leased"}:
+                await _mark_task_cancelled_stale(db, task, _STALE_FRAGMENT_REASON, now)
+                changed += 1
             continue
 
         frags: list[DramaEpisodeFragment] = []
@@ -266,26 +341,12 @@ async def reconcile_stale_pending_tasks(db: AsyncSession) -> int:
         if not reason:
             continue
 
-        task.status = "cancelled"
-        task.error_code = "stale_fragment_ref"
-        task.error_message = reason
-        task.finished_at = now
-        task.next_action_at = None
-        task.lease_token = None
-        task.lease_until = None
-        await append_task_event(
-            db,
-            task.id,
-            event_type="task.cancelled",
-            status=task.status,
-            phase=task.current_step_key,
-            message=reason,
-        )
+        await _mark_task_cancelled_stale(db, task, reason, now)
         changed += 1
 
     if changed:
         await db.commit()
-        logger.info("reconciled stale pending task runs count=%s", changed)
+        logger.info("reconciled stale fragment_video task runs count=%s", changed)
     return changed
 
 
@@ -643,6 +704,14 @@ async def retry_task_for_user(db: AsyncSession, user: User, task_id: int) -> Tas
     task = await get_task_for_user(db, user, task_id)
     if task.status not in {"failed", "cancelled"}:
         raise ValueError("仅失败或已取消任务支持重试")
+    # 分镜视频：旧任务绑定的分镜若已删，禁止重试，须在分集页按当前分镜重新生成
+    if task.domain == "drama" and task.task_type == "fragment_video":
+        frag_ids = task_fragment_ids(task)
+        if not frag_ids:
+            raise ValueError(_STALE_FRAGMENT_REASON)
+        for frag_id in frag_ids:
+            if await db.get(DramaEpisodeFragment, frag_id) is None:
+                raise ValueError(_STALE_FRAGMENT_REASON)
     payload = dict(task.payload or {}) if isinstance(task.payload, dict) else None
     body = TaskCreateRequest(
         domain=task.domain,

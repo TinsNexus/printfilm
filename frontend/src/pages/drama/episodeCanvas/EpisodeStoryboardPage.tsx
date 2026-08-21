@@ -169,6 +169,7 @@ function EpisodeStoryboardInner() {
                 ? (f.params as Record<string, unknown>)
                 : {}
             return {
+              id: typeof f.id === 'number' && f.id > 0 ? f.id : undefined,
               sort_order: index,
               content: f.content || '',
               cover: f.cover || '',

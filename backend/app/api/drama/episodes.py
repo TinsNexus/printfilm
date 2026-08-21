@@ -47,6 +47,7 @@ from app.services.drama.jobs import (
 from app.config import get_settings
 from app.services.drama.seed import seed_episodes_from_script
 from app.services.tasks.service import (
+    cancel_fragment_video_tasks_for_fragments,
     cancel_tasks_for_scope,
     create_task,
     list_active_tasks_for_owner,
@@ -325,23 +326,27 @@ async def save_fragments(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DramaEpisodeOut:
+    """按 id 更新已有分镜、新增无 id 项、删除未提交项；删除时作废旧视频任务，避免 ID 轮转导致上下文丢失。"""
     ep = await get_owned_episode(db, episode_id, user)
-    old_frag_ids = [int(f.id) for f in (ep.fragments or [])]
-    await detach_task_fragment_refs(db, old_frag_ids)
-    # 用 relationship 清空，保证会话内集合与库一致（delete 旧行但不从 ep.fragments 移除会导致返回旧 id）
-    ep.fragments.clear()
-    await db.flush()
+    existing = {int(f.id): f for f in (ep.fragments or [])}
+    keep_ids: set[int] = set()
+
     for item in body.fragments:
-        frag = DramaEpisodeFragment(
-            episode_id=ep.id,
-            sort_order=item.sort_order,
-            content=item.content or "",
-            cover=(item.cover or "")[:1024],
-            video=(item.video or "")[:1024],
-            duration_sec=item.duration_sec,
-            params=item.params,
-        )
-        ep.fragments.append(frag)
+        item_id = int(item.id) if item.id else 0
+        frag = existing.get(item_id) if item_id > 0 else None
+        if frag is None:
+            frag = DramaEpisodeFragment(episode_id=ep.id)
+            ep.fragments.append(frag)
+            await db.flush()
+        frag.sort_order = item.sort_order
+        frag.content = item.content or ""
+        frag.cover = (item.cover or "")[:1024]
+        frag.video = (item.video or "")[:1024]
+        frag.duration_sec = item.duration_sec
+        frag.params = item.params
+        keep_ids.add(int(frag.id))
+
+        frag.asset_references.clear()
         await db.flush()
         asset_ids = await filter_valid_project_asset_ids(
             db,
@@ -350,14 +355,25 @@ async def save_fragments(
         )
         for aid in asset_ids:
             db.add(DramaFragmentAssetRef(fragment_id=frag.id, asset_id=aid))
+
+    stale_ids = [fid for fid in existing if fid not in keep_ids]
+    if stale_ids:
+        await cancel_fragment_video_tasks_for_fragments(db, stale_ids)
+        await detach_task_fragment_refs(db, stale_ids)
+        for fid in stale_ids:
+            old = existing.get(fid)
+            if old is not None:
+                await db.delete(old)
+        await db.flush()
+
     await db.commit()
-    # expire_on_commit=False：必须重查，不能用会话里可能过期的 ep.fragments
     frags = await load_episode_fragments(db, episode_id)
     logger.info(
-        "已保存分镜 episode_id=%s count=%s ids=%s",
+        "已保存分镜 episode_id=%s count=%s ids=%s removed=%s",
         episode_id,
         len(frags),
         [f.id for f in frags],
+        stale_ids,
     )
     ep.fragments = frags
     return await _episode_out_with_tasks(db, user, ep)
@@ -521,6 +537,30 @@ async def generate_status(
         list(ep.fragments or []),
         collect_active_fragment_ids_from_tasks(episode_tasks),
     )
+    # 附带本集近期终态分镜视频任务，供队列点开详情（含失败原因）
+    from app.models_tasks import TaskRun
+    from app.services.tasks.service import TERMINAL_TASK_STATUSES, task_detail_options
+
+    recent_terminal = list(
+        (
+            await db.execute(
+                select(TaskRun)
+                .options(*task_detail_options())
+                .where(
+                    TaskRun.requested_by == user.id,
+                    TaskRun.domain == "drama",
+                    TaskRun.task_type == "fragment_video",
+                    TaskRun.episode_id == episode_id,
+                    TaskRun.status.in_(tuple(TERMINAL_TASK_STATUSES)),
+                )
+                .order_by(TaskRun.id.desc())
+                .limit(40)
+            )
+        )
+        .scalars()
+        .unique()
+        .all()
+    )
     items = []
     done = 0
     failed = 0
@@ -543,7 +583,7 @@ async def generate_status(
         "total": len(items),
         "tasks": [
             item
-            for item in _expand_episode_task_items(episode_tasks)
+            for item in _expand_episode_task_items([*episode_tasks, *recent_terminal])
         ],
         "fragments": items,
     }

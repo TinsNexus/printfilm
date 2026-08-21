@@ -798,7 +798,11 @@ async def _replace_episode_fragments(
     )
     protected_ids = {int(f.id) for f in protected}
     stale_ids = [int(f.id) for f in existing if int(f.id) not in protected_ids]
-    await detach_task_fragment_refs(db, stale_ids)
+    if stale_ids:
+        from app.services.tasks.service import cancel_fragment_video_tasks_for_fragments
+
+        await cancel_fragment_video_tasks_for_fragments(db, stale_ids)
+        await detach_task_fragment_refs(db, stale_ids)
     for old in existing:
         if int(old.id) not in protected_ids:
             await db.delete(old)
