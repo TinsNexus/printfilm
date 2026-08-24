@@ -20,6 +20,7 @@ from app.schemas_drama import (
     DramaScriptOut,
 )
 from app.services.drama.access import get_owned_drama_project
+from app.services.drama.generation import project_link_last_frame_enabled
 from app.services.drama.project_cover import resolve_drama_project_cover
 from app.services.drama.usage_stats import (
     aggregate_drama_usage_by_project_ids,
@@ -27,6 +28,7 @@ from app.services.drama.usage_stats import (
     get_drama_project_usage,
 )
 from app.services.drama.workflow import build_project_params, resolve_drama_workflow
+from app.services.tasks.service import rebalance_project_fragment_video_queue
 
 router = APIRouter()
 
@@ -166,6 +168,7 @@ async def update_project(
     user: User = Depends(get_current_user),
 ) -> DramaProjectOut:
     project = await get_owned_drama_project(db, project_id, user, with_script=True)
+    prev_link = project_link_last_frame_enabled(project)
     if body.title is not None:
         project.title = body.title.strip() or project.title
     if body.description is not None:
@@ -175,6 +178,17 @@ async def update_project(
     if body.params is not None:
         project.params = body.params
     await db.commit()
+
+    # 镜间衔接开关变化时，动态重排仍排队的分镜视频任务
+    next_link = project_link_last_frame_enabled(project)
+    if body.params is not None and prev_link != next_link:
+        await rebalance_project_fragment_video_queue(
+            db,
+            project_id,
+            sequential=next_link,
+            user_id=user.id,
+        )
+
     project = await get_owned_drama_project(
         db, project_id, user, with_script=True, with_assets=True, with_episodes=True
     )

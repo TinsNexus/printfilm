@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { Download, Loader2 } from 'lucide-react'
 import type { DramaFragment } from '../../api/drama'
+import { DramaSubtitleBoard } from '../../components/drama/DramaSubtitleBoard'
 import { DramaFragmentSegmentedVideoPlayer } from '../../components/drama/DramaFragmentSegmentedVideoPlayer'
 import { triggerBlobDownload } from '../../lib/clientDownload'
 import {
@@ -11,6 +12,7 @@ import {
   type EpisodeComposeProgress,
 } from '../../lib/composeEpisodeVideoClient'
 import { dialog } from '../../lib/dialog'
+import type { DramaSubtitleMode } from '../../lib/dramaSubtitleBoard'
 
 type Props = {
   fragments: DramaFragment[]
@@ -18,7 +20,14 @@ type Props = {
   onPlayingFragmentChange: (fragmentId: number) => void
   aspectRatio: string
   episodeName?: string
+  subtitleMode: DramaSubtitleMode
   onOpenStoryboard: () => void
+  /** 预览历史版本时覆盖当前镜 video src */
+  previewVideoUrl?: string | null
+  previewPosterUrl?: string | null
+  previewLabel?: string
+  onClearPreview?: () => void
+  onActivatePreview?: () => void
 }
 
 /** 把合成进度转成按钮文案 */
@@ -36,7 +45,13 @@ export function EpisodeEditSidePane({
   onPlayingFragmentChange,
   aspectRatio,
   episodeName = '本集',
+  subtitleMode,
   onOpenStoryboard,
+  previewVideoUrl = null,
+  previewPosterUrl = null,
+  previewLabel = '',
+  onClearPreview,
+  onActivatePreview,
 }: Props) {
   const hasSelection = playingFragmentId !== null
   /*
@@ -107,22 +122,49 @@ export function EpisodeEditSidePane({
       </div>
       {composeError ? <p className="drama-ep-compose-error drama-ep-compose-error--header">{composeError}</p> : null}
 
+      {previewVideoUrl ? (
+        <div className="drama-ep-preview-banner">
+          <span>预览历史版本{previewLabel ? ` · ${previewLabel}` : ''}</span>
+          <div className="drama-ep-preview-banner-actions">
+            {onActivatePreview ? (
+              <button type="button" className="drama-ep-preview-banner-btn" onClick={onActivatePreview}>
+                设为当前
+              </button>
+            ) : null}
+            {onClearPreview ? (
+              <button type="button" className="drama-ep-preview-banner-btn is-ghost" onClick={onClearPreview}>
+                退出预览
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
       {!hasSelection || fragments.length === 0 ? (
         <p className="drama-ep-empty">请选择底部分镜</p>
       ) : (
-        <div className="drama-ep-preview-inner">
-          <DramaFragmentSegmentedVideoPlayer
+        <>
+          <div className="drama-ep-preview-inner">
+            <DramaFragmentSegmentedVideoPlayer
+              fragments={fragments}
+              playingFragmentId={playingFragmentId}
+              onPlayingFragmentChange={onPlayingFragmentChange}
+              aspectRatio={aspectRatio}
+              overrideVideoUrl={previewVideoUrl}
+              overridePosterUrl={previewPosterUrl}
+            />
+            {!fragments.some((f) => f.video) && (
+              <button type="button" className="drama-ep-open-canvas" onClick={onOpenStoryboard}>
+                打开分镜画布
+              </button>
+            )}
+          </div>
+          <DramaSubtitleBoard
             fragments={fragments}
-            playingFragmentId={playingFragmentId}
-            onPlayingFragmentChange={onPlayingFragmentChange}
-            aspectRatio={aspectRatio}
+            episodeName={episodeName}
+            subtitleMode={subtitleMode}
           />
-          {!fragments.some((f) => f.video) && (
-            <button type="button" className="drama-ep-open-canvas" onClick={onOpenStoryboard}>
-              打开分镜画布
-            </button>
-          )}
-        </div>
+        </>
       )}
     </aside>
   )

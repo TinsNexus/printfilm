@@ -12,6 +12,7 @@ from app.services.drama.build_fragments import (
     FRAGMENT_TOTAL_MAX,
     _build_character_intro_lines,
     _build_production_cues,
+    _strip_subtitle_instruction,
     _clamp_duration,
     _estimate_line_duration,
     _find_asset_by_name,
@@ -265,6 +266,7 @@ def normalize_llm_fragment_items(
     episode_bodies: list[str] | None = None,
     intro_overrides: dict[str, str] | None = None,
     allow_opening: bool = True,
+    include_subtitles: bool = True,
 ) -> list[dict[str, Any]]:
     """
     将 LLM fragments 转为落库草稿。
@@ -369,6 +371,8 @@ def normalize_llm_fragment_items(
         for line in lines:
             raw = _inject_character_mentions(line, inject_bindings)
             formatted = _format_narrative_line(raw)
+            if not include_subtitles:
+                formatted = _strip_subtitle_instruction(formatted)
             if scene_asset_id and scene_name and scene_name in formatted and f"@asset:{scene_asset_id}" not in formatted:
                 formatted = formatted.replace(scene_name, f"@asset:{scene_asset_id} {scene_name}", 1)
             line_dur = _clamp_duration(_estimate_line_duration(formatted))
@@ -442,7 +446,12 @@ def normalize_llm_fragment_items(
 
             intro_lines = _build_character_intro_lines(to_intro)
             opening_lines = opening_cues if is_opening else []
-            cues = _build_production_cues(None, body_lines[:3], [*opening_lines, *intro_lines])
+            cues = _build_production_cues(
+                None,
+                body_lines[:3],
+                [*opening_lines, *intro_lines],
+                include_subtitles=include_subtitles,
+            )
             content = "\n".join([*cues, *body_lines]).strip()
             duration = min(FRAGMENT_TOTAL_MAX, max(used, FRAGMENT_DURATION_MIN))
             drafts.append(
@@ -508,6 +517,7 @@ async def plan_fragments_with_llm(
     db: Any | None = None,
     user_id: int | None = None,
     skill_ids: list[int] | None = None,
+    include_subtitles: bool = True,
 ) -> list[dict[str, Any]]:
     """
     调用 LLM 规划分镜并规范化。
@@ -530,6 +540,7 @@ async def plan_fragments_with_llm(
         synopsis=synopsis,
         core_hook=core_hook,
         locked_summaries=locked,
+        include_subtitles=include_subtitles,
     )
     raw = await run_task_json(
         db,
@@ -563,6 +574,7 @@ async def plan_fragments_with_llm(
         episode_bodies=episode_bodies,
         intro_overrides=intro_overrides,
         allow_opening=not bool(locked),
+        include_subtitles=include_subtitles,
     )
     if not drafts:
         raise RuntimeError("LLM 分镜规范化后为空")

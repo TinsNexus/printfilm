@@ -104,6 +104,11 @@ class DramaEpisodeOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class DramaEpisodeUpdate(BaseModel):
+    name: str | None = None
+    params: dict | None = None
+
+
 class DramaProjectOut(BaseModel):
     id: int
     user_id: int
@@ -251,6 +256,8 @@ class DramaPlanFragmentsRequest(BaseModel):
     fallback_rules: bool = True
     # skill_ids 本次注入的 Agent Skill；None 表示全部启用，[] 表示不注入
     skill_ids: list[int] | None = None
+    # subtitle_enabled 是否为本次分镜注入字幕提示；None 表示沿用分集当前设置
+    subtitle_enabled: bool | None = None
 
 
 class DramaActivateVideoVersionRequest(BaseModel):

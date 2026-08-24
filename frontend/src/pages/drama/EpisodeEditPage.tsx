@@ -11,7 +11,6 @@ import {
 import { type ImageStyleId } from '../../lib/dramaImageStyles'
 import {
   RATIO_OPTIONS,
-  RES_OPTIONS,
   buildFragmentRefStripItems,
   collectFragmentAssetIds,
   extractAssetIds,
@@ -40,6 +39,12 @@ import {
   formatDramaGateMessage,
 } from '../../lib/dramaEpisodeScriptValidate'
 import { dialog } from '../../lib/dialog'
+import {
+  formatProjectOutputLabel,
+  readEpisodeAspectRatio,
+  readEpisodeResolution,
+} from '../../lib/dramaProjectOutputSettings'
+import { DramaFragmentClipSpec } from '../../components/drama/DramaFragmentClipSpec'
 import { FragmentPlanSkillModal } from '../../components/drama/FragmentPlanSkillModal'
 import { DramaGenTaskDetail } from '../../components/drama/DramaGenTaskDetail'
 import { CircleAlert } from 'lucide-react'
@@ -55,6 +60,12 @@ import { EpisodeEditHeaderControls } from './EpisodeEditHeaderControls'
 import { EpisodeEditPromptEditor } from './EpisodeEditPromptEditor'
 import { EpisodeEditReferenceStrip } from './EpisodeEditReferenceStrip'
 import { EpisodeEditSidePane } from './EpisodeEditSidePane'
+import {
+  applySubtitleModeToFragments,
+  readEpisodeSubtitleMode,
+  subtitleModeUsesModelOutput,
+  type DramaSubtitleMode,
+} from '../../lib/dramaSubtitleBoard'
 import {
   CharacterVoiceBindModal,
   readAssetVoiceBinding,
@@ -111,7 +122,7 @@ function EpisodeEditInner() {
    * selectedIndex 当前分镜
    * assetScope / assetTab 侧栏筛选
    * editing 是否编辑模式
-   * videoStyleId / modelId / aspectRatio / resolution 生成参数（UI）
+   * videoStyleId / modelId / aspectRatio 生成参数（UI）
    * busy / status / error 状态
    */
   const [episode, setEpisode] = useState<DramaEpisode | null>(null)
@@ -124,13 +135,17 @@ function EpisodeEditInner() {
   const [videoStyleId, setVideoStyleId] = useState<ImageStyleId | ''>('')
   const [modelId, setModelId] = useState('seedance-2.5')
   const [aspectRatio, setAspectRatio] = useState<(typeof RATIO_OPTIONS)[number]>('9:16')
-  const [resolution, setResolution] = useState<(typeof RES_OPTIONS)[number]>('480p')
+  // subtitleMode 本集字幕方式：模型自出 / 后期拼接
+  const [subtitleMode, setSubtitleMode] = useState<DramaSubtitleMode>('model')
   // linkLastFrame 是否用上一镜尾帧作本镜首帧（写入 project.params，默认关闭）
   const [linkLastFrame, setLinkLastFrame] = useState(false)
-  // projectParams 项目 params 缓存，切换衔接开关时合并写回
+  // projectParams 项目 params 缓存（镜间衔接 + 分集输出规格回退）
   const [projectParams, setProjectParams] = useState<Record<string, unknown>>({})
+  // episodeParams 分集 params 缓存（画幅 / 清晰度写入此处）
+  const [episodeParams, setEpisodeParams] = useState<Record<string, unknown>>({})
   // planModalOpen AI 重新分镜确认（含 Skill 勾选）
   const [planModalOpen, setPlanModalOpen] = useState(false)
+  const [previewVersionId, setPreviewVersionId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
@@ -150,6 +165,8 @@ function EpisodeEditInner() {
     ReturnType<typeof dramaApi.generateStatus>
   >>(() => ({ episode_id: 0, done: 0, failed: 0, running: 0, total: 0, tasks: [], fragments: [] }))
   const reloadRef = useRef<() => Promise<void>>(async () => {})
+  const projectParamsRef = useRef<Record<string, unknown>>({})
+  const episodeParamsRef = useRef<Record<string, unknown>>({})
 
   const selected = fragments[selectedIndex] || null
   const selectedDuration = selected?.duration_sec ?? 8
@@ -180,6 +197,13 @@ function EpisodeEditInner() {
   const selectedHasVideo = Boolean(selected?.video)
   // selectedVersions 当前镜历史成片
   const selectedVersions = useMemo(() => readFragmentVideoVersions(selected), [selected])
+  // previewVersion 当前选中待预览的历史成片
+  const previewVersion = useMemo(
+    () => selectedVersions.find((ver) => ver.id === previewVersionId) ?? null,
+    [previewVersionId, selectedVersions],
+  )
+  const previewVideoUrl = previewVersion ? resolveDramaMediaUrl(previewVersion.video) : null
+  const previewPosterUrl = previewVersion?.cover ? resolveDramaMediaUrl(previewVersion.cover) : null
   // selectedGenerateLocked 仅锁当前镜的「生成」按钮
   const selectedGenerateLocked = busy || selectedIsGenerating
   // generateAllLocked 仅提交入队时锁定，生成过程不阻塞编辑
@@ -214,7 +238,7 @@ function EpisodeEditInner() {
     return typeof raw === 'string' ? raw.trim() : ''
   }, [fragments, selectedIndex])
 
-  // 持久化镜间衔接开关到项目 params
+  // 持久化镜间衔接开关到项目 params，并让后端重排未开始任务
   async function handleLinkLastFrameChange(enabled: boolean) {
     const prevEnabled = linkLastFrame
     const prevParams = projectParams
@@ -229,15 +253,144 @@ function EpisodeEditInner() {
           : (nextParams as Record<string, unknown>)
       setProjectParams(updatedParams)
       setLinkLastFrame(coerceProjectBool(updatedParams.linkLastFrame ?? updatedParams.link_last_frame, enabled))
+      // 刷新本集任务态，让底部分镜条立刻反映串行/并行调整
+      try {
+        const ep = await dramaApi.getEpisode(eid)
+        setEpisode(ep)
+        if (Array.isArray(ep.fragments)) setFragments(ep.fragments)
+      } catch {
+        /* ignore refresh errors */
+      }
       setStatus(
         enabled
-          ? '已开启尾帧衔接：将按镜序生成，后一镜会等待上一镜尾帧'
-          : '已关闭尾帧衔接：将优先并发生成，各镜互不等待',
+          ? '已开启尾帧衔接：未开始的任务已改成按镜序排队，进行中的任务不受影响'
+          : '已关闭尾帧衔接：未开始的任务已恢复并可并发生成，进行中的任务不受影响',
       )
     } catch (err) {
       setLinkLastFrame(prevEnabled)
       setProjectParams(prevParams)
       setError(err instanceof Error ? err.message : '保存衔接设置失败')
+    }
+  }
+
+  // 持久化本集画幅 / 清晰度到 episode.params；已有成片时提示重新生成
+  async function handleEpisodeOutputChange(nextParams: Record<string, unknown>) {
+    const prevRatio = readEpisodeAspectRatio(episodeParams, projectParams)
+    const prevRes = readEpisodeResolution(episodeParams, projectParams)
+    const nextRatio = readEpisodeAspectRatio(nextParams, projectParams)
+    const nextRes = readEpisodeResolution(nextParams, projectParams)
+    if (prevRatio === nextRatio && prevRes === nextRes) return
+
+    const prevLabel = formatProjectOutputLabel(prevRatio, prevRes)
+    const nextLabel = formatProjectOutputLabel(nextRatio, nextRes)
+    const generatedCount = fragments.filter((frag) => Boolean(frag.video)).length
+    const ok = await dialog.confirm({
+      title: '切换画幅 / 清晰度',
+      message:
+        generatedCount > 0
+          ? `将本集从 ${prevLabel} 改为 ${nextLabel}。已生成的 ${generatedCount} 镜不会自动更新，需要重新生成才会按新规格出片。`
+          : `将本集从 ${prevLabel} 改为 ${nextLabel}。之后生成的分镜将使用该规格。`,
+      confirmText: generatedCount > 0 ? '保存并重新生成' : '保存',
+      cancelText: '取消',
+      tone: generatedCount > 0 ? 'danger' : 'default',
+    })
+    if (!ok) return
+
+    const prevParams = episodeParams
+    setEpisodeParams(nextParams)
+    episodeParamsRef.current = nextParams
+    setAspectRatio(nextRatio)
+    try {
+      const updated = await dramaApi.updateEpisode(eid, { params: nextParams })
+      const updatedParams =
+        updated.params && typeof updated.params === 'object' && !Array.isArray(updated.params)
+          ? (updated.params as Record<string, unknown>)
+          : nextParams
+      setEpisode(updated)
+      setEpisodeParams(updatedParams)
+      episodeParamsRef.current = updatedParams
+      setAspectRatio(readEpisodeAspectRatio(updatedParams, projectParams))
+      setStatus(
+        generatedCount > 0
+          ? `已更新本集规格为 ${nextLabel}，正在按新规格重新入队…`
+          : `已更新本集规格为 ${nextLabel}`,
+      )
+      setError('')
+      if (generatedCount > 0) {
+        await generateAll({ forceRegen: true, skipConfirm: true })
+      }
+    } catch (err) {
+      setEpisodeParams(prevParams)
+      episodeParamsRef.current = prevParams
+      setAspectRatio(readEpisodeAspectRatio(prevParams, projectParams))
+      setError(err instanceof Error ? err.message : '本集输出规格保存失败')
+      throw err
+    }
+  }
+
+  // 持久化本集字幕方式，并动态改写当前分镜里的字幕提示词
+  async function handleEpisodeSubtitleChange(mode: DramaSubtitleMode) {
+    if (mode === subtitleMode) return
+    const prevParams = episodeParams
+    const prevFragments = fragments
+    const nextParams = {
+      ...episodeParams,
+      subtitleMode: mode,
+      subtitleEnabled: subtitleModeUsesModelOutput(mode),
+    }
+    const nextFragments = applySubtitleModeToFragments(fragments, mode)
+    setSubtitleMode(mode)
+    setEpisodeParams(nextParams)
+    episodeParamsRef.current = nextParams
+    setFragments(nextFragments)
+    try {
+      const updated = await dramaApi.updateEpisode(eid, { params: nextParams })
+      const updatedParams =
+        updated.params && typeof updated.params === 'object' && !Array.isArray(updated.params)
+          ? (updated.params as Record<string, unknown>)
+          : nextParams
+      setEpisode(updated)
+      setEpisodeParams(updatedParams)
+      episodeParamsRef.current = updatedParams
+      setSubtitleMode(readEpisodeSubtitleMode(updatedParams))
+      const contentChanged = nextFragments.some(
+        (frag, index) => frag.content !== prevFragments[index]?.content,
+      )
+      if (contentChanged) {
+        const ep = await dramaApi.saveFragments(
+          eid,
+          nextFragments.map((f, i) => {
+            const prevFragParams =
+              f.params && typeof f.params === 'object' && !Array.isArray(f.params)
+                ? (f.params as Record<string, unknown>)
+                : {}
+            return {
+              id: typeof f.id === 'number' && f.id > 0 ? f.id : undefined,
+              sort_order: i,
+              content: f.content,
+              cover: f.cover,
+              video: f.video,
+              duration_sec: resolveFragmentDurationSec(f.content, f.duration_sec),
+              params: { ...prevFragParams, user_edited: true },
+              asset_ids: f.asset_ids || [],
+            }
+          }),
+        )
+        setEpisode(ep)
+        setFragments(ep.fragments || nextFragments)
+      }
+      setStatus(
+        mode === 'model'
+          ? '已切换为模型自出字幕，并补回分镜字幕提示词'
+          : '已切换为后期拼接字幕，并去掉分镜里的字幕提示词',
+      )
+      setError('')
+    } catch (err) {
+      setSubtitleMode(readEpisodeSubtitleMode(prevParams))
+      setEpisodeParams(prevParams)
+      episodeParamsRef.current = prevParams
+      setFragments(prevFragments)
+      setError(err instanceof Error ? err.message : '本集字幕方式保存失败')
     }
   }
 
@@ -375,6 +528,14 @@ function EpisodeEditInner() {
   async function reload() {
     const ep = await dramaApi.getEpisode(eid)
     setEpisode(ep)
+    const epParams =
+      ep.params && typeof ep.params === 'object' && !Array.isArray(ep.params)
+        ? (ep.params as Record<string, unknown>)
+        : {}
+    setEpisodeParams(epParams)
+    episodeParamsRef.current = epParams
+    setSubtitleMode(readEpisodeSubtitleMode(epParams))
+    setAspectRatio(readEpisodeAspectRatio(epParams, projectParamsRef.current))
     setFragments(ep.fragments || [])
     if ((ep.fragments || []).length === 0) {
       setFragments([
@@ -406,6 +567,11 @@ function EpisodeEditInner() {
     })
   }, [eid])
 
+  // 切换分镜时退出历史版本预览
+  useEffect(() => {
+    setPreviewVersionId(null)
+  }, [selectedIndex, selected?.id])
+
   useEffect(() => {
     if (!eid || !pid) return
     reload().catch((err) => setError(err instanceof Error ? err.message : '加载失败'))
@@ -424,16 +590,11 @@ function EpisodeEditInner() {
             ? (project.params as Record<string, unknown>)
             : {}
         setProjectParams(params)
+        projectParamsRef.current = params
         const linkRaw = params.linkLastFrame ?? params.link_last_frame
         setLinkLastFrame(coerceProjectBool(linkRaw, false))
-        const ratio = String(params.aspect_ratio || '')
-        if ((RATIO_OPTIONS as readonly string[]).includes(ratio)) {
-          setAspectRatio(ratio as (typeof RATIO_OPTIONS)[number])
-        }
-        const res = String(params.resolution || '')
-        if ((RES_OPTIONS as readonly string[]).includes(res)) {
-          setResolution(res as (typeof RES_OPTIONS)[number])
-        }
+        setSubtitleMode(readEpisodeSubtitleMode(episodeParamsRef.current))
+        setAspectRatio(readEpisodeAspectRatio(episodeParamsRef.current, params))
       })
       .catch(() => {
         /* ignore */
@@ -669,6 +830,7 @@ function EpisodeEditInner() {
             : f,
         ),
       )
+      setPreviewVersionId(null)
       setStatus('已切换历史版本')
     } catch (err) {
       setError(err instanceof Error ? err.message : '切换版本失败')
@@ -677,8 +839,8 @@ function EpisodeEditInner() {
     }
   }
 
-  // 全部生成：入队本集所有分镜（用保存后的新 id）
-  async function generateAll() {
+  // 全部生成：入队本集分镜（forceRegen 覆盖已有成片）
+  async function generateAll(opts?: { forceRegen?: boolean; skipConfirm?: boolean }) {
     if (fragments.length === 0) {
       setError('没有可生成的分镜')
       return
@@ -692,7 +854,7 @@ function EpisodeEditInner() {
     const allWarnings: string[] = []
     const doneIndices: number[] = []
     for (let i = 0; i < fragments.length; i++) {
-      if (shouldSkipGenerateAllFragment(fragments[i])) {
+      if (!opts?.forceRegen && shouldSkipGenerateAllFragment(fragments[i])) {
         doneIndices.push(i)
         continue
       }
@@ -717,19 +879,23 @@ function EpisodeEditInner() {
       return
     }
 
-    const ok = await dialog.confirm({
-      title: '生成全部分镜视频',
-      message: formatDramaGateMessage(
-        [],
-        allWarnings.slice(0, 8).map((message) => ({ level: 'warn' as const, message })),
-        linkLastFrame
-          ? `将按镜序排队生成剩余 ${pendingCount} 镜（已生成的 ${doneIndices.length} 镜会跳过）。入队后可继续编辑；后一镜会等待上一镜尾帧写好再开始。`
-          : `将并发生成剩余 ${pendingCount} 镜（已生成的 ${doneIndices.length} 镜会跳过）。入队后可继续编辑；各镜互不等待。`,
-      ),
-      confirmText: allWarnings.length > 0 ? '仍要全部生成' : '全部生成',
-      tone: 'danger',
-    })
-    if (!ok) return
+    if (!opts?.skipConfirm) {
+      const ok = await dialog.confirm({
+        title: opts?.forceRegen ? '按新规格重新生成' : '生成全部分镜视频',
+        message: formatDramaGateMessage(
+          [],
+          allWarnings.slice(0, 8).map((message) => ({ level: 'warn' as const, message })),
+          opts?.forceRegen
+            ? `将按当前画幅/清晰度重新生成 ${pendingCount} 镜。当前成片会保留为历史版本。`
+            : linkLastFrame
+              ? `将按镜序排队生成剩余 ${pendingCount} 镜（已生成的 ${doneIndices.length} 镜会跳过）。入队后可继续编辑；后一镜会等待上一镜尾帧写好再开始。`
+              : `将并发生成剩余 ${pendingCount} 镜（已生成的 ${doneIndices.length} 镜会跳过）。入队后可继续编辑；各镜互不等待。`,
+        ),
+        confirmText: allWarnings.length > 0 ? '仍要全部生成' : opts?.forceRegen ? '全部重新生成' : '全部生成',
+        tone: 'danger',
+      })
+      if (!ok) return
+    }
     setBusy(true)
     setError('')
     setStatus(`保存并排队生成剩余 ${pendingCount} 条…`)
@@ -790,7 +956,7 @@ function EpisodeEditInner() {
     setPlanModalOpen(true)
   }
 
-  // 入队后轮询至完成
+  // 入队后轮询至完成（字幕方式沿用顶栏当前设置）
   async function startPlanFragments(skillIds: number[]) {
     setPlanModalOpen(false)
     setBusy(true)
@@ -801,6 +967,7 @@ function EpisodeEditInner() {
         force: true,
         fallback_rules: true,
         skill_ids: skillIds,
+        subtitle_enabled: subtitleModeUsesModelOutput(subtitleMode),
       })
       const started = Date.now()
       while (Date.now() - started < 10 * 60 * 1000) {
@@ -809,6 +976,9 @@ function EpisodeEditInner() {
         const st = readFragmentPlanStatus(ep)
         if (st === 'completed') {
           setEpisode(ep)
+          const nextParams = (ep.params as Record<string, unknown>) || {}
+          setEpisodeParams(nextParams)
+          episodeParamsRef.current = nextParams
           setFragments(ep.fragments || [])
           setSelectedIndex(0)
           setEditing(false)
@@ -990,14 +1160,15 @@ function EpisodeEditInner() {
           <EpisodeEditHeaderControls
             styleId={videoStyleId}
             modelId={modelId}
-            aspectRatio={aspectRatio}
-            resolution={resolution}
+            episodeParams={episodeParams}
+            projectParams={projectParams}
             linkLastFrame={linkLastFrame}
+            subtitleMode={subtitleMode}
             onStyleChange={setVideoStyleId}
             onModelChange={setModelId}
-            onAspectRatioChange={setAspectRatio}
-            onResolutionChange={setResolution}
+            onEpisodeOutputChange={handleEpisodeOutputChange}
             onLinkLastFrameChange={(enabled) => void handleLinkLastFrameChange(enabled)}
+            onSubtitleModeChange={(mode) => void handleEpisodeSubtitleChange(mode)}
             disabled={busy}
           />
           <button
@@ -1047,7 +1218,13 @@ function EpisodeEditInner() {
           <div className="drama-ep-editor-head">
             <div>
               <strong>{formatFragLabel(selectedIndex, selectedDuration)}</strong>
-              <p>顶部显示本镜关联；键入 @ 可引用资产或插入时长标签</p>
+              <p>
+                顶部显示本镜关联；键入 @ 可引用资产或插入时长标签 ·{' '}
+                {formatProjectOutputLabel(
+                  readEpisodeAspectRatio(episodeParams, projectParams),
+                  readEpisodeResolution(episodeParams, projectParams),
+                )}
+              </p>
             </div>
             <label className="drama-ep-duration">
               时长
@@ -1080,7 +1257,6 @@ function EpisodeEditInner() {
                 updateSelected({ content: nextContent, asset_ids: ids })
               }}
             />
-          </div>
 
           {selectedGateIssues.length > 0 ? (
             <ul className="drama-ep-script-issues" aria-live="polite">
@@ -1164,25 +1340,43 @@ function EpisodeEditInner() {
               </>
             )}
           </div>
+          </div>
 
           {selectedVersions.length > 0 && selected?.id ? (
             <div className="drama-ep-versions">
               <span className="drama-ep-versions-label">历史版本</span>
               <div className="drama-ep-versions-list">
+                {selectedHasVideo && selected.video ? (
+                  <button
+                    type="button"
+                    className={`drama-ep-version is-active${!previewVersionId ? ' is-current' : ''}`}
+                    disabled={busy || selectedIsGenerating}
+                    title="当前成片"
+                    onClick={() => setPreviewVersionId(null)}
+                  >
+                    {selected.cover ? (
+                      <img src={resolveDramaMediaUrl(selected.cover)} alt="" />
+                    ) : (
+                      <video src={resolveDramaMediaUrl(selected.video)} muted />
+                    )}
+                    <em>当前</em>
+                  </button>
+                ) : null}
                 {selectedVersions.map((ver, index) => {
                   const cover = ver.cover ? resolveDramaMediaUrl(ver.cover) : ''
                   const video = resolveDramaMediaUrl(ver.video)
+                  const versionNo = selectedVersions.length - index
                   return (
                     <button
                       key={ver.id}
                       type="button"
-                      className="drama-ep-version"
+                      className={`drama-ep-version${previewVersionId === ver.id ? ' is-previewing' : ''}`}
                       disabled={busy || selectedIsGenerating}
-                      title="切换为当前成片"
-                      onClick={() => void activateVideoVersion(ver.id)}
+                      title="点击预览；右侧可设为当前"
+                      onClick={() => setPreviewVersionId(ver.id)}
                     >
                       {cover ? <img src={cover} alt="" /> : <video src={video} muted />}
-                      <em>v{selectedVersions.length - index}</em>
+                      <em>v{versionNo}</em>
                     </button>
                   )
                 })}
@@ -1197,7 +1391,26 @@ function EpisodeEditInner() {
           onPlayingFragmentChange={handlePlayingFragmentChange}
           aspectRatio={aspectRatio}
           episodeName={episode?.name || '本集'}
+          subtitleMode={subtitleMode}
           onOpenStoryboard={openEpisodeStoryboard}
+          previewVideoUrl={previewVideoUrl}
+          previewPosterUrl={previewPosterUrl}
+          previewLabel={
+            previewVersion
+              ? `v${
+                  selectedVersions.length -
+                  selectedVersions.findIndex((ver) => ver.id === previewVersion.id)
+                }`
+              : ''
+          }
+          onClearPreview={() => setPreviewVersionId(null)}
+          onActivatePreview={
+            previewVersionId
+              ? () => {
+                  void activateVideoVersion(previewVersionId)
+                }
+              : undefined
+          }
         />
       </div>
 
@@ -1219,6 +1432,10 @@ function EpisodeEditInner() {
             const clipVideo = frag.video ? resolveDramaMediaUrl(frag.video) : ''
             const clipCover = frag.cover ? resolveDramaMediaUrl(frag.cover) : ''
             const showFailHint = fragStatus === 'failed' && !fragBusy
+            const fragParams =
+              frag.params && typeof frag.params === 'object' && !Array.isArray(frag.params)
+                ? (frag.params as Record<string, unknown>)
+                : {}
             return (
             <div key={`${frag.id}-${index}`} className="drama-ep-clip-wrap">
               <div
@@ -1247,7 +1464,15 @@ function EpisodeEditInner() {
                     </span>
                   )}
                   {badge ? <span className="drama-ep-clip-badge">{badge}</span> : null}
-                  <em>{formatFragLabel(index, frag.duration_sec)}</em>
+                  <em>
+                    {formatFragLabel(index, frag.duration_sec)}
+                    <DramaFragmentClipSpec
+                      fragmentParams={fragParams}
+                      episodeParams={episodeParams}
+                      projectParams={projectParams}
+                      videoUrl={clipVideo}
+                    />
+                  </em>
                 </button>
                 {showFailHint ? (
                   <button
@@ -1285,7 +1510,7 @@ function EpisodeEditInner() {
 
       <FragmentPlanSkillModal
         open={planModalOpen}
-        message="将调用大模型按本集剧本重新规划分镜（覆盖现有分镜与已生成视频），通常需要数十秒。可勾选本次使用的 Skill。"
+        message="将调用大模型按本集剧本重新规划分镜（覆盖现有分镜与已生成视频），通常需要数十秒。可勾选本次使用的 Skill。字幕方式沿用顶栏当前设置。"
         onCancel={() => setPlanModalOpen(false)}
         onConfirm={(skillIds) => void startPlanFragments(skillIds)}
       />

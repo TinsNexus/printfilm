@@ -13,6 +13,7 @@ from app.models import User
 from app.models_drama import DramaAsset, DramaProject
 from app.services.ark import get_ark
 from app.services.billing import record_usage
+from app.services.drama.billing_util import seedance_video_billing_tokens
 from app.services.drama.build_seedance_generate_body import (
     build_seedance_generate_body,
     drama_asset_to_payload,
@@ -154,6 +155,7 @@ async def generate_asset_video(
         drama_project_id=project.id,
         billing_key="seedance2:video0",
         model=settings.model_video,
+        tokens=seedance_video_billing_tokens(duration),
         estimated=True,
     )
     await db.commit()

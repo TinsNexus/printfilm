@@ -22,6 +22,12 @@ def test_stale_reason_skip_duplicate_when_video_done():
     assert stale_pending_fragment_video_reason([frag]) == "分镜已生成完成，跳过重复任务"
 
 
+def test_stale_reason_keep_when_replace_existing_video():
+    frag = _frag(video="https://cdn/old.mp4", cover="", params={})
+    task = SimpleNamespace(payload={"replace_existing_video": True})
+    assert stale_pending_fragment_video_reason([frag], task) is None
+
+
 def test_stale_reason_keep_when_no_video_yet():
     frag = _frag(video="", params={"generation": {"status": "queued"}})
     assert stale_pending_fragment_video_reason([frag]) is None

@@ -610,17 +610,32 @@ def _is_important_character(
     return True
 
 
+def _strip_subtitle_instruction(line: str) -> str:
+    # 关闭字幕时移除正文中的同步字幕提示，保留对白/旁白本身。
+    trimmed = (line or "").strip()
+    replacements = {
+        DIALOGUE_PREFIX: "【对白·慢速清晰】",
+        "【旁白·慢速清晰·同步字幕】": "【旁白·慢速清晰】",
+        "【内心独白·同步字幕】": "【内心独白】",
+    }
+    for src, dest in replacements.items():
+        if trimmed.startswith(src):
+            return trimmed.replace(src, dest, 1)
+    return trimmed
+
+
 def _build_production_cues(
     location_line: str | None,
     narrative_lines: list[str],
     character_intro_lines: list[str],
+    *,
+    include_subtitles: bool = True,
 ) -> list[str]:
     # 字幕 / BGM / 人物介绍前置提示（字幕 cue 不含「旁白」字样，避免 Seedance 整镜念白）
     hint = " ".join(filter(None, [location_line or "", *narrative_lines[:3]]))
-    lines = [
-        DRAMA_SUBTITLE_CUE,
-        f"【BGM：{_infer_bgm_mood(hint)}；音量低于人声】",
-    ]
+    lines = [f"【BGM：{_infer_bgm_mood(hint)}；音量低于人声】"]
+    if include_subtitles:
+        lines.insert(0, DRAMA_SUBTITLE_CUE)
     lines.extend(character_intro_lines)
     return lines
 
@@ -701,6 +716,8 @@ def plan_fragments_from_scene(
     scene_asset_id: int | None,
     character_bindings: list[dict[str, Any]],
     introduced: set[str] | None = None,
+    *,
+    include_subtitles: bool = True,
 ) -> list[tuple[str, int]]:
     """
     规划单场视频向分镜正文；超软上限时拆成多条，避免截断后半场。
@@ -717,7 +734,12 @@ def plan_fragments_from_scene(
         for b in character_bindings
         if b.get("important") and b.get("introText") and str(b.get("name") or "").strip()
     ]
-    base_cues = _build_production_cues(location_line, narrative_lines, [])
+    base_cues = _build_production_cues(
+        location_line,
+        narrative_lines,
+        [],
+        include_subtitles=include_subtitles,
+    )
 
     # timed_blocks 待打包的 (时长, 文本行列表)
     timed_blocks: list[tuple[int, list[str]]] = []
@@ -738,6 +760,8 @@ def plan_fragments_from_scene(
     for line in narrative_lines:
         raw = _inject_character_mentions(line, character_bindings)
         formatted = _format_narrative_line(raw)
+        if not include_subtitles:
+            formatted = _strip_subtitle_instruction(formatted)
         line_dur = _clamp_duration(_estimate_line_duration(formatted))
         if line_dur <= 0:
             continue
@@ -749,6 +773,7 @@ def plan_fragments_from_scene(
             location_line,
             narrative_lines,
             _build_character_intro_lines(to_intro),
+            include_subtitles=include_subtitles,
         )
         for b in to_intro:
             introduced_names.add(str(b["name"]))
@@ -897,9 +922,17 @@ def plan_fragment_content_from_scene(
     meta: dict[str, Any],
     scene_asset_id: int | None,
     character_bindings: list[dict[str, Any]],
+    *,
+    include_subtitles: bool = True,
 ) -> tuple[str, int]:
     # 兼容旧调用：返回本场第一条分镜
-    chunks = plan_fragments_from_scene(body, meta, scene_asset_id, character_bindings)
+    chunks = plan_fragments_from_scene(
+        body,
+        meta,
+        scene_asset_id,
+        character_bindings,
+        include_subtitles=include_subtitles,
+    )
     return chunks[0] if chunks else ("", FRAGMENT_DURATION_MIN)
 
 
@@ -924,6 +957,8 @@ def build_fragments_from_episode_body(
     summary: dict[str, Any] | None = None,
     episode_bodies: list[str] | None = None,
     intro_overrides: dict[str, str] | None = None,
+    *,
+    include_subtitles: bool = True,
 ) -> list[dict[str, Any]]:
     """
     将一集正文拆成多场分镜草稿。
@@ -994,6 +1029,7 @@ def build_fragments_from_episode_body(
             scene_asset_id,
             character_bindings,
             introduced,
+            include_subtitles=include_subtitles,
         ):
             # 规则切分：正文里出现的道具/素材名注入 @asset 并写入 asset_ids
             prop_bindings: list[dict[str, Any]] = []

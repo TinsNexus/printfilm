@@ -425,7 +425,8 @@ def resolve_seedance_model_endpoint(model_id: str | None) -> str:
 
 
 def resolve_seedance_ratio(aspect_ratio: str | None) -> str:
-    return (aspect_ratio or "16:9").strip() or "16:9"
+    # 与漫剧默认竖屏一致；缺失时不得回落到横屏 16:9
+    return (aspect_ratio or "9:16").strip() or "9:16"
 
 
 def resolve_seedance_resolution(resolution: str | None) -> str:

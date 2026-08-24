@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { Clapperboard, Film, Layers, Sparkles, Wand2 } from 'lucide-react'
 import { dramaApi, resolveDramaMediaUrl, type DramaEpisode } from '../../api/drama'
 import { dialog } from '../../lib/dialog'
+import { readEpisodeSubtitleMode, subtitleModeUsesModelOutput } from '../../lib/dramaSubtitleBoard'
 import { FragmentPlanSkillModal } from '../../components/drama/FragmentPlanSkillModal'
 import { readFragmentGenerationStatus } from './dramaEpisodeEditUtils'
 
@@ -164,15 +165,17 @@ export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
     setPlanTarget(ep)
   }
 
-  // 入队单集 LLM 分镜并轮询
+  // 入队单集 LLM 分镜并轮询（字幕方式沿用该集当前设置）
   async function startPlanEpisode(ep: DramaEpisode, skillIds: number[]) {
     setPlanTarget(null)
     setPlanningId(ep.id)
     try {
+      const subtitleMode = readEpisodeSubtitleMode(ep.params)
       await dramaApi.planEpisodeFragments(ep.id, {
         force: true,
         fallback_rules: true,
         skill_ids: skillIds,
+        subtitle_enabled: subtitleModeUsesModelOutput(subtitleMode),
       })
       const started = Date.now()
       while (Date.now() - started < 10 * 60 * 1000) {
@@ -361,7 +364,7 @@ export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
       )}
       <FragmentPlanSkillModal
         open={planTarget != null}
-        message={`将调用大模型重新规划「${planTarget?.name || ''}」的分镜（覆盖本集现有分镜与视频），通常需要数十秒。可勾选本次使用的 Skill。`}
+        message={`将调用大模型重新规划「${planTarget?.name || ''}」的分镜（覆盖本集现有分镜与视频），通常需要数十秒。可勾选本次使用的 Skill。字幕方式沿用该集当前设置。`}
         onCancel={() => setPlanTarget(null)}
         onConfirm={(skillIds) => {
           if (planTarget) void startPlanEpisode(planTarget, skillIds)

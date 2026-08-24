@@ -151,6 +151,43 @@ def probe_duration(path: Path) -> float | None:
         return None
 
 
+def probe_video_dimensions(path: Path) -> tuple[int, int] | None:
+    """读取视频宽高像素（ffprobe），失败返回 None。"""
+    ffprobe = shutil.which(get_settings().ffprobe_path) or shutil.which("ffprobe")
+    if not ffprobe or not path.exists():
+        return None
+    try:
+        proc = subprocess.run(
+            [
+                ffprobe,
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=width,height",
+                "-of",
+                "csv=p=0:s=x",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if proc.returncode != 0:
+            return None
+        raw = (proc.stdout or "").strip()
+        if "x" not in raw:
+            return None
+        w_str, h_str = raw.split("x", 1)
+        width, height = int(w_str), int(h_str)
+        if width <= 0 or height <= 0:
+            return None
+        return width, height
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def is_near_silent_audio(path: Path, *, max_db: float = -70.0) -> bool:
     """True when file missing/tiny or peak volume is below max_db (e.g. anullsrc)."""
     if not path.exists() or path.stat().st_size < 2000:

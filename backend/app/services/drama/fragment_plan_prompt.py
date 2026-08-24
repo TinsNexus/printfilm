@@ -92,6 +92,7 @@ def build_fragment_plan_user_prompt(
     synopsis: str | None = None,
     core_hook: str | None = None,
     locked_summaries: list[str] | None = None,
+    include_subtitles: bool = True,
 ) -> str:
     # 拼装用户侧：集号/背景元信息 + 分集正文 + 资产目录
     ep_no = int(episode_number or 0)
@@ -101,6 +102,7 @@ def build_fragment_plan_user_prompt(
         f"剧名：{(project_title or '').strip() or '未命名短剧'}",
         f"集号：{ep_label}" + (f"（episodeNumber={ep_no}）" if ep_no > 0 else ""),
         f"分集标题：{(episode_name or '').strip() or '未命名'}",
+        f"字幕需求：{'需要字幕' if include_subtitles else '不要字幕'}",
         "",
     ]
     if locked:
@@ -177,6 +179,15 @@ def build_fragment_plan_user_prompt(
             [
                 "",
                 "请输出 JSON：{\"fragments\":[...]}；第一条必须是开幕镜（is_opening=true，含集号与背景介绍）。",
+            ]
+        )
+    if not include_subtitles:
+        lines.extend(
+            [
+                "",
+                "【额外要求｜本集不要字幕】",
+                "- 只写画面、动作、对白、旁白本身，不要写任何“字幕 / 叠字 / 同步字幕 / 字卡”等提示。",
+                "- 开幕镜也不要设计集号、剧名、背景介绍的叠字，只用画面与对白/旁白表达。",
             ]
         )
     return "\n".join(lines)

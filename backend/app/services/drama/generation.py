@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -13,8 +14,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.models import User
-from app.models_drama import DramaAsset, DramaEpisodeFragment, DramaFragmentAssetRef, DramaProject
+from app.models_drama import DramaAsset, DramaEpisode, DramaEpisodeFragment, DramaFragmentAssetRef, DramaProject
 from app.services.ark import get_ark
+from app.services.drama.billing_util import seedance_video_billing_tokens
+from app.services.drama.output_settings import (
+    infer_aspect_ratio_from_pixels,
+    resolve_episode_video_output,
+    seedream_still_size_for_video_ratio,
+)
 from app.services.billing import record_usage
 from app.services.drama.build_seedance_generate_body import (
     ASSET_MENTION_TOKEN_PATTERN,
@@ -73,6 +80,51 @@ def write_fragment_last_frame_url(fragment: DramaEpisodeFragment, url: str | Non
     else:
         params.pop("lastFrameUrl", None)
         params.pop("last_frame_url", None)
+    fragment.params = params
+
+
+# 写入分镜成片输出规格（配置 + 实际像素），供前端展示与拼接校验
+def write_fragment_video_output_meta(
+    fragment: DramaEpisodeFragment,
+    *,
+    aspect_ratio: str,
+    resolution: str,
+    video_path: Path | str | None = None,
+) -> None:
+    from app.services import storage as storage_svc
+    from app.services.ffmpeg_compose import probe_video_dimensions
+
+    params = dict(fragment.params or {}) if isinstance(fragment.params, dict) else {}
+    width = 0
+    height = 0
+    path = video_path if isinstance(video_path, Path) else None
+    if path is None and isinstance(video_path, str) and video_path.strip():
+        path = storage_svc.local_path_from_url(video_path.strip())
+        if path is None and not video_path.strip().startswith("http"):
+            candidate = Path(video_path.strip())
+            if candidate.exists():
+                path = candidate
+    if path and path.exists():
+        dims = probe_video_dimensions(path)
+        if dims:
+            width, height = dims
+    ratio_label = (
+        infer_aspect_ratio_from_pixels(width, height)
+        if width > 0 and height > 0
+        else aspect_ratio
+    )
+    params["aspect_ratio"] = ratio_label
+    params["resolution"] = resolution
+    if width > 0 and height > 0:
+        params["video_width"] = width
+        params["video_height"] = height
+    gen = dict(params.get("generation") or {}) if isinstance(params.get("generation"), dict) else {}
+    gen["aspect_ratio"] = ratio_label
+    gen["resolution"] = resolution
+    if width > 0 and height > 0:
+        gen["video_width"] = width
+        gen["video_height"] = height
+    params["generation"] = gen
     fragment.params = params
 
 
@@ -267,15 +319,31 @@ def activate_fragment_video_version(
     fragment.cover = str(target.get("cover") or "")[:1024]
     last_frame = str(target.get("lastFrameUrl") or "").strip() or None
     write_fragment_last_frame_url(fragment, last_frame)
+    from app.services import storage as storage_svc
+
     params = dict(fragment.params or {})
     params["video_versions"] = remaining[:FRAGMENT_VIDEO_VERSION_LIMIT]
-    params["generation"] = {
+    fragment.params = params
+    ratio = str(target.get("aspect_ratio") or params.get("aspect_ratio") or "9:16")
+    resolution = str(target.get("resolution") or params.get("resolution") or "480p")
+    video_path = storage_svc.local_path_from_url(target_video)
+    write_fragment_video_output_meta(
+        fragment,
+        aspect_ratio=ratio,
+        resolution=resolution,
+        video_path=video_path or target_video,
+    )
+    params = dict(fragment.params or {})
+    gen = dict(params.get("generation") or {}) if isinstance(params.get("generation"), dict) else {}
+    gen.update({
         "status": "done",
         "video": fragment.video,
         "cover": fragment.cover,
         "lastFrameUrl": last_frame,
         "restoredFrom": version_id,
-    }
+    })
+    params["generation"] = gen
+    params["video_versions"] = remaining[:FRAGMENT_VIDEO_VERSION_LIMIT]
     fragment.params = params
     return {
         "fragment_id": fragment.id,
@@ -284,6 +352,27 @@ def activate_fragment_video_version(
         "lastFrameUrl": last_frame,
         "video_versions": params["video_versions"],
     }
+
+
+# 入队后、任务列表尚未可见时，保留 queued，避免被当成孤儿清掉
+_ORPHAN_QUEUE_GRACE_SEC = 60
+
+
+# 判断 generation.queued_at 是否仍在宽限期内
+def generation_queued_recently(gen: dict[str, Any] | None, *, now: datetime | None = None) -> bool:
+    if not isinstance(gen, dict):
+        return False
+    raw = str(gen.get("queued_at") or "").strip()
+    if not raw:
+        return False
+    try:
+        ts = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=UTC)
+    current = now or datetime.now(UTC)
+    return (current - ts).total_seconds() < _ORPHAN_QUEUE_GRACE_SEC
 
 
 # 无对应平台任务时，把 queued/running 分镜恢复为 idle，避免假排队
@@ -300,6 +389,9 @@ async def reconcile_orphaned_fragment_generations(
         if fragment.id in active_fragment_ids:
             continue
         params = dict(fragment.params or {})
+        gen = params.get("generation") if isinstance(params.get("generation"), dict) else None
+        if generation_queued_recently(gen if isinstance(gen, dict) else None):
+            continue
         params.pop("generation_attempts", None)
         params["generation"] = {
             "status": "idle",
@@ -785,6 +877,11 @@ async def generate_fragment_video(
     prompt = (fragment.content or "").strip() or "短剧分镜"
     duration = int(fragment.duration_sec or 8)
     duration = max(settings.seedance_duration_min, min(duration, settings.seedance_duration_max))
+    episode = await db.get(DramaEpisode, fragment.episode_id)
+    ratio, resolution = resolve_episode_video_output(
+        episode.params if episode else None,
+        project.params,
+    )
 
     refs = (
         await db.execute(
@@ -833,9 +930,6 @@ async def generate_fragment_video(
 
     local_last_frame: str | None = None
     if ref_payloads and (catalog.images or catalog.audios):
-        # ratio 优先项目 params，默认竖屏 9:16（与分集编辑页一致）
-        ratio = str((project.params or {}).get("aspect_ratio") or "").strip() or "9:16"
-        resolution = str((project.params or {}).get("resolution") or "").strip() or "480p"
         body = build_seedance_generate_body(
             {
                 "content": prompt,
@@ -859,7 +953,6 @@ async def generate_fragment_video(
             content_labels=content_labels,
         )
     elif image_url:
-        ratio = str((project.params or {}).get("aspect_ratio") or "").strip() or "9:16"
         local_video = await ark.gen_and_wait_video(
             image_url,
             prompt,
@@ -870,8 +963,21 @@ async def generate_fragment_video(
             generate_audio=True,
         )
     else:
-        ratio = str((project.params or {}).get("aspect_ratio") or "").strip() or "9:16"
-        still = await ark.gen_image(prompt[:500], project_id=project.id, shot_no=fragment.id)
+        still = await ark.gen_image(
+            prompt[:500],
+            project_id=project.id,
+            shot_no=fragment.id,
+            size=seedream_still_size_for_video_ratio(ratio),
+        )
+        await record_usage(
+            db,
+            user_id=user.id,
+            project_id=None,
+            drama_project_id=project.id,
+            billing_key="seedream",
+            model=settings.model_image,
+            estimated=True,
+        )
         image_url = still.local_url or ""
         local_video = await ark.gen_and_wait_video(
             still.local_url,
@@ -906,9 +1012,16 @@ async def generate_fragment_video(
         last_frame_url = storage_svc.republish_url(local_last_frame, sync=True) or local_last_frame
         if not cover_url:
             cover_url = last_frame_url
+    archive_fragment_video_version(fragment)
     fragment.video = video_url
     fragment.cover = cover_url or ""
     write_fragment_last_frame_url(fragment, last_frame_url)
+    write_fragment_video_output_meta(
+        fragment,
+        aspect_ratio=ratio,
+        resolution=resolution,
+        video_path=video_path,
+    )
     await record_usage(
         db,
         user_id=user.id,
@@ -916,6 +1029,7 @@ async def generate_fragment_video(
         drama_project_id=project.id,
         billing_key="seedance2:video0",
         model=settings.model_video,
+        tokens=seedance_video_billing_tokens(fragment.duration_sec),
         estimated=True,
     )
     await db.commit()
@@ -964,8 +1078,11 @@ async def prepare_fragment_video_for_submit(
     prompt = (fragment.content or "").strip() or "短剧分镜"
     duration = int(fragment.duration_sec or 8)
     duration = max(settings.seedance_duration_min, min(duration, settings.seedance_duration_max))
-    ratio = str((project.params or {}).get("aspect_ratio") or "").strip() or "9:16"
-    resolution = str((project.params or {}).get("resolution") or "").strip() or "480p"
+    episode = await db.get(DramaEpisode, fragment.episode_id)
+    ratio, resolution = resolve_episode_video_output(
+        episode.params if episode else None,
+        project.params,
+    )
 
     refs = (
         await db.execute(
@@ -1036,7 +1153,13 @@ async def prepare_fragment_video_for_submit(
 
     ark = get_ark()
     if not image_url:
-        still = await ark.gen_image(prompt[:500], project_id=project.id, shot_no=fragment.id)
+        # Seedance i2v 禁止传 ratio，输出跟首帧；静帧必须先按目标画幅生成
+        still = await ark.gen_image(
+            prompt[:500],
+            project_id=project.id,
+            shot_no=fragment.id,
+            size=seedream_still_size_for_video_ratio(ratio),
+        )
         image_url = still.local_url or ""
 
     return FragmentVideoPrepared(
@@ -1159,16 +1282,29 @@ async def apply_fragment_video_assets(
     fragment.video = video_url
     fragment.cover = cover_url or ""
     write_fragment_last_frame_url(fragment, last_frame_url)
+    episode = await db.get(DramaEpisode, fragment.episode_id)
+    ratio, resolution = resolve_episode_video_output(
+        episode.params if episode else None,
+        project.params,
+    )
+    write_fragment_video_output_meta(
+        fragment,
+        aspect_ratio=ratio,
+        resolution=resolution,
+        video_path=video_path,
+    )
     params = dict(fragment.params or {})
     params.pop("generation_attempts", None)
-    params["generation"] = {
+    gen = dict(params.get("generation") or {}) if isinstance(params.get("generation"), dict) else {}
+    gen.update({
         "status": "done",
         "video": fragment.video,
         "cover": fragment.cover,
         "lastFrameUrl": last_frame_url or None,
         "attempts": attempts,
         "attempt_limit": attempt_limit,
-    }
+    })
+    params["generation"] = gen
     if last_frame_url:
         params["lastFrameUrl"] = last_frame_url
     fragment.params = params
@@ -1179,6 +1315,7 @@ async def apply_fragment_video_assets(
         drama_project_id=project.id,
         billing_key="seedance2:video0",
         model=settings.model_video,
+        tokens=seedance_video_billing_tokens(fragment.duration_sec),
         estimated=True,
     )
     await db.commit()

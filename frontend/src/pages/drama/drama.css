@@ -1912,6 +1912,40 @@
   text-overflow: ellipsis;
 }
 
+.drama-project-output-settings {
+  flex-shrink: 0;
+}
+
+.drama-project-output-btn .drama-project-output-hint {
+  margin-left: 2px;
+  padding: 0.1rem 0.35rem;
+  border-radius: 999px;
+  background: rgba(17, 19, 24, 0.06);
+  color: #6b7280;
+  font-size: 0.65rem;
+  font-weight: 600;
+}
+
+.drama-project-output-note {
+  margin: 0 0 10px;
+  color: #6b7280;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.drama-ep-project-output-readonly {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  border: 1px dashed rgba(17, 19, 24, 0.14);
+  background: rgba(255, 255, 255, 0.7);
+  color: #374151;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .drama-icon-btn {
   width: 36px;
   height: 36px;
@@ -2912,6 +2946,16 @@
   overflow: visible;
 }
 
+.drama-ep-header-controls > .drama-ep-btn-ghost,
+.drama-ep-header-controls > .drama-ep-btn-dark {
+  height: 34px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
 .drama-ep-header-gen-all {
   white-space: nowrap;
   height: 34px;
@@ -2924,11 +2968,22 @@
   overflow: visible;
 }
 
+.drama-ep-header-gen-opts.fc-gen-opts,
+.drama-ep-header-gen-opts .fc-gen-opts {
+  margin-top: 0;
+}
+
+.drama-ep-header-gen-opts .fc-gen-opts-triggers {
+  align-items: center;
+}
+
 .drama-ep-header-gen-opts .fc-gen-opt-btn {
   background: #fff;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
   color: var(--ep-ink, #111);
   max-width: 180px;
+  height: 34px;
+  box-sizing: border-box;
 }
 
 .drama-ep-header-gen-opts .fc-gen-opt-btn.active {
@@ -3289,6 +3344,8 @@
 .drama-ep-editor-box {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.72);
   border: 1px solid transparent;
@@ -3307,6 +3364,7 @@
   padding: 0;
   display: flex;
   flex-direction: column;
+  flex: none;
   gap: 6px;
 }
 
@@ -3724,8 +3782,9 @@
 }
 
 .drama-ep-prompt-editor {
-  min-height: 280px;
-  height: 100%;
+  flex: 1;
+  min-height: 160px;
+  height: auto;
   overflow: auto;
   outline: none;
   white-space: pre-wrap;
@@ -4176,8 +4235,21 @@
 .drama-ep-editor-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 10px;
-  margin-top: 14px;
+  margin-top: auto;
+  padding-top: 12px;
+}
+
+.drama-ep-editor-actions .drama-ep-btn-ghost,
+.drama-ep-editor-actions .drama-ep-btn-dark {
+  height: 34px;
+  min-width: 88px;
+  padding: 0 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
 }
 
 .drama-ep-btn-ghost,
@@ -4797,6 +4869,173 @@
   font-style: normal;
 }
 
+.drama-ep-version.is-active,
+.drama-ep-version.is-current {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 1px color-mix(in srgb, #3b82f6 35%, transparent);
+}
+
+.drama-ep-version.is-previewing {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #f59e0b 45%, transparent);
+}
+
+.drama-ep-preview-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 12px 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, #f59e0b 12%, #fffbeb);
+  border: 1px solid color-mix(in srgb, #f59e0b 35%, #fde68a);
+  font-size: 12px;
+  color: #92400e;
+}
+
+.drama-ep-preview-banner-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+.drama-ep-preview-banner-btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, #f59e0b 40%, #fcd34d);
+  background: #fff;
+  color: #b45309;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.drama-ep-preview-banner-btn.is-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: #78716c;
+}
+
+.drama-ep-preview-banner-btn:hover:not(:disabled) {
+  background: #fffbeb;
+}
+
+.drama-subtitle-board {
+  margin: 0 12px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+  flex: none;
+}
+
+.drama-subtitle-board.is-collapsed {
+  border-color: #e8ebf0;
+}
+
+.drama-subtitle-board__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.drama-subtitle-board.is-collapsed .drama-subtitle-board__header {
+  border-bottom: 0;
+}
+
+.drama-subtitle-board__toggle {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.drama-subtitle-board__title-wrap {
+  min-width: 0;
+}
+
+.drama-subtitle-board__header h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.drama-subtitle-board__header p {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: #6b7280;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drama-subtitle-board__export {
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #374151;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.drama-subtitle-board__export:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.drama-subtitle-board__list {
+  max-height: 180px;
+  overflow: auto;
+  padding: 6px 8px 10px;
+}
+
+.drama-subtitle-board__item {
+  padding: 8px 6px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.drama-subtitle-board__item:last-child {
+  border-bottom: 0;
+}
+
+.drama-subtitle-board__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.drama-subtitle-board__text {
+  font-size: 12px;
+  line-height: 1.55;
+  color: #111827;
+  white-space: pre-wrap;
+}
+
+.drama-subtitle-board__empty {
+  padding: 14px 12px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
 @keyframes drama-ep-pulse {
   0%,
   100% {
@@ -4822,12 +5061,20 @@
 }
 
 .drama-ep-clip em {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   margin-top: 6px;
   font-style: normal;
   font-size: 11px;
   color: #64748b;
   white-space: nowrap;
+}
+
+.drama-ep-clip-spec {
+  font-size: 10px;
+  color: #94a3b8;
+  letter-spacing: 0.01em;
 }
 
 .drama-ep-clip-ops {

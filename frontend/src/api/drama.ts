@@ -344,15 +344,20 @@ export const dramaApi = {
   listEpisodes: (projectId: number) =>
     request<DramaEpisode[]>(`/api/drama/episodes?project_id=${projectId}`),
   getEpisode: (id: number) => request<DramaEpisode>(`/api/drama/episodes/${id}`),
+  updateEpisode: (id: number, body: { name?: string; params?: Record<string, unknown> | null }) =>
+    request<DramaEpisode>(`/api/drama/episodes/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
   seedEpisodes: (projectId: number, force = false) =>
     request<DramaEpisode[]>(
       `/api/drama/episodes/seed_from_script?project_id=${projectId}${force ? '&force=true' : ''}`,
       { method: 'POST' },
     ),
   /** 单集 AI（LLM）重新分镜；轮询 episode.params.fragment_plan_status */
-    planEpisodeFragments: (
+  planEpisodeFragments: (
     episodeId: number,
-    body?: { force?: boolean; fallback_rules?: boolean; skill_ids?: number[] },
+    body?: { force?: boolean; fallback_rules?: boolean; skill_ids?: number[]; subtitle_enabled?: boolean },
   ) =>
     request<DramaEpisode>(`/api/drama/episodes/${episodeId}/plan_fragments`, {
       method: 'POST',
@@ -360,6 +365,7 @@ export const dramaApi = {
         force: body?.force ?? true,
         fallback_rules: body?.fallback_rules ?? true,
         skill_ids: body?.skill_ids,
+        subtitle_enabled: body?.subtitle_enabled,
       }),
     }),
   saveFragments: (

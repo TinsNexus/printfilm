@@ -59,8 +59,14 @@ def build_task_step(task_id: int, step: TaskStepCreate) -> TaskStep:
     )
 
 
-async def create_task(db: AsyncSession, user: User, body: TaskCreateRequest) -> TaskRun:
-    """Create a new task run and pre-plan its execution steps."""
+async def create_task(
+    db: AsyncSession,
+    user: User,
+    body: TaskCreateRequest,
+    *,
+    commit: bool = True,
+) -> TaskRun:
+    """创建任务并预写步骤。commit=False 时仅 flush，由调用方与业务状态同事务提交。"""
     await _validate_task_scope(db, user, body)
     handler = get_task_handler(body.domain, body.task_type)
     if handler is None:
@@ -120,6 +126,8 @@ async def create_task(db: AsyncSession, user: User, body: TaskCreateRequest) -> 
             ),
         )
     )
+    if not commit:
+        return task
     await db.commit()
     return await get_task_for_user(db, user, task.id)
 
@@ -243,12 +251,16 @@ def task_fragment_ids(task: TaskRun) -> list[int]:
 
 
 # 判断分镜视频任务是否应作废；返回取消原因，None 表示保留。
-def stale_pending_fragment_video_reason(frags: list[Any]) -> str | None:
-    """分镜已删 → 作废；全有成片且无进行中 generation → 跳过重复；否则保留（含重新生成）。"""
+def stale_pending_fragment_video_reason(frags: list[Any], task: Any | None = None) -> str | None:
+    """分镜已删 → 作废；全有成片且无进行中 generation、且非替换成片 → 跳过重复；否则保留。"""
     from app.services.drama.generation import fragment_generation_status
 
     if not frags:
         return _STALE_FRAGMENT_REASON
+    payload = getattr(task, "payload", None) if task is not None else None
+    # 重新生成会保留旧 video，调度器不能当成重复任务取消
+    if isinstance(payload, dict) and payload.get("replace_existing_video"):
+        return None
     if not all((getattr(frag, "video", None) or "").strip() for frag in frags):
         return None
     for frag in frags:
@@ -337,7 +349,7 @@ async def reconcile_stale_pending_tasks(db: AsyncSession) -> int:
             if frag is not None:
                 frags.append(frag)
 
-        reason = stale_pending_fragment_video_reason(frags)
+        reason = stale_pending_fragment_video_reason(frags, task)
         if not reason:
             continue
 
@@ -461,6 +473,170 @@ async def reconcile_sequential_batches(db: AsyncSession) -> int:
     if changed:
         await db.commit()
     return changed
+
+
+# 镜间衔接开关切换后：只重排仍 pending 的分镜视频任务（已在跑的不动）。
+async def rebalance_project_fragment_video_queue(
+    db: AsyncSession,
+    project_id: int,
+    *,
+    sequential: bool,
+    user_id: int | None = None,
+) -> dict[str, int]:
+    from app.config import get_settings
+    from app.services.drama.access import count_user_inflight_fragment_video_tasks
+
+    stmt = select(TaskRun).where(
+        TaskRun.drama_project_id == int(project_id),
+        TaskRun.domain == "drama",
+        TaskRun.task_type == "fragment_video",
+        TaskRun.status.in_(("pending", "leased", "running", "awaiting_poll")),
+    )
+    tasks = list((await db.execute(stmt)).scalars().all())
+    if not tasks:
+        return {"pending": 0, "activated": 0, "deferred": 0}
+
+    pending = [task for task in tasks if task.status == "pending" and not task.cancel_requested]
+    active = [
+        task
+        for task in tasks
+        if task.status in {"leased", "running", "awaiting_poll"} and not task.cancel_requested
+    ]
+
+    # 先统一改写 pending 的串行标记，供后续调度器按新模式激活
+    for task in pending:
+        payload = dict(task.payload or {}) if isinstance(task.payload, dict) else {}
+        if bool(payload.get("sequential")) == bool(sequential):
+            continue
+        payload["sequential"] = bool(sequential)
+        task.payload = payload
+
+    activated = 0
+    deferred = 0
+    now = datetime.now(UTC)
+    limit = max(1, int(get_settings().drama_user_video_job_limit or 12))
+    owner_id = int(user_id or (pending[0].requested_by if pending else tasks[0].requested_by))
+
+    if not sequential:
+        # 关闭衔接：尽量把仍排队的 pending 激活到并发空位
+        inflight = await count_user_inflight_fragment_video_tasks(db, owner_id)
+        slots = max(0, limit - inflight)
+        deferred_pending = [task for task in pending if task.next_action_at is None]
+        for task in deferred_pending:
+            if slots <= 0:
+                deferred += 1
+                continue
+            task.next_action_at = now
+            slots -= 1
+            activated += 1
+            await append_task_event(
+                db,
+                task.id,
+                event_type="task.activated",
+                status=task.status,
+                phase=task.current_step_key,
+                message="已关闭镜间衔接，恢复并发生成",
+            )
+        if activated or deferred or pending:
+            await db.commit()
+        return {"pending": len(pending), "activated": activated, "deferred": deferred}
+
+    # 开启衔接：按分集镜序，只允许“当前最前未完成镜”占槽；其余 pending 收回激活
+    frag_ids = {
+        int(task.fragment_id)
+        for task in pending + active
+        if task.fragment_id is not None
+    }
+    sort_by_frag: dict[int, int] = {}
+    episode_by_frag: dict[int, int] = {}
+    if frag_ids:
+        frag_rows = list(
+            (
+                await db.execute(
+                    select(DramaEpisodeFragment).where(DramaEpisodeFragment.id.in_(sorted(frag_ids)))
+                )
+            ).scalars().all()
+        )
+        for frag in frag_rows:
+            sort_by_frag[int(frag.id)] = int(frag.sort_order or 0)
+            episode_by_frag[int(frag.id)] = int(frag.episode_id)
+
+    by_episode: dict[int, list[TaskRun]] = {}
+    for task in pending + active:
+        if task.fragment_id is None:
+            continue
+        ep_id = episode_by_frag.get(int(task.fragment_id)) or int(task.episode_id or 0)
+        by_episode.setdefault(ep_id, []).append(task)
+
+    heads_to_activate: list[TaskRun] = []
+    for ep_id, ep_tasks in by_episode.items():
+        ep_tasks.sort(
+            key=lambda task: (
+                sort_by_frag.get(int(task.fragment_id or 0), 10**9),
+                int(task.id),
+            )
+        )
+        head: TaskRun | None = None
+        for task in ep_tasks:
+            if task.status in {"leased", "running", "awaiting_poll"}:
+                head = task
+                break
+            if task.status == "pending":
+                head = task
+                break
+        for task in ep_tasks:
+            if task.status != "pending":
+                continue
+            is_head = head is not None and int(task.id) == int(head.id) and head.status == "pending"
+            if is_head:
+                heads_to_activate.append(task)
+                continue
+            if task.next_action_at is not None:
+                task.next_action_at = None
+                deferred += 1
+                await append_task_event(
+                    db,
+                    task.id,
+                    event_type="task.deferred",
+                    status=task.status,
+                    phase=task.current_step_key,
+                    message="已开启镜间衔接，后镜改回排队等待上一镜",
+                )
+            else:
+                deferred += 1
+
+    # 先 flush 收回后镜空位，再按并发上限激活各集当前首镜
+    await db.flush()
+    inflight = await count_user_inflight_fragment_video_tasks(db, owner_id)
+    slots = max(0, limit - inflight)
+    for task in heads_to_activate:
+        if task.next_action_at is not None:
+            continue
+        if slots <= 0:
+            deferred += 1
+            continue
+        task.next_action_at = now
+        slots -= 1
+        activated += 1
+        await append_task_event(
+            db,
+            task.id,
+            event_type="task.activated",
+            status=task.status,
+            phase=task.current_step_key,
+            message="已开启镜间衔接，按镜序激活当前首镜",
+        )
+
+    await db.commit()
+    logger.info(
+        "rebalanced fragment_video queue project_id=%s sequential=%s pending=%s activated=%s deferred=%s",
+        project_id,
+        sequential,
+        len(pending),
+        activated,
+        deferred,
+    )
+    return {"pending": len(pending), "activated": activated, "deferred": deferred}
 
 
 # 统计用户当前占用 Worker 槽位的任务数（NIO：awaiting_poll 注册项不占槽）。

@@ -1,5 +1,13 @@
 /** 分集编辑页辅助：资产分类、引用解析、标签文案 */
 import type { DramaAsset, DramaFragment } from '../../api/drama'
+import {
+  DRAMA_RATIO_OPTIONS,
+  DRAMA_RES_OPTIONS,
+  readEpisodeAspectRatio,
+  readEpisodeResolution,
+  readProjectAspectRatio,
+  readProjectResolution,
+} from '../../lib/dramaProjectOutputSettings'
 
 export type AssetScope = 'episode' | 'series'
 export type AssetTab = 'character' | 'scene' | 'prop'
@@ -15,8 +23,9 @@ export const MODEL_OPTIONS = [
   { id: 'seedance-1.5', label: 'Seedance 1.5' },
 ]
 
-export const RATIO_OPTIONS = ['9:16', '16:9', '1:1'] as const
-export const RES_OPTIONS = ['480p', '720p', '1080p'] as const
+export const RATIO_OPTIONS = DRAMA_RATIO_OPTIONS
+export const RES_OPTIONS = DRAMA_RES_OPTIONS
+export { readProjectAspectRatio, readProjectResolution, readEpisodeAspectRatio, readEpisodeResolution }
 
 // 从分镜正文提取 @asset:id
 export function extractAssetIds(content: string): number[] {

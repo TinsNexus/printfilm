@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -17,6 +18,7 @@ from app.models_drama import DramaEpisode, DramaEpisodeFragment, DramaFragmentAs
 from app.schemas_drama import (
     DramaActivateVideoVersionRequest,
     DramaEpisodeOut,
+    DramaEpisodeUpdate,
     DramaFragmentOut,
     DramaGenerateRequest,
     DramaPlanFragmentsRequest,
@@ -195,6 +197,22 @@ async def get_episode(
     return await _episode_out_with_tasks(db, user, ep)
 
 
+@router.patch("/episodes/{episode_id}", response_model=DramaEpisodeOut)
+async def update_episode(
+    episode_id: int,
+    body: DramaEpisodeUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DramaEpisodeOut:
+    ep = await get_owned_episode(db, episode_id, user)
+    if body.name is not None:
+        ep.name = body.name.strip() or ep.name
+    if body.params is not None:
+        ep.params = body.params
+    await db.commit()
+    return await _episode_out_with_tasks(db, user, ep)
+
+
 @router.post("/episodes/{episode_id}/plan_fragments", response_model=DramaEpisodeOut)
 async def plan_episode_fragments(
     episode_id: int,
@@ -232,6 +250,9 @@ async def plan_episode_fragments(
     params["fragment_plan_status"] = "generating"
     params.pop("fragment_plan_error", None)
     params["fragment_plan_mode"] = "llm"
+    if req.subtitle_enabled is not None:
+        params["subtitleEnabled"] = bool(req.subtitle_enabled)
+        params["subtitleMode"] = "model" if bool(req.subtitle_enabled) else "post"
     if req.skill_ids is None:
         params.pop("fragment_plan_skill_ids", None)
     else:
@@ -253,6 +274,7 @@ async def plan_episode_fragments(
                 "fallback_rules": bool(req.fallback_rules),
                 "force": bool(req.force),
                 "skill_ids": parse_skill_ids(req.skill_ids) if req.skill_ids is not None else None,
+                "subtitle_enabled": bool(req.subtitle_enabled) if req.subtitle_enabled is not None else None,
             },
             drama_project_id=ep.project_id,
             episode_id=episode_id,
@@ -451,11 +473,11 @@ async def generate_episode(
     sequential = project_link_last_frame_enabled(project)
     frag_ids = [f.id for f in idle_frags]
     batch_key = f"drama:episode:{episode_id}:video:{uuid.uuid4().hex[:12]}"
+    queued_at = datetime.now(UTC).isoformat()
     for f in idle_frags:
         params = dict(f.params or {})
-        params["generation"] = {"status": "queued"}
+        params["generation"] = {"status": "queued", "queued_at": queued_at, "message": "已入队"}
         f.params = params
-    await db.commit()
 
     created_tasks: list[int] = []
     deferred_count = 0
@@ -467,6 +489,7 @@ async def generate_episode(
             defer_activation = index >= activate_slots
         if defer_activation:
             deferred_count += 1
+        has_video = bool((f.video or "").strip())
         task = await create_task(
             db,
             user,
@@ -483,6 +506,7 @@ async def generate_episode(
                     "sequential": sequential,
                     "batch_key": batch_key,
                     "batch_index": index,
+                    "replace_existing_video": has_video,
                 },
                 drama_project_id=ep.project_id,
                 episode_id=episode_id,
@@ -493,8 +517,10 @@ async def generate_episode(
                     TaskTargetBind(target_type="fragment", target_id=f.id, sort_order=index),
                 ],
             ),
+            commit=False,
         )
         created_tasks.append(task.id)
+    await db.commit()
     logger.info(
         "已创建分集视频任务 episode_id=%s project_id=%s fragments=%s activated=%s deferred=%s task_ids=%s",
         episode_id,

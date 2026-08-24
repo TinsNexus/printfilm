@@ -1,11 +1,13 @@
 """分镜生成状态与视频版本。"""
 
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 from app.services.drama.generation import (
     activate_fragment_video_version,
     archive_fragment_video_version,
     fragment_generation_status,
+    generation_queued_recently,
 )
 
 
@@ -48,3 +50,15 @@ def test_archive_and_activate_video_version():
     assert out["video"] == "https://cdn/old.mp4"
     assert frag.video == "https://cdn/old.mp4"
     assert any(v.get("video") == "https://cdn/new.mp4" for v in frag.params["video_versions"])
+
+
+def test_generation_queued_recently_within_grace():
+    now = datetime(2026, 8, 24, 7, 0, tzinfo=UTC)
+    gen = {"status": "queued", "queued_at": (now - timedelta(seconds=10)).isoformat()}
+    assert generation_queued_recently(gen, now=now) is True
+
+
+def test_generation_queued_recently_expired():
+    now = datetime(2026, 8, 24, 7, 0, tzinfo=UTC)
+    gen = {"status": "queued", "queued_at": (now - timedelta(seconds=90)).isoformat()}
+    assert generation_queued_recently(gen, now=now) is False

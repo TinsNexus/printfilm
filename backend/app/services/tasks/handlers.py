@@ -52,6 +52,7 @@ async def _run_drama_fragment_plan(task: TaskRun) -> dict[str, Any] | None:
     return await run_episode_fragment_plan_job(
         _require_int(task.episode_id, "episode_id"),
         fallback_rules=bool(payload.get("fallback_rules", True)),
+        subtitle_enabled=payload.get("subtitle_enabled"),
     )
 
 

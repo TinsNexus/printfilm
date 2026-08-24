@@ -341,6 +341,18 @@ async def run_episode_scripts_job(project_id: int, force: bool = False) -> dict[
                 }
                 script.params = params
                 await db.commit()
+                user = await db.get(User, project.user_id)
+                if user:
+                    await record_usage(
+                        db,
+                        user_id=user.id,
+                        project_id=None,
+                        drama_project_id=project.id,
+                        billing_key="llm_chat",
+                        model=get_settings().model_llm,
+                        estimated=True,
+                    )
+                    await db.commit()
                 await db.refresh(script)
                 content = script.episode_content
                 if isinstance(content, dict) and isinstance(content.get("episodes"), list):
@@ -366,17 +378,6 @@ async def run_episode_scripts_job(project_id: int, force: bool = False) -> dict[
             params["episode_count"] = total
             params["episode_content_progress"] = {"done": total, "total": total}
             script.params = params
-            user = await db.get(User, project.user_id)
-            if user:
-                await record_usage(
-                    db,
-                    user_id=user.id,
-                    project_id=None,
-                    drama_project_id=project.id,
-                    billing_key="llm_chat",
-                    model=get_settings().model_llm,
-                    estimated=True,
-                )
             await db.commit()
             logger.info("分集剧本全部完成 project_id=%s total=%s", project_id, total)
             return {"ok": True, "project_id": project_id, "total": total}
@@ -410,6 +411,7 @@ async def run_episode_fragment_plan_job(
     episode_id: int,
     *,
     fallback_rules: bool = True,
+    subtitle_enabled: bool | None = None,
 ) -> dict[str, Any]:
     # Worker：LLM 规划本集分镜并落库；失败可选回退规则切分
     from app.services.drama.build_fragments import build_fragments_from_episode_body
@@ -464,6 +466,22 @@ async def run_episode_fragment_plan_job(
         )
         siblings = list(siblings_result.scalars().all())
         ep_params = episode.params if isinstance(episode.params, dict) else {}
+        raw_subtitles = (
+            subtitle_enabled
+            if subtitle_enabled is not None
+            else (
+                False
+                if ep_params.get("subtitleMode") == "post"
+                else True if ep_params.get("subtitleMode") == "model" else ep_params.get("subtitleEnabled", True)
+            )
+        )
+        if isinstance(raw_subtitles, str):
+            normalized = raw_subtitles.strip().lower()
+            include_subtitles = normalized not in {"0", "false", "no", "off", ""}
+        elif isinstance(raw_subtitles, (int, float)):
+            include_subtitles = raw_subtitles != 0
+        else:
+            include_subtitles = raw_subtitles is not False
         ep_no = int(ep_params.get("episodeNumber") or 0) or None
         from app.services.agent.compose import parse_skill_ids
 
@@ -534,6 +552,7 @@ async def run_episode_fragment_plan_job(
                 db=db,
                 user_id=project.user_id,
                 skill_ids=skill_ids,
+                include_subtitles=include_subtitles,
             )
         except (DramaLlmUnavailableError, RuntimeError, Exception) as exc:  # noqa: BLE001
             logger.exception("LLM 分镜失败 episode_id=%s err=%s", episode_id, exc)
@@ -551,6 +570,7 @@ async def run_episode_fragment_plan_job(
                 summary=summary,
                 episode_bodies=all_bodies,
                 intro_overrides=intro_overrides,
+                include_subtitles=include_subtitles,
             )
             mode_used = "rules_fallback"
             continuation = False
@@ -572,6 +592,17 @@ async def run_episode_fragment_plan_job(
         params["fragment_plan_count"] = len(protected_frags) + len(drafts)
         params["fragment_plan_preserved"] = len(protected_frags)
         episode.params = params
+        user = await db.get(User, project.user_id)
+        if user:
+            await record_usage(
+                db,
+                user_id=user.id,
+                project_id=None,
+                drama_project_id=project.id,
+                billing_key="llm_chat",
+                model=get_settings().model_llm,
+                estimated=True,
+            )
         await db.commit()
         logger.info(
             "单集分镜完成 episode_id=%s mode=%s new=%s preserved=%s continuation=%s",

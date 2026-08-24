@@ -81,7 +81,7 @@ export function SeedanceRulesModal({ open, onClose }: Props) {
                 <strong>模型</strong> → <code>model</code>（Seedance 2.5 / 1.5）
               </li>
               <li>
-                <strong>画幅 · 清晰度</strong> → <code>ratio</code>、<code>resolution</code>
+                <strong>画幅 · 清晰度</strong>（分集顶栏设置）→ <code>ratio</code>、<code>resolution</code>
               </li>
               <li>
                 <strong>时长</strong> → <code>duration</code>：脚本内{' '}
@@ -193,7 +193,7 @@ export function SeedanceRulesModal({ open, onClose }: Props) {
             <ul className="seedance-rules-list">
               <li>脚本校验：时长合法；空镜未被标成对白/旁白（编辑区会即时提示，有错误不可生成）</li>
               <li>本镜「参与资产」中的角色已有参考图；需说话的角色已「生成音色」或绑定试听（缺项会警告）</li>
-              <li>顶栏确认视频风格、模型、画幅与清晰度后再点「生成」</li>
+              <li>项目顶栏确认画幅与清晰度；分集顶栏确认视频风格、模型后再点「生成」</li>
             </ul>
 
             <h4>队列与并行</h4>
@@ -210,7 +210,7 @@ export function SeedanceRulesModal({ open, onClose }: Props) {
                 <code>params.lastFrameUrl</code>
               </li>
               <li>
-                顶栏「画幅 · 清晰度」→「用上一镜尾帧作本镜首帧」开启时：若本镜有角色/场景参考图或音色，
+                分集顶栏「镜间衔接」开启时：若本镜有角色/场景参考图或音色，
                 尾帧以 <code>reference_image</code> 附在末尾（Seedance 禁止与 <code>first_frame</code> 混用）；
                 无参考媒体时才用 <code>first_frame</code>
               </li>

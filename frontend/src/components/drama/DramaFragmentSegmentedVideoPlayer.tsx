@@ -19,6 +19,9 @@ type Props = {
   playingFragmentId: number | null
   onPlayingFragmentChange: (fragmentId: number) => void
   aspectRatio: string
+  /** 预览历史版本时覆盖当前镜视频地址 */
+  overrideVideoUrl?: string | null
+  overridePosterUrl?: string | null
 }
 
 // 渲染带分镜分段进度条的视频播放器
@@ -27,6 +30,8 @@ export function DramaFragmentSegmentedVideoPlayer({
   playingFragmentId,
   onPlayingFragmentChange,
   aspectRatio,
+  overrideVideoUrl = null,
+  overridePosterUrl = null,
 }: Props) {
   // videoRef 视频元素引用
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -94,10 +99,14 @@ export function DramaFragmentSegmentedVideoPlayer({
 
   playingSegmentRef.current = playingSegment
 
-  // videoUrl 当前分镜视频地址
-  const videoUrl = playingFragment?.video ? resolveDramaMediaUrl(playingFragment.video) : null
+  // videoUrl 当前分镜视频地址（可被历史版本预览覆盖）
+  const videoUrl =
+    overrideVideoUrl ||
+    (playingFragment?.video ? resolveDramaMediaUrl(playingFragment.video) : null)
   // posterUrl 当前分镜封面地址
-  const posterUrl = playingFragment?.cover ? resolveDramaMediaUrl(playingFragment.cover) : null
+  const posterUrl =
+    overridePosterUrl ||
+    (playingFragment?.cover ? resolveDramaMediaUrl(playingFragment.cover) : null)
   // hasCurrentVideo 当前分镜是否可播放
   const hasCurrentVideo = Boolean(videoUrl)
   // hasAnyVideo 是否存在任一分镜视频
