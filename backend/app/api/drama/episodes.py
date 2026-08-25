@@ -17,6 +17,7 @@ from app.models import User
 from app.models_drama import DramaEpisode, DramaEpisodeFragment, DramaFragmentAssetRef
 from app.schemas_drama import (
     DramaActivateVideoVersionRequest,
+    DramaComposeEpisodeRequest,
     DramaEpisodeOut,
     DramaEpisodeUpdate,
     DramaFragmentOut,
@@ -613,6 +614,37 @@ async def generate_status(
         ],
         "fragments": items,
     }
+
+
+@router.post("/episodes/{episode_id}/compose")
+async def compose_episode(
+    episode_id: int,
+    body: DramaComposeEpisodeRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """统一画幅重编码后拼接本集分镜，供浏览器无损失败时回退。"""
+    from app.services.drama.episode_compose import compose_episode_video, load_episode_for_compose
+
+    ep = await get_owned_episode(db, episode_id, user)
+    project = await get_owned_drama_project(db, ep.project_id, user)
+    episode = await load_episode_for_compose(db, episode_id)
+    if episode is None:
+        raise HTTPException(status_code=404, detail="分集不存在")
+    req = body or DramaComposeEpisodeRequest()
+    try:
+        url = await compose_episode_video(
+            db,
+            episode=episode,
+            project=project,
+            fragment_ids=req.fragment_ids,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("episode compose failed episode_id=%s", episode_id)
+        raise HTTPException(status_code=500, detail=f"全片合成失败：{exc}") from exc
+    return {"ok": True, "video_url": url, "episode_id": episode_id}
 
 
 @router.post("/episodes/{episode_id}/cancel_generate")

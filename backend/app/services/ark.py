@@ -20,6 +20,7 @@ from app.config import Settings, get_settings
 from app.schemas_routing import ResolvedModelRoute
 from app.services.logical_model_router import resolve_logical_model, resolve_logical_model_id
 from app.services import storage
+from app.services.drama.seedance_i2v_role import resolve_seedance_i2v_image_role
 from app.services.ffmpeg_compose import is_near_silent_audio
 from app.services.llm_client import chat_completions
 from app.services import seedance_segments as segplan
@@ -634,16 +635,17 @@ class ArkGateway:
         if "@duration:" in plain or "00:" in plain or plain.startswith("【"):
             text = plain
             prompt_as_json = False
+        # 有目标画幅时用 reference_image + ratio（可强制 9:16）。
+        # 纯 first_frame 禁止传 ratio，且实测即使静帧竖屏也可能吐横屏。
+        image_role, target_ratio = resolve_seedance_i2v_image_role(ratio)
         content: list[dict[str, Any]] = [
             {"type": "text", "text": text},
             {
                 "type": "image_url",
                 "image_url": {"url": image_ref},
-                "role": "first_frame",
+                "role": image_role,
             },
         ]
-        # 首帧/首尾帧生视频：ratio 必须省略，输出比例跟随首帧图
-        # （传 ratio 会报 InvalidParameter.TaskTypeConstraint）
         route = self._resolve_ark_route("video", self.settings.model_video)
         video_model = route.upstream_model if route else self.settings.model_video
         body: dict[str, Any] = {
@@ -655,13 +657,16 @@ class ArkGateway:
             "generate_audio": bool(generate_audio),
             "return_last_frame": bool(return_last_frame),
         }
+        if target_ratio:
+            body["ratio"] = target_ratio
         # Do not send character_consistency — unknown fields have caused BodyFormat failures
         logger.info(
-            "Seedance i2v create model=%s duration=%s resolution=%s generate_audio=%s "
-            "(ratio omitted for first_frame)",
+            "Seedance i2v create model=%s duration=%s resolution=%s ratio=%s role=%s generate_audio=%s",
             body["model"],
             body["duration"],
             resolution,
+            body.get("ratio") or "(omit)",
+            image_role,
             body["generate_audio"],
         )
 
@@ -681,16 +686,20 @@ class ArkGateway:
                 )
             if resp.status_code >= 400:
                 err_text = resp.text or ""
-                # 若仍因 ratio 报错（兼容旧调用残留），显式去掉再试
-                if "ratio" in err_text.lower() and "ratio" in body:
+                # 仅「误用 first_frame + ratio」时去掉 ratio；有目标画幅时不得回落到 adaptive 横屏
+                if (
+                    not target_ratio
+                    and "ratio" in err_text.lower()
+                    and "ratio" in body
+                ):
                     body.pop("ratio", None)
                     resp = await client.post(
                         self._route_url("/contents/generations/tasks", route),
                         headers=self._route_headers(route),
                         json=body,
                     )
-            if resp.status_code >= 400:
-                # Last try: drop role（参考图模式，可按需带 adaptive）
+            if resp.status_code >= 400 and not target_ratio:
+                # 无目标画幅时的兼容回退；有竖屏目标时禁止 adaptive，避免再次出横屏
                 body["content"][1].pop("role", None)
                 body["ratio"] = "adaptive"
                 resp = await client.post(

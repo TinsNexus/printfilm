@@ -19,6 +19,7 @@ type Props = {
   playingFragmentId: number | null
   onPlayingFragmentChange: (fragmentId: number) => void
   aspectRatio: string
+  episodeId?: number
   episodeName?: string
   subtitleMode: DramaSubtitleMode
   onOpenStoryboard: () => void
@@ -35,6 +36,7 @@ function composeProgressLabel(progress: EpisodeComposeProgress | null, busy: boo
   if (!busy) return '全片合成下载'
   if (!progress) return '全片合成中…'
   if (progress.phase === 'download') return `拉取分镜 ${progress.done}/${progress.total}`
+  if (progress.phase === 'server') return '服务端统一重编码拼接…'
   return '正在拼接…'
 }
 
@@ -44,6 +46,7 @@ export function EpisodeEditSidePane({
   playingFragmentId,
   onPlayingFragmentChange,
   aspectRatio,
+  episodeId,
   episodeName = '本集',
   subtitleMode,
   onOpenStoryboard,
@@ -80,7 +83,9 @@ export function EpisodeEditSidePane({
     setComposeBusy(true)
     setComposeProgress({ phase: 'download', done: 0, total: composeClips.length })
     try {
-      const blob = await composeEpisodeVideoClient(composeClips, setComposeProgress)
+      const blob = await composeEpisodeVideoClient(composeClips, setComposeProgress, {
+        episodeId,
+      })
       triggerBlobDownload(blob, episodeComposeFilename(episodeName))
     } catch (err) {
       setComposeError(err instanceof Error ? err.message : '全片合成失败')

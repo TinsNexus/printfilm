@@ -408,6 +408,16 @@ export const dramaApi = {
       fragments: Array<{ fragment_id: number; status: string; video?: string; cover?: string }>
     }>(`/api/drama/episodes/${episodeId}/generate_status`),
 
+  /** 服务端统一重编码拼接本集（浏览器无损失败时回退） */
+  composeEpisode: (episodeId: number, fragmentIds?: number[]) =>
+    request<{ ok: boolean; video_url: string; episode_id: number }>(
+      `/api/drama/episodes/${episodeId}/compose`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ fragment_ids: fragmentIds }),
+      },
+    ),
+
   cancelEpisodeGenerate: (episodeId: number) =>
     request<{ ok: boolean; episode_id: number; fragments: number }>(
       `/api/drama/episodes/${episodeId}/cancel_generate`,

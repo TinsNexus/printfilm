@@ -1083,6 +1083,18 @@ async def prepare_fragment_video_for_submit(
         episode.params if episode else None,
         project.params,
     )
+    # 分集未落库画幅时写入解析结果，避免 UI 默认 9:16 与 params 长期不一致
+    if episode is not None:
+        ep_params = dict(episode.params or {})
+        changed = False
+        if str(ep_params.get("aspect_ratio") or "").strip() not in {"9:16", "16:9", "1:1"}:
+            ep_params["aspect_ratio"] = ratio
+            changed = True
+        if str(ep_params.get("resolution") or "").strip() not in {"480p", "720p", "1080p"}:
+            ep_params["resolution"] = resolution
+            changed = True
+        if changed:
+            episode.params = ep_params
 
     refs = (
         await db.execute(

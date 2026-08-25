@@ -249,6 +249,11 @@ class DramaGenerateRequest(BaseModel):
     fragment_ids: list[int] | None = None
 
 
+class DramaComposeEpisodeRequest(BaseModel):
+    # fragment_ids 仅拼接指定分镜；None 表示本集全部已有视频的分镜
+    fragment_ids: list[int] | None = None
+
+
 class DramaPlanFragmentsRequest(BaseModel):
     # force 是否覆盖已有视频/手改分镜（单集 AI 重切默认 true）
     force: bool = True

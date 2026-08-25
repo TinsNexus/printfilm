@@ -134,6 +134,15 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
     }
   }
 
+  if (/跳过重复任务|分镜已生成完成/.test(text)) {
+    return {
+      title: '旧任务已跳过',
+      message: '调度器发现该分镜已有成片，因此取消了这条重复入队的旧任务。',
+      suggestion:
+        '若你是在「重新生成」，请看队列里是否还有进行中的新任务；没有的话再点一次重新生成。不要把这条旧取消当成当前失败。',
+    }
+  }
+
   if (/已取消|任务已中断/.test(text)) {
     return {
       title: text.includes('取消') ? '已取消' : '任务已中断',

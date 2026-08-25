@@ -1390,6 +1390,7 @@ function EpisodeEditInner() {
           playingFragmentId={playingFragmentId}
           onPlayingFragmentChange={handlePlayingFragmentChange}
           aspectRatio={aspectRatio}
+          episodeId={episode?.id}
           episodeName={episode?.name || '本集'}
           subtitleMode={subtitleMode}
           onOpenStoryboard={openEpisodeStoryboard}
