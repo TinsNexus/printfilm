@@ -412,6 +412,7 @@ async def run_episode_fragment_plan_job(
     *,
     fallback_rules: bool = True,
     subtitle_enabled: bool | None = None,
+    force: bool = False,
 ) -> dict[str, Any]:
     # Worker：LLM 规划本集分镜并落库；失败可选回退规则切分
     from app.services.drama.build_fragments import build_fragments_from_episode_body
@@ -496,27 +497,29 @@ async def run_episode_fragment_plan_job(
             exclude_episode_id=episode.id,
         )
 
-        # 本集已有视频/手改分镜：续拆时锁定，并把已介绍角色并入去重集
+        # force：覆盖本集全部分镜；否则锁定已有视频/手改分镜并续拆
         from app.services.drama.build_fragments import extract_introduced_names_from_content
 
-        protected_frags = sorted(
-            [f for f in (episode.fragments or []) if _fragment_is_protected(f)],
-            key=lambda f: int(f.sort_order or 0),
-        )
+        protected_frags: list[DramaEpisodeFragment] = []
         locked_summaries: list[str] = []
-        for frag in protected_frags:
-            for name in extract_introduced_names_from_content(frag.content or ""):
-                already_introduced.add(name)
-            # 摘要：去掉 cue 行后取前几行画面/对白
-            narr: list[str] = []
-            for raw in (frag.content or "").replace("\r\n", "\n").split("\n"):
-                line = raw.strip()
-                if not line or line.startswith("@") or line.startswith("【"):
-                    continue
-                narr.append(line)
-                if len(narr) >= 3:
-                    break
-            locked_summaries.append("；".join(narr) if narr else f"分镜#{frag.sort_order}")
+        if not force:
+            protected_frags = sorted(
+                [f for f in (episode.fragments or []) if _fragment_is_protected(f)],
+                key=lambda f: int(f.sort_order or 0),
+            )
+            for frag in protected_frags:
+                for name in extract_introduced_names_from_content(frag.content or ""):
+                    already_introduced.add(name)
+                # 摘要：去掉 cue 行后取前几行画面/对白
+                narr: list[str] = []
+                for raw in (frag.content or "").replace("\r\n", "\n").split("\n"):
+                    line = raw.strip()
+                    if not line or line.startswith("@") or line.startswith("【"):
+                        continue
+                    narr.append(line)
+                    if len(narr) >= 3:
+                        break
+                locked_summaries.append("；".join(narr) if narr else f"分镜#{frag.sort_order}")
 
         mode_used = "llm"
         summary = script.summary if script and isinstance(script.summary, dict) else {}
@@ -532,7 +535,7 @@ async def run_episode_fragment_plan_job(
             episode_bodies=all_bodies,
             story_type=str(summary.get("storyType") or "") or None,
         )
-        continuation = bool(locked_summaries)
+        continuation = bool(locked_summaries) and not force
         try:
             drafts = await plan_fragments_with_llm(
                 episode_name=episode.name or "",
@@ -581,7 +584,7 @@ async def run_episode_fragment_plan_job(
             body,
             assets,
             drafts,
-            preserve_protected=True,
+            preserve_protected=not force,
             continuation=continuation,
         )
         # 重新加载 params（replace 会写 fingerprint）
