@@ -46,6 +46,7 @@ from app.services.drama.generation import (
 from app.services.drama.jobs import (
     cancel_all_episode_video_jobs,
     cancel_episode_video_jobs,
+    clear_episode_video_cancelled,
 )
 from app.config import get_settings
 from app.services.drama.seed import seed_episodes_from_script
@@ -465,6 +466,9 @@ async def generate_episode(
             status_code=409,
             detail="所选分镜正在生成，请等待完成后再试",
         )
+
+    # 清除进程内「本集已取消」标记，避免旧取消态把新入队任务立刻作废
+    clear_episode_video_cancelled(episode_id)
 
     # 全部入队；超过单用户并发上限的镜保持 pending 排队，由调度器按空位激活
     limit = max(1, int(get_settings().drama_user_video_job_limit or 12))

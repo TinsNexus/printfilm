@@ -407,10 +407,11 @@ export function syncEpisodeVideoJobs(input: {
     else status = 'running'
 
     const errText =
-      raw === 'cancelled'
-        ? '已取消'
-        : item.error ||
-          (status === 'failed' ? latestTask?.error_message || undefined : undefined)
+      item.error ||
+      (raw === 'cancelled' || status === 'failed'
+        ? latestTask?.error_message || undefined
+        : undefined) ||
+      (raw === 'cancelled' ? '已取消' : undefined)
 
     upsertDramaGenJob(
       {

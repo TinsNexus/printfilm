@@ -69,6 +69,9 @@ async def execute_task_run(task_id: int) -> None:
                 return
             if task.status == "pending" and isinstance(result, dict) and result.get("deferred"):
                 return
+            if isinstance(result, dict) and result.get("cancelled"):
+                await _mark_cancelled(db, task)
+                return
             await _complete_task(db, task, result or {"ok": True})
     except asyncio.CancelledError:
         async with AsyncSessionLocal() as db:

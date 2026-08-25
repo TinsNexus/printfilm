@@ -34,7 +34,14 @@ from app.services.drama.build_seedance_generate_body import (
 from app.services.drama.generation_prompt import build_generation_prompt
 from app.services.drama.seedream_options import resolve_seedream_model_endpoint, resolve_seedream_size
 from app.services.drama.visual_prompt import resolve_visual_prompt_for_asset
-from app.services.drama.voice_synthesis import synthesize_voice_asset
+from app.services.drama.voice_synthesis import build_voice_sample_text, synthesize_voice_asset
+from app.services.drama.voice_prompt import fallback_voice_prompt
+from app.services.drama.voice_reference_audio import (
+    finalize_voice_reference_url,
+    is_voice_duration_too_short,
+    patch_params_voice_url,
+    probe_voice_url_duration,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -698,6 +705,210 @@ async def ensure_reference_assets_public_urls(
     return assets
 
 
+def _character_voice_binding(params: dict[str, Any]) -> dict[str, Any] | None:
+    binding = params.get("voiceAudio")
+    if isinstance(binding, dict):
+        return binding
+    canvas = params.get("canvas")
+    if isinstance(canvas, dict):
+        nested = canvas.get("voiceAudio")
+        if isinstance(nested, dict):
+            return nested
+    return None
+
+
+# 分镜视频提交前：过短的参考音色自动重新合成（Seedance ≥1.8s）
+async def ensure_fragment_reference_audios(
+    db: AsyncSession,
+    user: User,
+    project: DramaProject,
+    fragment: DramaEpisodeFragment,
+    ref_assets: list[DramaAsset],
+) -> list[DramaAsset]:
+    from app.services import storage as storage_svc
+
+    work_dir = storage_svc.project_dir(project.id) / "voice_probe"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    assets_by_id = {a.id: a for a in ref_assets}
+    regenerated = 0
+
+    async def _regen_voice_asset(
+        voice_asset: DramaAsset,
+        *,
+        character: DramaAsset | None,
+        voice_prompt: str,
+        speaker: str | None,
+    ) -> DramaAsset:
+        sample = build_voice_sample_text(
+            voice_prompt,
+            character.name if character else voice_asset.name,
+            short=False,
+        )
+        return await synthesize_voice_asset(
+            db,
+            user,
+            project,
+            voice_asset,
+            voice_prompt=voice_prompt,
+            sample_text=sample,
+            speaker=speaker,
+            character_name=character.name if character else None,
+            character_asset=character,
+        )
+
+    for asset in list(ref_assets):
+        if (asset.type or "").strip().lower() != "character":
+            continue
+        params = dict(asset.params or {}) if isinstance(asset.params, dict) else {}
+        url = read_asset_voice_audio_url(params)
+        if not url:
+            continue
+        duration = await probe_voice_url_duration(url, work_dir=work_dir)
+        if not is_voice_duration_too_short(duration):
+            continue
+
+        binding = _character_voice_binding(params) or {}
+        source_id = binding.get("sourceAssetId")
+        voice_asset: DramaAsset | None = None
+        if isinstance(source_id, int) and source_id > 0:
+            voice_asset = await db.get(DramaAsset, source_id)
+            if voice_asset and voice_asset.project_id != project.id:
+                voice_asset = None
+        if voice_asset is None and (asset.type or "") == "voice":
+            voice_asset = asset
+
+        voice_params = (
+            dict(voice_asset.params or {})
+            if voice_asset and isinstance(voice_asset.params, dict)
+            else {}
+        )
+        prompt = str(
+            voice_params.get("voicePrompt")
+            or binding.get("voicePrompt")
+            or params.get("voicePrompt")
+            or ""
+        ).strip()
+        if not prompt:
+            prompt = fallback_voice_prompt(asset)
+        speaker = str(
+            voice_params.get("speaker")
+            or voice_params.get("designedSpeakerId")
+            or binding.get("speaker")
+            or ""
+        ).strip() or None
+
+        logger.info(
+            "参考音频过短，重新合成 fragment_id=%s character_id=%s duration=%s",
+            fragment.id,
+            asset.id,
+            duration,
+        )
+        try:
+            if voice_asset is None:
+                # 无独立 voice 资产：就地补足本地文件并回写绑定
+                local = storage_svc.local_path_from_url(url)
+                if local is None:
+                    dest = work_dir / f"char_{asset.id}_voice.mp3"
+                    local = await storage_svc.ensure_local_media(url, dest)
+                padded = finalize_voice_reference_url(
+                    storage_svc.rel_static_url(local) if local else url,
+                    project_id=project.id,
+                    asset_id=asset.id,
+                )
+                asset.params = patch_params_voice_url(params, padded)
+                regenerated += 1
+                continue
+
+            updated_voice = await _regen_voice_asset(
+                voice_asset,
+                character=asset,
+                voice_prompt=prompt,
+                speaker=speaker,
+            )
+            new_url = (updated_voice.url or "").strip()
+            if new_url:
+                asset.params = patch_params_voice_url(params, new_url)
+                assets_by_id[asset.id] = asset
+                regenerated += 1
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "参考音频重生成失败 fragment_id=%s character_id=%s",
+                fragment.id,
+                asset.id,
+            )
+
+    # 项目旁白音色
+    proj_params = dict(project.params or {}) if isinstance(project.params, dict) else {}
+    narrator = proj_params.get("narrationVoiceAudio")
+    if isinstance(narrator, dict):
+        narr_url = str(narrator.get("url") or narrator.get("previewUrl") or "").strip()
+        if narr_url:
+            duration = await probe_voice_url_duration(narr_url, work_dir=work_dir)
+            if is_voice_duration_too_short(duration):
+                source_id = narrator.get("sourceAssetId")
+                voice_asset = None
+                if isinstance(source_id, int) and source_id > 0:
+                    voice_asset = await db.get(DramaAsset, source_id)
+                try:
+                    if voice_asset and voice_asset.project_id == project.id:
+                        voice_params = (
+                            dict(voice_asset.params or {})
+                            if isinstance(voice_asset.params, dict)
+                            else {}
+                        )
+                        prompt = str(voice_params.get("voicePrompt") or "").strip() or "沉稳旁白，吐字清晰"
+                        speaker = str(
+                            voice_params.get("speaker")
+                            or voice_params.get("designedSpeakerId")
+                            or ""
+                        ).strip() or None
+                        updated_voice = await _regen_voice_asset(
+                            voice_asset,
+                            character=None,
+                            voice_prompt=prompt,
+                            speaker=speaker,
+                        )
+                        new_url = (updated_voice.url or "").strip()
+                        if new_url:
+                            proj_params["narrationVoiceAudio"] = {
+                                **narrator,
+                                "url": new_url,
+                            }
+                            project.params = proj_params
+                            regenerated += 1
+                    else:
+                        padded = finalize_voice_reference_url(
+                            narr_url,
+                            project_id=project.id,
+                            asset_id=int(source_id) if isinstance(source_id, int) else project.id,
+                        )
+                        if padded != narr_url:
+                            proj_params["narrationVoiceAudio"] = {
+                                **narrator,
+                                "url": padded,
+                            }
+                            project.params = proj_params
+                            regenerated += 1
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "旁白参考音频重生成失败 project_id=%s fragment_id=%s",
+                        project.id,
+                        fragment.id,
+                    )
+
+    if regenerated:
+        await db.commit()
+        for asset in ref_assets:
+            await db.refresh(asset)
+        await db.refresh(project)
+        logger.info(
+            "已修复过短参考音频 fragment_id=%s count=%s",
+            fragment.id,
+            regenerated,
+        )
+    return [assets_by_id.get(a.id, a) for a in ref_assets]
+
+
 async def generate_asset_image(
     db: AsyncSession,
     user: User,
@@ -910,6 +1121,13 @@ async def generate_fragment_video(
     )
     # 已有本地图的资产同步上 OSS，避免 Seedance 拿不到公网 URL
     ref_assets = await ensure_reference_assets_public_urls(db, ref_assets)
+    ref_assets = await ensure_fragment_reference_audios(
+        db,
+        user,
+        project,
+        fragment,
+        ref_assets,
+    )
 
     ref_payloads = build_fragment_ref_payloads(project, ref_assets)
     style_id = str((project.params or {}).get("image_style_id") or "").strip() or None
@@ -1121,6 +1339,13 @@ async def prepare_fragment_video_for_submit(
         ref_assets=ref_assets,
     )
     ref_assets = await ensure_reference_assets_public_urls(db, ref_assets)
+    ref_assets = await ensure_fragment_reference_audios(
+        db,
+        user,
+        project,
+        fragment,
+        ref_assets,
+    )
     ref_payloads = build_fragment_ref_payloads(project, ref_assets)
     style_id = str((project.params or {}).get("image_style_id") or "").strip() or None
     catalog = build_seedance_reference_catalog(ref_payloads)

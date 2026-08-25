@@ -67,6 +67,11 @@ def _clear_episode_video_cancelled(episode_id: int) -> None:
     _video_cancelled_episodes.discard(int(episode_id))
 
 
+def clear_episode_video_cancelled(episode_id: int) -> None:
+    """新入队分镜视频前清除进程内取消标记，避免误把新任务立刻作废。"""
+    _clear_episode_video_cancelled(episode_id)
+
+
 def _cancel_inprocess_episode_video(episode_id: int) -> bool:
     # 同时取消旧版整集任务与按分镜拆开的进程内任务
     cancelled = False
@@ -98,7 +103,7 @@ async def _reset_fragment_video_generation(
         status = str(gen.get("status") or "") if isinstance(gen, dict) else ""
         if status not in ACTIVE_VIDEO_GEN_STATUSES:
             continue
-        params["generation"] = {"status": "cancelled"}
+        params["generation"] = {"status": "cancelled", "error": "任务已取消"}
         frag.params = params
         changed += 1
     if changed:
@@ -785,7 +790,7 @@ async def _generate_one_fragment_video(
             if _is_episode_video_cancelled(episode_id) or gen_status == "cancelled":
                 params = dict(frag.params or {})
                 params.pop("generation_attempts", None)
-                params["generation"] = {"status": "cancelled"}
+                params["generation"] = {"status": "cancelled", "error": "任务已取消"}
                 frag.params = params
                 await db.commit()
                 logger.info(
@@ -980,7 +985,7 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
         if _is_episode_video_cancelled(episode_id):
             params = dict(frag.params or {})
             params.pop("generation_attempts", None)
-            params["generation"] = {"status": "cancelled"}
+            params["generation"] = {"status": "cancelled", "error": "任务已取消"}
             frag.params = params
             await db.commit()
             return {"ok": False, "cancelled": True}

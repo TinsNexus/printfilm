@@ -19,9 +19,16 @@ function extractContentIndex(raw: string): number | null {
 
 /** 判断文案是否像「具体根因」（优先于「重试上限」等包装句） */
 function looksLikeRootCause(text: string): boolean {
-  return /PrivacyInformation|InputImageSensitive|SensitiveContentDetected|参考图疑似|may contain real person|Seedance create error|上一镜失败|无法衔接|分镜已变更|分镜上下文|InputTextSensitive|resource download failed|audio_url/i.test(
+  return /PrivacyInformation|InputImageSensitive|SensitiveContentDetected|参考图疑似|参考音频过短|may contain real person|Seedance create error|上一镜失败|无法衔接|分镜已变更|分镜上下文|InputTextSensitive|resource download failed|audio_url|audio duration/i.test(
     text,
   )
+}
+
+// 从错误里尽量抽出已标注的槽位名（后端 content_labels）
+function extractNamedSlot(text: string): string | null {
+  const named = text.match(/(角色|场景|道具|旁白|参考图|音色)「([^」]+)」/)
+  if (named) return `${named[1]}「${named[2]}」`
+  return null
 }
 
 /**
@@ -110,7 +117,7 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
     }
   }
 
-  if (/resource download failed|audio_url/i.test(text)) {
+  if (/resource download failed|audio_url/i.test(text) && !/audio duration/i.test(text)) {
     return {
       title: '参考音频无法下载',
       message: '音色参考文件地址无效或暂时无法访问。',
@@ -118,11 +125,31 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
     }
   }
 
+  // Seedance r2v：reference_audio 须 ≥ 1.8 秒（不是参考图）
+  if (/audio duration|参考音频过短|1\.8/i.test(text) && /audio|音色|reference_audio|content\[/i.test(text)) {
+    const idx = extractContentIndex(text)
+    const named = extractNamedSlot(text)
+    const where =
+      named ||
+      (idx != null ? `提交内容第 ${idx + 1} 项 / content[${idx}]（参考音频，不是图片）` : '某条角色/旁白音色')
+    return {
+      title: '参考音频过短',
+      message: `视频服务要求参考音频时长 ≥ 1.8 秒，当前过短：${where}。`,
+      suggestion:
+        '打开左侧对应角色或旁白资产，重新生成/上传更长的试听音频（建议 ≥ 2 秒）后再生成该分镜。这不是参考图问题。',
+    }
+  }
+
   if (/Seedance create error\s*400/i.test(text)) {
+    const idx = extractContentIndex(text)
+    const named = extractNamedSlot(text)
+    const where =
+      named ||
+      (idx != null ? `（提交内容第 ${idx + 1} 项 / content[${idx}]）` : '')
     return {
       title: '视频服务拒绝请求',
-      message: '上游返回参数或内容错误，未能创建生成任务。',
-      suggestion: '检查本镜参考图、时长与脚本后重试；若持续失败请联系客服并提供任务号。',
+      message: `上游返回参数或内容错误，未能创建生成任务${where}。`,
+      suggestion: '检查本镜参考图、参考音频时长（须 ≥ 1.8 秒）与脚本后重试；若持续失败请联系客服并提供任务号。',
     }
   }
 

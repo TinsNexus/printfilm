@@ -171,6 +171,19 @@ def _extract_seedance_last_frame_url(data: dict[str, Any]) -> str | None:
     return None
 
 
+# 从错误文案解析 content[n] 下标与可选标签
+def _seedance_content_slot_label(
+    text: str,
+    content_labels: list[str] | None = None,
+) -> tuple[int, str]:
+    m = re.search(r"content\[(\d+)\]", text or "", re.I)
+    idx = int(m.group(1)) if m else -1
+    label = ""
+    if idx >= 0 and content_labels and idx < len(content_labels):
+        label = str(content_labels[idx] or "").strip()
+    return idx, label
+
+
 # 将 Seedance 创建失败响应转为可读中文（保留关键 code 便于前端匹配）
 def _format_seedance_create_error(
     status_code: int,
@@ -182,11 +195,7 @@ def _format_seedance_create_error(
         k in text
         for k in ("PrivacyInformation", "InputImageSensitive", "SensitiveContentDetected", "real person")
     ):
-        m = re.search(r"content\[(\d+)\]", text, re.I)
-        idx = int(m.group(1)) if m else -1
-        label = ""
-        if idx >= 0 and content_labels and idx < len(content_labels):
-            label = str(content_labels[idx] or "").strip()
+        idx, label = _seedance_content_slot_label(text, content_labels)
         if label:
             return (
                 f"参考图疑似真人：{label}（content[{idx}]，PrivacyInformation），"
@@ -202,6 +211,16 @@ def _format_seedance_create_error(
         return "分镜文案未通过内容审核，请修改敏感表述后重试"
     if "resource download failed" in text and "audio" in text.lower():
         return "参考音频无法下载，请检查角色音色绑定后重试"
+    # Seedance r2v：reference_audio 时长须 ≥ 1.8 秒
+    if re.search(r"audio duration.*(?:1\.8|greater than or equal)", text, re.I) or (
+        "audio duration" in text.lower() and "content[" in text.lower()
+    ):
+        idx, label = _seedance_content_slot_label(text, content_labels)
+        who = label or (f"提交内容第 {idx + 1} 项 / content[{idx}]" if idx >= 0 else "某条参考音频")
+        return (
+            f"参考音频过短：{who}，Seedance 要求时长 ≥ 1.8 秒。"
+            "请打开对应角色/旁白，重新生成或上传更长的试听音频后再生成该分镜。"
+        )
     return f"Seedance create error {status_code}: {text}"
 
 
