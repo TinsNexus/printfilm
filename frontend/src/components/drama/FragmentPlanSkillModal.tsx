@@ -77,7 +77,7 @@ export function FragmentPlanSkillModal({
             onUpload={(file) => void uploadSkill(file)}
             uploading={uploading}
             uploadError={uploadError}
-            emptyText="还没有 Skill，可先上传 .md"
+            emptyText="还没有 Skill，可上传 .md"
           />
         </div>
         <div className="pf-dialog-actions">

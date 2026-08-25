@@ -309,19 +309,116 @@
   background: rgba(182, 255, 0, 0.18);
 }
 
+.fc-skill-picker-row,
+.pf-skill-picker-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.fc-skill-picker-row .fc-skill-picker-item,
+.pf-skill-picker-row .pf-skill-picker-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.fc-skill-picker-actions,
+.pf-skill-picker-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.fc-skill-picker-action,
+.pf-skill-picker-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  color: #64748b;
+  cursor: pointer;
+  padding: 0;
+}
+
+.fc-skill-picker-action:hover,
+.pf-skill-picker-action:hover {
+  color: #3d6500;
+  border-color: #cbd5e1;
+}
+
+.fc-skill-picker-preview,
+.pf-skill-picker-preview {
+  margin-top: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  overflow: hidden;
+}
+
+.fc-skill-picker-preview-head,
+.pf-skill-picker-preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #fff;
+}
+
+.fc-skill-picker-preview-head > div:first-child,
+.pf-skill-picker-preview-head > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fc-skill-picker-preview-head strong,
+.pf-skill-picker-preview-head strong {
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.fc-skill-picker-preview-head span,
+.pf-skill-picker-preview-head span {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.fc-skill-picker-preview-head-actions,
+.pf-skill-picker-preview-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.fc-skill-picker-preview-body,
+.pf-skill-picker-preview-body {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  padding: 12px;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #334155;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
 .fc-skill-picker-empty,
 .pf-skill-picker-empty {
   margin: 0;
   color: #94a3b8;
   font-size: 12px;
-}
-
-.fc-skill-picker-hint,
-.pf-skill-picker-hint {
-  margin: 8px 0 0;
-  color: #94a3b8;
-  font-size: 11px;
-  line-height: 1.45;
 }
 
 .fc-skill-picker-error,
