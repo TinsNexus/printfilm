@@ -968,7 +968,9 @@ class ArkGateway:
         if result.url.startswith("/static/"):
             video_local = result.url
         else:
-            dest = storage.project_dir(project_id) / f"shot_{shot_no:03d}.mp4"
+            # 每次生成独立文件名，避免覆盖旧成片导致历史版本失效
+            stamp = int(time.time())
+            dest = storage.project_dir(project_id) / f"shot_{shot_no:03d}_{stamp}.mp4"
             await storage.download_to(result.url, dest)
             video_local = storage.publish_local(dest)
 
@@ -978,7 +980,11 @@ class ArkGateway:
                 if result.last_frame_url.startswith("/static/"):
                     last_local = result.last_frame_url
                 else:
-                    frame_dest = storage.project_dir(project_id) / f"shot_{shot_no:03d}_last.jpg"
+                    stamp = int(time.time())
+                    frame_dest = (
+                        storage.project_dir(project_id)
+                        / f"shot_{shot_no:03d}_{stamp}_last.jpg"
+                    )
                     await storage.download_to(result.last_frame_url, frame_dest)
                     last_local = storage.publish_local(frame_dest)
             except Exception:  # noqa: BLE001

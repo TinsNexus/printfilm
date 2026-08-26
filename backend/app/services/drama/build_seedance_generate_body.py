@@ -17,6 +17,7 @@ from app.services.drama.image_styles import resolve_image_style_prompt
 from app.services.seedance_segments import (
     build_seedance_production_section,
     rewrite_misclassified_visual_voice_lines,
+    strip_model_burn_subtitle_cues,
 )
 
 ASSET_MENTION_TOKEN_PATTERN = re.compile(r"@asset:(\d+)")
@@ -54,6 +55,26 @@ class BuildSeedanceGenerateBodyInput(TypedDict, total=False):
     duration_fallback: int | None
     # 上一镜尾帧公网/本地 URL；有参考媒体时作 reference_image（不可与 first_frame 混用）
     continuity_first_frame_url: str | None
+    # True=模型烧录字幕；False=后期叠字（禁止画面内字幕）
+    burn_subtitles: bool
+
+
+# 从分集 params 解析是否由模型烧录字幕（subtitleMode=post → False）
+def resolve_episode_burn_subtitles(params: dict[str, Any] | None) -> bool:
+    raw = params if isinstance(params, dict) else {}
+    mode = raw.get("subtitleMode")
+    if mode == "post":
+        return False
+    if mode == "model":
+        return True
+    enabled = raw.get("subtitleEnabled")
+    if enabled is None:
+        return True
+    if isinstance(enabled, str):
+        return enabled.strip().lower() not in {"0", "false", "no", "off", ""}
+    if isinstance(enabled, (int, float)):
+        return enabled != 0
+    return bool(enabled)
 
 
 @dataclass
@@ -298,13 +319,18 @@ def build_seedance_prompt_text(
     reference: list[dict[str, Any]] | None,
     catalog: SeedanceReferenceCatalog | None = None,
     video_style_id: str | None = None,
+    *,
+    burn_subtitles: bool = True,
 ) -> str:
     # 提交前统一纠正空镜误标，保证强制约束与正文一致
     normalized = rewrite_misclassified_visual_voice_lines(content or "")
+    if not burn_subtitles:
+        # 后期模式：去掉字幕 cue /「同步字幕」前缀，避免模型仍按字烧屏
+        normalized = strip_model_burn_subtitle_cues(normalized)
     resolved_catalog = catalog or build_seedance_reference_catalog(reference)
     sections = [
         build_visual_style_section(video_style_id),
-        build_seedance_production_section(normalized),
+        build_seedance_production_section(normalized, burn_subtitles=burn_subtitles),
         build_reference_index_section(
             reference,
             "character",
@@ -348,9 +374,17 @@ def build_seedance_content_items(
     reference: list[dict[str, Any]] | None,
     video_style_id: str | None = None,
     continuity_first_frame_url: str | None = None,
+    *,
+    burn_subtitles: bool = True,
 ) -> list[dict[str, Any]]:
     catalog = build_seedance_reference_catalog(reference)
-    prompt_text = build_seedance_prompt_text(content, reference, catalog, video_style_id)
+    prompt_text = build_seedance_prompt_text(
+        content,
+        reference,
+        catalog,
+        video_style_id,
+        burn_subtitles=burn_subtitles,
+    )
     items: list[dict[str, Any]] = []
 
     continuity = (continuity_first_frame_url or "").strip()
@@ -442,6 +476,9 @@ def build_seedance_generate_body(input_params: BuildSeedanceGenerateBodyInput) -
     catalog = build_seedance_reference_catalog(reference)
     # 仅「纯首帧、无参考媒体」时省略 ratio；混用参考时必须保留 ratio、且尾帧用 reference_image
     use_first_frame_mode = bool(continuity) and not (catalog.images or catalog.audios)
+    burn_subtitles = input_params.get("burn_subtitles")
+    if burn_subtitles is None:
+        burn_subtitles = True
 
     body: dict[str, Any] = {
         "model": resolve_seedance_model_endpoint(input_params.get("model_id")),
@@ -450,11 +487,12 @@ def build_seedance_generate_body(input_params: BuildSeedanceGenerateBodyInput) -
             reference,
             input_params.get("video_style_id"),
             continuity_first_frame_url=continuity,
+            burn_subtitles=bool(burn_subtitles),
         ),
         "duration": resolve_seedance_duration_from_content(content, fallback=fallback),
         "resolution": resolve_seedance_resolution(input_params.get("resolution")),
         "watermark": False,
-        # Seedance 原生配音+烧录字幕；关闭则仅有画面、无对白/BGM/字幕
+        # Seedance 原生配音；字幕是否烧录由 burn_subtitles 控制提示词
         "generate_audio": True,
         "return_last_frame": True,
     }

@@ -261,14 +261,44 @@ def build_production_cues(bgm_mood: str) -> list[str]:
     return [SUBTITLE_CUE, f"【BGM：{mood}】"]
 
 
+# 后期字幕模式：提交前去掉烧录 cue /「同步字幕」前缀，避免模型仍按字烧屏。
+_POST_SUBTITLE_PREFIX_MAP = (
+    ("【对白·慢速清晰·同步字幕】", "【对白·慢速清晰】"),
+    ("【旁白·慢速清晰·同步字幕】", "【旁白·慢速清晰】"),
+    ("【旁白·自然语速·同步字幕】", "【旁白·自然语速】"),
+    ("【内心独白·同步字幕】", "【内心独白】"),
+)
+
+
+def strip_model_burn_subtitle_cues(content: str) -> str:
+    """去掉模型烧录字幕提示，保留对白/旁白本身（供后期叠字）。"""
+    out: list[str] = []
+    for raw in (content or "").replace("\r\n", "\n").split("\n"):
+        stripped = raw.strip()
+        if not stripped:
+            out.append(raw)
+            continue
+        if stripped.startswith("【字幕"):
+            continue
+        line = stripped
+        for src, dest in _POST_SUBTITLE_PREFIX_MAP:
+            if line.startswith(src):
+                line = dest + line[len(src) :]
+                break
+        out.append(line)
+    return "\n".join(out).replace("\n\n\n", "\n\n").strip()
+
+
 def build_seedance_production_section(
     segment_script: str,
     *,
     ambient_only: bool = False,
+    burn_subtitles: bool = True,
 ) -> str:
     """组装 Seedance 音频/字幕/BGM 强制约束（科普旁白 / 漫剧画面+对白混排）。
 
     ambient_only：科普后期 TTS 模式——模型只出操作环境音，禁止口播与 BGM。
+    burn_subtitles=False：对齐后期叠字（如 VOZEB 成片后再烧 SRT）——保留口播，禁止画面内字幕。
     """
     if ambient_only:
         lines = [
@@ -298,26 +328,42 @@ def build_seedance_production_section(
     if "音量低于人声" not in bgm_mood:
         bgm_mood = f"{bgm_mood}，音量低于人声"
 
+    # 后期字幕：口播保留，画面禁止任何文字（字幕交给剪辑/导出 SRT）
+    no_burn = (
+        "禁止在画面内烧录字幕、标题、水印、字卡或口播文字；"
+        "口播仅出声，文字叠字由后期完成。"
+    )
+
     if drama_mixed:
         lines = [
             "1. 配音范围：仅【旁白·…】【对白·…】标记的段落需要口播；"
             "【画面·…】标记或未带配音前缀的段落为画面/动作描述，只呈现视觉与环境音，"
             "禁止为其生成配音、禁止烧字幕、禁止把画面描述念出来。",
             "2. 语速：旁白/对白语速自然偏慢，吐字清晰，留有呼吸与停顿；严禁加速赶词。",
-            "3. 字幕：仅【旁白·…】【对白·…】口播内容烧录简体中文字幕，底部居中；"
-            "同一时刻只显示一行（一句），随口播进度逐句轮换，禁止把整段对白一次性叠满屏幕；"
-            "禁止重复字、叠字、口吃式重复；字幕必须与当前正在说的那一句逐字一致；"
-            "画面描述段不出现字幕。",
+            (
+                f"3. 字幕：{no_burn}"
+                if not burn_subtitles
+                else (
+                    "3. 字幕：仅【旁白·…】【对白·…】口播内容烧录简体中文字幕，底部居中；"
+                    "同一时刻只显示一行（一句），随口播进度逐句轮换，禁止把整段对白一次性叠满屏幕；"
+                    "禁止重复字、叠字、口吃式重复；字幕必须与当前正在说的那一句逐字一致；"
+                    "画面描述段不出现字幕。"
+                )
+            ),
         ]
         if has_vo:
             lines.append(
                 "4. 旁白：【旁白·…】段落以第三人称旁白慢速清晰配音；"
-                "字幕逐句轮换，与当前口播句同步。"
+                + ("仅出声，画面不叠字幕。" if not burn_subtitles else "字幕逐句轮换，与当前口播句同步。")
             )
         elif has_dialogue:
             lines.append(
                 "4. 对白：【对白·…】段落按角色对白配音；"
-                "字幕逐句轮换，与当前口播句同步；无对白标记时保持环境音即可。"
+                + (
+                    "仅出声，画面不叠字幕；无对白标记时保持环境音即可。"
+                    if not burn_subtitles
+                    else "字幕逐句轮换，与当前口播句同步；无对白标记时保持环境音即可。"
+                )
             )
         else:
             lines.append(
@@ -330,29 +376,43 @@ def build_seedance_production_section(
             "6. 音效：环境音与动作音效与画面同步，层次低于人声。"
         )
         if "【人物介绍" in (segment_script or ""):
-            lines.append(
-                "7. 人物介绍叠字：【人物介绍·画面叠字·角色身旁】须贴在对应角色身旁"
-                "（肩侧/身旁小字），随该角色首次入画短暂出现；"
-                "禁止居中大标题、禁止底部与口播字幕抢位；"
-                "禁止口播念出介绍全文。"
-            )
+            if burn_subtitles:
+                lines.append(
+                    "7. 人物介绍叠字：【人物介绍·画面叠字·角色身旁】须贴在对应角色身旁"
+                    "（肩侧/身旁小字），随该角色首次入画短暂出现；"
+                    "禁止居中大标题、禁止底部与口播字幕抢位；"
+                    "禁止口播念出介绍全文。"
+                )
+            else:
+                lines.append(
+                    "7. 人物介绍：本镜禁止任何人物介绍叠字/字卡；身份信息不写入画面。"
+                )
         return f"{SEEDANCE_PRODUCTION_SECTION_HEADER}\n" + "\n".join(lines)
 
     # 科普旁白模式：整镜以旁白段为主（语速自然偏快，避免拖沓）
     lines = [
         "1. 语速：旁白语速自然偏快、吐字清晰，节奏紧凑有呼吸感；"
         "避免刻意放慢、拖腔或长时间停顿；不要压缩到含糊赶词，也不要提高播放倍速。",
-        "2. 字幕：全程烧录简体中文字幕，位置底部居中，字号清晰可读；旁白须逐句同步显示，字幕与口播一致。",
+        (
+            f"2. 字幕：{no_burn}"
+            if not burn_subtitles
+            else (
+                "2. 字幕：全程烧录简体中文字幕，位置底部居中，字号清晰可读；"
+                "旁白须逐句同步显示，字幕与口播一致。"
+            )
+        ),
     ]
     if has_vo:
         lines.append(
             "3. 旁白：脚本含旁白段落时以第三人称旁白配音，沉稳清晰、语速自然偏快；"
-            "视频内不要自行添加嘈杂对白；旁白出现时字幕同步显示全文。"
+            "视频内不要自行添加嘈杂对白；"
+            + ("口播仅出声，画面不叠字幕。" if not burn_subtitles else "旁白出现时字幕同步显示全文。")
         )
     else:
         lines.append(
-            "3. 旁白：若脚本含旁白标记，按第三人称旁白自然偏快清晰配音，并同步烧录字幕；"
-            "视频内不要自行添加嘈杂对白。"
+            "3. 旁白：若脚本含旁白标记，按第三人称旁白自然偏快清晰配音"
+            + ("；口播仅出声，画面不叠字幕；" if not burn_subtitles else "，并同步烧录字幕；")
+            + "视频内不要自行添加嘈杂对白。"
         )
     lines.append(
         f"4. 背景音乐：{bgm_mood}；BGM 音量低于人声约 30%，不得盖过旁白与关键音效。"
@@ -624,6 +684,7 @@ def build_seedance_prompt(
     motion_bias: str = "",
     camera: str = "",
     ambient_only: bool = False,
+    burn_subtitles: bool = True,
 ) -> str:
     """Assemble final Seedance text: style lock + production constraints + timed body."""
     parts: list[str] = []
@@ -633,8 +694,17 @@ def build_seedance_prompt(
             "【强制约束：视频画面风格】全片画面必须严格遵循以下风格描述，"
             f"严禁偏离或混用其他画风：{style}"
         )
+    script_for_rules = (
+        strip_model_burn_subtitle_cues(segment_script)
+        if not burn_subtitles and not ambient_only
+        else (segment_script or "")
+    )
     parts.append(
-        build_seedance_production_section(segment_script, ambient_only=ambient_only)
+        build_seedance_production_section(
+            script_for_rules,
+            ambient_only=ambient_only,
+            burn_subtitles=burn_subtitles and not ambient_only,
+        )
     )
     parts.append(
         "【强制约束：节奏与画面】严格按时间轴段落演绎画面；"
@@ -646,7 +716,7 @@ def build_seedance_prompt(
     body_src = (
         seedance_timeline_without_voice(segment_script)
         if ambient_only
-        else (segment_script or "")
+        else script_for_rules
     )
     body = replace_duration_with_time_ranges(body_src)
     parts.append(body.strip())

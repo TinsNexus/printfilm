@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -30,6 +31,7 @@ from app.services.drama.build_seedance_generate_body import (
     describe_seedance_content_slots,
     drama_asset_to_payload,
     read_asset_voice_audio_url,
+    resolve_episode_burn_subtitles,
 )
 from app.services.drama.generation_prompt import build_generation_prompt
 from app.services.drama.seedream_options import resolve_seedream_model_endpoint, resolve_seedream_size
@@ -237,8 +239,32 @@ def build_failed_generation_params(
     return out
 
 
-# 分镜视频版本上限（含当前成片前归档的历史 take）
-FRAGMENT_VIDEO_VERSION_LIMIT = 5
+# 分镜视频版本上限（归档的历史 take，不含「当前」）
+FRAGMENT_VIDEO_VERSION_LIMIT = 8
+
+
+def _snapshot_version_media_url(url: str, *, label: str) -> str:
+    """把当前成片复制为独立历史文件，避免下次生成覆盖同路径导致版本失效。"""
+    from shutil import copy2
+
+    from app.services import storage as storage_svc
+
+    raw = (url or "").strip()
+    if not raw:
+        return ""
+    path = storage_svc.local_path_from_url(raw)
+    if path is None or not path.exists() or not path.is_file():
+        return raw
+    stem = path.stem
+    # 已是带时间戳/历史后缀的独立文件，无需再拷
+    if "_hist_" in stem or re.search(r"_\d{10,}$", stem):
+        published = storage_svc.republish_url(storage_svc.rel_static_url(path), sync=True)
+        return published or storage_svc.rel_static_url(path)
+    dest = path.with_name(f"{stem}_hist_{label}{path.suffix}")
+    if not dest.exists():
+        copy2(path, dest)
+    rel = storage_svc.rel_static_url(dest)
+    return storage_svc.republish_url(rel, sync=True) or rel
 
 
 # 归档当前成片到 params.video_versions（覆盖前调用）
@@ -246,6 +272,7 @@ def archive_fragment_video_version(fragment: DramaEpisodeFragment) -> dict[str, 
     video = (fragment.video or "").strip()
     if not video:
         return None
+    import uuid
     from datetime import datetime, timezone
 
     params = dict(fragment.params or {}) if isinstance(fragment.params, dict) else {}
@@ -255,25 +282,30 @@ def archive_fragment_video_version(fragment: DramaEpisodeFragment) -> dict[str, 
         if isinstance(raw, str) and raw.strip():
             last_frame = raw.strip()
             break
+    stamp = f"{int(datetime.now(timezone.utc).timestamp())}_{uuid.uuid4().hex[:8]}"
+    archived_video = _snapshot_version_media_url(video, label=stamp)
+    archived_cover = _snapshot_version_media_url(
+        (fragment.cover or "").strip(),
+        label=f"{stamp}_cover",
+    )
+    archived_last = (
+        _snapshot_version_media_url(last_frame, label=f"{stamp}_last") if last_frame else None
+    )
     entry = {
-        "id": f"v_{int(datetime.now(timezone.utc).timestamp())}_{fragment.id}",
-        "video": video,
-        "cover": (fragment.cover or "").strip(),
-        "lastFrameUrl": last_frame or None,
+        "id": f"v_{stamp}_{fragment.id}",
+        "video": archived_video,
+        "cover": archived_cover or (fragment.cover or "").strip(),
+        "lastFrameUrl": archived_last or last_frame or None,
         "createdAt": datetime.now(timezone.utc).isoformat(),
         "source": "generate",
     }
     versions = params.get("video_versions")
     if not isinstance(versions, list):
         versions = []
-    # 去重：同一 video URL 不重复归档
-    versions = [
-        v
-        for v in versions
-        if isinstance(v, dict) and str(v.get("video") or "").strip() != video
-    ]
-    versions.insert(0, entry)
-    params["video_versions"] = versions[:FRAGMENT_VIDEO_VERSION_LIMIT]
+    # 保留全部历史 take；不再按 URL 去重（固定 shot_xxx.mp4 会被覆盖，URL 相同会误删版本）
+    cleaned: list[dict[str, Any]] = [v for v in versions if isinstance(v, dict)]
+    cleaned.insert(0, entry)
+    params["video_versions"] = cleaned[:FRAGMENT_VIDEO_VERSION_LIMIT]
     fragment.params = params
     return entry
 
@@ -310,13 +342,22 @@ def activate_fragment_video_version(
             if isinstance(raw, str) and raw.strip():
                 last_frame = raw.strip()
                 break
+        stamp = f"{int(datetime.now(timezone.utc).timestamp())}_{fragment.id}"
         remaining.insert(
             0,
             {
-                "id": f"v_{int(datetime.now(timezone.utc).timestamp())}_{fragment.id}",
-                "video": current_video,
-                "cover": (fragment.cover or "").strip(),
-                "lastFrameUrl": last_frame or None,
+                "id": f"v_{stamp}_replaced",
+                "video": _snapshot_version_media_url(current_video, label=f"{stamp}_cur"),
+                "cover": _snapshot_version_media_url(
+                    (fragment.cover or "").strip(),
+                    label=f"{stamp}_cur_cover",
+                )
+                or (fragment.cover or "").strip(),
+                "lastFrameUrl": (
+                    _snapshot_version_media_url(last_frame, label=f"{stamp}_cur_last")
+                    if last_frame
+                    else None
+                ),
                 "createdAt": datetime.now(timezone.utc).isoformat(),
                 "source": "replaced",
             },
@@ -1147,6 +1188,7 @@ async def generate_fragment_video(
         break
 
     local_last_frame: str | None = None
+    burn_subtitles = resolve_episode_burn_subtitles(episode.params if episode else None)
     if ref_payloads and (catalog.images or catalog.audios):
         body = build_seedance_generate_body(
             {
@@ -1157,6 +1199,7 @@ async def generate_fragment_video(
                 "resolution": resolution,
                 "duration_fallback": duration,
                 "continuity_first_frame_url": continuity_url,
+                "burn_subtitles": burn_subtitles,
             }
         )
         content_labels = describe_seedance_content_slots(
@@ -1209,7 +1252,10 @@ async def generate_fragment_video(
 
     # Seedance 成片落盘后立即同步 OSS，避免库里长期留 /static
     from app.services import storage as storage_svc
+    from app.services.ffmpeg_compose import extract_video_poster_frame
 
+    # 覆盖前先归档旧成片（复制为独立 hist 文件）
+    archive_fragment_video_version(fragment)
     video_url = storage_svc.republish_url(local_video, sync=True) or local_video
     # 封面必须来自成片帧，禁止用角色/场景参考图冒充
     cover_url = ""
@@ -1219,9 +1265,10 @@ async def generate_fragment_video(
         if candidate.exists():
             video_path = candidate
     if video_path and video_path.exists():
-        from app.services.ffmpeg_compose import extract_video_poster_frame
-
-        poster_dest = storage_svc.project_dir(project.id) / f"shot_{fragment.id}_cover.jpg"
+        poster_dest = (
+            storage_svc.project_dir(project.id)
+            / f"shot_{fragment.id}_{int(time.time())}_cover.jpg"
+        )
         if extract_video_poster_frame(video_path, poster_dest):
             cover_src = storage_svc.rel_static_url(poster_dest)
             cover_url = storage_svc.republish_url(cover_src, sync=True) or cover_src
@@ -1230,7 +1277,6 @@ async def generate_fragment_video(
         last_frame_url = storage_svc.republish_url(local_last_frame, sync=True) or local_last_frame
         if not cover_url:
             cover_url = last_frame_url
-    archive_fragment_video_version(fragment)
     fragment.video = video_url
     fragment.cover = cover_url or ""
     write_fragment_last_frame_url(fragment, last_frame_url)
@@ -1372,6 +1418,9 @@ async def prepare_fragment_video_for_submit(
                 "resolution": resolution,
                 "duration_fallback": duration,
                 "continuity_first_frame_url": continuity_url,
+                "burn_subtitles": resolve_episode_burn_subtitles(
+                    episode.params if episode else None
+                ),
             }
         )
         return FragmentVideoPrepared(
@@ -1507,7 +1556,10 @@ async def apply_fragment_video_assets(
         if candidate.exists():
             video_path = candidate
     if video_path and video_path.exists():
-        poster_dest = storage_svc.project_dir(project.id) / f"shot_{fragment.id}_cover.jpg"
+        poster_dest = (
+            storage_svc.project_dir(project.id)
+            / f"shot_{fragment.id}_{int(time.time())}_cover.jpg"
+        )
         if extract_video_poster_frame(video_path, poster_dest):
             cover_src = storage_svc.rel_static_url(poster_dest)
             cover_url = storage_svc.republish_url(cover_src, sync=True) or cover_src
