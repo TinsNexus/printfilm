@@ -3173,6 +3173,38 @@
   color: #fff;
 }
 
+.drama-ep-asset-actions {
+  display: flex;
+  gap: 6px;
+  padding: 0 12px 8px;
+}
+
+.drama-ep-asset-action-btn {
+  flex: 1;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #0f172a;
+  color: #fff;
+  cursor: pointer;
+}
+
+.drama-ep-asset-action-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.drama-ep-asset-action-btn.is-ghost {
+  background: #fff;
+  color: #0f172a;
+}
+
+.drama-ep-asset-action-btn.is-ghost:hover:not(:disabled) {
+  background: #f8fafc;
+}
+
 .drama-ep-asset-grid {
   flex: 1;
   min-height: 0;

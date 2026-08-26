@@ -15,6 +15,7 @@ type Props = {
   assets: DramaAsset[]
   activeIds?: Set<number>
   imageBusyIds?: ReadonlySet<number>
+  createBusy?: boolean
   onScopeChange: (scope: AssetScope) => void
   onTabChange: (tab: AssetTab | null) => void
   onOpenCanvas: () => void
@@ -22,9 +23,22 @@ type Props = {
   onOpenAsset: (asset: DramaAsset) => void
   /** 插入 @asset 到当前分镜脚本 */
   onMention: (asset: DramaAsset) => void
+  /** 取消当前分镜对该资产的关联（不删除资产） */
+  onUnlinkAsset?: (assetId: number) => void
   onGenerateVoice?: (asset: DramaAsset) => void
   voiceBusyIds?: ReadonlySet<number>
   onVoiceError?: (message: string) => void
+  /** 自定义新建当前分类资产 */
+  onCreateAsset?: () => void
+  /** 从全局资产库导入 */
+  onImportAsset?: () => void
+}
+
+// 当前分类新建按钮文案
+function createLabel(tab: AssetTab | null): string {
+  if (tab === 'scene') return '新建场景'
+  if (tab === 'prop') return '新建道具'
+  return '新建角色'
 }
 
 // 渲染分集编辑左侧资产栏
@@ -34,14 +48,18 @@ export function EpisodeEditAssetPanel({
   assets,
   activeIds,
   imageBusyIds,
+  createBusy,
   onScopeChange,
   onTabChange,
   onOpenCanvas,
   onOpenAsset,
   onMention,
+  onUnlinkAsset,
   onGenerateVoice,
   voiceBusyIds,
   onVoiceError,
+  onCreateAsset,
+  onImportAsset,
 }: Props) {
   return (
     <aside className="drama-ep-assets">
@@ -83,12 +101,36 @@ export function EpisodeEditAssetPanel({
           </button>
         ))}
       </div>
+      {onCreateAsset || onImportAsset ? (
+        <div className="drama-ep-asset-actions">
+          {onCreateAsset ? (
+            <button
+              type="button"
+              className="drama-ep-asset-action-btn"
+              disabled={createBusy}
+              onClick={onCreateAsset}
+            >
+              {createBusy ? '创建中…' : createLabel(tab)}
+            </button>
+          ) : null}
+          {onImportAsset ? (
+            <button
+              type="button"
+              className="drama-ep-asset-action-btn is-ghost"
+              disabled={createBusy}
+              onClick={onImportAsset}
+            >
+              导入
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <div className="drama-ep-asset-grid">
         {assets.length === 0 ? (
           <p className="drama-ep-empty">
             {scope === 'episode'
-              ? '本集暂无引用资产，可切换「全集」或点击资产插入脚本'
-              : '暂无资产，可打开分镜画布或前往资产画布添加'}
+              ? '本集暂无引用资产，可点上方「新建」加入，或切换「全集」查看项目资产'
+              : '暂无资产，可点上方「新建 / 导入」添加'}
           </p>
         ) : (
           assets.map((asset) => {
@@ -123,14 +165,25 @@ export function EpisodeEditAssetPanel({
                   <span className="drama-ep-asset-settings">设置</span>
                 </button>
                 <div className="drama-ep-asset-ops">
-                  <button
-                    type="button"
-                    className="drama-ep-asset-op-btn"
-                    onClick={() => onMention(asset)}
-                    title="插入到当前分镜脚本"
-                  >
-                    插入
-                  </button>
+                  {isActive && onUnlinkAsset ? (
+                    <button
+                      type="button"
+                      className="drama-ep-asset-op-btn"
+                      onClick={() => onUnlinkAsset(asset.id)}
+                      title="仅取消当前分镜关联，不会删除资产"
+                    >
+                      取消关联
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="drama-ep-asset-op-btn"
+                      onClick={() => onMention(asset)}
+                      title="插入到当前分镜脚本"
+                    >
+                      插入
+                    </button>
+                  )}
                   {isCharacter && onGenerateVoice ? (
                     voice ? (
                       <CharacterVoicePreviewButton

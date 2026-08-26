@@ -63,6 +63,12 @@ export function DramaAssetDetailModal({
   const hasImage = dramaAssetHasImage(asset)
   const voice = readAssetVoiceBinding(asset)
   const isCharacter = (asset.type || '').toLowerCase() === 'character'
+  const isScene = (asset.type || '').toLowerCase() === 'scene'
+  const isProp =
+    (asset.type || '').toLowerCase() === 'prop' ||
+    (asset.type || '').toLowerCase() === 'material'
+  const deleteLabel = isScene ? '删除场景' : isProp ? '删除道具' : '删除角色'
+  const canDelete = Boolean(onDelete) && (isCharacter || isScene || isProp)
   const dirty = promptDraft.trim() !== readVisualPrompt(asset).trim()
 
   useEffect(() => {
@@ -214,14 +220,14 @@ export function DramaAssetDetailModal({
                 {voice ? '更换音色' : '绑定音色'}
               </button>
             ) : null}
-            {isCharacter && onDelete ? (
+            {canDelete ? (
               <button
                 type="button"
                 className="pf-btn pf-btn-sm drama-btn-danger-text"
                 disabled={busy || saving || uploading}
-                onClick={() => onDelete(asset)}
+                onClick={() => onDelete?.(asset)}
               >
-                删除角色
+                {deleteLabel}
               </button>
             ) : null}
           </div>

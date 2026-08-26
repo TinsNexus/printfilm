@@ -61,6 +61,10 @@ import { EpisodeEditPromptEditor } from './EpisodeEditPromptEditor'
 import { EpisodeEditReferenceStrip } from './EpisodeEditReferenceStrip'
 import { EpisodeEditSidePane } from './EpisodeEditSidePane'
 import {
+  GlobalAssetPickerModal,
+  importGlobalAssetToProject,
+} from './GlobalAssetPickerModal'
+import {
   applySubtitleModeToFragments,
   readEpisodeSubtitleMode,
   subtitleModeUsesModelOutput,
@@ -159,6 +163,9 @@ function EpisodeEditInner() {
   const [voiceBindAsset, setVoiceBindAsset] = useState<DramaAsset | null>(null)
   /** failReasonJob 底部分镜感叹号打开的失败原因 */
   const [failReasonJob, setFailReasonJob] = useState<DramaGenJob | null>(null)
+  // assetCreateBusy / libraryPickerOpen 侧栏新建与导入
+  const [assetCreateBusy, setAssetCreateBusy] = useState(false)
+  const [libraryPickerOpen, setLibraryPickerOpen] = useState(false)
   const imageGenQueue = useDramaImageGenQueue()
   const dramaGenQueue = useDramaGenQueue()
   const applyStatusRef = useRef<(st: Awaited<ReturnType<typeof dramaApi.generateStatus>>) => Awaited<
@@ -1019,6 +1026,88 @@ function EpisodeEditInner() {
     setEditing(true)
   }
 
+  // 解析侧栏当前要新建的资产类型（未选分类时默认角色）
+  function resolveCreateAssetTab(): AssetTab {
+    return assetTab || 'character'
+  }
+
+  // 新建后挂到当前分镜并打开详情，便于本集列表立刻可见
+  function adoptCreatedAsset(created: DramaAsset, kind: AssetTab) {
+    setAssets((prev) => (prev.some((a) => a.id === created.id) ? prev : [...prev, created]))
+    setAssetTab(kind)
+    mentionAsset(created)
+    if ((created.type || '').toLowerCase() !== 'voice') {
+      setDetailAsset(created)
+    }
+  }
+
+  // 自定义新建角色 / 场景 / 道具
+  async function handleCreateSideAsset() {
+    const kind = resolveCreateAssetTab()
+    const label = kind === 'scene' ? '场景' : kind === 'prop' ? '道具' : '角色'
+    const name = await dialog.prompt({
+      title: `新建${label}`,
+      message: `输入${label}名称，创建后会插入当前分镜，并可继续生成或上传形象。`,
+      placeholder: kind === 'scene' ? '例如：深宫御花园' : kind === 'prop' ? '例如：玉佩' : '例如：白龙',
+      confirmText: '创建',
+    })
+    if (!name?.trim()) return
+    setAssetCreateBusy(true)
+    setError('')
+    try {
+      const created = await dramaApi.createAsset({
+        project_id: pid,
+        type: kind,
+        asset_type: 'image',
+        name: name.trim(),
+        params: { kind },
+      })
+      adoptCreatedAsset(created, kind)
+      setStatus(`已新建${label}「${created.name}」并插入当前分镜`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `创建${label}失败`)
+    } finally {
+      setAssetCreateBusy(false)
+    }
+  }
+
+  // 从全局资产库导入到本项目并挂到当前分镜
+  async function handleImportSideAsset(source: DramaAsset) {
+    const kind = normalizeAssetTab(source.type) || resolveCreateAssetTab()
+    setAssetCreateBusy(true)
+    setError('')
+    try {
+      const created = await importGlobalAssetToProject(pid, source)
+      adoptCreatedAsset(created, kind)
+      setLibraryPickerOpen(false)
+      setStatus(`已导入「${created.name}」并插入当前分镜`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '导入资产失败')
+      throw err
+    } finally {
+      setAssetCreateBusy(false)
+    }
+  }
+
+  // 仅取消当前分镜对该资产的关联（不删除项目资产）
+  function unlinkSelectedAsset(assetId: number) {
+    if (!selected) return
+    const content = (selected.content || '')
+      .replace(new RegExp(`\\s*@asset:${assetId}(?!\\d)`, 'g'), ' ')
+      .replace(/[ \t]{2,}/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+    const asset_ids = (selected.asset_ids || []).filter((id) => id !== assetId)
+    updateSelected({ content, asset_ids })
+    setEditing(true)
+    const name = assets.find((a) => a.id === assetId)?.name
+    setStatus(
+      name
+        ? `已取消本镜对「${name}」的关联，资产仍在项目中（可切到「全集」查看）`
+        : '已取消本镜关联，资产仍在项目中（可切到「全集」查看）',
+    )
+  }
+
   // 从关联条跳到对应分类并打开资产详情
   function focusLinkedAsset(assetId: number) {
     const asset = assets.find((a) => a.id === assetId)
@@ -1204,14 +1293,18 @@ function EpisodeEditInner() {
           assets={filteredAssets}
           activeIds={selectedRefIds}
           imageBusyIds={imageBusyIds}
+          createBusy={assetCreateBusy}
           onScopeChange={setAssetScope}
           onTabChange={setAssetTab}
           onOpenCanvas={openEpisodeStoryboard}
           onOpenAsset={setDetailAsset}
           onMention={mentionAsset}
+          onUnlinkAsset={unlinkSelectedAsset}
           onGenerateVoice={(asset) => void handleGenerateCharacterVoice(asset)}
           voiceBusyIds={characterVoiceBusyIds}
           onVoiceError={(message) => setError(message)}
+          onCreateAsset={() => void handleCreateSideAsset()}
+          onImportAsset={() => setLibraryPickerOpen(true)}
         />
 
         <section className="drama-ep-editor">
@@ -1253,8 +1346,20 @@ function EpisodeEditInner() {
               onOpenAsset={focusLinkedAsset}
               onContentChange={(nextContent) => {
                 const fromContent = extractAssetIds(nextContent)
-                const ids = Array.from(new Set([...(selected?.asset_ids || []), ...fromContent]))
-                updateSelected({ content: nextContent, asset_ids: ids })
+                const prevContentIds = extractAssetIds(selected?.content || '')
+                const removed = prevContentIds.filter((id) => !fromContent.includes(id))
+                /* 正文删掉的引用同步移出 asset_ids；仅存在于 asset_ids 的额外关联保留 */
+                const prevContentIdSet = new Set(prevContentIds)
+                const keptExtra = (selected?.asset_ids || []).filter(
+                  (id) => !prevContentIdSet.has(id) || fromContent.includes(id),
+                )
+                updateSelected({
+                  content: nextContent,
+                  asset_ids: Array.from(new Set([...keptExtra, ...fromContent])),
+                })
+                if (removed.length > 0) {
+                  setStatus('已取消本镜关联，资产仍保留在项目中（可切到「全集」查看）')
+                }
               }}
             />
 
@@ -1543,6 +1648,21 @@ function EpisodeEditInner() {
           onError={(message) => setError(message)}
         />
       ) : null}
+
+      <GlobalAssetPickerModal
+        open={libraryPickerOpen}
+        onClose={() => setLibraryPickerOpen(false)}
+        projectId={pid}
+        defaultTab={resolveCreateAssetTab()}
+        allowedTypes={
+          resolveCreateAssetTab() === 'prop'
+            ? ['prop', 'material', 'none']
+            : [resolveCreateAssetTab()]
+        }
+        title={`导入${resolveCreateAssetTab() === 'scene' ? '场景' : resolveCreateAssetTab() === 'prop' ? '道具' : '角色'}`}
+        confirmLabel="导入到本集"
+        onPick={handleImportSideAsset}
+      />
 
       {failReasonJob ? (
         <div className="drama-ep-fail-reason-pop">

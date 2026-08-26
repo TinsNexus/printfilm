@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { resolveDramaMediaUrl, type DramaAsset } from '../../api/drama'
 import {
+  deleteAdjacentEditorChip,
   detectMentionTriggerFromSelection,
   getCaretClientRect,
   insertDurationChipAtRange,
@@ -205,6 +206,18 @@ export function EpisodeEditPromptEditor({
           syncMentionTrigger()
         }}
         onKeyDown={(e) => {
+          if (editing && (e.key === 'Backspace' || e.key === 'Delete') && editorRef.current) {
+            const removed = deleteAdjacentEditorChip(
+              editorRef.current,
+              e.key === 'Backspace' ? 'backward' : 'forward',
+            )
+            if (removed) {
+              e.preventDefault()
+              emitContent()
+              closeMentionPopover()
+              return
+            }
+          }
           if (!mentionOpen) return
           if (e.key === 'Escape') {
             e.preventDefault()

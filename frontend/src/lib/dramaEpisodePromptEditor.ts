@@ -36,6 +36,149 @@ function isInsideMentionChip(node: Node | null) {
   return Boolean(element?.closest(MENTION_CHIP_SELECTOR))
 }
 
+// 是否为资产/时长 chip 元素
+function isEditorChipElement(node: Node | null): node is HTMLElement {
+  return Boolean(
+    node &&
+      node.nodeType === Node.ELEMENT_NODE &&
+      (node as HTMLElement).dataset?.mention === 'true',
+  )
+}
+
+// 可忽略的空文本 / 零宽字符
+function isIgnorableEditorText(node: Node | null) {
+  if (!node || node.nodeType !== Node.TEXT_NODE) return false
+  return !(node.textContent || '').replace(/[\u200b\uFEFF]/g, '')
+}
+
+// 仅含普通空格的文本节点（chip 后插入的分隔空格）
+function isSpacerTextNode(node: Node | null): node is Text {
+  if (!node || node.nodeType !== Node.TEXT_NODE) return false
+  const text = node.textContent || ''
+  return text.length > 0 && /^[\s\u00a0]+$/.test(text)
+}
+
+// 从节点向上找所属 chip
+function closestEditorChip(node: Node | null, root: HTMLElement): HTMLElement | null {
+  if (!node || !root.contains(node)) return null
+  const element = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement
+  const chip = element?.closest(MENTION_CHIP_SELECTOR) as HTMLElement | null
+  return chip && root.contains(chip) ? chip : null
+}
+
+/**
+ * 删除光标相邻的 contentEditable=false 标签。
+ * 浏览器对不可编辑 chip 的 Backspace/Delete 常无效，需手动移除。
+ * 返回 true 表示已处理。
+ */
+export function deleteAdjacentEditorChip(
+  root: HTMLElement,
+  direction: 'backward' | 'forward',
+): boolean {
+  const selection = window.getSelection()
+  if (!selection || !selection.isCollapsed || selection.rangeCount === 0) return false
+  const { anchorNode, anchorOffset } = selection
+  if (!anchorNode || !root.contains(anchorNode)) return false
+
+  const inside = closestEditorChip(anchorNode, root)
+  if (inside) {
+    placeCaretAndRemoveChip(selection, inside, null)
+    return true
+  }
+
+  let chip: HTMLElement | null = null
+  let spacer: Node | null = null
+
+  if (direction === 'backward') {
+    if (anchorNode.nodeType === Node.TEXT_NODE) {
+      const text = anchorNode.textContent || ''
+      if (anchorOffset === 0) {
+        let prev: Node | null = anchorNode.previousSibling
+        while (prev && isIgnorableEditorText(prev)) prev = prev.previousSibling
+        if (isSpacerTextNode(prev) && isEditorChipElement(prev.previousSibling)) {
+          chip = prev.previousSibling
+          spacer = prev
+        } else if (isEditorChipElement(prev)) {
+          chip = prev
+        }
+      } else if (anchorOffset === text.length && isSpacerTextNode(anchorNode) && text.length <= 2) {
+        /* 光标在 chip 后的分隔空格末尾：一次删掉空格 + chip */
+        const prev = anchorNode.previousSibling
+        if (isEditorChipElement(prev)) {
+          chip = prev
+          spacer = anchorNode
+        }
+      } else if (
+        anchorOffset > 0 &&
+        isSpacerTextNode(anchorNode) &&
+        /^[\s\u00a0]$/.test(text.slice(anchorOffset - 1, anchorOffset)) &&
+        isEditorChipElement(anchorNode.previousSibling)
+      ) {
+        /* 光标紧挨分隔空格内：删空格与 chip */
+        chip = anchorNode.previousSibling
+        spacer = anchorNode
+      }
+    } else if (anchorNode.nodeType === Node.ELEMENT_NODE && anchorOffset > 0) {
+      let prev: Node | null = anchorNode.childNodes[anchorOffset - 1] || null
+      while (prev && isIgnorableEditorText(prev)) {
+        prev = prev.previousSibling
+      }
+      if (isSpacerTextNode(prev) && isEditorChipElement(prev.previousSibling)) {
+        chip = prev.previousSibling
+        spacer = prev
+      } else if (isEditorChipElement(prev)) {
+        chip = prev
+      }
+    }
+  } else if (direction === 'forward') {
+    if (anchorNode.nodeType === Node.TEXT_NODE) {
+      const text = anchorNode.textContent || ''
+      if (anchorOffset >= text.length) {
+        let next: Node | null = anchorNode.nextSibling
+        while (next && isIgnorableEditorText(next)) next = next.nextSibling
+        if (isEditorChipElement(next)) {
+          chip = next
+          const after = next.nextSibling
+          if (isSpacerTextNode(after)) spacer = after
+        } else if (isSpacerTextNode(next) && isEditorChipElement(next.nextSibling)) {
+          spacer = next
+          chip = next.nextSibling
+        }
+      }
+    } else if (anchorNode.nodeType === Node.ELEMENT_NODE) {
+      let next: Node | null = anchorNode.childNodes[anchorOffset] || null
+      while (next && isIgnorableEditorText(next)) next = next.nextSibling
+      if (isEditorChipElement(next)) {
+        chip = next
+        const after = next.nextSibling
+        if (isSpacerTextNode(after)) spacer = after
+      } else if (isSpacerTextNode(next) && isEditorChipElement(next.nextSibling)) {
+        spacer = next
+        chip = next.nextSibling
+      }
+    }
+  }
+
+  if (!chip || !root.contains(chip)) return false
+  placeCaretAndRemoveChip(selection, chip, spacer)
+  return true
+}
+
+// 移除 chip（及可选分隔空格），光标落在原位置
+function placeCaretAndRemoveChip(
+  selection: Selection,
+  chip: HTMLElement,
+  spacer: Node | null,
+) {
+  const caretRange = document.createRange()
+  caretRange.setStartBefore(chip)
+  caretRange.collapse(true)
+  spacer?.parentNode?.removeChild(spacer)
+  chip.remove()
+  selection.removeAllRanges()
+  selection.addRange(caretRange)
+}
+
 // 将含换行符的文本追加为 Text + <br>
 function appendTextWithLineBreaks(root: HTMLElement, text: string) {
   const parts = text.split('\n')

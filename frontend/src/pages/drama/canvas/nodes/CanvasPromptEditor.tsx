@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { resolveDramaMediaUrl } from '../../../../api/drama'
 import {
+  deleteAdjacentEditorChip,
   detectActiveMentionTrigger,
   insertMentionChipAtRange,
   renderPromptEditorContent,
@@ -167,6 +168,23 @@ export function CanvasPromptEditor({
   const filtered = filterCanvasMentionItems(mentionItems, mention.query)
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (
+      !disabled &&
+      (event.key === 'Backspace' || event.key === 'Delete') &&
+      editorRef.current
+    ) {
+      const removed = deleteAdjacentEditorChip(
+        editorRef.current,
+        event.key === 'Backspace' ? 'backward' : 'forward',
+      )
+      if (removed) {
+        event.preventDefault()
+        emitContent()
+        closeMention()
+        return
+      }
+    }
+
     if (mention.open && filtered.length > 0) {
       if (event.key === 'ArrowDown') {
         event.preventDefault()
