@@ -7,11 +7,39 @@ from app.services.model_routing_config import (
     channel_connection_ready,
     channel_supports_model,
     infer_model_capability,
-    normalize_model_name,
     resolve_channel_model_capability,
-    resolve_logical_model_config,
 )
 from app.services.model_settings import get_routing_snapshot
+
+
+# 解析某逻辑模型的可用路由
+def _routes_for_logical_model(
+    logical: LogicalModel,
+    capability: LogicalModelCapability,
+    channels: list[SystemModelChannel],
+    *,
+    preferred_channel_id: str = "",
+) -> list[ResolvedModelRoute]:
+    bindings = sorted(
+        [binding for binding in logical.bindings if binding.enabled],
+        key=lambda binding: (
+            0 if preferred_channel_id and binding.channel_id == preferred_channel_id else 1,
+            binding.priority,
+            -(binding.weight or 100),
+            binding.id,
+        ),
+    )
+    routes: list[ResolvedModelRoute] = []
+    for binding in bindings:
+        channel = next((item for item in channels if item.id == binding.channel_id), None)
+        if not channel or not channel_connection_ready(channel):
+            continue
+        if not channel_supports_model(channel, binding.upstream_model):
+            continue
+        route = _build_route(capability, logical.id, binding.upstream_model, channel)
+        if route:
+            routes.append(route)
+    return routes
 
 
 # 解析逻辑模型到运行时路由（含 failover 候选列表）
@@ -21,48 +49,53 @@ def resolve_logical_model_candidates(
     *,
     preferred_channel_id: str = "",
 ) -> list[ResolvedModelRoute]:
+    """按请求 ID 解析；不可用时回落到同能力任一可解析逻辑模型（通用模型）。"""
     snapshot = get_routing_snapshot()
     requested = (requested_model_id or "").strip()
     if not requested:
         requested = _default_model_id(snapshot.default_models, capability)
-    if not requested:
-        return []
 
-    logical = next(
-        (
-            model
-            for model in snapshot.logical_models
-            if model.enabled
-            and model.capability == capability
-            and model.id.lower() == requested.lower()
-        ),
-        None,
-    )
-    if logical:
-        bindings = sorted(
-            [binding for binding in logical.bindings if binding.enabled],
-            key=lambda binding: (
-                0 if preferred_channel_id and binding.channel_id == preferred_channel_id else 1,
-                binding.priority,
-                -(binding.weight or 100),
-                binding.id,
+    if requested:
+        logical = next(
+            (
+                model
+                for model in snapshot.logical_models
+                if model.enabled
+                and model.capability == capability
+                and model.id.lower() == requested.lower()
             ),
+            None,
         )
-        routes: list[ResolvedModelRoute] = []
-        for binding in bindings:
-            channel = next((item for item in snapshot.channels if item.id == binding.channel_id), None)
-            if not channel or not channel_connection_ready(channel):
-                continue
-            if not channel_supports_model(channel, binding.upstream_model):
-                continue
-            route = _build_route(capability, logical.id, binding.upstream_model, channel)
-            if route:
-                routes.append(route)
-        return routes
+        if logical:
+            routes = _routes_for_logical_model(
+                logical,
+                capability,
+                snapshot.channels,
+                preferred_channel_id=preferred_channel_id,
+            )
+            if routes:
+                return routes
+
+    # 默认/请求模型失效时，回落到同能力第一个可解析模型（DeepSeek / Kimi / 其它兼容均可）
+    for model in snapshot.logical_models:
+        if not model.enabled or model.capability != capability:
+            continue
+        if requested and model.id.lower() == requested.lower():
+            continue
+        routes = _routes_for_logical_model(
+            model,
+            capability,
+            snapshot.channels,
+            preferred_channel_id=preferred_channel_id,
+        )
+        if routes:
+            return routes
 
     if snapshot.logical_models:
         return []
 
+    if not requested:
+        return []
     ordered = snapshot.channels
     if preferred_channel_id:
         ordered = [

@@ -24,9 +24,10 @@ class Settings(BaseSettings):
 
     ark_api_key: str = ""
     ark_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
-    # 文字模型（Kimi 等 OpenAI 兼容 API，对齐 manju OPENAI_*）
+    # 文字模型（任意 OpenAI 兼容 API：DeepSeek / Kimi / OpenAI 等）
     openai_api_key: str = ""
     openai_base_url: str = ""
+    # 默认示例为 kimi；实际以后台渠道 models + 默认定稿为准，可改为 deepseek-chat 等
     model_llm: str = "kimi-k2.6"
     model_image: str = "doubao-seedream-5-0-260128"
     # Seedream 4.5 接入点（可选；未配则回退 model_image）

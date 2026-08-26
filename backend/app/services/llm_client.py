@@ -1,4 +1,4 @@
-"""OpenAI 兼容文字模型客户端（对齐 manju agents/llm.ts）。"""
+"""OpenAI 兼容文字模型客户端（任意兼容上游：Kimi / DeepSeek / OpenAI 等）。"""
 
 from __future__ import annotations
 
@@ -11,9 +11,6 @@ from app.config import get_settings
 from app.services.logical_model_router import resolve_logical_model, resolve_logical_model_id
 
 logger = logging.getLogger(__name__)
-
-# DEFAULT_LLM_MODEL kimi-k2.6：关闭 thinking 后结构化长文本更快
-DEFAULT_LLM_MODEL = "kimi-k2.6"
 
 # DEFAULT_MAX_TOKENS 分集正文等结构化输出需要足够 completion 空间
 DEFAULT_MAX_TOKENS = 32768
@@ -29,8 +26,8 @@ def resolve_llm_api_key() -> str:
     if not key:
         raise LlmUnavailableError(
             "未配置 OPENAI_API_KEY，无法调用文字模型。"
-            "请在 backend/.env 设置 OPENAI_API_KEY、OPENAI_BASE_URL，"
-            f"并将 MODEL_LLM 设为 {DEFAULT_LLM_MODEL}（或你的 Kimi 接入点）。"
+            "请在后台渠道或 backend/.env 配置 OpenAI 兼容 Key、Base URL，"
+            "并将 MODEL_LLM / 渠道 models 设为该上游的模型 ID（如 deepseek-chat、kimi-k2.6）。"
         )
     return key
 
@@ -43,9 +40,10 @@ def resolve_llm_base_url() -> str:
     return "https://api.openai.com/v1"
 
 
-# kimi-k2.6 需关闭 thinking，否则 token 耗在 reasoning_content、content 为空
+# kimi / deepseek-v4 默认 thinking 会占满 token、content 常为空；结构化产出统一关闭
 def _llm_extra_body(model: str) -> dict[str, Any]:
-    if (model or "").strip().lower().startswith("kimi"):
+    mid = (model or "").strip().lower()
+    if mid.startswith("kimi") or mid.startswith("deepseek"):
         return {"thinking": {"type": "disabled"}}
     return {}
 
@@ -79,13 +77,18 @@ async def chat_completions(
     route = resolve_logical_model("text", logical_id)
     if route:
         api_key = route.api_key
-        model = (route.upstream_model or DEFAULT_LLM_MODEL).strip() or DEFAULT_LLM_MODEL
+        model = (route.upstream_model or "").strip()
         base = route.base_url.rstrip("/") or resolve_llm_base_url()
     else:
         api_key = resolve_llm_api_key()
-        model = (settings.model_llm or DEFAULT_LLM_MODEL).strip() or DEFAULT_LLM_MODEL
+        model = (settings.model_llm or "").strip()
         base = resolve_llm_base_url()
-    # kimi-k2.6 仅允许 temperature=0.6，其它值会 400
+    if not model:
+        raise LlmUnavailableError(
+            "未解析到可用文字模型。请在后台启用 OpenAI 兼容渠道，"
+            "并在渠道 models / 默认文本模型中填写上游模型 ID。"
+        )
+    # kimi 系列仅允许 temperature=0.6，其它值会 400
     effective_temperature = 0.6 if model.lower().startswith("kimi") else temperature
 
     payload: dict[str, Any] = {

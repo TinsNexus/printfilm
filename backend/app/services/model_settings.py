@@ -349,6 +349,7 @@ def _effective_flat(stored: dict[str, Any] | None) -> dict[str, Any]:
 
 
 async def _compose_runtime_state(db: AsyncSession) -> tuple[list[SystemModelChannel], list[LogicalModel], DefaultModels, dict[str, Any], AppSettings]:
+    """组装运行时路由：始终按渠道 models 同步逻辑模型，默认文字模型随可用上游回落。"""
     app_row = await _get_or_create_app_row(db)
     await _ensure_bootstrapped_channels(db)
     channels = await _load_channels(db, runtime=True)
@@ -359,12 +360,31 @@ async def _compose_runtime_state(db: AsyncSession) -> tuple[list[SystemModelChan
         logical_models, default_models = _bootstrap_logical_from_channels(
             [_channel_row_to_admin(row) for row in (await db.execute(select(SystemModelChannelRow))).scalars().all()]
         )
+    # 渠道 models 变更后，丢弃失效绑定并补齐新上游（支持任意 OpenAI 兼容模型）
+    logical_models = synchronize_logical_models_with_channels(logical_models, channels)
+    default_models = normalize_default_models(default_models, logical_models, channels)
     flat = _effective_flat(_decrypt_flat_config(config))
+    if default_models.text_model:
+        flat["model_llm"] = default_models.text_model
     return channels, logical_models, default_models, flat, app_row
 
 
 async def load_model_settings_cache(db: AsyncSession) -> None:
-    channels, logical_models, default_models, flat, _ = await _compose_runtime_state(db)
+    """加载路由快照；若与渠道不同步则回写 healed 配置，避免默认仍钉死旧模型名。"""
+    channels, logical_models, default_models, flat, app_row = await _compose_runtime_state(db)
+    config = dict(app_row.config_json or {})
+    old_ids = {(item or {}).get("id") for item in (config.get("logical_models") or [])}
+    new_ids = {model.id for model in logical_models}
+    old_defaults = default_models_from_dict(config.get("default_models"))
+    if old_ids != new_ids or old_defaults != default_models:
+        config["logical_models"] = [model.model_dump() for model in logical_models]
+        config["default_models"] = default_models_to_dict(default_models)
+        flat_cfg = dict(config.get("flat") or {})
+        if default_models.text_model:
+            flat_cfg["model_llm"] = default_models.text_model
+            config["flat"] = flat_cfg
+        app_row.config_json = config
+        await db.commit()
     _refresh_routing_snapshot(channels, logical_models, default_models)
     _refresh_overlay({"flat": flat})
     reload_settings()
@@ -556,11 +576,13 @@ async def patch_admin_routing_settings(
         logical_models = body.logical_models
         applied.append("logical_models")
     elif body.system_channels is not None:
-        synced = synchronize_logical_models_with_channels(logical_models, channels_after)
         bootstrapped, _ = _bootstrap_logical_from_channels(channels_after)
         alias_ids = {"seedream-5.0", "seedream-4.5", "seedance-2.5"}
         extras = [model for model in bootstrapped if model.id in alias_ids]
-        logical_models = synchronize_logical_models_with_channels(synced + extras, channels_after)
+        logical_models = logical_models + extras
+
+    # 无论前端是否提交逻辑模型，最终都以渠道 models 为准同步（通用 OpenAI 兼容）
+    logical_models = synchronize_logical_models_with_channels(logical_models, channels_after)
 
     defaults = default_models_from_dict(config.get("default_models"))
     if body.default_models is not None:
