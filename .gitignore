@@ -32,6 +32,8 @@ venv/
 !**/.env.example
 !**/.env.*.example
 !frontend/.env.production
+backend/.env.secrets.local
+deploy/.env.secrets.local
 deploy/.env.prod
 deploy/scripts/deploy_kepu.py
 deploy/scripts/deploy_kepu_8136.py

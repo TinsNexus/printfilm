@@ -106,5 +106,5 @@ OSS_ACCESS_KEY_SECRET=...
 ```bash
 cd frontend && npm run build
 cd ../backend && .venv/bin/python ../deploy/scripts/upload_oss_web.py
-# → https://your-bucket.oss-cn-beijing.aliyuncs.com/kepu/index.html
+# → https://{bucket}.oss-cn-beijing.aliyuncs.com/kepu/index.html
 ```

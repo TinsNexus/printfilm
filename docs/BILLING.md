@@ -37,10 +37,10 @@ charge_fen = ceil(tokens / 1e6 * provider_yuan_per_m * markup * 100)
 BILLING_ENABLED=true
 BILLING_MARKUP=1.5
 EPAY_API_URL=https://pay.gitcc.com
-EPAY_PID=
+EPAY_PID=your-epay-pid
 EPAY_KEY=***
-EPAY_NOTIFY_URL=https://kepu.printfilm.com/api/billing/epay/notify
-EPAY_RETURN_URL=https://kepu.printfilm.com/pricing?paid=1
+EPAY_NOTIFY_URL=https://your-site.example.com/epay/notify
+EPAY_RETURN_URL=https://your-site.example.com/pricing?paid=1
 ```
 
 下单：服务端 `POST {EPAY_API_URL}/mapi.php`（扫码），MD5 签名（参数 ASCII 排序，排除 sign/sign_type，末尾拼 KEY）。返回 `qrcode` / `payurl` 供前端弹窗展示二维码。
