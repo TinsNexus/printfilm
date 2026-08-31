@@ -1,5 +1,7 @@
 /** 独立创作工具 API：/api/tools/* */
 
+import { throwApiError } from '../lib/apiError'
+
 function defaultApiBase() {
   if (typeof window !== 'undefined' && window.location?.hostname) {
     const { protocol, hostname } = window.location
@@ -105,7 +107,7 @@ export async function runStudioTool(payload: ToolRunPayload): Promise<ToolRunRes
   if (res.status === 401) throw new Error('未登录')
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(errorMessage(err.detail, '生成失败'))
+    throwApiError(res.status, err.detail, '生成失败')
   }
   return res.json()
 }

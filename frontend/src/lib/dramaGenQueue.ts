@@ -211,6 +211,7 @@ export function syncImageJobToUnified(input: {
   assetName: string
   assetType: string
   status: DramaGenJobStatus
+  taskId?: number
   error?: string
 }): void {
   upsertDramaGenJob({
@@ -221,6 +222,7 @@ export function syncImageJobToUnified(input: {
     title: input.assetName || `资产 ${input.assetId}`,
     subtype: input.assetType || 'image',
     status: input.status,
+    taskId: input.taskId,
     error: input.error,
     message:
       input.status === 'running'

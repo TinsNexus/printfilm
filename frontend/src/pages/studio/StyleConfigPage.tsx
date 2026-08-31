@@ -6,6 +6,7 @@ import AppShell from '../../components/layout/AppShell'
 import Stepper from '../../components/ui/Stepper'
 import ComingSoon from '../../components/ui/ComingSoon'
 import { IconChevronLeft, IconPlay } from '../../components/ui/Icons'
+import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import { handleBillingError } from '../../lib/billingError'
 import { CREATE_STEPS } from '../../lib/status'
 
@@ -57,6 +58,14 @@ const RATIOS: { id: string; label: string; w: number; h: number }[] = [
   { id: '4:3', label: '4:3', w: 28, h: 21 },
   { id: '21:9', label: '21:9', w: 40, h: 17 },
 ]
+
+/** 画幅是否竖向（高 > 宽），用于预览卡与实时预览比例 */
+function isPortraitRatio(ratio: string | undefined | null): boolean {
+  const raw = String(ratio || '').trim()
+  const m = raw.match(/^(\d+(?:\.\d+)?)\s*[:/x]\s*(\d+(?:\.\d+)?)$/i)
+  if (!m) return false
+  return Number(m[2]) > Number(m[1])
+}
 
 export default function StyleConfigPage() {
   const { id } = useParams()
@@ -139,8 +148,8 @@ export default function StyleConfigPage() {
     setCharacterPrompt(d.character_prompt)
     setExtraPrompt(d.extra_prompt)
     setVoiceId(d.voice_id)
-    // Keep user's video-mode choice; only suggest template default ratio if untouched
-    setRatio((prev) => prev || d.output_ratio)
+    // 风格带默认画幅；用户仍可在下方「输出比例」改
+    if (d.output_ratio) setRatio(d.output_ratio)
     if (/无人物|无角色/.test(d.character_prompt)) setCharPreset('none')
     else if (/剪影/.test(d.character_prompt)) setCharPreset('sil')
     else if (/动漫|二次元/.test(d.character_prompt)) setCharPreset('anime')
@@ -150,6 +159,7 @@ export default function StyleConfigPage() {
         .updateProject(project.id, {
           template_id: t.id,
           voice_id: d.voice_id,
+          output_ratio: d.output_ratio || undefined,
         })
         .then(setProject)
         .catch((err) => setError(err instanceof Error ? err.message : '更新失败'))
@@ -272,11 +282,16 @@ export default function StyleConfigPage() {
           <h3>项目信息</h3>
           {currentTpl ? (
             <div>
-              <img
-                src={api.assetUrl(currentTpl.preview_cover)}
-                alt=""
-                style={{ width: '100%', borderRadius: 12, aspectRatio: '16/9', objectFit: 'cover' }}
-              />
+              <div
+                className={[
+                  'pf-style-side-thumb',
+                  isPortraitRatio(currentTpl.default_ratio) ? 'portrait' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+              >
+                <img src={api.assetUrl(currentTpl.preview_cover)} alt="" />
+              </div>
               <p style={{ margin: '0.5rem 0 0', fontWeight: 600 }}>{currentTpl.name}</p>
               <div className="pf-tags">
                 {currentTpl.category.map((c) => (
@@ -315,19 +330,31 @@ export default function StyleConfigPage() {
               </button>
             </h3>
             <div className="pf-style-grid">
-              {styleOptions.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  className={
-                    project?.template_id === t.id ? 'pf-style-opt selected' : 'pf-style-opt'
-                  }
-                  onClick={() => pickStyle(t)}
-                >
-                  <img src={api.assetUrl(t.preview_cover)} alt="" />
-                  <div className="cap">{t.name}</div>
-                </button>
-              ))}
+              {styleOptions.map((t) => {
+                const portrait = isPortraitRatio(t.default_ratio)
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    className={[
+                      'pf-style-opt',
+                      portrait ? 'portrait' : '',
+                      project?.template_id === t.id ? 'selected' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    onClick={() => pickStyle(t)}
+                  >
+                    <span className="pf-style-opt-media">
+                      <img src={api.assetUrl(t.preview_cover)} alt="" />
+                      {t.default_ratio ? (
+                        <span className="pf-style-opt-ratio">{t.default_ratio}</span>
+                      ) : null}
+                    </span>
+                    <div className="cap">{t.name}</div>
+                  </button>
+                )
+              })}
             </div>
             <label className="pf-field" style={{ marginTop: '0.75rem' }}>
               <span className="pf-field-label">风格提示词</span>
@@ -501,11 +528,19 @@ export default function StyleConfigPage() {
 
         <aside className="pf-create-col">
           <h3>实时预览</h3>
-          <div className="pf-editor-preview" style={{ marginBottom: '0.85rem' }}>
+          <div
+            className={[
+              'pf-editor-preview',
+              isPortraitRatio(ratio) ? 'portrait' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            style={{ marginBottom: '0.85rem' }}
+          >
             {currentTpl ? (
               <img src={api.assetUrl(currentTpl.preview_cover)} alt="" />
             ) : (
-              <span>预览占位</span>
+              <span className="empty">预览占位</span>
             )}
           </div>
           <p className="pf-muted" style={{ fontSize: '0.8rem' }}>
@@ -548,7 +583,7 @@ export default function StyleConfigPage() {
                 : `试听「${selectedVoice.label}」`}
             </button>
           ) : null}
-          {error ? <p className="pf-error" style={{ marginTop: '0.75rem' }}>{error}</p> : null}
+          {error ? <BillingErrorNotice message={error} style={{ marginTop: '0.75rem' }} /> : null}
           <button
             type="button"
             className="pf-btn pf-btn-lime pf-btn-block pf-btn-lg pf-btn-icon"

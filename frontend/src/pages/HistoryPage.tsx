@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import type { Project } from '../api'
+import BillingErrorNotice from '../components/billing/BillingErrorNotice'
 import AppShell from '../components/layout/AppShell'
 import PillTabs from '../components/ui/PillTabs'
 import Pagination from '../components/ui/Pagination'
@@ -375,7 +376,7 @@ export default function HistoryPage() {
             </button>
           </div>
 
-          {error ? <p className="pf-error">{error}</p> : null}
+          {error ? <BillingErrorNotice message={error} /> : null}
           {loading ? <p className="pf-muted">{t('common.loading')}</p> : null}
           {!loading && total === 0 ? (
             <div className="pf-history-empty">{t('history.empty')}</div>

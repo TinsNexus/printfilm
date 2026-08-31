@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { Loader2, X } from 'lucide-react'
 import { tasksApi, type TaskRunOut } from '../../api/tasks'
 import { formatDramaGenError, pickRootDramaGenError } from '../../lib/dramaGenError'
+import BillingTopupLink from '../billing/BillingTopupLink'
 import type { DramaGenJob } from '../../lib/dramaGenQueue'
 
 type Props = {
@@ -163,7 +164,22 @@ export function DramaGenTaskDetail({ job, onClose }: Props) {
               <p className="drama-gen-detail-tip">
                 <strong>建议：</strong>
                 {errView.suggestion}
+                {errView.billingBlocked ? (
+                  <>
+                    {' '}
+                    <BillingTopupLink />
+                  </>
+                ) : null}
+                {errView.upstreamAccountBlocked ? (
+                  <> 需管理员充值火山方舟 Seedream 账户。</>
+                ) : null}
               </p>
+            ) : errView.billingBlocked ? (
+              <p className="drama-gen-detail-tip">
+                <BillingTopupLink />
+              </p>
+            ) : errView.upstreamAccountBlocked ? (
+              <p className="drama-gen-detail-tip">需管理员充值火山方舟 Seedream 账户，用户端充值无法解决。</p>
             ) : null}
             {rawError ? (
               <button

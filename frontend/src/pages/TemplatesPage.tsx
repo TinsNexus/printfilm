@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import type { Template } from '../api'
+import BillingErrorNotice from '../components/billing/BillingErrorNotice'
 import AppShell from '../components/layout/AppShell'
 import PillTabs from '../components/ui/PillTabs'
 import { CATEGORY_ORDER, HOME_CATEGORY_LABELS } from '../lib/categories'
@@ -78,7 +79,7 @@ export default function TemplatesPage() {
         onChange={(label) => setCategory(labelToKey.get(label) || '全部')}
         ariaLabel="模板分类"
       />
-      {error ? <p className="pf-error">{error}</p> : null}
+      {error ? <BillingErrorNotice message={error} /> : null}
       <div className="pf-template-grid" style={{ marginTop: '1rem' }}>
         {filtered.map((t) => (
           <button key={t.id} type="button" className="pf-template-card" onClick={() => openTemplate(t)}>

@@ -18,6 +18,7 @@ import {
 import { scenePromptForDisplay } from '../../promptDisplay'
 import { dialog } from '../../lib/dialog'
 import { handleBillingError } from '../../lib/billingError'
+import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import {
   BOARD_STEPS,
   effectiveStatus,
@@ -650,7 +651,7 @@ export default function StoryboardPage() {
   if (!project) {
     return (
       <AppShell active="studio">
-        <p className="pf-error">{error}</p>
+        <BillingErrorNotice message={error} />
       </AppShell>
     )
   }
@@ -761,7 +762,7 @@ title="用当前镜头重新拼接"
         <Stepper steps={BOARD_STEPS} current={step} doneThrough={Math.max(0, step - 1)} />
       </header>
 
-      {error ? <p className="pf-error">{error}</p> : null}
+      {error ? <BillingErrorNotice message={error} /> : null}
       {project.error_msg ? <p className="pf-error">{project.error_msg}</p> : null}
 
       <div className="pf-board">

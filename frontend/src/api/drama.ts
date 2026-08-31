@@ -1,4 +1,4 @@
-/** Drama module API client (/api/drama/*). */
+import { throwApiError } from '../lib/apiError'
 
 function defaultApiBase() {
   if (typeof window !== 'undefined' && window.location?.hostname) {
@@ -41,14 +41,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
-    const detail = err.detail
-    const message =
-      typeof detail === 'string'
-        ? detail
-        : Array.isArray(detail)
-          ? detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join('; ')
-          : res.statusText
-    throw new Error(message || '请求失败')
+    throwApiError(res.status, err.detail, '请求失败')
   }
   return res.json()
 }

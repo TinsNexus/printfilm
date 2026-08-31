@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, DragEvent, FormEvent } from 'react'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Download, Loader2 } from 'lucide-react'
+import BillingErrorNotice from '../components/billing/BillingErrorNotice'
 import AppShell from '../components/layout/AppShell'
 import Button from '../components/ui/Button'
 import { pollStudioToolTask, resolveToolMediaUrl, runStudioTool } from '../api/tools'
@@ -292,7 +293,7 @@ function ToolWorkspace({ tool: baseTool }: { tool: ToolDef }) {
                 onChange={onPick}
               />
             ) : null}
-            {error ? <p className="pf-tool-error">{error}</p> : null}
+            {error ? <BillingErrorNotice message={error} className="pf-tool-error" /> : null}
             <Button type="submit" variant="lime" block disabled={busy}>
               {busy ? (
                 <>

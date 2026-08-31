@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Boxes, Sparkles } from 'lucide-react'
 import { dramaApi, resolveDramaMediaUrl, type DramaAsset, type DramaProject } from '../../api/drama'
+import { api, type BillingPreflight } from '../../api'
 import { useDramaImageGenQueue } from '../../hooks/useDramaImageGenQueue'
 import { enqueueDramaImageGen, resumeDramaImageGensFromAssets } from '../../lib/dramaImageGenQueue'
 import {
@@ -25,6 +26,8 @@ import { GlobalAssetPickerModal, importGlobalAssetToProject } from './GlobalAsse
 import { DramaVoiceAssetCard } from './DramaVoiceAssetCard'
 import Pagination from '../../components/ui/Pagination'
 import { dialog } from '../../lib/dialog'
+import { handleBillingError, isBillingError } from '../../lib/billingError'
+import { alertDramaGenError, formatDramaGenError, isUpstreamAccountError } from '../../lib/dramaGenError'
 import { pageCountOf } from '../../lib/pagination'
 import { readVisualPrompt } from '../../lib/dramaVisualPrompt'
 import { filterDramaLibraryAssets } from '../../lib/dramaLibraryAssets'
@@ -233,23 +236,58 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
     }
   }
 
+  // 入队前校验余额（批量/单项共用）；成功时返回预检明细（含单张估算）
+  async function ensureImageGenBalance(count: number): Promise<BillingPreflight | null> {
+    try {
+      return await api.billingPreflight({
+        domain: 'drama',
+        task_type: 'asset_image',
+        count,
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err || '')
+      if (isBillingError(message)) return null
+      if (await handleBillingError(err)) return null
+      onError(message || '余额校验失败')
+      return null
+    }
+  }
+
+  async function notifyImageGenFailure(err: unknown) {
+    const message = err instanceof Error ? err.message : String(err || '')
+    if (isBillingError(message)) return
+    if (isUpstreamAccountError(message)) {
+      await alertDramaGenError(err)
+      onError(formatDramaGenError(message).message)
+      return
+    }
+    if (await handleBillingError(err)) return
+    const view = formatDramaGenError(message)
+    if (view.upstreamAccountBlocked || view.billingBlocked) {
+      await alertDramaGenError(err)
+    }
+    onError(view.message || message || '生图失败')
+  }
+
   // 加入全局生图队列（不互相顶掉）
   function enqueueOne(asset: DramaAsset, options = genOptions) {
     if (busyAssetIds.has(asset.id)) return
-    void enqueueDramaImageGen({
-      projectId,
-      assetId: asset.id,
-      assetName: asset.name || undefined,
-      assetType: asset.type,
-      prompt: readVisualPrompt(asset),
-      options,
-    })
-      .then((updated) => {
+    void (async () => {
+      if (!(await ensureImageGenBalance(1))) return
+      try {
+        const updated = await enqueueDramaImageGen({
+          projectId,
+          assetId: asset.id,
+          assetName: asset.name || undefined,
+          assetType: asset.type,
+          prompt: readVisualPrompt(asset),
+          options,
+        })
         setAssets((prev) => (prev ?? []).map((a) => (a.id === updated.id ? updated : a)))
-      })
-      .catch((err) => {
-        onError(err instanceof Error ? err.message : '生图失败')
-      })
+      } catch (err) {
+        await notifyImageGenFailure(err)
+      }
+    })()
   }
 
   // 一键只入队「当前分类下尚未出图」的资产（已有图 / 排队中跳过）
@@ -261,9 +299,16 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
       onError('当前分类没有未生成的资产')
       return
     }
+    const pre = await ensureImageGenBalance(targets.length)
+    if (!pre) return
+    const unitYuan = pre.unit_estimate_yuan ?? pre.unit_estimate_fen / 100
+    const totalYuan = pre.requested_total_yuan ?? pre.requested_total_fen / 100
+    const balanceYuan = pre.balance_yuan ?? pre.balance_fen / 100
     const ok = await dialog.confirm({
       title: '批量生成形象',
-      message: `将为当前「${ASSET_TABS.find((t) => t.key === tab)?.label || '分类'}」下 ${targets.length} 个未出图资产排队生图（最多 3 路并行）。是否继续？`,
+      message:
+        `将为当前「${ASSET_TABS.find((t) => t.key === tab)?.label || '分类'}」下 ${targets.length} 个未出图资产排队生图（最多 3 路并行）。\n\n` +
+        `每张预扣约 ¥${unitYuan.toFixed(2)}，本次合计约 ¥${totalYuan.toFixed(2)}（当前余额 ¥${balanceYuan.toFixed(2)}；结束后按实际上游用量多退少补）。\n\n是否继续？`,
       confirmText: '开始生成',
     })
     if (!ok) return
@@ -286,12 +331,11 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
         setAssets((prev) => (prev ?? []).map((a) => (a.id === updated.id ? updated : a)))
       }),
     )
-    void Promise.allSettled(tasks).then((results) => {
+    void Promise.allSettled(tasks).then(async (results) => {
       setBatchBusy(false)
       const failed = results.find((r) => r.status === 'rejected')
       if (failed && failed.status === 'rejected') {
-        const reason = failed.reason
-        onError(reason instanceof Error ? reason.message : '部分生图失败')
+        await notifyImageGenFailure(failed.reason)
       }
     })
   }
@@ -600,7 +644,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
       else {
         const queuedOnly = genQueue.filter((j) => j.status === 'queued' || j.status === 'running')
         const pos = queuedOnly.findIndex((j) => j.id === job.id) + 1
-        queueLabel = pos > 1 ? `排队 #${pos}` : '排队中…'
+        queueLabel = pos > 0 ? (pos > 1 ? `排队 #${pos}` : '排队中…') : '排队中…'
       }
     }
     return dramaAssetImageGenButtonLabel(asset, queueLabel)

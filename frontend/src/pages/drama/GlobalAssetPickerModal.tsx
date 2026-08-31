@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { dramaApi, resolveDramaMediaUrl, type DramaAsset } from '../../api/drama'
 import { filterDramaLibraryAssets, isDramaLibraryAsset } from '../../lib/dramaLibraryAssets'
+import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import Modal from '../../components/ui/Modal'
 import './drama.css'
 
@@ -176,7 +177,7 @@ export function GlobalAssetPickerModal({
         placeholder="搜索名称或项目 ID"
       />
 
-      {error ? <p className="drama-error">{error}</p> : null}
+      {error ? <BillingErrorNotice message={error} className="drama-error" /> : null}
       {loading ? <p className="drama-muted">加载资产库…</p> : null}
 
       <div className="drama-global-picker-grid">

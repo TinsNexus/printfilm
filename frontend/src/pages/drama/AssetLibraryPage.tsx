@@ -1,6 +1,7 @@
 /** 全局漫剧资产库：按角色 / 场景 / 道具 / 音色分类，音色可试听 */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Pause, Play } from 'lucide-react'
+import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import AppShell from '../../components/layout/AppShell'
 import Button from '../../components/ui/Button'
 import FilterSelect from '../../components/ui/FilterSelect'
@@ -251,7 +252,7 @@ function AssetLibraryInner() {
           </div>
         </header>
 
-        {error ? <p className="drama-error">{error}</p> : null}
+        {error ? <BillingErrorNotice message={error} className="drama-error" /> : null}
 
         <div className="pf-asset-toolbar-meta">
           <p className="pf-muted" style={{ margin: 0 }}>

@@ -1,8 +1,17 @@
 import { dialog } from './dialog'
 
+export const PRICING_PATH = '/pricing'
+
 /** 是否为余额不足 / 计费拦截类错误 */
 export function isBillingError(message: string) {
-  return /余额不足|请先充值|402/.test(message)
+  return /余额不足|请先充值|402|insufficient_balance/i.test(message)
+}
+
+/** 跳转定价页充值 */
+export function goToTopup() {
+  if (typeof window !== 'undefined') {
+    window.location.assign(PRICING_PATH)
+  }
 }
 
 /**
@@ -22,6 +31,18 @@ export async function handleBillingError(
     cancelText: '知道了',
     tone: 'danger',
   })
-  if (go && navigate) navigate('/pricing')
+  if (go) {
+    if (navigate) navigate(PRICING_PATH)
+    else goToTopup()
+  }
   return true
+}
+
+/**
+ * API 层全局拦截：402 / 余额不足时弹出充值引导（不吞掉原错误）。
+ */
+export function notifyBillingErrorIfNeeded(status: number, message: string) {
+  if (status === 402 || isBillingError(message)) {
+    void handleBillingError(new Error(message))
+  }
 }

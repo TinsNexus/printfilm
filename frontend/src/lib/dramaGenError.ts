@@ -1,5 +1,8 @@
 /** 漫剧生成队列：把上游/平台原始错误翻成可读中文，并附处理建议 */
 
+import { dialog } from './dialog'
+import { isBillingError } from './billingError'
+
 export type DramaGenErrorView = {
   /** 短标题 */
   title: string
@@ -7,6 +10,15 @@ export type DramaGenErrorView = {
   message: string
   /** 建议操作 */
   suggestion?: string
+  /** 是否余额不足（展示充值跳转） */
+  billingBlocked?: boolean
+  /** 是否上游模型账户欠费（提醒管理员，非用户钱包） */
+  upstreamAccountBlocked?: boolean
+}
+
+/** 是否为火山方舟 / Seedream 上游账户欠费 */
+export function isUpstreamAccountError(message: string): boolean {
+  return /AccountOverdueError|上游 Seedream 账户欠费|上游.*账户欠费/i.test(message)
 }
 
 // 从 Seedance JSON 文案里取出 content[n]
@@ -55,6 +67,25 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
       title: '生成失败',
       message: '任务未能完成。',
       suggestion: '请稍后重试；若反复失败，检查分镜参考图与脚本后重新生成。',
+    }
+  }
+
+  if (isUpstreamAccountError(text) || (/Seedream error 403/i.test(text) && /AccountOverdue/i.test(text))) {
+    return {
+      title: '平台上游账户欠费',
+      message:
+        '火山方舟 Seedream 模型账户余额不足，生图请求被拒绝。这是站点上游模型账户欠费，不是您个人钱包余额问题。',
+      suggestion: '请联系站点管理员在火山引擎 / 方舟控制台充值；充值完成后请重试生图。',
+      upstreamAccountBlocked: true,
+    }
+  }
+
+  if (isBillingError(text)) {
+    return {
+      title: '余额不足',
+      message: /余额不足|请先充值/.test(text) ? text : '当前余额不足，无法继续生成。',
+      suggestion: '请先充值后再重试该任务。',
+      billingBlocked: true,
     }
   }
 
@@ -192,4 +223,16 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
     message: text.length > 200 ? `${text.slice(0, 200)}…` : text,
     suggestion: '请检查本镜参考图与脚本后重试。',
   }
+}
+
+/** 弹窗展示生成失败（含上游欠费 / 用户余额不足等） */
+export async function alertDramaGenError(raw: unknown): Promise<void> {
+  const text = raw instanceof Error ? raw.message : String(raw || '')
+  const view = formatDramaGenError(text)
+  const body = [view.message, view.suggestion].filter(Boolean).join('\n\n')
+  await dialog.alert({
+    title: view.title,
+    message: body || view.title,
+    tone: 'danger',
+  })
 }

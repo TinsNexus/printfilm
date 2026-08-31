@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ChevronLeft } from 'lucide-react'
+import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import AppShell from '../../components/layout/AppShell'
 import { dramaApi, type DramaProject } from '../../api/drama'
 import {
@@ -233,7 +234,7 @@ function WorkspaceInner() {
           </div>
         </header>
 
-        {error ? <p className="drama-error drama-workspace-banner">{error}</p> : null}
+        {error ? <BillingErrorNotice message={error} className="drama-error drama-workspace-banner" /> : null}
 
         <main className="drama-workspace-main">
           {activeStep === 'outline' ? (

@@ -38,6 +38,7 @@ import {
   collectDramaGenerateGateIssues,
   formatDramaGateMessage,
 } from '../../lib/dramaEpisodeScriptValidate'
+import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import { dialog } from '../../lib/dialog'
 import {
   formatProjectOutputLabel,
@@ -1281,7 +1282,7 @@ function EpisodeEditInner() {
 
       {(status || error) && (
         <div className="drama-ep-banner">
-          {error ? <span className="drama-ep-banner-error">{error}</span> : null}
+          {error ? <BillingErrorNotice message={error} className="drama-ep-banner-error" inline /> : null}
           {!error && status ? <span>{status}</span> : null}
         </div>
       )}

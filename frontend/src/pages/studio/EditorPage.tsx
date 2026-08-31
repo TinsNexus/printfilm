@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../../api'
 import type { Project, Shot } from '../../api'
+import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import AppShell from '../../components/layout/AppShell'
 import ComingSoon from '../../components/ui/ComingSoon'
 import { STATUS_CN } from '../../lib/status'
@@ -109,7 +110,7 @@ export default function EditorPage() {
   if (!project) {
     return (
       <AppShell active="studio">
-        <p className="pf-error">{error}</p>
+        <BillingErrorNotice message={error} />
       </AppShell>
     )
   }
@@ -176,9 +177,7 @@ export default function EditorPage() {
       </div>
 
       {error ? (
-        <p className="pf-error" style={{ padding: '0.5rem 1.25rem' }}>
-          {error}
-        </p>
+        <BillingErrorNotice message={error} style={{ padding: '0.5rem 1.25rem' }} />
       ) : null}
 
       <div className="pf-editor">

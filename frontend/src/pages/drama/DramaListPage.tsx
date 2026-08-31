@@ -10,6 +10,7 @@ import {
   Sparkles,
   Trash2,
 } from 'lucide-react'
+import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import AppShell from '../../components/layout/AppShell'
 import Button from '../../components/ui/Button'
 import PillFilter, { type PillOption } from '../../components/ui/PillFilter'
@@ -406,7 +407,7 @@ function DramaListInner() {
           </section>
         ) : null}
 
-        {error ? <p className="drama-error drama-agent-error">{error}</p> : null}
+        {error ? <BillingErrorNotice message={error} className="drama-error drama-agent-error" /> : null}
 
         {loading ? (
           <div className="pf-drama-card-grid" aria-busy="true">

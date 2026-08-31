@@ -1,3 +1,5 @@
+import { throwApiError } from './lib/apiError'
+
 function defaultApiBase() {
   if (typeof window !== 'undefined' && window.location?.hostname) {
     const { protocol, hostname } = window.location
@@ -26,14 +28,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
-    const detail = err.detail
-    const message =
-      typeof detail === 'string'
-        ? detail
-        : Array.isArray(detail)
-          ? detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join('; ')
-          : res.statusText
-    throw new Error(message || '请求失败')
+    throwApiError(res.status, err.detail, res.statusText)
   }
   return res.json()
 }
@@ -240,6 +235,24 @@ export type Wallet = {
   billing_enabled: boolean
   billing_unlimited: boolean
   markup: number
+}
+
+export type BillingPreflight = {
+  ok: boolean
+  billing_enabled: boolean
+  balance_fen: number
+  balance_yuan?: number
+  unit_estimate_fen: number
+  unit_estimate_yuan?: number
+  pending_commitment_fen: number
+  pending_commitment_yuan?: number
+  requested_total_fen: number
+  requested_total_yuan?: number
+  required_total_fen: number
+  required_total_yuan?: number
+  count?: number
+  domain?: string
+  task_type?: string
 }
 
 export type Work = {
@@ -542,6 +555,14 @@ export const api = {
     return request<UsageChargeList>(
       `/api/billing/usage/events?page=${page}&page_size=${pageSize}`,
     )
+  },
+  billingPreflight(params: { domain: string; task_type: string; count?: number }) {
+    const q = new URLSearchParams({
+      domain: params.domain,
+      task_type: params.task_type,
+      count: String(params.count ?? 1),
+    })
+    return request<BillingPreflight>(`/api/billing/preflight?${q.toString()}`)
   },
   eventsUrl(projectId: number) {
     return `${API_BASE}/api/projects/${projectId}/events`

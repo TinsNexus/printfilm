@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Download, Eye } from 'lucide-react'
+import BillingErrorNotice from '../components/billing/BillingErrorNotice'
 import Modal from '../components/ui/Modal'
 import Pagination from '../components/ui/Pagination'
 import { fetchMediaBlob, triggerBlobDownload } from '../lib/clientDownload'
@@ -149,8 +150,8 @@ export default function SettingsToolRunsPanel() {
         </div>
       </div>
       {loading ? <p className="pf-muted">加载中…</p> : null}
-      {error ? <p className="pf-error">{error}</p> : null}
-      {actionError ? <p className="pf-error">{actionError}</p> : null}
+      {error ? <BillingErrorNotice message={error} /> : null}
+      {actionError ? <BillingErrorNotice message={actionError} /> : null}
       {!loading && !error && items.length === 0 ? (
         <div className="pf-settings-empty">
           <p>还没有工具创作记录</p>

@@ -32,11 +32,13 @@ type EnqueueInput = {
 
 type InternalJob = DramaImageGenJob & {
   resumeOnly: boolean
+  taskId?: number
   resolve: (asset: DramaAsset) => void
   reject: (err: Error) => void
 }
 
-/* 前端同时轮询几路；真正执行在 Celery Worker */
+/* 前端同时提交/轮询几路；真正执行在任务平台 Worker */
+const MAX_SUBMIT_CONCURRENT = 3
 const MAX_POLL_CONCURRENT = 6
 const DONE_RETENTION_MS = 45_000
 const POLL_INTERVAL_MS = 2000
@@ -126,6 +128,7 @@ function emit() {
         assetName: job.assetName,
         assetType: job.assetType,
         status: job.status,
+        taskId: job.taskId,
         error: job.error,
       })
     }
@@ -170,15 +173,20 @@ function readGenerationStatus(asset: DramaAsset): string {
   return String(gen?.status || '')
 }
 
-// 轮询直到资产生图结束
-async function waitForAssetImage(projectId: number, assetId: number): Promise<DramaAsset> {
+// 轮询直到资产生图结束；generating 时回调以便 UI 切到「生成中」
+async function waitForAssetImage(
+  projectId: number,
+  assetId: number,
+  onRemoteStatus?: (status: string) => void,
+): Promise<DramaAsset> {
   const started = Date.now()
   while (Date.now() - started < POLL_TIMEOUT_MS) {
     const list = await dramaApi.listAssets(projectId)
     const latest = list.find((a) => a.id === assetId)
     if (!latest) throw new Error('资产不存在')
     const status = readGenerationStatus(latest)
-    if ((latest.url || latest.cover) && status !== 'generating') {
+    onRemoteStatus?.(status)
+    if ((latest.url || latest.cover) && status !== 'generating' && status !== 'queued') {
       return latest
     }
     if (status === 'failed') {
@@ -188,21 +196,32 @@ async function waitForAssetImage(projectId: number, assetId: number): Promise<Dr
     if (status === 'done' && (latest.url || latest.cover)) {
       return latest
     }
+    if (!['queued', 'generating', ''].includes(status) && (latest.url || latest.cover)) {
+      return latest
+    }
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
   }
   throw new Error('生图超时，请刷新后重试')
 }
 
 /*
+ * waitingSubmit 等待 POST 入队的任务
  * waitingPoll 已提交、等待轮询槽位的任务
  */
+const waitingSubmit: InternalJob[] = []
+let submittingCount = 0
 const waitingPoll: InternalJob[] = []
 
 // 有限并发轮询后端结果
 async function pollJob(job: InternalJob) {
   pollingCount += 1
   try {
-    const asset = await waitForAssetImage(job.projectId, job.assetId)
+    const asset = await waitForAssetImage(job.projectId, job.assetId, (remoteStatus) => {
+      if (remoteStatus === 'generating' && job.status !== 'running') {
+        job.status = 'running'
+        emit()
+      }
+    })
     job.status = 'done'
     job.finishedAt = Date.now()
     emit()
@@ -216,13 +235,13 @@ async function pollJob(job: InternalJob) {
     job.reject(err instanceof Error ? err : new Error(message))
   } finally {
     pollingCount -= 1
-    pump()
+    pumpPoll()
     emit()
   }
 }
 
 // 调度轮询槽位
-function pump() {
+function pumpPoll() {
   if (pumping) return
   pumping = true
   queueMicrotask(() => {
@@ -237,36 +256,62 @@ function pump() {
   })
 }
 
-// 提交后端（Worker 入队）后进入轮询队列
-function startJob(job: InternalJob) {
-  void (async () => {
-    try {
-      if (!job.resumeOnly) {
-        await dramaApi.generateImage({
-          project_id: job.projectId,
-          asset_id: job.assetId,
-          prompt: job.prompt,
-          name: job.assetName || undefined,
-          asset_type_kind: job.assetType,
-          image_style_id: job.options.image_style_id,
-          model_id: job.options.model_id,
-          aspect_ratio: job.options.aspect_ratio,
-          resolution: job.options.resolution,
-        })
-      }
-      job.status = 'running'
-      emit()
-      waitingPoll.push(job)
-      pump()
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '生图失败'
-      job.status = 'failed'
-      job.error = message
-      job.finishedAt = Date.now()
-      emit()
-      job.reject(err instanceof Error ? err : new Error(message))
+// 有限并发 POST 入队
+async function submitJob(job: InternalJob) {
+  submittingCount += 1
+  try {
+    if (!job.resumeOnly) {
+      const resp = await dramaApi.generateImage({
+        project_id: job.projectId,
+        asset_id: job.assetId,
+        prompt: job.prompt,
+        name: job.assetName || undefined,
+        asset_type_kind: job.assetType,
+        image_style_id: job.options.image_style_id,
+        model_id: job.options.model_id,
+        aspect_ratio: job.options.aspect_ratio,
+        resolution: job.options.resolution,
+      })
+      job.taskId = resp.task_id != null ? Number(resp.task_id) : undefined
     }
-  })()
+    waitingPoll.push(job)
+    pumpPoll()
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '生图失败'
+    job.status = 'failed'
+    job.error = message
+    job.finishedAt = Date.now()
+    emit()
+    job.reject(err instanceof Error ? err : new Error(message))
+  } finally {
+    submittingCount -= 1
+    pumpSubmit()
+    emit()
+  }
+}
+
+// 调度入队提交槽位
+function pumpSubmit() {
+  queueMicrotask(() => {
+    while (submittingCount < MAX_SUBMIT_CONCURRENT && waitingSubmit.length > 0) {
+      const next = waitingSubmit.shift()
+      if (!next) break
+      if (next.status === 'failed' || next.status === 'done') continue
+      void submitJob(next)
+    }
+    emit()
+  })
+}
+
+// 加入本地队列后等待提交/轮询
+function startJob(job: InternalJob) {
+  if (job.resumeOnly) {
+    waitingPoll.push(job)
+    pumpPoll()
+    return
+  }
+  waitingSubmit.push(job)
+  pumpSubmit()
 }
 
 /**
@@ -328,7 +373,7 @@ export function resumeDramaImageGensFromAssets(
     /* 视频资产走 Seedance 队列，避免刷新后误 POST 生图 */
     if ((asset.type || '').toLowerCase() === 'video') continue
     const status = readGenerationStatus(asset)
-    if (status !== 'generating') continue
+    if (status !== 'generating' && status !== 'queued') continue
     if (isDramaAssetImageBusy(asset.id)) continue
     void enqueueDramaImageGen({
       projectId,
