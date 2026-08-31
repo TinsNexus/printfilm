@@ -15,7 +15,13 @@ from app.schemas_api import (
     V1SeedanceTaskRequest,
     V1VideoGenerateRequest,
 )
-from app.services.billing import record_usage, settle_usage_charge
+from app.services.ark import get_ark
+from app.services.billing import (
+    record_line,
+    run_billed_ephemeral,
+    run_billed_ephemeral_deferred,
+    settle_deferred_video_poll,
+)
 from app.services.studio_tools import poll_video_task, ratio_to_size
 from app.services import storage
 
@@ -42,44 +48,60 @@ async def generate_image(
     user: User = Depends(_resolve_api_user),
 ) -> V1GenerationOut:
     """文生图 / 图生图（Seedream）。"""
-    ark = get_ark()
-    refs: list[str] | None = None
-    prompt = body.prompt.strip()
-    if body.image_url:
-        refs = [body.image_url.strip()]
-        prompt = f"{prompt}。在保持主体可识别的前提下适度改变风格"
-    size = ratio_to_size(body.ratio)
-    try:
-        result = await ark.gen_image(
-            prompt,
-            body.negative,
-            refs,
-            project_id=0,
-            shot_no=user.id,
-            size=size,
-        )
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=str(exc)[:400]) from exc
 
-    ev = await record_usage(
-        db,
-        user_id=user.id,
-        project_id=None,
-        billing_key="seedream",
-        model=get_settings().model_image,
-        estimated=True,
-        raw={"source": "api_v1_image"},
-    )
+    async def _exec() -> str:
+        ark = get_ark()
+        refs: list[str] | None = None
+        prompt = body.prompt.strip()
+        if body.image_url:
+            refs = [body.image_url.strip()]
+            prompt = f"{prompt}。在保持主体可识别的前提下适度改变风格"
+        size = ratio_to_size(body.ratio)
+        try:
+            result = await ark.gen_image(
+                prompt,
+                body.negative,
+                refs,
+                project_id=0,
+                shot_no=user.id,
+                size=size,
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=str(exc)[:400]) from exc
+
+        await record_line(
+            db,
+            user_id=user.id,
+            billing_key="seedream",
+            model=get_settings().model_image,
+            estimated=True,
+            domain="api",
+            raw={"source": "api_v1_image"},
+        )
+        url = result.local_url or result.remote_url or ""
+        if url:
+            url = storage.republish_url(url, sync=True) or url
+        return url
+
     try:
-        await settle_usage_charge(db, user, int(ev.charge_fen or 0), ref_type="api", ref_id=f"img:{ev.id}")
+        task, url = await run_billed_ephemeral(
+            db,
+            user,
+            domain="api",
+            task_type="v1_image",
+            executor=_exec,
+            payload={"prompt_len": len(body.prompt or "")},
+            commit=True,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=402, detail=str(exc)) from exc
 
-    url = result.local_url or result.remote_url or ""
-    if url:
-        url = storage.republish_url(url, sync=True) or url
-    await db.commit()
-    return V1GenerationOut(status="succeeded", kind="image", urls=[url] if url else [])
+    return V1GenerationOut(
+        status="succeeded",
+        kind="image",
+        urls=[url] if url else [],
+        task_id=str(task.id),
+    )
 
 
 @router.post("/videos/generations", response_model=V1GenerationOut)
@@ -89,37 +111,39 @@ async def generate_video(
     user: User = Depends(_resolve_api_user),
 ) -> V1GenerationOut:
     """首帧图 + 文案 → Seedance 图生视频，返回 task_id。"""
-    ark = get_ark()
-    try:
-        task_id = await ark.gen_video_i2v(
-            body.image_url.strip(),
-            body.prompt.strip(),
-            body.duration,
-            resolution=body.resolution,
-            generate_audio=body.generate_audio,
-        )
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=str(exc)[:400]) from exc
 
-    ev = await record_usage(
-        db,
-        user_id=user.id,
-        project_id=None,
-        billing_key="seedance2:video0",
-        model=get_settings().model_video,
-        estimated=True,
-        raw={"source": "api_v1_video", "duration": body.duration},
-    )
+    async def _exec() -> str:
+        ark = get_ark()
+        try:
+            upstream_id = await ark.gen_video_i2v(
+                body.image_url.strip(),
+                body.prompt.strip(),
+                body.duration,
+                resolution=body.resolution,
+                generate_audio=body.generate_audio,
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=str(exc)[:400]) from exc
+
+        return upstream_id
+
     try:
-        await settle_usage_charge(db, user, int(ev.charge_fen or 0), ref_type="api", ref_id=f"vid:{ev.id}")
+        task, upstream_id = await run_billed_ephemeral_deferred(
+            db,
+            user,
+            domain="api",
+            task_type="v1_video",
+            executor=_exec,
+            payload={"duration": body.duration},
+            commit=True,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=402, detail=str(exc)) from exc
 
-    await db.commit()
     return V1GenerationOut(
         status="queued",
         kind="video",
-        task_id=task_id,
+        task_id=upstream_id,
         preview_url=body.image_url,
         urls=[],
     )
@@ -148,28 +172,29 @@ async def forward_seedance(
     if body.ratio:
         payload["ratio"] = body.ratio
 
-    ark = get_ark()
-    try:
-        task_id = await ark.gen_video_seedance_body(payload, project_id=0)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=str(exc)[:400]) from exc
+    async def _exec() -> str:
+        ark = get_ark()
+        try:
+            upstream_id = await ark.gen_video_seedance_body(payload, project_id=0)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=str(exc)[:400]) from exc
 
-    ev = await record_usage(
-        db,
-        user_id=user.id,
-        project_id=None,
-        billing_key="seedance2:video0",
-        model=settings.model_video,
-        estimated=True,
-        raw={"source": "api_v1_seedance"},
-    )
+        return upstream_id
+
     try:
-        await settle_usage_charge(db, user, int(ev.charge_fen or 0), ref_type="api", ref_id=f"sd:{ev.id}")
+        task, upstream_id = await run_billed_ephemeral_deferred(
+            db,
+            user,
+            domain="api",
+            task_type="v1_seedance",
+            executor=_exec,
+            payload={"duration": body.duration},
+            commit=True,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=402, detail=str(exc)) from exc
 
-    await db.commit()
-    return V1GenerationOut(status="queued", kind="video", task_id=task_id, urls=[])
+    return V1GenerationOut(status="queued", kind="video", task_id=upstream_id, urls=[])
 
 
 @router.get("/tasks/{task_id}", response_model=V1GenerationOut)
@@ -181,7 +206,15 @@ async def get_task(
     """查询 Seedance 视频任务状态。"""
     if not task_id.strip():
         raise HTTPException(status_code=400, detail="缺少 task_id")
-    data = await poll_video_task(user, task_id.strip())
+    tid = task_id.strip()
+    data = await poll_video_task(user, tid)
+    await settle_deferred_video_poll(
+        db,
+        user,
+        provider_task_id=tid,
+        poll_status=str(data.get("status") or ""),
+        error=str(data.get("error") or "") or None,
+    )
     await db.commit()
     return V1GenerationOut(
         status=str(data.get("status") or "running"),

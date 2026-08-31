@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from datetime import UTC, datetime
 
 from app.database import AsyncSessionLocal
+from app.services.billing.context import billing_scope
+from app.services.billing.settlement import freeze_for_task, settle_task
 from app.services.tasks.handlers import get_task_handler
 from app.services.tasks.service import append_task_event, get_task_for_runtime, set_task_step_state
+
+logger = logging.getLogger(__name__)
 
 
 # 执行单个任务并回写平台状态。
@@ -24,6 +30,8 @@ async def execute_task_run(task_id: int) -> None:
             task.error_code = "handler_missing"
             task.error_message = f"未注册任务处理器: {task.domain}/{task.task_type}"
             task.finished_at = datetime.now(UTC)
+            # 未进入预扣，保持 none
+            task.billing_status = "none"
             await append_task_event(
                 db,
                 task.id,
@@ -34,6 +42,28 @@ async def execute_task_run(task_id: int) -> None:
             )
             await db.commit()
             return
+
+        try:
+            await freeze_for_task(db, task)
+        except ValueError as exc:
+            await _fail_drama_asset_generation_if_needed(db, task, str(exc))
+            task.status = "failed"
+            task.error_code = "insufficient_balance"
+            task.error_message = str(exc)[:500]
+            task.finished_at = datetime.now(UTC)
+            # 未预扣成功，保持 none（skipped 仅表示无限额跳过扣费）
+            task.billing_status = "none"
+            await append_task_event(
+                db,
+                task.id,
+                event_type="task.failed",
+                status=task.status,
+                phase=task.current_step_key,
+                message=task.error_message,
+            )
+            await db.commit()
+            return
+
         step = task.steps[0] if task.steps else None
         now = datetime.now(UTC)
         task.status = "running"
@@ -52,27 +82,30 @@ async def execute_task_run(task_id: int) -> None:
         await db.commit()
 
     try:
-        async with AsyncSessionLocal() as db:
-            task = await get_task_for_runtime(db, task_id)
-            if not task:
-                return
-            handler = get_task_handler(task.domain, task.task_type)
-            result = await handler.executor(task) if handler else {"ok": False, "error": "missing_handler"}
-            task = await get_task_for_runtime(db, task_id)
-            if not task:
-                return
-            # handler 在独立 session 提交后，本 session 可能仍缓存 running（expire_on_commit=False）
-            await db.refresh(task)
-            if isinstance(result, dict) and (result.get("deferred") or result.get("awaiting_poll")):
-                return
-            if task.status == "awaiting_poll":
-                return
-            if task.status == "pending" and isinstance(result, dict) and result.get("deferred"):
-                return
-            if isinstance(result, dict) and result.get("cancelled"):
-                await _mark_cancelled(db, task)
-                return
-            await _complete_task(db, task, result or {"ok": True})
+        async with billing_scope(task_id):
+            async with AsyncSessionLocal() as db:
+                task = await get_task_for_runtime(db, task_id)
+                if not task:
+                    return
+                handler = get_task_handler(task.domain, task.task_type)
+                result = await handler.executor(task) if handler else {"ok": False, "error": "missing_handler"}
+                task = await get_task_for_runtime(db, task_id)
+                if not task:
+                    return
+                await db.refresh(task)
+                if isinstance(result, dict) and (result.get("deferred") or result.get("awaiting_poll")):
+                    await db.commit()
+                    return
+                if task.status == "awaiting_poll":
+                    await db.commit()
+                    return
+                if task.status == "pending" and isinstance(result, dict) and result.get("deferred"):
+                    await db.commit()
+                    return
+                if isinstance(result, dict) and result.get("cancelled"):
+                    await _mark_cancelled(db, task)
+                    return
+                await _complete_task(db, task, result or {"ok": True})
     except asyncio.CancelledError:
         async with AsyncSessionLocal() as db:
             task = await get_task_for_runtime(db, task_id)
@@ -87,9 +120,6 @@ async def execute_task_run(task_id: int) -> None:
             task = await get_task_for_runtime(db, task_id)
             if task:
                 await _fail_task(db, task, exc)
-
-
-import asyncio
 
 
 # 把任务收敛到成功态。
@@ -112,6 +142,10 @@ async def _complete_task(db, task, result: dict) -> None:
         message="任务执行完成" if task.status == "succeeded" else "任务已取消",
         payload=result,
     )
+    try:
+        await settle_task(db, task.id)
+    except Exception:  # noqa: BLE001
+        logger.exception("settle_task failed task_id=%s", task.id)
     await db.commit()
 
 
@@ -143,7 +177,6 @@ async def _fail_task(db, task, exc: Exception) -> None:
                 "error": task.error_message,
             }
             frag.params = params
-    # 科普拼接/流水线失败时同步项目态，避免卡在 COMPOSING 等 running 状态无法重试
     if task.domain == "kepu" and task.project_id:
         from app.models import Project, ProjectStatus
 
@@ -170,6 +203,10 @@ async def _fail_task(db, task, exc: Exception) -> None:
             batch_index,
             "上一镜失败，无法衔接尾帧",
         )
+    try:
+        await settle_task(db, task.id)
+    except Exception:  # noqa: BLE001
+        logger.exception("settle_task failed task_id=%s", task.id)
     await db.commit()
 
 
@@ -190,7 +227,27 @@ async def _mark_cancelled(db, task) -> None:
         phase=task.current_step_key,
         message="任务已取消",
     )
+    try:
+        await settle_task(db, task.id)
+    except Exception:  # noqa: BLE001
+        logger.exception("settle_task failed task_id=%s", task.id)
     await db.commit()
+
+
+async def _fail_drama_asset_generation_if_needed(db, task, error: str) -> None:
+    """任务未开始执行时失败，同步更新漫剧资产 generation 状态。"""
+    if (task.domain or "") != "drama" or not task.asset_id:
+        return
+    if (task.task_type or "") not in {"asset_image", "asset_video"}:
+        return
+    from app.models_drama import DramaAsset
+
+    asset = await db.get(DramaAsset, int(task.asset_id))
+    if not asset:
+        return
+    params = dict(asset.params or {})
+    params["generation"] = {"status": "failed", "error": error[:400]}
+    asset.params = params
 
 
 # 应用重启或热更新中断时，把任务重新放回待执行状态。

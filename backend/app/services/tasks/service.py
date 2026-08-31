@@ -71,6 +71,21 @@ async def create_task(
     handler = get_task_handler(body.domain, body.task_type)
     if handler is None:
         raise ValueError("当前任务类型尚未接入任务平台")
+    from app.services.billing.settlement import ensure_balance_for_task
+
+    balance_probe = TaskRun(
+        domain=body.domain,
+        task_type=body.task_type,
+        requested_by=user.id,
+        payload=body.payload,
+        project_id=body.project_id,
+        drama_project_id=body.drama_project_id,
+        episode_id=body.episode_id,
+        fragment_id=body.fragment_id,
+        asset_id=body.asset_id,
+        shot_id=body.shot_id,
+    )
+    estimate_fen = await ensure_balance_for_task(db, user, balance_probe)
     planned_steps = handler.plan_steps(body)
     first_step = planned_steps[0] if planned_steps else None
     now = datetime.now(UTC)
@@ -99,6 +114,7 @@ async def create_task(
         fragment_id=body.fragment_id,
         asset_id=body.asset_id,
         shot_id=body.shot_id,
+        billing_estimate_fen=int(estimate_fen or 0),
     )
     db.add(task)
     await db.flush()

@@ -8,7 +8,7 @@ from app.config import get_settings
 from app.models import User
 from app.models_drama import DramaAsset, DramaProject
 from app.services.ark import get_ark
-from app.services.billing import record_usage
+from app.services.billing import record_line
 from app.services.drama.voice_design import (
     design_voice,
     parse_speaker_pool,
@@ -214,7 +214,7 @@ async def synthesize_voice_asset(
     gen = params.get("generation") if isinstance(params.get("generation"), dict) else {}
     params["generation"] = {**gen, "status": "done", "url": audio_url}
     asset.params = params
-    await record_usage(
+    await record_line(
         db,
         user_id=user.id,
         project_id=None,
@@ -222,6 +222,7 @@ async def synthesize_voice_asset(
         billing_key="tts",
         model=settings.model_audio,
         estimated=True,
+        domain="drama",
     )
     await db.commit()
     await db.refresh(asset)

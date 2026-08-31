@@ -19,7 +19,13 @@ from app.config import get_settings
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import Order, Project, UsageEvent, User
+from app.models_tasks import TaskRun
 from app.services import billing, epay
+from app.services.billing.http import http_exception_for_value_error
+from app.services.billing.settlement import (
+    billing_active,
+    ensure_balance_for_task_batch,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/billing", tags=["billing"])
@@ -51,6 +57,54 @@ async def list_skus() -> dict:
         "skus": billing.SKUS,
         "pay_types": ["alipay", "wxpay"],
         "markup": settings.billing_markup,
+    }
+
+
+@router.get("/preflight")
+async def billing_preflight(
+    domain: str = Query(..., min_length=1),
+    task_type: str = Query(..., min_length=1),
+    count: int = Query(1, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """入队前余额预检：返回单项估算与批量总需求。"""
+    if not billing_active(user):
+        return {
+            "ok": True,
+            "billing_enabled": False,
+            "balance_fen": int(user.balance_fen or 0),
+            "unit_estimate_fen": 0,
+            "pending_commitment_fen": 0,
+            "requested_total_fen": 0,
+            "required_total_fen": 0,
+        }
+    probe = TaskRun(
+        domain=domain.strip(),
+        task_type=task_type.strip(),
+        requested_by=user.id,
+        payload={},
+    )
+    try:
+        summary = await ensure_balance_for_task_batch(db, user, probe, count)
+    except ValueError as exc:
+        raise http_exception_for_value_error(exc) from exc
+    return {
+        "ok": True,
+        "billing_enabled": True,
+        "balance_fen": summary["balance_fen"],
+        "balance_yuan": round(summary["balance_fen"] / 100, 2),
+        "unit_estimate_fen": summary["unit_estimate_fen"],
+        "unit_estimate_yuan": round(summary["unit_estimate_fen"] / 100, 2),
+        "pending_commitment_fen": summary["pending_commitment_fen"],
+        "pending_commitment_yuan": round(summary["pending_commitment_fen"] / 100, 2),
+        "requested_total_fen": summary["requested_total_fen"],
+        "requested_total_yuan": round(summary["requested_total_fen"] / 100, 2),
+        "required_total_fen": summary["required_total_fen"],
+        "required_total_yuan": round(summary["required_total_fen"] / 100, 2),
+        "count": int(count),
+        "domain": domain.strip(),
+        "task_type": task_type.strip(),
     }
 
 

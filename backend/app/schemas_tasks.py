@@ -22,7 +22,7 @@ class TaskTargetBind(BaseModel):
 class TaskCreateRequest(BaseModel):
     """Create a platform task run."""
 
-    domain: str = Field(default="drama", description="drama | kepu | tools")
+    domain: str = Field(default="drama", description="drama | kepu | tools | api | studio")
     task_type: str = Field(min_length=1, max_length=64)
     priority: int = Field(default=100, ge=0, le=1000)
     client_request_id: str | None = Field(default=None, max_length=128)
@@ -196,6 +196,10 @@ class TaskRunOut(BaseModel):
     updated_at: datetime | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    billing_estimate_fen: int = 0
+    billing_charged_fen: int = 0
+    billing_refunded_fen: int = 0
+    billing_status: str = "none"
     steps: list[TaskStepOut] = Field(default_factory=list)
     targets: list[TaskTargetOut] = Field(default_factory=list)
     events: list[TaskEventOut] = Field(default_factory=list)
@@ -226,6 +230,50 @@ class AdminTaskRunOut(TaskRunOut):
     """Admin task view with requester email."""
 
     user_email: str | None = None
+    usage_lines: list["AdminUsageEventBriefOut"] = Field(default_factory=list)
+
+
+class AdminUsageEventBriefOut(BaseModel):
+    """Compact usage line for task billing tab."""
+
+    id: int
+    billing_key: str
+    capability: str | None = None
+    model: str = ""
+    total_tokens: int = 0
+    charge_fen: int = 0
+    estimated: bool = False
+    created_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class AdminUsageEventOut(BaseModel):
+    """Admin usage event list row."""
+
+    id: int
+    user_id: int
+    user_email: str | None = None
+    task_run_id: int | None = None
+    domain: str | None = None
+    capability: str | None = None
+    billing_key: str
+    model: str = ""
+    total_tokens: int = 0
+    charge_fen: int = 0
+    cost_fen: int = 0
+    estimated: bool = False
+    created_at: datetime | None = None
+    task_domain: str | None = None
+    task_type: str | None = None
+    task_status: str | None = None
+
+
+class AdminUsageEventListOut(BaseModel):
+    """Paginated admin usage events."""
+
+    items: list[AdminUsageEventOut] = Field(default_factory=list)
+    meta: PageMeta
 
 
 class AdminTaskListOut(BaseModel):

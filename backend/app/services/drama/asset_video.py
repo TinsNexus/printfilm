@@ -12,7 +12,7 @@ from app.config import get_settings
 from app.models import User
 from app.models_drama import DramaAsset, DramaProject
 from app.services.ark import get_ark
-from app.services.billing import record_usage
+from app.services.billing import record_line
 from app.services.drama.billing_util import seedance_video_billing_tokens
 from app.services.drama.build_seedance_generate_body import (
     build_seedance_generate_body,
@@ -148,7 +148,7 @@ async def generate_asset_video(
     }
     asset.params = params
 
-    await record_usage(
+    await record_line(
         db,
         user_id=user.id,
         project_id=None,
@@ -157,6 +157,7 @@ async def generate_asset_video(
         model=settings.model_video,
         tokens=seedance_video_billing_tokens(duration),
         estimated=True,
+        domain="drama",
     )
     await db.commit()
     await db.refresh(asset)

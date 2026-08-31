@@ -12,6 +12,7 @@ from app.database import get_db
 from app.deps import get_current_user
 from app.models import ToolRun, User
 from app.schemas_tools import ToolRunListOut, ToolRunOut, ToolRunRecordOut, ToolTaskOut
+from app.services.billing import run_billed_ephemeral_deferred, settle_deferred_video_poll
 from app.services.studio_tools import (
     enqueue_image_tool,
     get_tool_run,
@@ -66,36 +67,54 @@ async def run_tool(
                 raise ValueError("单个文件不能超过 40MB")
             saved.append(save_upload(user.id, raw, item.filename or "upload.bin"))
         if tid in IMAGE_TOOLS:
-            data = await enqueue_image_tool(
-                db,
-                user,
-                tool_id=tid,
-                prompt=prompt,
-                negative=negative,
-                ratio=ratio or None,
-                strength=strength or None,
-                mode=mode or None,
-                pack=pack or None,
-                files=saved,
-                params=tool_params,
-            )
+            try:
+                data = await enqueue_image_tool(
+                    db,
+                    user,
+                    tool_id=tid,
+                    prompt=prompt,
+                    negative=negative,
+                    ratio=ratio or None,
+                    strength=strength or None,
+                    mode=mode or None,
+                    pack=pack or None,
+                    files=saved,
+                    params=tool_params,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=402, detail=str(exc)) from exc
         elif tid in VIDEO_TOOLS:
-            data = await start_video_tool(
-                db,
-                user,
-                tool_id=tid,
-                prompt=prompt,
-                ratio=ratio or None,
-                duration_raw=duration or None,
-                motion=motion or None,
-                files=saved,
-            )
+            async def _exec_video() -> dict:
+                return await start_video_tool(
+                    db,
+                    user,
+                    tool_id=tid,
+                    prompt=prompt,
+                    ratio=ratio or None,
+                    duration_raw=duration or None,
+                    motion=motion or None,
+                    files=saved,
+                )
+
+            try:
+                billing_task, data = await run_billed_ephemeral_deferred(
+                    db,
+                    user,
+                    domain="studio",
+                    task_type="tool_video",
+                    executor=_exec_video,
+                    payload=tool_params,
+                    commit=False,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=402, detail=str(exc)) from exc
+            data = {**data, "billing_task_id": billing_task.id}
             await persist_tool_run(
                 db,
                 user_id=user.id,
                 tool_id=tid,
                 prompt=prompt,
-                params=tool_params,
+                params={**tool_params, "billing_task_id": billing_task.id},
                 data=data,
             )
         else:
@@ -123,10 +142,26 @@ async def get_tool_task(
             select(ToolRun).where(ToolRun.user_id == user.id, ToolRun.task_id == tid).limit(1)
         )
     ).scalar_one_or_none()
+    billing_task_id: int | None = None
+    if row and isinstance(row.params, dict):
+        raw_bid = row.params.get("billing_task_id")
+        if raw_bid is not None:
+            try:
+                billing_task_id = int(raw_bid)
+            except (TypeError, ValueError):
+                billing_task_id = None
     if row and row.kind == "image":
         data = await poll_image_tool_task(db, user, tid)
     else:
         data = await poll_video_task(user, tid)
+        await settle_deferred_video_poll(
+            db,
+            user,
+            provider_task_id=tid,
+            poll_status=str(data.get("status") or ""),
+            error=str(data.get("error") or "") or None,
+            billing_task_id=billing_task_id,
+        )
     await update_tool_run_task(db, user.id, tid, data)
     await db.commit()
     return ToolTaskOut.model_validate(data)

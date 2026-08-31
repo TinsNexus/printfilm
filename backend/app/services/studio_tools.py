@@ -14,8 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.models import ToolRun, User
+from app.models_tasks import TaskRun
 from app.services.ark import get_ark
-from app.services.billing import record_usage
+from app.services.billing import record_line, run_billed_ephemeral
+from app.services.billing.estimates import estimate_task_fen
+from app.services.billing.settlement import billing_active
 from app.services.ffmpeg_compose import extract_video_poster_frame
 from app.services import storage
 
@@ -193,13 +196,13 @@ async def run_image_tool(
         shot_no=user.id,
         size=size,
     )
-    await record_usage(
+    await record_line(
         db,
         user_id=user.id,
-        project_id=None,
         billing_key="seedream",
         model=get_settings().model_image,
         estimated=True,
+        domain="studio",
         raw={"tool_id": tool_id},
     )
     url = result.local_url or result.remote_url or ""
@@ -214,6 +217,17 @@ def _dispatch_tool_image(run_id: int) -> str:
 
     asyncio.create_task(execute_image_tool_run(run_id))
     return f"local-{run_id}"
+
+
+# 入队前同步校验余额（与 run_billed_ephemeral 预扣估算一致）
+async def _ensure_image_tool_balance(db: AsyncSession, user: User, tool_id: str) -> None:
+    if not billing_active(user):
+        return
+    synthetic = TaskRun(domain="studio", task_type="tool_image", payload={"tool_id": tool_id})
+    need = await estimate_task_fen(db, synthetic)
+    available = int(user.balance_fen or 0)
+    if available < need:
+        raise ValueError(f"余额不足：需要 ¥{need/100:.2f}，当前 ¥{available/100:.2f}，请先充值")
 
 
 # 提交生图任务：立即返回 task_id，实际生成在后台执行
@@ -231,6 +245,7 @@ async def enqueue_image_tool(
     files: list[Path],
     params: dict,
 ) -> dict:
+    await _ensure_image_tool_balance(db, user, tool_id)
     row = ToolRun(
         user_id=user.id,
         tool_id=tool_id,
@@ -281,17 +296,28 @@ async def execute_image_tool_run(run_id: int) -> dict:
         await db.commit()
 
         try:
-            data = await run_image_tool(
+            async def _exec() -> dict:
+                return await run_image_tool(
+                    db,
+                    user,
+                    tool_id=row.tool_id,
+                    prompt=row.prompt or "",
+                    negative=str(stored.get("negative") or ""),
+                    ratio=stored.get("ratio") or None,
+                    strength=stored.get("strength") or None,
+                    mode=stored.get("mode") or None,
+                    pack=stored.get("pack") or None,
+                    files=file_paths,
+                )
+
+            billing_task, data = await run_billed_ephemeral(
                 db,
                 user,
-                tool_id=row.tool_id,
-                prompt=row.prompt or "",
-                negative=str(stored.get("negative") or ""),
-                ratio=stored.get("ratio") or None,
-                strength=stored.get("strength") or None,
-                mode=stored.get("mode") or None,
-                pack=stored.get("pack") or None,
-                files=file_paths,
+                domain="studio",
+                task_type="tool_image",
+                executor=_exec,
+                payload={"tool_id": row.tool_id, "run_id": run_id},
+                commit=False,
             )
             urls = ensure_public_urls(list(data.get("urls") or []))
             row.kind = str(data.get("kind") or "image")
@@ -299,8 +325,11 @@ async def execute_image_tool_run(run_id: int) -> dict:
             row.urls = urls
             row.preview_url = urls[0] if urls else row.preview_url
             row.error = None
+            params = dict(row.params or {})
+            params["billing_task_id"] = billing_task.id
+            row.params = params
             await db.commit()
-            return {"ok": True, "run_id": run_id, "urls": urls}
+            return {"ok": True, "run_id": run_id, "urls": urls, "billing_task_id": billing_task.id}
         except Exception as exc:  # noqa: BLE001
             row.status = "failed"
             row.error = str(exc)[:512]
@@ -358,12 +387,12 @@ async def start_video_tool(
             shot_no=user.id,
             size=ratio_to_size(ratio or "9:16"),
         )
-        await record_usage(
+        await record_line(
             db,
             user_id=user.id,
-            project_id=None,
             billing_key="seedream",
             estimated=True,
+            domain="studio",
             raw={"tool_id": "t2v-still"},
         )
         preview_url = still.local_url or still.remote_url
@@ -398,15 +427,6 @@ async def start_video_tool(
         duration,
         resolution="480p",
         generate_audio=False,
-    )
-    await record_usage(
-        db,
-        user_id=user.id,
-        project_id=None,
-        billing_key="seedance2:video0",
-        model=get_settings().model_video,
-        estimated=True,
-        raw={"tool_id": tool_id, "duration": duration},
     )
     digest = hashlib.md5(f"{user.id}:{task_id}".encode()).hexdigest()[:8]
     logger.info("tool video queued user=%s tool=%s task=%s hash=%s", user.id, tool_id, task_id, digest)

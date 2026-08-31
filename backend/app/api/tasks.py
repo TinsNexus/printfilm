@@ -11,6 +11,7 @@ from app.database import get_db
 from app.deps import get_current_user
 from app.models import User
 from app.schemas_tasks import MockDelayTaskRequest, TaskCreateRequest, TaskListOut, TaskRunOut
+from app.services.billing.http import http_exception_for_value_error
 from app.services.tasks.service import (
     cancel_task_for_user,
     count_active_tasks_for_user,
@@ -59,7 +60,7 @@ async def create_mock_delay_task(
                 ),
             )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise http_exception_for_value_error(exc) from exc
     return TaskRunOut.model_validate(task)
 
 
@@ -125,7 +126,7 @@ async def cancel_task_run(
     except LookupError as exc:
         raise HTTPException(status_code=404, detail="任务不存在") from exc
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise http_exception_for_value_error(exc) from exc
     return TaskRunOut.model_validate(task)
 
 

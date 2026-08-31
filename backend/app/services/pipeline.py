@@ -48,17 +48,6 @@ _running: dict[int, asyncio.Task] = {}
 _cancelled: set[int] = set()
 
 
-async def _settle_billing(project_id: int) -> None:
-    try:
-        from app.services import billing as billing_svc
-
-        async with AsyncSessionLocal() as db:
-            await billing_svc.settle_project(db, project_id)
-            await db.commit()
-    except Exception:  # noqa: BLE001
-        logger.exception("billing settle failed project=%s", project_id)
-
-
 async def _record_usage_est(
     project_id: int,
     billing_key: str,
@@ -66,22 +55,25 @@ async def _record_usage_est(
     tokens: int = 0,
     model: str = "",
     estimated: bool = True,
+    shot_id: int | None = None,
 ) -> None:
     try:
-        from app.services import billing as billing_svc
+        from app.services.billing import record_line
 
         async with AsyncSessionLocal() as db:
             project = await db.get(Project, project_id)
             if not project:
                 return
-            await billing_svc.record_usage(
+            await record_line(
                 db,
                 user_id=project.user_id,
-                project_id=project_id,
                 billing_key=billing_key,
                 model=model,
                 tokens=tokens,
                 estimated=estimated,
+                project_id=project_id,
+                shot_id=shot_id,
+                domain="kepu",
             )
             await db.commit()
     except Exception:  # noqa: BLE001
@@ -416,8 +408,6 @@ async def run_pipeline(project_id: int) -> None:
                     "message": "分镜已生成，请确认修改后手动继续",
                 },
             )
-            await _settle_billing(project_id)
-            logger.info("pipeline paused after script project=%s", project_id)
             return
 
         logger.info(
@@ -500,7 +490,6 @@ async def run_pipeline(project_id: int) -> None:
                 project.status = ProjectStatus.CANCELLED
                 project.error_msg = "用户取消"
                 await db.commit()
-        await _settle_billing(project_id)
         await publish_progress(
             project_id,
             {
@@ -520,7 +509,6 @@ async def run_pipeline(project_id: int) -> None:
                     project.status = ProjectStatus.CANCELLED
                     project.error_msg = "用户取消"
                     await db.commit()
-            await _settle_billing(project_id)
             await publish_progress(
                 project_id,
                 {
@@ -544,7 +532,6 @@ async def run_pipeline(project_id: int) -> None:
                 project.status = ProjectStatus.FAILED
                 project.error_msg = fail_msg
                 await db.commit()
-        await _settle_billing(project_id)
         await publish_progress(
             project_id,
             {
@@ -1544,10 +1531,7 @@ async def _compose_stage(project_id: int) -> None:
             project.status = ProjectStatus.DONE
             project.progress = 100
             await db.commit()
-    await _settle_billing(project_id)
-
-
-# FFmpeg 合成：遇到 SIGTERM 自动重试，避免部署重启等打断直接落失败
+# 遇到 SIGTERM 自动重试，避免部署重启等打断直接落失败
 async def _run_ffmpeg_compose_with_retry(project_id: int, work) -> None:
     last_exc: BaseException | None = None
     for attempt in range(1, _COMPOSE_SIGTERM_MAX_ATTEMPTS + 1):
@@ -1638,6 +1622,14 @@ async def regen_shot_image(project_id: int, shot_id: int) -> None:
         project.status = ProjectStatus.IMAGE_READY
         project.final_video_url = None
         await db.commit()
+    s = get_settings()
+    await _record_usage_est(
+        project_id,
+        "seedream",
+        tokens=s.billing_est_seedream_tokens,
+        model=s.model_image,
+        shot_id=shot_id,
+    )
 
 
 @storage.without_intermediate_oss
@@ -1696,6 +1688,15 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
         project.final_video_url = None
         project.status = ProjectStatus.VIDEO_READY
         await db.commit()
+    billing_key = "seedance2:video0" if generate_audio else "seedance2:video1"
+    tok = int(max(float(dur), 2.0) * cfg.billing_est_seedance_tokens_per_sec)
+    await _record_usage_est(
+        project_id,
+        billing_key,
+        tokens=tok,
+        model=cfg.model_video,
+        shot_id=shot_id,
+    )
 
 
 @storage.without_intermediate_oss

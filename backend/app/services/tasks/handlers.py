@@ -57,21 +57,15 @@ async def _run_drama_fragment_plan(task: TaskRun) -> dict[str, Any] | None:
     )
 
 
-# 执行漫剧分镜视频任务。
+# 执行漫剧分镜视频任务（NIO + 任务平台计费；每 task 仅处理一个 fragment）。
 async def _run_drama_fragment_video(task: TaskRun) -> dict[str, Any] | None:
-    from app.services.drama.jobs import run_episode_generate_job, submit_fragment_video_task
+    from app.services.drama.jobs import submit_fragment_video_task
 
     payload = task.payload or {}
     fragment_ids = payload.get("fragment_ids") or []
-    if not isinstance(fragment_ids, list):
+    if fragment_ids and not isinstance(fragment_ids, list):
         raise ValueError("fragment_ids 必须为数组")
-    if task.fragment_id or len(fragment_ids) <= 1:
-        return await submit_fragment_video_task(task)
-    return await run_episode_generate_job(
-        _require_int(task.episode_id, "episode_id"),
-        int(task.requested_by),
-        [int(item) for item in fragment_ids],
-    )
+    return await submit_fragment_video_task(task)
 
 
 # 执行漫剧资产生图任务。
@@ -208,6 +202,11 @@ async def _run_tools_mock_delay(task: TaskRun) -> dict[str, Any] | None:
     }
 
 
+# 轻量任务占位 handler（实际由 run_billed_ephemeral 内联执行）。
+async def _noop_ephemeral(task: TaskRun) -> dict[str, Any] | None:
+    return {"ok": True, "ephemeral": True}
+
+
 # 确保关键主键字段存在。
 def _require_int(value: int | None, field_name: str) -> int:
     if isinstance(value, int) and value > 0:
@@ -223,6 +222,16 @@ TASK_HANDLERS: dict[tuple[str, str], TaskHandler] = {
     ("drama", "asset_image"): TaskHandler("drama", "asset_image", _run_drama_asset_image),
     ("drama", "asset_video"): TaskHandler("drama", "asset_video", _run_drama_asset_video),
     ("drama", "seed_assets"): TaskHandler("drama", "seed_assets", _run_drama_seed_assets),
+    ("drama", "agent_chat"): TaskHandler("drama", "agent_chat", _noop_ephemeral),
+    ("drama", "skill_optimize"): TaskHandler("drama", "skill_optimize", _noop_ephemeral),
+    ("drama", "voice_prompt"): TaskHandler("drama", "voice_prompt", _noop_ephemeral),
+    ("drama", "voice_synthesis"): TaskHandler("drama", "voice_synthesis", _noop_ephemeral),
+    ("kepu", "content_expand"): TaskHandler("kepu", "content_expand", _noop_ephemeral),
+    ("api", "v1_image"): TaskHandler("api", "v1_image", _noop_ephemeral),
+    ("api", "v1_video"): TaskHandler("api", "v1_video", _noop_ephemeral),
+    ("api", "v1_seedance"): TaskHandler("api", "v1_seedance", _noop_ephemeral),
+    ("studio", "tool_image"): TaskHandler("studio", "tool_image", _noop_ephemeral),
+    ("studio", "tool_video"): TaskHandler("studio", "tool_video", _noop_ephemeral),
     ("kepu", "project_pipeline"): TaskHandler("kepu", "project_pipeline", _run_kepu_project_pipeline),
     ("kepu", "shot_regen_image"): TaskHandler("kepu", "shot_regen_image", _run_kepu_shot_image),
     ("kepu", "shot_regen_video"): TaskHandler("kepu", "shot_regen_video", _run_kepu_shot_video),

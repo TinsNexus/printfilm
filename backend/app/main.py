@@ -219,6 +219,12 @@ async def _migrate_sqlite() -> None:
             uecols = {row[0] for row in result.fetchall()}
         if "drama_project_id" not in uecols:
             await conn.execute(text("ALTER TABLE usage_events ADD COLUMN drama_project_id INTEGER"))
+        if "task_run_id" not in uecols:
+            await conn.execute(text("ALTER TABLE usage_events ADD COLUMN task_run_id INTEGER"))
+        if "domain" not in uecols:
+            await conn.execute(text("ALTER TABLE usage_events ADD COLUMN domain VARCHAR(32)"))
+        if "capability" not in uecols:
+            await conn.execute(text("ALTER TABLE usage_events ADD COLUMN capability VARCHAR(16)"))
 
         # Task platform additive columns
         if is_sqlite:
@@ -272,6 +278,14 @@ async def _migrate_sqlite() -> None:
             await conn.execute(text("ALTER TABLE task_runs ADD COLUMN lease_token VARCHAR(64)"))
         if "lease_until" not in trcols:
             await conn.execute(text("ALTER TABLE task_runs ADD COLUMN lease_until DATETIME"))
+        if "billing_estimate_fen" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN billing_estimate_fen INTEGER DEFAULT 0"))
+        if "billing_charged_fen" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN billing_charged_fen INTEGER DEFAULT 0"))
+        if "billing_refunded_fen" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN billing_refunded_fen INTEGER DEFAULT 0"))
+        if "billing_status" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN billing_status VARCHAR(16) DEFAULT 'none'"))
 
         # Drop leftover worker-era columns that block the new task platform.
         legacy_task_run_cols = (
