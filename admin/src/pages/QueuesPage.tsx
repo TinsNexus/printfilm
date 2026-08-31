@@ -7,9 +7,9 @@ import { PageSection } from "@/components/admin/PageSection";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 import { PageHeader, Toolbar } from "@/components/ui/page";
 import { PaginationBar } from "@/components/PaginationBar";
-import { cn } from "@/lib/utils";
+import { cn, fenToYuan } from "@/lib/utils";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
-import { taskDomainLabel, taskStatusLabel } from "@/lib/statusLabels";
+import { taskDomainLabel, taskStatusLabel, taskTypeLabel } from "@/lib/statusLabels";
 
 const REFRESH_MS = 15000;
 const TERMINAL_STATUSES = new Set(["succeeded", "failed", "cancelled"]);
@@ -127,7 +127,7 @@ export function QueuesPage() {
   const handleCancel = useCallback(
     async (task: AdminTaskRow) => {
       if (!canCancel(task)) return;
-      if (!window.confirm(`确定取消任务 #${task.id}（${task.task_type}）？`)) return;
+      if (!window.confirm(`确定取消任务 #${task.id}（${taskTypeLabel(task.task_type)}）？`)) return;
       setCancelLoading(task.id);
       try {
         await api(`/api/admin/tasks/${task.id}/cancel`, { method: "POST" });
@@ -355,6 +355,7 @@ export function QueuesPage() {
                     <th>关联</th>
                     <th>状态</th>
                     <th>进度</th>
+                    <th>费用</th>
                     <th>时间</th>
                     <th>操作</th>
                   </tr>
@@ -362,7 +363,7 @@ export function QueuesPage() {
                 <tbody>
                   {(data?.items.length ?? 0) === 0 ? (
                     <tr>
-                      <td colSpan={8}>
+                      <td colSpan={9}>
                         <div className="admin-empty !py-10">
                           <div className="admin-empty-title">暂无任务</div>
                           <div className="admin-empty-desc">切换到「全部」查看历史任务</div>
@@ -379,7 +380,9 @@ export function QueuesPage() {
                         <td className="font-mono text-xs">#{task.id}</td>
                         <td>
                           <div className="text-sm">{taskDomainLabel(task.domain)}</div>
-                          <div className="font-mono text-[11px] text-[#909399]">{task.task_type}</div>
+                          <div className="font-mono text-[11px] text-[#909399]">
+                            {taskTypeLabel(task.task_type)}
+                          </div>
                         </td>
                         <td>
                           <div className="text-xs">{task.user_email ?? `#${task.requested_by}`}</div>
@@ -398,6 +401,13 @@ export function QueuesPage() {
                           ) : null}
                         </td>
                         <td className="text-xs">{task.progress_percent}%</td>
+                        <td className="text-xs">
+                          {task.billing_charged_fen != null && task.billing_charged_fen > 0
+                            ? `¥${fenToYuan(task.billing_charged_fen)}`
+                            : task.billing_status === "frozen"
+                              ? `预扣 ¥${fenToYuan(task.billing_estimate_fen ?? 0)}`
+                              : "—"}
+                        </td>
                         <td className="text-xs text-[#909399]">
                           <div>创建 {formatTime(task.created_at)}</div>
                           {task.started_at ? <div>开始 {formatTime(task.started_at)}</div> : null}

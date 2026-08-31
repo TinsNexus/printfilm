@@ -71,6 +71,35 @@ export const TASK_DOMAIN_LABELS: Record<string, string> = {
   drama: "漫剧",
   kepu: "科普",
   tools: "工具",
+  studio: "工作室",
+  api: "开放 API",
+};
+
+/** Task type → Chinese（轻量同步 + 平台任务） */
+export const TASK_TYPE_LABELS: Record<string, string> = {
+  agent_chat: "漫剧助手聊天",
+  skill_optimize: "Skill 优化提示词",
+  voice_prompt: "角色音色描述",
+  content_expand: "选题扩写",
+  script_summary: "剧本摘要",
+  episode_script: "分集剧本",
+  fragment_plan: "AI 分镜",
+  fragment_video: "分镜视频",
+  seed_assets: "资产抽取",
+  asset_image: "资产生图",
+  asset_video: "资产视频",
+  voice_synthesis: "配音合成",
+  project_pipeline: "科普流水线",
+  shot_regen_image: "单镜重绘",
+  shot_regen_video: "单镜视频",
+  shot_regen_audio: "单镜配音",
+  project_regen_audio: "全片配音",
+  project_compose_only: "仅合成",
+  v1_image: "API 生图",
+  v1_video: "API 生视频",
+  v1_seedance: "API Seedance",
+  tool_image: "工具生图",
+  tool_video: "工具生视频",
 };
 
 // Resolve project status display text
@@ -111,6 +140,11 @@ export function taskStatusLabel(status: string): string {
 // Resolve task domain display text
 export function taskDomainLabel(domain: string): string {
   return TASK_DOMAIN_LABELS[domain] ?? domain;
+}
+
+// Resolve task type display text
+export function taskTypeLabel(taskType: string): string {
+  return TASK_TYPE_LABELS[taskType] ?? taskType;
 }
 
 /** Filter options for project status select (value stays English for API) */

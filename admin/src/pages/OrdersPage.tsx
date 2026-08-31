@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { api, type AdminLedger, type AdminOrder, type PageMeta } from "@/api/client";
+import { api, type AdminLedger, type AdminOrder, type AdminUsageEventListRes, type PageMeta } from "@/api/client";
 import { PaginationBar } from "@/components/PaginationBar";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/ui/page";
 import { fenToYuan } from "@/lib/utils";
-import { ledgerKindLabel, orderStatusLabel, payTypeLabel } from "@/lib/statusLabels";
+import { ledgerKindLabel, orderStatusLabel, payTypeLabel, taskDomainLabel } from "@/lib/statusLabels";
 
 type OrderRes = { items: AdminOrder[]; meta: PageMeta };
 type LedgerRes = { items: AdminLedger[]; meta: PageMeta };
@@ -36,8 +36,15 @@ export function OrdersPage() {
   const [ledgerUserId, setLedgerUserId] = useState("");
   const [orderPage, setOrderPage] = useState(1);
   const [ledgerPage, setLedgerPage] = useState(1);
+  const [usagePage, setUsagePage] = useState(1);
+  const [usageUserId, setUsageUserId] = useState("");
+  const [usageTaskId, setUsageTaskId] = useState("");
+  const [usageDomain, setUsageDomain] = useState("");
+  const [usageBillingKey, setUsageBillingKey] = useState("");
+  const [usageCapability, setUsageCapability] = useState("");
   const [orders, setOrders] = useState<OrderRes | null>(null);
   const [ledger, setLedger] = useState<LedgerRes | null>(null);
+  const [usage, setUsage] = useState<AdminUsageEventListRes | null>(null);
 
   // Load recharge orders
   async function loadOrders(page = orderPage) {
@@ -63,6 +70,26 @@ export function OrdersPage() {
     }
   }
 
+  // Load usage events
+  async function loadUsage(
+    page = usagePage,
+    overrides?: { billing_key?: string; capability?: string },
+  ) {
+    try {
+      const params = new URLSearchParams({ page: String(page), page_size: String(DEFAULT_PAGE_SIZE) });
+      if (usageUserId.trim()) params.set("user_id", usageUserId.trim());
+      if (usageTaskId.trim()) params.set("task_run_id", usageTaskId.trim());
+      if (usageDomain) params.set("domain", usageDomain);
+      const billingKey = overrides?.billing_key ?? usageBillingKey.trim();
+      const capability = overrides?.capability ?? usageCapability.trim();
+      if (billingKey) params.set("billing_key", billingKey);
+      if (capability) params.set("capability", capability);
+      setUsage(await api<AdminUsageEventListRes>(`/api/admin/usage-events?${params}`));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "加载用量失败");
+    }
+  }
+
   useEffect(() => {
     void loadOrders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -73,13 +100,19 @@ export function OrdersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ledgerPage]);
 
+  useEffect(() => {
+    void loadUsage();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usagePage]);
+
   return (
     <div className="admin-list-page">
-      <PageHeader description="查看充值单与钱包流水" />
+      <PageHeader description="查看充值单、钱包流水与 AI 用量明细" />
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="orders">充值订单</TabsTrigger>
           <TabsTrigger value="ledger">钱包流水</TabsTrigger>
+          <TabsTrigger value="usage">用量明细</TabsTrigger>
         </TabsList>
         <TabsContent value="orders" className="space-y-4">
           <div className="flex flex-wrap gap-2">
@@ -225,6 +258,114 @@ export function OrdersPage() {
               pageSize={ledger.meta.page_size}
               total={ledger.meta.total}
               onPageChange={setLedgerPage}
+            />
+          )}
+        </TabsContent>
+        <TabsContent value="usage" className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            <Input
+              className="w-32"
+              placeholder="用户 ID"
+              value={usageUserId}
+              onChange={(e) => setUsageUserId(e.target.value)}
+            />
+            <Input
+              className="w-32"
+              placeholder="任务 ID"
+              value={usageTaskId}
+              onChange={(e) => setUsageTaskId(e.target.value)}
+            />
+            <Select className="w-36" value={usageDomain} onChange={(e) => setUsageDomain(e.target.value)}>
+              <option value="">全部领域</option>
+              <option value="kepu">科普</option>
+              <option value="drama">漫剧</option>
+              <option value="studio">工作室</option>
+              <option value="api">开放 API</option>
+            </Select>
+            <Input
+              className="w-40"
+              placeholder="billing_key"
+              value={usageBillingKey}
+              onChange={(e) => setUsageBillingKey(e.target.value)}
+            />
+            <Select
+              className="w-32"
+              value={usageCapability}
+              onChange={(e) => setUsageCapability(e.target.value)}
+            >
+              <option value="">全部能力</option>
+              <option value="llm">LLM 文本</option>
+              <option value="image">生图</option>
+              <option value="video">视频</option>
+              <option value="tts">配音</option>
+            </Select>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setUsageBillingKey("llm_chat");
+                setUsageCapability("llm");
+                setUsagePage(1);
+                void loadUsage(1, { billing_key: "llm_chat", capability: "llm" });
+              }}
+            >
+              LLM 用量
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setUsagePage(1);
+                void loadUsage(1);
+              }}
+            >
+              筛选
+            </Button>
+          </div>
+          <div className="rounded-lg border bg-background">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>时间</TableHead>
+                  <TableHead>用户</TableHead>
+                  <TableHead>任务</TableHead>
+                  <TableHead>领域</TableHead>
+                  <TableHead>能力</TableHead>
+                  <TableHead>模型</TableHead>
+                  <TableHead>Tokens</TableHead>
+                  <TableHead>费用</TableHead>
+                  <TableHead>估算</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(usage?.items ?? []).map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {row.created_at ? new Date(row.created_at).toLocaleString() : "—"}
+                    </TableCell>
+                    <TableCell>{row.user_email ?? row.user_id}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {row.task_run_id ? `#${row.task_run_id}` : "历史/未关联"}
+                    </TableCell>
+                    <TableCell>{row.domain ? taskDomainLabel(row.domain) : "—"}</TableCell>
+                    <TableCell>{row.capability ?? row.billing_key}</TableCell>
+                    <TableCell className="max-w-[120px] truncate text-xs">{row.model || "—"}</TableCell>
+                    <TableCell>{row.total_tokens ?? 0}</TableCell>
+                    <TableCell>¥{fenToYuan(row.charge_fen ?? 0)}</TableCell>
+                    <TableCell>
+                      <Badge variant={row.estimated ? "secondary" : "success"}>
+                        {row.estimated ? "估算" : "实测"}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          {usage && (
+            <PaginationBar
+              page={usage.meta.page}
+              pageSize={usage.meta.page_size}
+              total={usage.meta.total}
+              onPageChange={setUsagePage}
             />
           )}
         </TabsContent>

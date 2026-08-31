@@ -200,6 +200,45 @@ export type AdminTaskRow = {
   created_at?: string | null;
   started_at?: string | null;
   finished_at?: string | null;
+  billing_estimate_fen?: number;
+  billing_charged_fen?: number;
+  billing_refunded_fen?: number;
+  billing_status?: string;
+};
+
+export type AdminUsageEventBrief = {
+  id: number;
+  billing_key: string;
+  capability?: string | null;
+  model?: string;
+  total_tokens?: number;
+  charge_fen?: number;
+  estimated?: boolean;
+  created_at?: string | null;
+};
+
+export type AdminUsageEvent = {
+  id: number;
+  user_id: number;
+  user_email?: string | null;
+  task_run_id?: number | null;
+  domain?: string | null;
+  capability?: string | null;
+  billing_key: string;
+  model?: string;
+  total_tokens?: number;
+  charge_fen?: number;
+  cost_fen?: number;
+  estimated?: boolean;
+  created_at?: string | null;
+  task_domain?: string | null;
+  task_type?: string | null;
+  task_status?: string | null;
+};
+
+export type AdminUsageEventListRes = {
+  items: AdminUsageEvent[];
+  meta: PageMeta;
 };
 
 export type AdminTaskStep = {
@@ -243,6 +282,11 @@ export type AdminTaskDetail = AdminTaskRow & {
   steps: AdminTaskStep[];
   events: AdminTaskEvent[];
   targets: Array<{ id: number; target_type: string; target_id: number }>;
+  usage_lines?: AdminUsageEventBrief[];
+  billing_estimate_fen?: number;
+  billing_charged_fen?: number;
+  billing_refunded_fen?: number;
+  billing_status?: string;
 };
 
 export type AdminTaskStats = {

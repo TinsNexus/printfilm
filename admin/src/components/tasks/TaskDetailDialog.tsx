@@ -4,8 +4,8 @@ import { toast } from "sonner";
 import { api, type AdminTaskDetail } from "@/api/client";
 import { AdminModal } from "@/components/admin/AdminModal";
 import { Button } from "@/components/ui/button";
-import { taskDomainLabel, taskStatusLabel } from "@/lib/statusLabels";
-import { cn } from "@/lib/utils";
+import { taskDomainLabel, taskStatusLabel, taskTypeLabel } from "@/lib/statusLabels";
+import { cn, fenToYuan } from "@/lib/utils";
 
 type TaskDetailDialogProps = {
   taskId: number | null;
@@ -14,7 +14,7 @@ type TaskDetailDialogProps = {
   onCancelled?: () => void;
 };
 
-type DetailTab = "overview" | "steps" | "events" | "json";
+type DetailTab = "overview" | "billing" | "steps" | "events" | "json";
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
 
@@ -110,7 +110,7 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
       subtitle={
         task ? (
           <span className="font-mono text-xs">
-            {task.task_type}
+            {taskTypeLabel(task.task_type)}
             {task.user_email ? ` · ${task.user_email}` : ""}
           </span>
         ) : undefined
@@ -146,6 +146,7 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
             {(
               [
                 ["overview", "概览"],
+                ["billing", `计费 (${task.usage_lines?.length ?? 0})`],
                 ["steps", `步骤 (${task.steps?.length ?? 0})`],
                 ["events", `事件 (${task.events?.length ?? 0})`],
                 ["json", "原始 JSON"],
@@ -290,6 +291,72 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
                     <pre className="task-detail-json">{fmtJson(task.result_payload)}</pre>
                   </section>
                 ) : null}
+              </div>
+            ) : null}
+
+            {tab === "billing" ? (
+              <div className="task-detail-grid">
+                <section className="task-detail-section">
+                  <h4>结算摘要</h4>
+                  <dl className="task-detail-dl">
+                    <div>
+                      <dt>计费状态</dt>
+                      <dd>{task.billing_status ?? "none"}</dd>
+                    </div>
+                    <div>
+                      <dt>预扣估算</dt>
+                      <dd>¥{fenToYuan(task.billing_estimate_fen ?? 0)}</dd>
+                    </div>
+                    <div>
+                      <dt>实扣</dt>
+                      <dd>¥{fenToYuan(task.billing_charged_fen ?? 0)}</dd>
+                    </div>
+                    <div>
+                      <dt>退回</dt>
+                      <dd>¥{fenToYuan(task.billing_refunded_fen ?? 0)}</dd>
+                    </div>
+                  </dl>
+                </section>
+
+                <section className="task-detail-section task-detail-section--full">
+                  <h4>用量明细</h4>
+                  <div className="admin-table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>时间</th>
+                          <th>能力</th>
+                          <th>billing_key</th>
+                          <th>模型</th>
+                          <th>Tokens</th>
+                          <th>费用</th>
+                          <th>估算</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(task.usage_lines?.length ?? 0) === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="text-center text-sm text-[#909399]">
+                              暂无用量记录
+                            </td>
+                          </tr>
+                        ) : (
+                          task.usage_lines?.map((line) => (
+                            <tr key={line.id}>
+                              <td className="text-[11px] text-[#909399]">{fmtTime(line.created_at)}</td>
+                              <td>{line.capability ?? "—"}</td>
+                              <td className="font-mono text-xs">{line.billing_key}</td>
+                              <td className="max-w-[120px] truncate text-xs">{line.model || "—"}</td>
+                              <td>{line.total_tokens ?? 0}</td>
+                              <td>¥{fenToYuan(line.charge_fen ?? 0)}</td>
+                              <td>{line.estimated ? "估算" : "实测"}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
               </div>
             ) : null}
 
