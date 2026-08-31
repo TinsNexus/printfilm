@@ -275,12 +275,12 @@ async def ensure_episode_outline(
     summary: dict[str, Any],
     existing: list[dict[str, Any]],
     total: int,
-) -> list[dict[str, Any]]:
-    # 无有效集名时先跑大纲，再与已有正文合并
+) -> tuple[list[dict[str, Any]], bool]:
+    """返回 (合并后分集列表, 是否实际调用 LLM 生成大纲)。"""
     if _titles_ready(existing, total):
-        return existing
+        return existing, False
     outline = await run_episode_outline(creative, summary, total)
-    return merge_episode_bodies(outline, existing)
+    return merge_episode_bodies(outline, existing), True
 
 
 async def run_episode_script_batch(

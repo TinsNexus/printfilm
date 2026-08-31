@@ -44,3 +44,4 @@ class AgentSkillOptimizeBody(BaseModel):
 
 class AgentSkillOptimizeOut(BaseModel):
     prompt: str
+    task_id: int | None = None

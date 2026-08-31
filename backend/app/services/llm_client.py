@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -124,7 +125,20 @@ async def chat_completions(
         )
         if res.status_code >= 400:
             raise RuntimeError(f"LLM error {res.status_code}: {res.text[:800]}")
-        data = res.json()
+        body = (res.text or "").strip()
+        if not body:
+            raise RuntimeError(f"LLM 返回空响应体 (HTTP {res.status_code})")
+        lowered = body[:256].lower()
+        if lowered.startswith("<!doctype") or lowered.startswith("<html"):
+            raise RuntimeError(
+                f"LLM 渠道 Base URL 配置错误（返回了网页 HTML 而非 API JSON）。"
+                f"当前 base={base}，请检查管理后台「模型渠道」的 Base URL 是否为 OpenAI 兼容 API 地址"
+                f"（如 https://api.deepseek.com 或 https://api.moonshot.cn/v1），而非网站首页。"
+            )
+        try:
+            data = res.json()
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"LLM 响应不是合法 JSON: {body[:200]}") from exc
     content = _message_content(data)
     logger.info("文字 LLM 返回 content_len=%s", len(content))
     return content

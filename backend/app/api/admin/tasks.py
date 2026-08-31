@@ -8,18 +8,33 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.database import get_db
 from app.deps import get_current_admin
-from app.models import User
+from app.models import UsageEvent, User
 from app.schemas import PageMeta
-from app.schemas_tasks import AdminTaskListOut, AdminTaskRunOut, AdminTaskStatsOut, TaskRunOut
+from app.schemas_tasks import AdminTaskListOut, AdminTaskRunOut, AdminTaskStatsOut, AdminUsageEventBriefOut, TaskRunOut
 from app.services.tasks.runtime import runtime_summary
 from app.services.tasks.service import cancel_task_admin, get_task_admin, get_task_stats_admin, list_tasks_admin
 
 router = APIRouter()
 
 
-def _task_to_admin_out(task, user_email: str | None) -> AdminTaskRunOut:
+def _task_to_admin_out(
+    task,
+    user_email: str | None,
+    usage_lines: list[AdminUsageEventBriefOut] | None = None,
+) -> AdminTaskRunOut:
     base = TaskRunOut.model_validate(task)
-    return AdminTaskRunOut(**base.model_dump(), user_email=user_email)
+    return AdminTaskRunOut(**base.model_dump(), user_email=user_email, usage_lines=usage_lines or [])
+
+
+async def _load_usage_lines(db: AsyncSession, task_id: int) -> list[AdminUsageEventBriefOut]:
+    rows = (
+        await db.execute(
+            select(UsageEvent)
+            .where(UsageEvent.task_run_id == task_id)
+            .order_by(UsageEvent.id.asc())
+        )
+    ).scalars().all()
+    return [AdminUsageEventBriefOut.model_validate(row) for row in rows]
 
 
 @router.get("/tasks/stats", response_model=AdminTaskStatsOut)
@@ -85,7 +100,8 @@ async def admin_get_task(
     email = (
         await db.execute(select(User.email).where(User.id == task.requested_by))
     ).scalar_one_or_none()
-    return _task_to_admin_out(task, email)
+    usage_lines = await _load_usage_lines(db, task.id)
+    return _task_to_admin_out(task, email, usage_lines)
 
 
 @router.post("/tasks/{task_id}/cancel", response_model=AdminTaskRunOut)
@@ -104,4 +120,5 @@ async def admin_cancel_task(
     email = (
         await db.execute(select(User.email).where(User.id == task.requested_by))
     ).scalar_one_or_none()
-    return _task_to_admin_out(task, email)
+    usage_lines = await _load_usage_lines(db, task.id)
+    return _task_to_admin_out(task, email, usage_lines)

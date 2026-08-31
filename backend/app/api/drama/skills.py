@@ -19,6 +19,8 @@ from app.schemas_agent import (
 from app.services.agent.compose import skill_to_public_dict
 from app.services.agent.optimize import optimize_prompt_with_skills
 from app.services.agent.parse import SkillParseError
+from app.services.billing import record_llm_chat_line, run_billed_ephemeral
+from app.services.billing.http import http_exception_for_value_error
 from app.services.agent.store import (
     create_user_skill,
     delete_user_skill,
@@ -51,15 +53,40 @@ async def optimize_prompt(
     user: User = Depends(get_current_user),
 ) -> AgentSkillOptimizeOut:
     # 用勾选 Skill 改写提示词，保留 @asset 引用
-    task = (body.task or "video_prompt").strip() or "video_prompt"
-    prompt = await optimize_prompt_with_skills(
-        db,
-        user.id,
-        prompt=body.prompt,
-        skill_ids=list(body.skill_ids or []),
-        task=task,
-    )
-    return AgentSkillOptimizeOut(prompt=prompt)
+    task_name = (body.task or "video_prompt").strip() or "video_prompt"
+    skill_ids = list(body.skill_ids or [])
+    if not skill_ids:
+        prompt = (body.prompt or "").strip()
+        return AgentSkillOptimizeOut(prompt=prompt, task_id=None)
+
+    async def _do_optimize() -> str:
+        prompt = await optimize_prompt_with_skills(
+            db,
+            user.id,
+            prompt=body.prompt,
+            skill_ids=skill_ids,
+            task=task_name,
+        )
+        await record_llm_chat_line(
+            db,
+            user_id=user.id,
+            domain="drama",
+        )
+        return prompt
+
+    try:
+        task, prompt = await run_billed_ephemeral(
+            db,
+            user,
+            domain="drama",
+            task_type="skill_optimize",
+            executor=_do_optimize,
+            payload={"task": task_name, "skill_count": len(skill_ids)},
+            commit=True,
+        )
+    except ValueError as exc:
+        raise http_exception_for_value_error(exc) from exc
+    return AgentSkillOptimizeOut(prompt=prompt, task_id=task.id)
 
 
 @router.get("/skills/{skill_id}", response_model=AgentSkillOut)

@@ -23,7 +23,7 @@ from app.services.drama.output_settings import (
     resolve_episode_video_output,
     seedream_still_size_for_video_ratio,
 )
-from app.services.billing import record_usage
+from app.services.billing import record_line
 from app.services.drama.build_seedance_generate_body import (
     ASSET_MENTION_TOKEN_PATTERN,
     build_seedance_generate_body,
@@ -604,7 +604,7 @@ async def ensure_fragment_reference_images(
 
     for index, asset in enumerate(missing):
         try:
-            prompt = await resolve_visual_prompt_for_asset(asset, project)
+            prompt = await resolve_visual_prompt_for_asset(asset, project, db=db)
         except Exception:  # noqa: BLE001
             prompt = read_asset_visual_prompt(asset)
         if not (prompt or "").strip():
@@ -1013,7 +1013,7 @@ async def generate_asset_image(
             )
     logger.info("Seedream 返回 project_id=%s url=%s", project.id, (url or "")[:100])
 
-    await record_usage(
+    await record_line(
         db,
         user_id=user.id,
         project_id=None,
@@ -1021,6 +1021,7 @@ async def generate_asset_image(
         billing_key="seedream",
         model=model or settings.model_image,
         estimated=True,
+        domain="drama",
     )
 
     # gen_meta 写入资产 params，便于前端回显上次选项
@@ -1230,7 +1231,7 @@ async def generate_fragment_video(
             shot_no=fragment.id,
             size=seedream_still_size_for_video_ratio(ratio),
         )
-        await record_usage(
+        await record_line(
             db,
             user_id=user.id,
             project_id=None,
@@ -1238,6 +1239,7 @@ async def generate_fragment_video(
             billing_key="seedream",
             model=settings.model_image,
             estimated=True,
+            domain="drama",
         )
         image_url = still.local_url or ""
         local_video = await ark.gen_and_wait_video(
@@ -1286,7 +1288,7 @@ async def generate_fragment_video(
         resolution=resolution,
         video_path=video_path,
     )
-    await record_usage(
+    await record_line(
         db,
         user_id=user.id,
         project_id=None,
@@ -1295,6 +1297,7 @@ async def generate_fragment_video(
         model=settings.model_video,
         tokens=seedance_video_billing_tokens(fragment.duration_sec),
         estimated=True,
+        domain="drama",
     )
     await db.commit()
     await db.refresh(fragment)
@@ -1597,7 +1600,7 @@ async def apply_fragment_video_assets(
     if last_frame_url:
         params["lastFrameUrl"] = last_frame_url
     fragment.params = params
-    await record_usage(
+    await record_line(
         db,
         user_id=user.id,
         project_id=None,
@@ -1606,6 +1609,7 @@ async def apply_fragment_video_assets(
         model=settings.model_video,
         tokens=seedance_video_billing_tokens(fragment.duration_sec),
         estimated=True,
+        domain="drama",
     )
     await db.commit()
     await db.refresh(fragment)

@@ -39,6 +39,8 @@ from app.schemas_tasks import TaskCreateRequest, TaskTargetBind
 from app.services import pipeline, storage
 from app.services.ark import get_ark
 from app.services.progress import redis_bridge, subscribe, unsubscribe
+from app.services.billing import record_llm_chat_line, run_billed_ephemeral
+from app.services.billing.http import http_exception_for_value_error
 from app.services.tasks.service import (
     cancel_tasks_for_scope,
     create_task,
@@ -71,15 +73,43 @@ async def preview_voice(
 @router.post("/content/expand", response_model=ContentExpandOut)
 async def expand_content(
     body: ContentExpandRequest,
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ContentExpandOut:
     """AI-expand a short topic into a project title + theme brief or full script."""
-    _ = user
+    topic = (body.topic or "").strip()
+    if not topic:
+        raise HTTPException(status_code=400, detail="请输入选题")
+
+    async def _do_expand() -> dict[str, str]:
+        try:
+            result = await get_ark().expand_content(topic, body.mode)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=f"AI 生成失败：{exc}") from exc
+        await record_llm_chat_line(
+            db,
+            user_id=user.id,
+            domain="kepu",
+        )
+        return result
+
     try:
-        result = await get_ark().expand_content(body.topic, body.mode)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"AI 生成失败：{exc}") from exc
-    return ContentExpandOut(title=result["title"], content=result["content"])
+        task, result = await run_billed_ephemeral(
+            db,
+            user,
+            domain="kepu",
+            task_type="content_expand",
+            executor=_do_expand,
+            payload={"mode": body.mode, "topic_len": len(topic)},
+            commit=True,
+        )
+    except ValueError as exc:
+        raise http_exception_for_value_error(exc) from exc
+    return ContentExpandOut(
+        title=result["title"],
+        content=result["content"],
+        task_id=task.id,
+    )
 
 
 async def _get_owned_project(db: AsyncSession, project_id: int, user: User) -> Project:
@@ -173,19 +203,23 @@ async def _create_kepu_task(
     targets = [TaskTargetBind(target_type="project", target_id=project_id)]
     if shot_id is not None:
         targets.append(TaskTargetBind(target_type="shot", target_id=shot_id))
-    task = await create_task(
-        db,
-        user,
-        TaskCreateRequest(
-            domain="kepu",
-            task_type=task_type,
-            dedupe_key=f"kepu:{task_type}:project:{project_id}:shot:{shot_id or 0}",
-            payload={"project_id": project_id, "shot_id": shot_id, **(payload or {})},
-            project_id=project_id,
-            shot_id=shot_id,
-            targets=targets,
-        ),
-    )
+    try:
+        task = await create_task(
+            db,
+            user,
+            TaskCreateRequest(
+                domain="kepu",
+                task_type=task_type,
+                dedupe_key=f"kepu:{task_type}:project:{project_id}:shot:{shot_id or 0}",
+                payload={"project_id": project_id, "shot_id": shot_id, **(payload or {})},
+                project_id=project_id,
+                shot_id=shot_id,
+                targets=targets,
+            ),
+        )
+    except ValueError as exc:
+        await db.rollback()
+        raise http_exception_for_value_error(exc) from exc
     return int(task.id)
 
 
@@ -604,13 +638,6 @@ async def generate_project(
     project.final_video_url = None
     shots = list(project.shots or [])
     phase = "script" if (restart or not shots) else "produce"
-    try:
-        from app.services import billing as billing_svc
-
-        await billing_svc.freeze_for_project(db, user, project, phase)
-    except ValueError as exc:
-        raise HTTPException(status_code=402, detail=str(exc)) from exc
-
     if restart or not shots:
         # First run / restart — actually splitting storyboard
         project.status = ProjectStatus.SCRIPTING
@@ -630,26 +657,29 @@ async def generate_project(
         else:
             project.status = ProjectStatus.COMPOSING
             project.progress = max(project.progress or 0, 88)
-    await db.commit()
-    task = await create_task(
-        db,
-        user,
-        TaskCreateRequest(
-            domain="kepu",
-            task_type="project_pipeline",
-            dedupe_key=f"kepu:project_pipeline:{project_id}:{int(bool(restart))}:{phase}",
-            payload={
-                "project_id": project_id,
-                "restart": bool(restart),
-                "phase": phase,
-                "pipeline_mode": project.pipeline_mode or "full",
-            },
-            project_id=project_id,
-            targets=[
-                TaskTargetBind(target_type="project", target_id=project_id),
-            ],
-        ),
-    )
+    try:
+        await create_task(
+            db,
+            user,
+            TaskCreateRequest(
+                domain="kepu",
+                task_type="project_pipeline",
+                dedupe_key=f"kepu:project_pipeline:{project_id}:{int(bool(restart))}:{phase}",
+                payload={
+                    "project_id": project_id,
+                    "restart": bool(restart),
+                    "phase": phase,
+                    "pipeline_mode": project.pipeline_mode or "full",
+                },
+                project_id=project_id,
+                targets=[
+                    TaskTargetBind(target_type="project", target_id=project_id),
+                ],
+            ),
+        )
+    except ValueError as exc:
+        await db.rollback()
+        raise http_exception_for_value_error(exc) from exc
     return await _get_owned_project(db, project_id, user)
 
 

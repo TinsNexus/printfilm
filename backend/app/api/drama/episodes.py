@@ -27,6 +27,7 @@ from app.schemas_drama import (
 )
 from app.schemas_tasks import TaskCreateRequest, TaskTargetBind
 from app.services.agent.compose import parse_skill_ids
+from app.services.billing.http import http_exception_for_value_error
 from app.services.drama.access import (
     count_user_inflight_fragment_video_tasks,
     detach_task_fragment_refs,
@@ -260,32 +261,34 @@ async def plan_episode_fragments(
     else:
         params["fragment_plan_skill_ids"] = parse_skill_ids(req.skill_ids) or []
     ep.params = params
-    await db.commit()
-    await db.refresh(ep)
 
-    task = await create_task(
-        db,
-        user,
-        TaskCreateRequest(
-            domain="drama",
-            task_type="fragment_plan",
-            dedupe_key=f"drama:fragment_plan:episode:{episode_id}:force:{int(bool(req.force))}",
-            payload={
-                "project_id": ep.project_id,
-                "episode_id": episode_id,
-                "fallback_rules": bool(req.fallback_rules),
-                "force": bool(req.force),
-                "skill_ids": parse_skill_ids(req.skill_ids) if req.skill_ids is not None else None,
-                "subtitle_enabled": bool(req.subtitle_enabled) if req.subtitle_enabled is not None else None,
-            },
-            drama_project_id=ep.project_id,
-            episode_id=episode_id,
-            targets=[
-                TaskTargetBind(target_type="drama_project", target_id=ep.project_id),
-                TaskTargetBind(target_type="episode", target_id=episode_id),
-            ],
-        ),
-    )
+    try:
+        task = await create_task(
+            db,
+            user,
+            TaskCreateRequest(
+                domain="drama",
+                task_type="fragment_plan",
+                dedupe_key=f"drama:fragment_plan:episode:{episode_id}:force:{int(bool(req.force))}",
+                payload={
+                    "project_id": ep.project_id,
+                    "episode_id": episode_id,
+                    "fallback_rules": bool(req.fallback_rules),
+                    "force": bool(req.force),
+                    "skill_ids": parse_skill_ids(req.skill_ids) if req.skill_ids is not None else None,
+                    "subtitle_enabled": bool(req.subtitle_enabled) if req.subtitle_enabled is not None else None,
+                },
+                drama_project_id=ep.project_id,
+                episode_id=episode_id,
+                targets=[
+                    TaskTargetBind(target_type="drama_project", target_id=ep.project_id),
+                    TaskTargetBind(target_type="episode", target_id=episode_id),
+                ],
+            ),
+        )
+    except ValueError as exc:
+        await db.rollback()
+        raise http_exception_for_value_error(exc) from exc
     logger.info(
         "已创建单集 LLM 分镜任务 episode_id=%s force=%s task_id=%s",
         episode_id,
@@ -495,35 +498,39 @@ async def generate_episode(
         if defer_activation:
             deferred_count += 1
         has_video = bool((f.video or "").strip())
-        task = await create_task(
-            db,
-            user,
-            TaskCreateRequest(
-                domain="drama",
-                task_type="fragment_video",
-                dedupe_key=f"drama:fragment_video:fragment:{f.id}",
-                batch_key=batch_key,
-                defer_activation=defer_activation,
-                payload={
-                    "project_id": ep.project_id,
-                    "episode_id": episode_id,
-                    "fragment_ids": [f.id],
-                    "sequential": sequential,
-                    "batch_key": batch_key,
-                    "batch_index": index,
-                    "replace_existing_video": has_video,
-                },
-                drama_project_id=ep.project_id,
-                episode_id=episode_id,
-                fragment_id=f.id,
-                targets=[
-                    TaskTargetBind(target_type="drama_project", target_id=ep.project_id),
-                    TaskTargetBind(target_type="episode", target_id=episode_id),
-                    TaskTargetBind(target_type="fragment", target_id=f.id, sort_order=index),
-                ],
-            ),
-            commit=False,
-        )
+        try:
+            task = await create_task(
+                db,
+                user,
+                TaskCreateRequest(
+                    domain="drama",
+                    task_type="fragment_video",
+                    dedupe_key=f"drama:fragment_video:fragment:{f.id}",
+                    batch_key=batch_key,
+                    defer_activation=defer_activation,
+                    payload={
+                        "project_id": ep.project_id,
+                        "episode_id": episode_id,
+                        "fragment_ids": [f.id],
+                        "sequential": sequential,
+                        "batch_key": batch_key,
+                        "batch_index": index,
+                        "replace_existing_video": has_video,
+                    },
+                    drama_project_id=ep.project_id,
+                    episode_id=episode_id,
+                    fragment_id=f.id,
+                    targets=[
+                        TaskTargetBind(target_type="drama_project", target_id=ep.project_id),
+                        TaskTargetBind(target_type="episode", target_id=episode_id),
+                        TaskTargetBind(target_type="fragment", target_id=f.id, sort_order=index),
+                    ],
+                ),
+                commit=False,
+            )
+        except ValueError as exc:
+            await db.rollback()
+            raise http_exception_for_value_error(exc) from exc
         created_tasks.append(task.id)
     await db.commit()
     logger.info(

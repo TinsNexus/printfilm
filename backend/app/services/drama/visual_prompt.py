@@ -6,7 +6,10 @@ import logging
 import re
 from typing import Any
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models_drama import DramaAsset, DramaProject
+from app.services.billing import record_llm_chat_line
 from app.services.drama.llm import drama_chat_text
 from app.services.llm_client import LlmUnavailableError
 from app.services.drama.seed import _episode_bodies
@@ -231,9 +234,24 @@ def merge_visual_prompts(rule_prompt: str, llm_prompt: str, *, min_len: int = 10
     return llm or rule
 
 
-async def _llm_visual_prompt(system: str, user: str, *, min_len: int = 80) -> str:
+async def _llm_visual_prompt(
+    system: str,
+    user: str,
+    *,
+    min_len: int = 80,
+    db: AsyncSession | None = None,
+    user_id: int | None = None,
+    drama_project_id: int | None = None,
+) -> str:
     raw = await drama_chat_text(system, user, temperature=0.6, max_tokens=1024)
     prompt = normalize_visual_prompt_text(raw)
+    if db is not None and user_id is not None:
+        await record_llm_chat_line(
+            db,
+            user_id=user_id,
+            domain="drama",
+            drama_project_id=drama_project_id,
+        )
     return prompt if len(prompt) >= min_len else ""
 
 
@@ -244,6 +262,7 @@ async def resolve_visual_prompt_for_asset(
     *,
     force_refresh: bool = False,
     strict_llm: bool = False,
+    db: AsyncSession | None = None,
 ) -> str:
     """解析资产生图用的用户描述（过短/模板化则规则 + LLM 补全）。"""
     kind = (asset.type or "character").lower()
@@ -262,6 +281,7 @@ async def resolve_visual_prompt_for_asset(
         return stored
 
     min_len = MIN_PROMPT_LEN.get(kind, 80)
+    llm_bill = {"db": db, "user_id": project.user_id, "drama_project_id": project.id}
 
     if kind == "character":
         summary_char = find_summary_character(summary, name)
@@ -276,6 +296,7 @@ async def resolve_visual_prompt_for_asset(
                 CHARACTER_VISUAL_SYSTEM,
                 f"请为以下角色生成视觉形象描述：\n\n{context}",
                 min_len=80,
+                **llm_bill,
             )
             prompt = merge_visual_prompts(rule_prompt, llm, min_len=min_len)
             if len(prompt) >= min_len or len(prompt) >= 80:
@@ -309,7 +330,7 @@ async def resolve_visual_prompt_for_asset(
             ]
         )
         try:
-            llm = await _llm_visual_prompt(SCENE_VISUAL_SYSTEM, user_msg, min_len=80)
+            llm = await _llm_visual_prompt(SCENE_VISUAL_SYSTEM, user_msg, min_len=80, **llm_bill)
             prompt = merge_visual_prompts(rule_prompt, llm, min_len=min_len)
             if len(prompt) >= min_len or len(prompt) >= 80:
                 return prompt
@@ -339,7 +360,7 @@ async def resolve_visual_prompt_for_asset(
         if excerpt:
             ctx += f"剧本相关摘录：\n{excerpt[:800]}"
         try:
-            llm = await _llm_visual_prompt(system, ctx, min_len=60)
+            llm = await _llm_visual_prompt(system, ctx, min_len=60, **llm_bill)
             prompt = merge_visual_prompts(rule_prompt, llm, min_len=min_len)
             if len(prompt) >= 60:
                 return prompt

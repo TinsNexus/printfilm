@@ -22,10 +22,22 @@ from app.services.logical_model_router import resolve_logical_model, resolve_log
 from app.services import storage
 from app.services.drama.seedance_i2v_role import resolve_seedance_i2v_image_role
 from app.services.ffmpeg_compose import is_near_silent_audio
+from app.services.drama.llm import _extract_json
 from app.services.llm_client import chat_completions
 from app.services import seedance_segments as segplan
 
 logger = logging.getLogger(__name__)
+
+
+def _raise_seedream_http_error(status_code: int, body: str) -> None:
+    """将 Seedream HTTP 错误转为可读 RuntimeError（含上游账户欠费）。"""
+    snippet = (body or "")[:800]
+    if status_code == 403 and "AccountOverdueError" in snippet:
+        logger.error("Seedream AccountOverdueError — upstream Ark account overdue: %s", snippet[:200])
+        raise RuntimeError(
+            "上游 Seedream 账户欠费（AccountOverdueError），生图暂不可用，请联系管理员充值火山方舟账户"
+        )
+    raise RuntimeError(f"Seedream error {status_code}: {snippet}")
 
 
 def _fallback_overlay_title(text: str, shot_no: int) -> str:
@@ -441,9 +453,48 @@ class ArkGateway:
             f"输入类型：{source_type}。请先理解内容与应用场景，再拆成精确到每一段的分镜"
             f"（{shot_range} 镜，短镜快切，禁止拖腔注水）：\n{source_text}"
         )
-        content = await chat_completions(system, user, temperature=0.6, timeout=120.0)
+        json_format = {"type": "json_object"}
+        try:
+            content = await chat_completions(
+                system,
+                user,
+                temperature=0.6,
+                timeout=120.0,
+                response_format=json_format,
+            )
+        except RuntimeError as exc:
+            if "response_format" not in str(exc).lower():
+                raise
+            logger.warning("分镜 LLM 不支持 response_format，降级普通调用: %s", exc)
+            content = await chat_completions(system, user, temperature=0.6, timeout=120.0)
+
+        if not (content or "").strip():
+            logger.warning("分镜 LLM 返回空内容，重试一次 source_type=%s", source_type)
+            retry_user = (
+                f"{user}\n\n"
+                "【重要】请只输出一个完整 JSON 对象，顶层含 character_bible、bgm_lock、shots 数组；"
+                "不要 markdown、不要代码围栏、字符串内不要未转义换行。"
+            )
+            try:
+                content = await chat_completions(
+                    system,
+                    retry_user,
+                    temperature=0.6,
+                    timeout=120.0,
+                    response_format=json_format,
+                )
+            except RuntimeError as exc:
+                if "response_format" not in str(exc).lower():
+                    raise
+                content = await chat_completions(
+                    system, retry_user, temperature=0.6, timeout=120.0
+                )
+
+        if not (content or "").strip():
+            raise RuntimeError("分镜模型返回空内容，请检查文字模型渠道配置或稍后重试")
+
         return self._parse_storyboard(
-            content or "{}",
+            content,
             style_prefix,
             duration_min,
             duration_max,
@@ -541,7 +592,7 @@ class ArkGateway:
                 json=body,
             )
             if resp.status_code >= 400:
-                raise RuntimeError(f"Seedream error {resp.status_code}: {resp.text[:800]}")
+                _raise_seedream_http_error(resp.status_code, resp.text)
             data = resp.json()
 
         remote = self._extract_image_url(data)
@@ -1444,11 +1495,13 @@ class ArkGateway:
         duration_max: int,
         max_shot_duration: int,
     ) -> StoryboardResult:
-        raw = content.strip()
-        if raw.startswith("```"):
-            raw = re.sub(r"^```(?:json)?\s*", "", raw)
-            raw = re.sub(r"\s*```$", "", raw)
-        data = json.loads(raw)
+        raw = (content or "").strip()
+        if not raw:
+            raise RuntimeError("分镜 JSON 为空，无法解析")
+        try:
+            data = _extract_json(raw)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"分镜 JSON 解析失败：{exc}") from exc
         character_bible = ""
         bgm_lock = ""
         items = data
@@ -1460,6 +1513,8 @@ class ArkGateway:
             items = data.get("shots") or data.get("storyboard") or data.get("scenes") or []
         if not isinstance(items, list):
             raise RuntimeError("LLM storyboard JSON 格式无效：需要 shots 数组")
+        if not items:
+            raise RuntimeError("分镜模型未返回任何镜头（shots 为空）")
         hi = min(duration_max, max_shot_duration)
         plans: list[ShotPlan] = []
         for i, item in enumerate(items, start=1):

@@ -215,6 +215,7 @@ class ContentExpandRequest(BaseModel):
 class ContentExpandOut(BaseModel):
     title: str
     content: str
+    task_id: int | None = None
 
 
 class VoicePreviewRequest(BaseModel):

@@ -19,12 +19,13 @@ from app.schemas_drama import (
     DramaScriptOut,
     DramaScriptSummaryRequest,
 )
-from app.services.billing import record_usage
+from app.services.billing import run_billed_ephemeral
 from app.services.drama.access import get_owned_drama_project
 from app.services.drama.agents import (
     count_completed_episodes,
     resolve_episode_target,
 )
+from app.services.billing.http import http_exception_for_value_error
 from app.services.drama.jobs import dispatch_episode_scripts_job, dispatch_script_summary_job
 from app.services.drama.llm import DramaLlmUnavailableError, drama_chat_text
 
@@ -101,10 +102,12 @@ async def script_summary(
     params["summary_generating_at"] = datetime.now(timezone.utc).isoformat()
     params.pop("summary_error", None)
     project.script.params = params
-    await db.commit()
-    await db.refresh(project)
 
-    task_id = dispatch_script_summary_job(project.id)
+    try:
+        task_id = await dispatch_script_summary_job(db, user, project.id)
+    except ValueError as exc:
+        await db.rollback()
+        raise http_exception_for_value_error(exc) from exc
     logger.info(
         "已入队剧本摘要 project_id=%s user_id=%s task_id=%s creative_len=%s",
         project.id,
@@ -190,10 +193,12 @@ async def episode_script(
             }
         params["episode_content_progress"] = {"done": 0, "total": total}
     project.script.params = params
-    await db.commit()
-    await db.refresh(project)
 
-    task_id = dispatch_episode_scripts_job(project.id, force=bool(body.force))
+    try:
+        task_id = await dispatch_episode_scripts_job(db, user, project.id, force=bool(body.force))
+    except ValueError as exc:
+        await db.rollback()
+        raise http_exception_for_value_error(exc) from exc
     content = project.script.episode_content
     existing = []
     if isinstance(content, dict) and isinstance(content.get("episodes"), list):
@@ -241,21 +246,39 @@ async def ai_chat(
     user: User = Depends(get_current_user),
 ) -> dict:
     logger.info("漫剧聊天 user_id=%s project_id=%s", user.id, body.project_id)
-    try:
-        reply = await drama_chat_text(
-            "你是 PRINTFILM 漫剧创作助手，帮助用户构思短剧创意、人物与分集结构。用简洁中文回答。",
-            body.message,
+
+    async def _do_chat() -> str:
+        from app.services.billing import record_line
+
+        try:
+            reply = await drama_chat_text(
+                "你是 PRINTFILM 漫剧创作助手，帮助用户构思短剧创意、人物与分集结构。用简洁中文回答。",
+                body.message,
+            )
+        except DramaLlmUnavailableError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        await record_line(
+            db,
+            user_id=user.id,
+            billing_key="llm_chat",
+            model=get_settings().model_llm,
+            estimated=True,
+            drama_project_id=body.project_id,
+            domain="drama",
         )
-    except DramaLlmUnavailableError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    await record_usage(
-        db,
-        user_id=user.id,
-        project_id=None,
-        drama_project_id=body.project_id,
-        billing_key="llm_chat",
-        model=get_settings().model_llm,
-        estimated=True,
-    )
-    await db.commit()
-    return {"reply": reply}
+        return reply
+
+    try:
+        task, reply = await run_billed_ephemeral(
+            db,
+            user,
+            domain="drama",
+            task_type="agent_chat",
+            executor=_do_chat,
+            payload={"message_len": len(body.message or "")},
+            drama_project_id=body.project_id,
+            commit=True,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=402, detail=str(exc)) from exc
+    return {"reply": reply, "task_id": task.id}

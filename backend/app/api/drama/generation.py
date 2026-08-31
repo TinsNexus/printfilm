@@ -20,6 +20,8 @@ from app.schemas_drama import (
 )
 from app.services.drama.access import get_owned_drama_project
 from app.services.drama.generation import generate_voice_asset_audio
+from app.services.billing import record_llm_chat_line, run_billed_ephemeral
+from app.services.billing.http import http_exception_for_value_error
 from app.services.drama.jobs import dispatch_asset_image_job, dispatch_asset_video_job
 from app.services.drama.voice_prompt import suggest_voice_prompt_for_character
 
@@ -41,10 +43,14 @@ async def generate_image(
         if not asset or asset.project_id != project.id:
             raise HTTPException(status_code=404, detail="资产不存在")
         params = dict(asset.params or {})
-        params["generation"] = {"status": "generating"}
+        from datetime import datetime, timezone
+
+        params["generation"] = {
+            "status": "queued",
+            "queued_at": datetime.now(timezone.utc).isoformat(),
+            "message": "已入队",
+        }
         asset.params = params
-        await db.commit()
-        await db.refresh(asset)
 
     prompt = (body.prompt or "").strip()
     if not prompt:
@@ -55,18 +61,27 @@ async def generate_image(
     style_id = (body.image_style_id or "").strip() or str(
         (project.params or {}).get("image_style_id") or ""
     ).strip() or None
-    task_id = dispatch_asset_image_job(
-        project.id,
-        user.id,
-        prompt,
-        asset_id=asset.id if asset else None,
-        name=body.name,
-        kind=kind,
-        image_style_id=style_id,
-        model_id=body.model_id,
-        aspect_ratio=body.aspect_ratio,
-        resolution=body.resolution,
-    )
+    try:
+        task_id = await dispatch_asset_image_job(
+            db,
+            user,
+            project.id,
+            user.id,
+            prompt,
+            asset_id=asset.id if asset else None,
+            name=body.name,
+            kind=kind,
+            image_style_id=style_id,
+            model_id=body.model_id,
+            aspect_ratio=body.aspect_ratio,
+            resolution=body.resolution,
+        )
+    except ValueError as exc:
+        await db.rollback()
+        raise http_exception_for_value_error(exc) from exc
+    await db.commit()
+    if asset is not None:
+        await db.refresh(asset)
     logger.info(
         "已入队资产生图 project_id=%s asset_id=%s kind=%s style=%s model=%s size=%s/%s task_id=%s prompt_len=%s",
         project.id,
@@ -82,7 +97,7 @@ async def generate_image(
     return {
         "ok": True,
         "queued": True,
-        "status": "generating",
+        "status": "queued",
         "task_id": task_id,
         "asset_id": asset.id if asset else None,
         "asset": DramaAssetOut.model_validate(asset).model_dump() if asset else None,
@@ -108,24 +123,30 @@ async def generate_video(
     params["generation"] = {"status": "generating"}
     params["visualPrompt"] = prompt
     asset.params = params
-    await db.commit()
-    await db.refresh(asset)
 
     style_id = (body.image_style_id or "").strip() or str(
         (project.params or {}).get("image_style_id") or ""
     ).strip() or None
-    task_id = dispatch_asset_video_job(
-        project.id,
-        user.id,
-        prompt,
-        asset.id,
-        model_id=body.model_id,
-        aspect_ratio=body.aspect_ratio,
-        resolution=body.resolution,
-        duration_sec=body.duration_sec,
-        image_style_id=style_id,
-        reference_asset_ids=body.reference_asset_ids,
-    )
+    try:
+        task_id = await dispatch_asset_video_job(
+            db,
+            user,
+            project.id,
+            user.id,
+            prompt,
+            asset.id,
+            model_id=body.model_id,
+            aspect_ratio=body.aspect_ratio,
+            resolution=body.resolution,
+            duration_sec=body.duration_sec,
+            image_style_id=style_id,
+            reference_asset_ids=body.reference_asset_ids,
+        )
+    except ValueError as exc:
+        await db.rollback()
+        raise http_exception_for_value_error(exc) from exc
+    await db.commit()
+    await db.refresh(asset)
     logger.info(
         "已入队资产生视频 project_id=%s asset_id=%s model=%s size=%s/%s duration=%s task_id=%s prompt_len=%s",
         project.id,
@@ -161,13 +182,38 @@ async def suggest_voice_prompt(
     if (asset.type or "").lower() != "character":
         raise HTTPException(status_code=400, detail="仅支持角色资产")
 
-    voice_prompt, speaker, sample_text = await suggest_voice_prompt_for_character(asset, project)
+    async def _do_voice_prompt() -> tuple[str, str, str]:
+        voice_prompt, speaker, sample_text = await suggest_voice_prompt_for_character(asset, project)
+        await record_llm_chat_line(
+            db,
+            user_id=user.id,
+            domain="drama",
+            drama_project_id=project.id,
+        )
+        return voice_prompt, speaker, sample_text
+
+    try:
+        task, (voice_prompt, speaker, sample_text) = await run_billed_ephemeral(
+            db,
+            user,
+            domain="drama",
+            task_type="voice_prompt",
+            executor=_do_voice_prompt,
+            payload={"asset_id": asset.id},
+            drama_project_id=project.id,
+            asset_id=asset.id,
+            commit=True,
+        )
+    except ValueError as exc:
+        raise http_exception_for_value_error(exc) from exc
+
     logger.info(
-        "音色提示词已生成 project_id=%s asset_id=%s len=%s speaker=%s",
+        "音色提示词已生成 project_id=%s asset_id=%s len=%s speaker=%s task_id=%s",
         project.id,
         asset.id,
         len(voice_prompt),
         speaker,
+        task.id,
     )
     return {
         "ok": True,
@@ -175,6 +221,7 @@ async def suggest_voice_prompt(
         "speaker": speaker,
         "sample_text": sample_text,
         "asset_id": asset.id,
+        "task_id": task.id,
     }
 
 

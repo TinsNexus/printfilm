@@ -17,6 +17,9 @@ from app.models import User
 from app.models_drama import DramaAsset, DramaProject
 from app.schemas_drama import DramaAssetCreate, DramaAssetOut, DramaAssetUpdate, SeedAssetsFromScriptOut
 from app.services.drama.access import get_owned_drama_project
+from app.services.billing import run_billed_ephemeral
+from app.services.billing.http import http_exception_for_value_error
+from app.services.drama.billing_util import record_seed_assets_llm_usage
 from app.services.drama.jobs import dispatch_seed_assets_job
 from app.services.drama.seed import (
     _asset_dedupe_key,
@@ -274,12 +277,17 @@ async def seed_assets(
         params["assets_seed_generating_at"] = datetime.now(timezone.utc).isoformat()
         params.pop("assets_seed_error", None)
         locked.params = params
-        await db.commit()
-        dispatch_seed_assets_job(
-            project_id,
-            refresh_prompts=refresh_prompts,
-            reextract_props=reextract_props,
-        )
+        try:
+            await dispatch_seed_assets_job(
+                db,
+                user,
+                project_id,
+                refresh_prompts=refresh_prompts,
+                reextract_props=reextract_props,
+            )
+        except ValueError as exc:
+            await db.rollback()
+            raise http_exception_for_value_error(exc) from exc
         existing = list(
             (await db.execute(select(DramaAsset).where(DramaAsset.project_id == locked.id)))
             .scalars()
@@ -297,14 +305,28 @@ async def seed_assets(
     locked.params = params
     await db.commit()
     try:
-        # 重新加载带 script 的项目，避免过期状态
-        project = await get_owned_drama_project(db, project_id, user, with_script=True)
-        result = await seed_assets_from_script(
+        async def _do_sync_seed():
+            project_inner = await get_owned_drama_project(db, project_id, user, with_script=True)
+            seed_result = await seed_assets_from_script(
+                db,
+                project_inner,
+                refresh_prompts=refresh_prompts,
+                reextract_props=reextract_props,
+            )
+            await record_seed_assets_llm_usage(db, user, project_id, seed_result)
+            return seed_result
+
+        _task, result = await run_billed_ephemeral(
             db,
-            project,
-            refresh_prompts=refresh_prompts,
-            reextract_props=reextract_props,
+            user,
+            domain="drama",
+            task_type="seed_assets",
+            executor=_do_sync_seed,
+            drama_project_id=project_id,
+            payload={"sync": True, "refresh_prompts": refresh_prompts, "reextract_props": reextract_props},
+            commit=False,
         )
+        project = await get_owned_drama_project(db, project_id, user, with_script=True)
         params = dict(project.params or {}) if isinstance(project.params, dict) else {}
         params["assets_seed_status"] = "done"
         params.pop("assets_seed_error", None)
@@ -312,14 +334,18 @@ async def seed_assets(
         project.params = params
         await db.commit()
     except ValueError as exc:
+        project = await get_owned_drama_project(db, project_id, user, with_script=True)
         params = dict(project.params or {}) if isinstance(project.params, dict) else {}
         params["assets_seed_status"] = "failed"
         params["assets_seed_error"] = str(exc)[:500]
         params.pop("assets_seed_generating_at", None)
         project.params = params
         await db.commit()
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise http_exception_for_value_error(exc) from exc
+    except HTTPException:
+        raise
     except RuntimeError as exc:
+        project = await get_owned_drama_project(db, project_id, user, with_script=True)
         params = dict(project.params or {}) if isinstance(project.params, dict) else {}
         params["assets_seed_status"] = "failed"
         params["assets_seed_error"] = str(exc)[:500]
@@ -328,6 +354,7 @@ async def seed_assets(
         await db.commit()
         raise HTTPException(status_code=502, detail=str(exc)[:500]) from exc
     except Exception:
+        project = await get_owned_drama_project(db, project_id, user, with_script=True)
         params = dict(project.params or {}) if isinstance(project.params, dict) else {}
         params["assets_seed_status"] = "failed"
         params["assets_seed_error"] = "资产抽取失败"

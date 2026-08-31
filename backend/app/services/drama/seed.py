@@ -307,6 +307,7 @@ class SeedAssetsResult:
     created_count: int = 0
     prompts_refreshed: int = 0
     props_updated: int = 0
+    llm_calls_props: int = 0
     llm_errors: list[str] = field(default_factory=list)
 
 
@@ -439,6 +440,7 @@ async def seed_assets_from_script(
 
     created: list[DramaAsset] = []
     props_updated = 0
+    llm_calls_props = 0
     llm_errors: list[str] = []
     logger.info(
         "seed_assets project_id=%s refresh_prompts=%s reextract_props=%s existing=%s",
@@ -543,6 +545,7 @@ async def seed_assets_from_script(
     need_props = not has_prop
     should_extract_props = not props_seeded and (need_props or reextract_props)
     if should_extract_props:
+        llm_calls_props = 1
         try:
             extracted = await extract_props_materials(summary=summary, episode_bodies=bodies)
         except Exception:
@@ -608,6 +611,7 @@ async def seed_assets_from_script(
         created_count=len(created),
         prompts_refreshed=prompts_refreshed,
         props_updated=props_updated,
+        llm_calls_props=llm_calls_props,
         llm_errors=llm_errors,
     )
 

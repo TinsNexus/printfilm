@@ -10,6 +10,8 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.config import get_settings
 from app.database import AsyncSessionLocal
 from app.models import User
@@ -21,7 +23,8 @@ from app.models_drama import (
     DramaFragmentAssetRef,
     DramaProject,
 )
-from app.services.billing import record_usage
+from app.services.billing import record_line, record_llm_chat_line
+from app.services.drama.billing_util import record_seed_assets_llm_usage
 from app.services.drama.agents import (
     count_completed_episodes,
     ensure_episode_outline,
@@ -168,26 +171,58 @@ def _job_key(kind: str, entity_id: int) -> str:
     return f"{kind}:{entity_id}"
 
 
-# ---------- script summary ----------
+async def _enqueue_drama_task(
+    db: AsyncSession,
+    user: User,
+    *,
+    task_type: str,
+    project_id: int,
+    dedupe_suffix: str,
+    payload: dict[str, Any],
+    asset_id: int | None = None,
+    episode_id: int | None = None,
+    fragment_id: int | None = None,
+    commit: bool = True,
+) -> int:
+    """通过统一任务平台入队漫剧任务，返回 task_run_id。"""
+    from app.schemas_tasks import TaskCreateRequest, TaskTargetBind
+    from app.services.tasks.service import create_task
+
+    task = await create_task(
+        db,
+        user,
+        TaskCreateRequest(
+            domain="drama",
+            task_type=task_type,
+            dedupe_key=f"drama:{task_type}:{dedupe_suffix}",
+            drama_project_id=project_id,
+            asset_id=asset_id,
+            episode_id=episode_id,
+            fragment_id=fragment_id,
+            payload=payload,
+            targets=[TaskTargetBind(target_type="drama_project", target_id=project_id)],
+        ),
+        commit=commit,
+    )
+    return int(task.id)
 
 
-def dispatch_script_summary_job(project_id: int) -> str:
-    """Start one in-process script-summary task.
-
-    Caller should mark summary_status=generating before calling.
-    """
-    key = _job_key("summary", project_id)
-    if key in _running and not _running[key].done():
-        logger.info("dispatch 剧本摘要 → 进程内已在跑 project_id=%s", project_id)
-        return "in-process"
-    _running[key] = asyncio.create_task(run_script_summary_job(project_id))
-    logger.info("dispatch 剧本摘要 → 进程内新建 project_id=%s", project_id)
-    return "in-process"
+async def dispatch_script_summary_job(db: AsyncSession, user: User, project_id: int) -> int:
+    """入队剧本摘要任务。"""
+    task_id = await _enqueue_drama_task(
+        db,
+        user,
+        task_type="script_summary",
+        project_id=project_id,
+        dedupe_suffix=str(project_id),
+        payload={"project_id": project_id},
+    )
+    logger.info("dispatch 剧本摘要 → task_id=%s project_id=%s", task_id, project_id)
+    return task_id
 
 
 async def run_script_summary_job(project_id: int) -> dict[str, Any]:
     # Worker：生成剧本摘要并写库
-    logger.info("开始生成剧本摘要 project_id=%s", project_id)
     async with AsyncSessionLocal() as db:
         project = await db.get(
             DramaProject,
@@ -233,7 +268,7 @@ async def run_script_summary_job(project_id: int) -> dict[str, Any]:
                 script.name = project.title
         user = await db.get(User, project.user_id)
         if user:
-            await record_usage(
+            await record_line(
                 db,
                 user_id=user.id,
                 project_id=None,
@@ -241,6 +276,7 @@ async def run_script_summary_job(project_id: int) -> dict[str, Any]:
                 billing_key="llm_chat",
                 model=get_settings().model_llm,
                 estimated=True,
+                domain="drama",
             )
         await db.commit()
         logger.info(
@@ -255,18 +291,27 @@ async def run_script_summary_job(project_id: int) -> dict[str, Any]:
 # ---------- episode scripts ----------
 
 
-def dispatch_episode_scripts_job(project_id: int, force: bool = False) -> str:
-    """Start one in-process episode-script task.
-
-    Caller should mark episode_content_status=generating before calling.
-    """
-    key = _job_key("episodes", project_id)
-    if key in _running and not _running[key].done():
-        logger.info("dispatch 分集剧本 → 进程内已在跑 project_id=%s", project_id)
-        return "in-process"
-    _running[key] = asyncio.create_task(run_episode_scripts_job(project_id, force=force))
-    logger.info("dispatch 分集剧本 → 进程内新建 project_id=%s force=%s", project_id, force)
-    return "in-process"
+async def dispatch_episode_scripts_job(
+    db: AsyncSession,
+    user: User,
+    project_id: int,
+    force: bool = False,
+) -> int:
+    """入队分集剧本任务。"""
+    project = await db.get(DramaProject, project_id, options=[selectinload(DramaProject.script)])
+    total = 1
+    if project and project.script and isinstance(project.script.summary, dict):
+        total = int(project.script.summary.get("episodeCount") or 1)
+    task_id = await _enqueue_drama_task(
+        db,
+        user,
+        task_type="episode_script",
+        project_id=project_id,
+        dedupe_suffix=f"{project_id}:force:{int(force)}",
+        payload={"project_id": project_id, "force": force, "total": total},
+    )
+    logger.info("dispatch 分集剧本 → task_id=%s project_id=%s", task_id, project_id)
+    return task_id
 
 
 async def run_episode_scripts_job(project_id: int, force: bool = False) -> dict[str, Any]:
@@ -312,9 +357,18 @@ async def run_episode_scripts_job(project_id: int, force: bool = False) -> dict[
                 await db.flush()
                 logger.info("已清空分集正文准备重写 project_id=%s total=%s", project_id, total)
 
-            existing = await ensure_episode_outline(creative, summary, existing, total)
+            existing, outline_used_llm = await ensure_episode_outline(creative, summary, existing, total)
             script.episode_content = {"episodes": existing}
             await db.flush()
+            if outline_used_llm:
+                user = await db.get(User, project.user_id)
+                if user:
+                    await record_llm_chat_line(
+                        db,
+                        user_id=user.id,
+                        domain="drama",
+                        drama_project_id=project.id,
+                    )
             logger.info("分集大纲就绪 project_id=%s titles=%s", project_id, len(existing))
 
             guard = 0
@@ -348,7 +402,7 @@ async def run_episode_scripts_job(project_id: int, force: bool = False) -> dict[
                 await db.commit()
                 user = await db.get(User, project.user_id)
                 if user:
-                    await record_usage(
+                    await record_line(
                         db,
                         user_id=user.id,
                         project_id=None,
@@ -356,6 +410,7 @@ async def run_episode_scripts_job(project_id: int, force: bool = False) -> dict[
                         billing_key="llm_chat",
                         model=get_settings().model_llm,
                         estimated=True,
+                        domain="drama",
                     )
                     await db.commit()
                 await db.refresh(script)
@@ -400,7 +455,7 @@ async def run_episode_scripts_job(project_id: int, force: bool = False) -> dict[
 
 
 def dispatch_episode_fragment_plan_job(episode_id: int, *, fallback_rules: bool = True) -> str:
-    # 启动单集 LLM 分镜任务。
+    # Legacy：进程内 dispatch，无任务平台计费。API 已改 create_task(fragment_plan)；无外部调用方。
     key = _job_key("fragplan", episode_id)
     if key in _running and not _running[key].done():
         logger.info("dispatch 单集分镜 → 进程内已在跑 episode_id=%s", episode_id)
@@ -601,8 +656,8 @@ async def run_episode_fragment_plan_job(
         params["fragment_plan_preserved"] = len(protected_frags)
         episode.params = params
         user = await db.get(User, project.user_id)
-        if user:
-            await record_usage(
+        if user and mode_used == "llm":
+            await record_line(
                 db,
                 user_id=user.id,
                 project_id=None,
@@ -610,6 +665,7 @@ async def run_episode_fragment_plan_job(
                 billing_key="llm_chat",
                 model=get_settings().model_llm,
                 estimated=True,
+                domain="drama",
             )
         await db.commit()
         logger.info(
@@ -702,7 +758,7 @@ def dispatch_episode_generate_job(
     *,
     sequential: bool = True,
 ) -> str:
-    # API 立即返回。开启镜间衔接时按 sort_order 串行，否则可并行入队
+    # Legacy：进程内 dispatch，无任务平台计费。API 已改 create_task(fragment_video)；无外部调用方。
     ids = [int(x) for x in fragment_ids]
     _clear_episode_video_cancelled(episode_id)
     if not ids:
@@ -745,7 +801,7 @@ def dispatch_episode_generate_job(
     return "in-process"
 
 
-# 单个分镜视频（独立 DB session，供并发池调用）
+# Legacy：单分镜同步生成（独立 DB session）。任务平台请用 submit_fragment_video_task。
 async def _generate_one_fragment_video(
     *,
     episode_id: int,
@@ -889,7 +945,7 @@ async def run_fragment_generate_job(
     fragment_id: int,
     remaining_ids: list[int] | None = None,
 ) -> dict[str, Any]:
-    # 单条分镜；成功后再入队下一镜，保证能读到上一镜尾帧
+    # Legacy：单镜 + 链式衔接的进程内路径，无任务平台计费。
     remaining = [int(x) for x in (remaining_ids or [])]
     logger.info(
         "开始生成分镜视频 episode_id=%s fragment_id=%s rest=%s",
@@ -1103,85 +1159,86 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
 # 任务平台：轮询 awaiting_poll 的分镜视频任务。
 async def poll_fragment_video_task(task_id: int) -> None:
     from app.services.ark import get_ark
+    from app.services.billing.context import billing_scope
     from app.services.tasks.executor import _complete_task, _fail_task
     from app.services.tasks.service import activate_next_sequential_task, get_task_for_runtime
 
-    async with AsyncSessionLocal() as db:
-        task = await get_task_for_runtime(db, task_id)
-        if not task or task.status != "awaiting_poll" or not task.provider_task_id:
-            return
-        payload = task.payload if isinstance(task.payload, dict) else {}
-        fragment_ids = payload.get("fragment_ids") or []
-        fragment_id = int(task.fragment_id or (fragment_ids[0] if fragment_ids else 0))
-        episode_id = int(task.episode_id or payload.get("episode_id") or 0)
-        user_id = int(task.requested_by)
-        attempts = int(payload.get("generation_attempts") or 1)
-        attempt_limit = int(payload.get("attempt_limit") or get_settings().drama_fragment_max_attempts or 3)
-        poll_interval = max(1.0, float(get_settings().ark_video_poll_interval or 8.0))
-        now = datetime.now(UTC)
+    async with billing_scope(task_id):
+        async with AsyncSessionLocal() as db:
+            task = await get_task_for_runtime(db, task_id)
+            if not task or task.status != "awaiting_poll" or not task.provider_task_id:
+                return
+            payload = task.payload if isinstance(task.payload, dict) else {}
+            fragment_ids = payload.get("fragment_ids") or []
+            fragment_id = int(task.fragment_id or (fragment_ids[0] if fragment_ids else 0))
+            episode_id = int(task.episode_id or payload.get("episode_id") or 0)
+            user_id = int(task.requested_by)
+            attempts = int(payload.get("generation_attempts") or 1)
+            attempt_limit = int(payload.get("attempt_limit") or get_settings().drama_fragment_max_attempts or 3)
+            poll_interval = max(1.0, float(get_settings().ark_video_poll_interval or 8.0))
+            now = datetime.now(UTC)
 
-        if task.cancel_requested or _is_episode_video_cancelled(episode_id):
-            await _fail_task(db, task, RuntimeError("任务已取消"))
-            return
+            if task.cancel_requested or _is_episode_video_cancelled(episode_id):
+                await _fail_task(db, task, RuntimeError("任务已取消"))
+                return
 
-        # 分镜已删/重建：直接作废，勿继续轮询或写回（用户应按当前分镜重新生成）
-        frag_probe = await db.get(DramaEpisodeFragment, fragment_id) if fragment_id > 0 else None
-        if fragment_id <= 0 or frag_probe is None:
-            await _fail_task(db, task, RuntimeError("分镜已变更，请重新生成"))
-            return
+            frag_probe = await db.get(DramaEpisodeFragment, fragment_id) if fragment_id > 0 else None
+            if fragment_id <= 0 or frag_probe is None:
+                await _fail_task(db, task, RuntimeError("分镜已变更，请重新生成"))
+                return
 
-        result = await get_ark().fetch_task_once(task.provider_task_id)
-        if result.status == "running":
-            task.next_action_at = now + timedelta(seconds=poll_interval)
-            task.progress_percent = min(95, int(task.progress_percent or 40) + 3)
-            task.current_step_status = "polling"
-            await db.commit()
-            return
-        if result.status != "succeeded":
+            result = await get_ark().fetch_task_once(task.provider_task_id)
+            if result.status == "running":
+                task.next_action_at = now + timedelta(seconds=poll_interval)
+                task.progress_percent = min(95, int(task.progress_percent or 40) + 3)
+                task.current_step_status = "polling"
+                await db.commit()
+                return
+            if result.status != "succeeded":
+                frag = await db.get(DramaEpisodeFragment, fragment_id)
+                if frag:
+                    params = dict(frag.params or {})
+                    prev_gen = params.get("generation") if isinstance(params.get("generation"), dict) else None
+                    params["generation"] = build_failed_generation_params(
+                        prev_gen if isinstance(prev_gen, dict) else None,
+                        str(result.error or "上游生成失败"),
+                        attempts=attempts,
+                        attempt_limit=attempt_limit,
+                    )
+                    frag.params = params
+                await _fail_task(db, task, RuntimeError(result.error or "上游生成失败"))
+                return
+
+            ep = await db.get(DramaEpisode, episode_id, options=[selectinload(DramaEpisode.project)])
+            user = await db.get(User, user_id)
             frag = await db.get(DramaEpisodeFragment, fragment_id)
-            if frag:
-                params = dict(frag.params or {})
-                prev_gen = params.get("generation") if isinstance(params.get("generation"), dict) else None
-                params["generation"] = build_failed_generation_params(
-                    prev_gen if isinstance(prev_gen, dict) else None,
-                    str(result.error or "上游生成失败"),
-                    attempts=attempts,
-                    attempt_limit=attempt_limit,
-                )
-                frag.params = params
-            await _fail_task(db, task, RuntimeError(result.error or "上游生成失败"))
-            return
+            if not ep or not ep.project or not user or not frag:
+                await _fail_task(db, task, RuntimeError("分镜已变更，请重新生成"))
+                return
 
-        ep = await db.get(DramaEpisode, episode_id, options=[selectinload(DramaEpisode.project)])
-        user = await db.get(User, user_id)
-        frag = await db.get(DramaEpisodeFragment, fragment_id)
-        if not ep or not ep.project or not user or not frag:
-            await _fail_task(db, task, RuntimeError("分镜已变更，请重新生成"))
-            return
+            task.current_step_status = "finalizing"
+            task.progress_percent = max(int(task.progress_percent or 0), 90)
+            await db.commit()
 
-        task.current_step_status = "finalizing"
-        task.progress_percent = max(int(task.progress_percent or 0), 90)
-        await db.commit()
-
-        local_video, local_last_frame = await get_ark().save_video_assets_from_result(
-            result,
-            project_id=ep.project.id,
-            shot_no=fragment_id,
-        )
-        await apply_fragment_video_assets(
-            db,
-            user,
-            ep.project,
-            frag,
-            local_video=local_video,
-            local_last_frame=local_last_frame,
-            attempts=attempts,
-            attempt_limit=attempt_limit,
-        )
-        batch_index = int(payload.get("batch_index", 0))
-        await activate_next_sequential_task(db, task.batch_key, batch_index)
-        task.progress_percent = 100
-        await _complete_task(db, task, {"ok": True, "fragment_id": fragment_id})
+            local_video, local_last_frame = await get_ark().save_video_assets_from_result(
+                result,
+                project_id=ep.project.id,
+                shot_no=fragment_id,
+            )
+            await apply_fragment_video_assets(
+                db,
+                user,
+                ep.project,
+                frag,
+                local_video=local_video,
+                local_last_frame=local_last_frame,
+                attempts=attempts,
+                attempt_limit=attempt_limit,
+            )
+            batch_index = int(payload.get("batch_index", 0))
+            await activate_next_sequential_task(db, task.batch_key, batch_index)
+            task.progress_percent = 100
+            await _complete_task(db, task, {"ok": True, "fragment_id": fragment_id})
 
 
 async def run_episode_generate_job(
@@ -1189,7 +1246,7 @@ async def run_episode_generate_job(
     user_id: int,
     fragment_ids: list[int],
 ) -> dict[str, Any]:
-    # 校验分集后，按 Seedance 并发上限并行生成各分镜
+    # Legacy：整批分镜进程内生成，绕过任务平台 freeze/settle。handlers 已改 submit_fragment_video_task。
     _clear_episode_video_cancelled(episode_id)
     logger.info(
         "开始生成分集视频 episode_id=%s fragments=%s",
@@ -1266,7 +1323,9 @@ async def run_episode_generate_job(
 # ---------- asset image ----------
 
 
-def dispatch_asset_image_job(
+async def dispatch_asset_image_job(
+    db: AsyncSession,
+    user: User,
     project_id: int,
     user_id: int,
     prompt: str,
@@ -1278,33 +1337,31 @@ def dispatch_asset_image_job(
     model_id: str | None = None,
     aspect_ratio: str | None = None,
     resolution: str | None = None,
-) -> str:
-    """Enqueue asset image generation. Caller marks asset generating when possible."""
-    key = _job_key("img", asset_id or project_id)
-    if key in _running and not _running[key].done():
-        logger.info("dispatch 资产生图 → 进程内已在跑 asset_id=%s", asset_id)
-        return "in-process"
-    _running[key] = asyncio.create_task(
-        run_asset_image_job(
-            project_id,
-            user_id,
-            prompt,
-            asset_id,
-            name,
-            kind,
-            image_style_id=image_style_id,
-            model_id=model_id,
-            aspect_ratio=aspect_ratio,
-            resolution=resolution,
-        )
+) -> int:
+    """入队资产生图任务。"""
+    task_id = await _enqueue_drama_task(
+        db,
+        user,
+        task_type="asset_image",
+        project_id=project_id,
+        dedupe_suffix=f"{project_id}:asset:{asset_id or 0}",
+        asset_id=asset_id,
+        payload={
+            "project_id": project_id,
+            "user_id": user_id,
+            "prompt": prompt,
+            "asset_id": asset_id,
+            "name": name,
+            "kind": kind,
+            "image_style_id": image_style_id,
+            "model_id": model_id,
+            "aspect_ratio": aspect_ratio,
+            "resolution": resolution,
+        },
+        commit=False,
     )
-    logger.info(
-        "dispatch 资产生图 → 进程内新建 project_id=%s asset_id=%s kind=%s",
-        project_id,
-        asset_id,
-        kind,
-    )
-    return "in-process"
+    logger.info("dispatch 资产生图 → task_id=%s project_id=%s asset_id=%s", task_id, project_id, asset_id)
+    return task_id
 
 
 async def run_asset_image_job(
@@ -1345,10 +1402,17 @@ async def run_asset_image_job(
             asset = await db.get(DramaAsset, asset_id)
             if not asset or asset.project_id != project_id:
                 return {"ok": False, "error": "asset_not_found"}
+            params = dict(asset.params or {})
+            gen = dict(params.get("generation") or {})
+            gen["status"] = "generating"
+            gen["message"] = "生图中"
+            params["generation"] = gen
+            asset.params = params
+            await db.commit()
         try:
             resolved_prompt = prompt
             if asset:
-                resolved_prompt = await resolve_visual_prompt_for_asset(asset, project, prompt)
+                resolved_prompt = await resolve_visual_prompt_for_asset(asset, project, prompt, db=db)
                 params = dict(asset.params or {})
                 params["visualPrompt"] = resolved_prompt
                 if not str(params.get("visualImage") or "").strip():
@@ -1408,7 +1472,9 @@ async def run_asset_image_job(
 # ---------- asset video ----------
 
 
-def dispatch_asset_video_job(
+async def dispatch_asset_video_job(
+    db: AsyncSession,
+    user: User,
     project_id: int,
     user_id: int,
     prompt: str,
@@ -1420,32 +1486,31 @@ def dispatch_asset_video_job(
     duration_sec: int | None = None,
     image_style_id: str | None = None,
     reference_asset_ids: list[int] | None = None,
-) -> str:
-    """Start one in-process asset-video generation task."""
-    key = _job_key("vid", asset_id)
-    if key in _running and not _running[key].done():
-        logger.info("dispatch 资产生视频 → 进程内已在跑 asset_id=%s", asset_id)
-        return "in-process"
-    _running[key] = asyncio.create_task(
-        run_asset_video_job(
-            project_id,
-            user_id,
-            prompt,
-            asset_id,
-            model_id=model_id,
-            aspect_ratio=aspect_ratio,
-            resolution=resolution,
-            duration_sec=duration_sec,
-            image_style_id=image_style_id,
-            reference_asset_ids=reference_asset_ids or [],
-        )
+) -> int:
+    """入队资产生视频任务。"""
+    task_id = await _enqueue_drama_task(
+        db,
+        user,
+        task_type="asset_video",
+        project_id=project_id,
+        dedupe_suffix=f"{project_id}:asset:{asset_id}",
+        asset_id=asset_id,
+        payload={
+            "project_id": project_id,
+            "user_id": user_id,
+            "prompt": prompt,
+            "asset_id": asset_id,
+            "model_id": model_id,
+            "aspect_ratio": aspect_ratio,
+            "resolution": resolution,
+            "duration_sec": duration_sec,
+            "image_style_id": image_style_id,
+            "reference_asset_ids": reference_asset_ids or [],
+        },
+        commit=False,
     )
-    logger.info(
-        "dispatch 资产生视频 → 进程内新建 project_id=%s asset_id=%s",
-        project_id,
-        asset_id,
-    )
-    return "in-process"
+    logger.info("dispatch 资产生视频 → task_id=%s asset_id=%s", task_id, asset_id)
+    return task_id
 
 
 async def run_asset_video_job(
@@ -1571,6 +1636,9 @@ async def run_seed_assets_job(
             else:
                 params.pop("assets_seed_llm_errors", None)
             project.params = params
+            user = await db.get(User, project.user_id)
+            if user:
+                await record_seed_assets_llm_usage(db, user, project.id, result)
             await db.commit()
             return {
                 "ok": True,
@@ -1589,23 +1657,26 @@ async def run_seed_assets_job(
             return {"ok": False, "error": str(exc)[:500]}
 
 
-def dispatch_seed_assets_job(
+async def dispatch_seed_assets_job(
+    db: AsyncSession,
+    user: User,
     project_id: int,
     *,
     refresh_prompts: bool = False,
     reextract_props: bool = False,
-) -> str:
-    """Start one in-process seed-assets task."""
-    key = _job_key("seed_assets", project_id)
-    if key in _running and not _running[key].done():
-        logger.info("dispatch 抽取资产 → 进程内已在跑 project_id=%s", project_id)
-        return "in-process"
-    _running[key] = asyncio.create_task(
-        run_seed_assets_job(
-            project_id,
-            refresh_prompts=refresh_prompts,
-            reextract_props=reextract_props,
-        )
+) -> int:
+    """入队抽取漫剧资产任务。"""
+    task_id = await _enqueue_drama_task(
+        db,
+        user,
+        task_type="seed_assets",
+        project_id=project_id,
+        dedupe_suffix=str(project_id),
+        payload={
+            "project_id": project_id,
+            "refresh_prompts": refresh_prompts,
+            "reextract_props": reextract_props,
+        },
     )
-    logger.info("dispatch 抽取资产 → 进程内新建 project_id=%s", project_id)
-    return "in-process"
+    logger.info("dispatch 抽取资产 → task_id=%s project_id=%s", task_id, project_id)
+    return task_id
