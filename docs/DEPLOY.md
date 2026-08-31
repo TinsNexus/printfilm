@@ -29,7 +29,18 @@
 
 ```text
 deploy/scripts/deploy_kepu.py
+deploy/scripts/deploy_kepu_8136.py
+deploy/.env.secrets.local
 ```
+
+SSH / DB 密码**不要**写进脚本，放入 `deploy/.env.secrets.local`（可参考 `.env.secrets.local.example`）：
+
+```text
+DEPLOY_SSH_PASSWORD=…
+DEPLOY_PG_PASSWORD=…
+```
+
+或发布前导出同名环境变量。
 
 在仓库根目录执行：
 
