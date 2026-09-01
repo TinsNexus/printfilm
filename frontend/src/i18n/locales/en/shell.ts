@@ -48,7 +48,7 @@ export const enShell = {
   nav: {
     workbench: 'Home',
     drama: 'Drama',
-    kepu: 'Explainers',
+    kepu: 'AI Short Video',
     tools: 'Tools',
     assets: 'Assets',
     pricing: 'Pricing',
@@ -90,7 +90,7 @@ export const enShell = {
     hint: 'Pick a product and enter its workflow',
     drama: 'AI Drama',
     dramaHint: 'Script · episodes · film',
-    kepu: 'Explainer video',
+    kepu: 'AI Short Video',
     kepuHint: 'Storyboard pipeline',
     toolsFootPrefix: 'Or browse standalone tools in the',
     toolsFootLink: 'tool hub',

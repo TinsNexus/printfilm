@@ -4,14 +4,14 @@ export const zhPages = {
   home: {
     headlineBefore: '把故事做成',
     headlineEm: '能播的片子',
-    lede: 'AI 漫剧从剧本到分集成片，科普视频从分镜到配音合成。一套工作台，两种出片方式。',
+    lede: 'AI 漫剧从剧本到分集成片，AI短视频从分镜到配音合成。一套工作台，两种出片方式。',
     startCreate: '开始创作',
     browseTools: '浏览工具',
     products: '主产品',
     dramaTitle: 'AI 漫剧',
     dramaFor: '给短剧创作者',
     dramaDesc: '从一句话生成剧本，沉淀角色与场景，再按集分镜成片。',
-    kepuTitle: '科普视频',
+    kepuTitle: 'AI短视频',
     kepuFor: '给知识创作者',
     kepuDesc: '选定画面风格，写好分镜旁白，沿流水线出讲解短片。',
     howKicker: 'How it works',
@@ -26,7 +26,7 @@ export const zhPages = {
     closeTitle: '从一条创意开始',
     closeLead: '登录后选择漫剧或科普，进入对应工作台。',
     viewPricing: '查看定价',
-    footBrand: 'AI 漫剧与科普视频创作平台',
+    footBrand: 'AI 漫剧与 AI短视频创作平台',
     footNav: '页脚导航',
     dramaSteps: ['AI 生剧本', '角色与场景', '分集分镜', '成片导出'],
     kepuSteps: ['选画面风格', '写分镜旁白', '配音与成片', '批量出片'],
@@ -72,7 +72,7 @@ export const zhPages = {
     cats: [
       { id: 'start', title: '快速开始', desc: '工作台选产品入口', href: '/' },
       { id: 'drama', title: '漫剧创作', desc: '剧本 · 分集 · 成片', href: '/drama' },
-      { id: 'kepu', title: '科普视频', desc: '分镜流水线与成片', href: '/history' },
+      { id: 'kepu', title: 'AI短视频', desc: '分镜流水线与成片', href: '/history' },
       { id: 'tools', title: '创作工具', desc: '文生图 / 图生图 / 视频', href: '/tools' },
       { id: 'settings', title: '个人中心', desc: '项目 · 记录 · 下载', href: '/settings?tab=tools' },
       { id: 'billing', title: '充值说明', desc: '按量计费，余额永久有效', href: '/pricing' },
@@ -81,7 +81,7 @@ export const zhPages = {
       {
         n: '01',
         title: '选创作入口',
-        body: '工作台进入「AI 漫剧」或「科普视频」；单点能力也可从顶栏「工具」进入文生图、图生图、文生视频等。',
+        body: '工作台进入「AI 漫剧」或「AI短视频」；单点能力也可从顶栏「工具」进入文生图、图生图、文生视频等。',
       },
       {
         n: '02',
@@ -102,7 +102,7 @@ export const zhPages = {
     faq: [
       {
         q: '第一次使用从哪开始？',
-        a: '打开工作台，选择「AI 漫剧」或「科普视频」。漫剧适合分集叙事与角色一致性；科普适合短视频分镜流水线。若只要单张图或短片段，可直接进入「工具」。',
+        a: '打开工作台，选择「AI 漫剧」或「AI短视频」。漫剧适合分集叙事与角色一致性；AI短视频适合短视频分镜流水线。若只要单张图或短片段，可直接进入「工具」。',
       },
       {
         q: '「AI 视频」和「静图成片」有什么区别？',
@@ -379,7 +379,7 @@ export const zhPages = {
   },
   history: {
     title: '科普历史',
-    lead: '管理你的科普视频项目，继续编辑或下载成片。',
+    lead: '管理你的 AI短视频项目，继续编辑或下载成片。',
     newKepu: '新建科普',
     goDrama: '去漫剧',
     statTotal: '总作品数',

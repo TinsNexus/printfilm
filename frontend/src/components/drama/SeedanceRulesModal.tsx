@@ -200,7 +200,7 @@ export function SeedanceRulesModal({ open, onClose }: Props) {
             <ul className="seedance-rules-list">
               <li>分镜视频走独立 video 队列，Seedance 最多 10 路并行</li>
               <li>某一镜生成中时，仍可编辑其他镜脚本、预览已完成的视频</li>
-              <li>「全部生成」会为本集各镜依次入队；单镜「生成」仅提交当前镜</li>
+              <li>「一键生成」会为本集各镜依次入队；单镜「生成」仅提交当前镜</li>
             </ul>
 
             <h4>镜间尾帧衔接</h4>

@@ -11,7 +11,7 @@ export const enPages = {
     dramaTitle: 'AI Drama',
     dramaFor: 'For short-drama makers',
     dramaDesc: 'Generate a script from one line, lock characters and scenes, then board each episode.',
-    kepuTitle: 'Explainer video',
+    kepuTitle: 'AI Short Video',
     kepuFor: 'For knowledge creators',
     kepuDesc: 'Pick a look, write narration boards, and run the pipeline to a short explainer.',
     howKicker: 'How it works',
@@ -72,7 +72,7 @@ export const enPages = {
     cats: [
       { id: 'start', title: 'Quick start', desc: 'Pick a product on Home', href: '/' },
       { id: 'drama', title: 'Drama', desc: 'Script · episodes · film', href: '/drama' },
-      { id: 'kepu', title: 'Explainers', desc: 'Storyboard pipeline', href: '/history' },
+      { id: 'kepu', title: 'AI Short Video', desc: 'Storyboard pipeline', href: '/history' },
       { id: 'tools', title: 'Tools', desc: 'Text-to-image / video', href: '/tools' },
       { id: 'settings', title: 'Account', desc: 'Projects · runs · downloads', href: '/settings?tab=tools' },
       { id: 'billing', title: 'Billing', desc: 'Pay as you go, no expiry', href: '/pricing' },

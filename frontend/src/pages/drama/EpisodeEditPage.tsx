@@ -700,7 +700,7 @@ function EpisodeEditInner() {
     }
   }
 
-  // 判断「全部生成」时是否可安全跳过：仅跳过未改动且已有成片的旧分镜
+  // 判断「一键生成」时是否可安全跳过：仅跳过未改动且已有成片的旧分镜
   function shouldSkipGenerateAllFragment(frag: DramaFragment): boolean {
     if (!frag.video || !frag.id) return false
     const prev = (episode?.fragments || []).find((item) => item.id === frag.id)
@@ -847,7 +847,7 @@ function EpisodeEditInner() {
     }
   }
 
-  // 全部生成：入队本集分镜（forceRegen 覆盖已有成片）
+  // 一键生成：入队本集分镜（forceRegen 覆盖已有成片）
   async function generateAll(opts?: { forceRegen?: boolean; skipConfirm?: boolean }) {
     if (fragments.length === 0) {
       setError('没有可生成的分镜')
@@ -879,7 +879,7 @@ function EpisodeEditInner() {
     if (allBlocking.length > 0) {
       setError(allBlocking[0] || '分镜脚本校验未通过')
       await dialog.alert({
-        title: '无法全部生成',
+        title: '无法一键生成',
         message: ['请先修复以下问题：', '', ...allBlocking.slice(0, 8).map((m) => `· ${m}`)].join(
           '\n',
         ),
@@ -889,7 +889,7 @@ function EpisodeEditInner() {
 
     if (!opts?.skipConfirm) {
       const ok = await dialog.confirm({
-        title: opts?.forceRegen ? '按新规格重新生成' : '生成全部分镜视频',
+        title: opts?.forceRegen ? '按新规格重新生成' : '一键生成分镜视频',
         message: formatDramaGateMessage(
           [],
           allWarnings.slice(0, 8).map((message) => ({ level: 'warn' as const, message })),
@@ -899,7 +899,7 @@ function EpisodeEditInner() {
               ? `将按镜序排队生成剩余 ${pendingCount} 镜（已生成的 ${doneIndices.length} 镜会跳过）。入队后可继续编辑；后一镜会等待上一镜尾帧写好再开始。`
               : `将并发生成剩余 ${pendingCount} 镜（已生成的 ${doneIndices.length} 镜会跳过）。入队后可继续编辑；各镜互不等待。`,
         ),
-        confirmText: allWarnings.length > 0 ? '仍要全部生成' : opts?.forceRegen ? '全部重新生成' : '全部生成',
+        confirmText: allWarnings.length > 0 ? '仍要一键生成' : opts?.forceRegen ? '全部重新生成' : '一键生成',
         tone: 'danger',
       })
       if (!ok) return
@@ -945,7 +945,7 @@ function EpisodeEditInner() {
       }
       setBusy(false)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '全部生成失败')
+      setError(err instanceof Error ? err.message : '一键生成失败')
       setBusy(false)
     }
   }
@@ -1269,14 +1269,17 @@ function EpisodeEditInner() {
           >
             {busy && status.includes('分镜') ? '分镜中…' : 'AI 重新分镜'}
           </button>
-          <button
-            type="button"
-            className="drama-ep-btn-dark drama-ep-header-gen-all"
-            disabled={generateAllLocked || fragments.length === 0}
-            onClick={() => void generateAll()}
-          >
-            {busy ? '入队中…' : '全部生成'}
-          </button>
+          {/* 一键生成：暂时隐藏，恢复时去掉 false && */}
+          {false && (
+            <button
+              type="button"
+              className="drama-ep-btn-dark drama-ep-header-gen-all"
+              disabled={generateAllLocked || fragments.length === 0}
+              onClick={() => void generateAll()}
+            >
+              {busy ? '入队中…' : '一键生成'}
+            </button>
+          )}
         </div>
       </header>
 

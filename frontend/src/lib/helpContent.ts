@@ -21,7 +21,7 @@ export type HelpGuideStep = {
 export const HELP_CATS: HelpCatItem[] = [
   { id: 'start', title: '快速开始', desc: '工作台选产品入口', href: '/' },
   { id: 'drama', title: '漫剧创作', desc: '剧本 · 分集 · 成片', href: '/drama' },
-  { id: 'kepu', title: '科普视频', desc: '分镜流水线与成片', href: '/history' },
+  { id: 'kepu', title: 'AI短视频', desc: '分镜流水线与成片', href: '/history' },
   { id: 'tools', title: '创作工具', desc: '文生图 / 图生图 / 视频', href: '/tools' },
   { id: 'settings', title: '个人中心', desc: '项目 · 记录 · 下载', href: '/settings?tab=tools' },
   { id: 'billing', title: '充值说明', desc: '按量计费，余额永久有效', href: '/pricing' },
@@ -31,7 +31,7 @@ export const HELP_GUIDE_STEPS: HelpGuideStep[] = [
   {
     n: '01',
     title: '选创作入口',
-    body: '工作台进入「AI 漫剧」或「科普视频」；单点能力也可从顶栏「工具」进入文生图、图生图、文生视频等。',
+    body: '工作台进入「AI 漫剧」或「AI短视频」；单点能力也可从顶栏「工具」进入文生图、图生图、文生视频等。',
   },
   {
     n: '02',
@@ -53,7 +53,7 @@ export const HELP_GUIDE_STEPS: HelpGuideStep[] = [
 export const HELP_FAQ_ITEMS: HelpFaqItem[] = [
   {
     q: '第一次使用从哪开始？',
-    a: '打开工作台，选择「AI 漫剧」或「科普视频」。漫剧适合分集叙事与角色一致性；科普适合短视频分镜流水线。若只要单张图或短片段，可直接进入「工具」。',
+    a: '打开工作台，选择「AI 漫剧」或「AI短视频」。漫剧适合分集叙事与角色一致性；AI短视频适合短视频分镜流水线。若只要单张图或短片段，可直接进入「工具」。',
   },
   {
     q: '「AI 视频」和「静图成片」有什么区别？',

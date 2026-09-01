@@ -728,7 +728,8 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
               ? `AI 抽取中…（约 ${Math.max(imageAssetCount, 1)} 项，需 1–3 分钟）`
               : '重新抽取资产'}
           </button>
-          {tab !== 'voice' ? (
+          {/* 一键生成未出图：暂时隐藏，恢复时去掉 && false */}
+          {tab !== 'voice' && false ? (
             <button
               type="button"
               className="drama-btn-primary"

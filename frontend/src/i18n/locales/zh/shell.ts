@@ -2,8 +2,8 @@
 
 export const zhShell = {
   meta: {
-    title: 'PRINTFILM · 科普视频平台',
-    description: 'PRINTFILM：AI 漫剧从剧本到分集成片，科普视频从分镜到配音合成。',
+    title: 'PRINTFILM · AI短视频平台',
+    description: 'PRINTFILM：AI 漫剧从剧本到分集成片，AI短视频从分镜到配音合成。',
   },
   common: {
     comingSoon: '即将推出',
@@ -47,7 +47,7 @@ export const zhShell = {
   nav: {
     workbench: '工作台',
     drama: '漫剧',
-    kepu: '科普',
+    kepu: 'AI短视频',
     tools: '工具',
     assets: '资产',
     pricing: '定价',
@@ -74,7 +74,7 @@ export const zhShell = {
   auth: {
     loginTitle: '回到工作台',
     registerTitle: '创建创作者账号',
-    lede: 'PRINTFILM · AI 漫剧与科普视频创作平台',
+    lede: 'PRINTFILM · AI 漫剧与 AI短视频创作平台',
     nickname: '昵称',
     email: '邮箱',
     password: '密码',
@@ -89,7 +89,7 @@ export const zhShell = {
     hint: '选择一个产品线，进入对应工作流',
     drama: 'AI 漫剧',
     dramaHint: '剧本 · 分集 · 成片',
-    kepu: '科普视频',
+    kepu: 'AI短视频',
     kepuHint: '分镜流水线出片',
     toolsFootPrefix: '也可以先去',
     toolsFootLink: '工具中心',
@@ -136,7 +136,7 @@ export const zhShell = {
     noDrama: '还没有漫剧项目',
     goCreate: '去创建',
     projectFallback: '项目 #{id}',
-    kepuLead: '科普视频项目与成片记录',
+    kepuLead: 'AI短视频项目与成片记录',
     allHistory: '全部历史',
     newKepu: '新建科普',
     noKepu: '还没有科普项目',
