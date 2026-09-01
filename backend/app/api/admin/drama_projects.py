@@ -11,7 +11,7 @@ from sqlalchemy.orm import aliased, selectinload
 from app.database import get_db
 from app.deps import get_current_admin
 from app.models import User
-from app.models_drama import DramaAsset, DramaEpisode, DramaProject
+from app.models_drama import DramaAsset, DramaEpisode, DramaProject, DramaScript
 from app.models_tasks import TaskRun
 from app.schemas import AdminProjectUsageOut, AdminTaskBriefOut, PageMeta
 from app.services.admin.stats import aggregate_usage_summary
@@ -93,6 +93,8 @@ async def list_drama_projects(
     page_size: int = Query(20, ge=1, le=100),
     q: str | None = None,
     user_id: int | None = None,
+    summary_status: str | None = None,
+    assets_seed_status: str | None = None,
     _admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> AdminDramaProjectListOut:
@@ -125,6 +127,18 @@ async def list_drama_projects(
         filt = or_(DramaProject.title.ilike(like), DramaProject.description.ilike(like))
         stmt = stmt.where(filt)
         count_stmt = count_stmt.where(filt)
+    if summary_status and summary_status.strip():
+        status_val = summary_status.strip()
+        stmt = stmt.join(DramaScript, DramaScript.project_id == DramaProject.id).where(
+            DramaScript.params["summary_status"].as_string() == status_val
+        )
+        count_stmt = count_stmt.join(DramaScript, DramaScript.project_id == DramaProject.id).where(
+            DramaScript.params["summary_status"].as_string() == status_val
+        )
+    if assets_seed_status and assets_seed_status.strip():
+        seed_val = assets_seed_status.strip()
+        stmt = stmt.where(DramaProject.params["assets_seed_status"].as_string() == seed_val)
+        count_stmt = count_stmt.where(DramaProject.params["assets_seed_status"].as_string() == seed_val)
 
     total = int((await db.execute(count_stmt)).scalar_one() or 0)
     rows = (
@@ -183,7 +197,8 @@ async def get_drama_project(
     assets = sorted(project.assets or [], key=lambda a: a.id)
     fragment_count = sum(len(ep.fragments or []) for ep in episodes)
 
-    data = AdminDramaProjectDetailOut.model_validate(project)
+    base = AdminDramaProjectOut.model_validate(project)
+    data = AdminDramaProjectDetailOut(**base.model_dump())
     data.user_email = email
     data.episode_count = len(episodes)
     data.asset_count = len(assets)

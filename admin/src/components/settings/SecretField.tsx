@@ -1,5 +1,4 @@
 import { LabeledControl } from "@/components/settings/SettingsPanel";
-import { cn } from "@/lib/utils";
 
 type SecretFieldProps = {
   label: string;
@@ -24,27 +23,25 @@ export function SecretField({
   return (
     <LabeledControl
       label={label}
-      hint={hint ?? (configured ? "已配置；留空保存则不修改，可点清除后保存" : undefined)}
+      hint={hint ?? (configured ? "已配置；留空保存则不修改" : undefined)}
     >
-      <div className="flex flex-col gap-2">
-        <div className="flex gap-2">
+      <div className="admin-secret-field">
+        <div className="admin-secret-field-row">
           <input
             type="password"
-            className="settings-input flex-1"
+            className="settings-input is-secret"
             placeholder={placeholder ?? (configured ? "留空则不修改" : "填写密钥")}
             value={value}
             onChange={(e) => onChange(e.target.value)}
             autoComplete="new-password"
           />
           {configured && onClear ? (
-            <button type="button" className="admin-quick-btn shrink-0 px-3" onClick={onClear}>
+            <button type="button" className="admin-quick-btn shrink-0 px-3 text-xs" onClick={onClear}>
               清除
             </button>
           ) : null}
         </div>
-        {configured ? (
-          <span className={cn("text-xs font-medium text-[#67c23a]")}>● 已配置</span>
-        ) : null}
+        {configured ? <span className="admin-secret-status">已配置</span> : null}
       </div>
     </LabeledControl>
   );

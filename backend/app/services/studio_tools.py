@@ -17,6 +17,7 @@ from app.models import ToolRun, User
 from app.models_tasks import TaskRun
 from app.services.ark import get_ark
 from app.services.billing import record_line, run_billed_ephemeral
+from app.services.drama.billing_util import record_seedream_image_usage
 from app.services.billing.estimates import estimate_task_fen
 from app.services.billing.settlement import billing_active
 from app.services.ffmpeg_compose import extract_video_poster_frame
@@ -196,14 +197,13 @@ async def run_image_tool(
         shot_no=user.id,
         size=size,
     )
-    await record_line(
+    await record_seedream_image_usage(
         db,
         user_id=user.id,
-        billing_key="seedream",
         model=get_settings().model_image,
-        estimated=True,
         domain="studio",
-        raw={"tool_id": tool_id},
+        image_result=result,
+        extra_raw={"tool_id": tool_id},
     )
     url = result.local_url or result.remote_url or ""
     if url:
@@ -387,13 +387,13 @@ async def start_video_tool(
             shot_no=user.id,
             size=ratio_to_size(ratio or "9:16"),
         )
-        await record_line(
+        await record_seedream_image_usage(
             db,
             user_id=user.id,
-            billing_key="seedream",
-            estimated=True,
+            model=get_settings().model_image,
             domain="studio",
-            raw={"tool_id": "t2v-still"},
+            image_result=still,
+            extra_raw={"tool_id": "t2v-still"},
         )
         preview_url = still.local_url or still.remote_url
         if preview_url:
@@ -444,6 +444,10 @@ async def start_video_tool(
 async def poll_video_task(user: User, task_id: str) -> dict:
     ark = get_ark()
     result = await ark.fetch_task_once(task_id)
+    usage = {
+        "total_tokens": int(result.total_tokens or 0),
+        "completion_tokens": int(result.completion_tokens or 0),
+    }
     if result.status == "succeeded" and result.url:
         dest = tools_dir(user.id) / f"v_{task_id[-10:]}.mp4"
         if result.url.startswith("/static/"):
@@ -453,10 +457,23 @@ async def poll_video_task(user: User, task_id: str) -> dict:
         else:
             await storage.download_to(result.url, dest)
             url = publish_public(dest)
-        return {"status": "succeeded", "kind": "video", "urls": [url]}
+        return {
+            "status": "succeeded",
+            "kind": "video",
+            "urls": [url],
+            "usage": usage,
+            "raw_usage": result.raw_usage,
+        }
     if result.status == "failed":
-        return {"status": "failed", "kind": "video", "urls": [], "error": result.error or "生成失败"}
-    return {"status": "running", "kind": "video", "urls": []}
+        return {
+            "status": "failed",
+            "kind": "video",
+            "urls": [],
+            "error": result.error or "生成失败",
+            "usage": usage,
+            "raw_usage": result.raw_usage,
+        }
+    return {"status": "running", "kind": "video", "urls": [], "usage": usage}
 
 
 # 把一次工具生成写入 tool_runs（结果 URL 优先 OSS）

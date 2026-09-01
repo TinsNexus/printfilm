@@ -69,7 +69,7 @@ export const TASK_STATUS_LABELS: Record<string, string> = {
 /** Task domain → Chinese */
 export const TASK_DOMAIN_LABELS: Record<string, string> = {
   drama: "漫剧",
-  kepu: "科普",
+  kepu: "AI短视频",
   tools: "工具",
   studio: "工作室",
   api: "开放 API",

@@ -78,6 +78,67 @@ async def _record_usage_est(
             await db.commit()
     except Exception:  # noqa: BLE001
         logger.exception("billing record failed project=%s key=%s", project_id, billing_key)
+
+
+async def _record_seedream_usage(
+    project_id: int,
+    *,
+    image_result,
+    model: str,
+    shot_id: int | None = None,
+) -> None:
+    try:
+        from app.services.drama.billing_util import record_seedream_image_usage
+
+        async with AsyncSessionLocal() as db:
+            project = await db.get(Project, project_id)
+            if not project:
+                return
+            await record_seedream_image_usage(
+                db,
+                user_id=project.user_id,
+                model=model,
+                domain="kepu",
+                image_result=image_result,
+                project_id=project_id,
+                shot_id=shot_id,
+            )
+            await db.commit()
+    except Exception:  # noqa: BLE001
+        logger.exception("seedream billing record failed project=%s", project_id)
+
+
+async def _record_seedance_usage(
+    project_id: int,
+    *,
+    billing_key: str,
+    model: str,
+    task_result,
+    fallback_duration_sec: float,
+    shot_id: int | None = None,
+) -> None:
+    try:
+        from app.services.drama.billing_util import record_seedance_video_usage
+
+        async with AsyncSessionLocal() as db:
+            project = await db.get(Project, project_id)
+            if not project:
+                return
+            await record_seedance_video_usage(
+                db,
+                user_id=project.user_id,
+                billing_key=billing_key,
+                model=model,
+                domain="kepu",
+                task_result=task_result,
+                fallback_duration_sec=fallback_duration_sec,
+                provider_task_id=getattr(task_result, "provider_task_id", None),
+                project_id=project_id,
+                shot_id=shot_id,
+            )
+            await db.commit()
+    except Exception:  # noqa: BLE001
+        logger.exception("seedance billing record failed project=%s key=%s", project_id, billing_key)
 # Seedream min pixels ~3686400; portrait 9:16 ≈ 1440x2560
 _IMAGE_SIZE_BY_RATIO = {
     "9:16": "1440x2560",
@@ -905,11 +966,11 @@ async def _parallel_image_and_audio(project_id: int) -> None:
                 size=image_size,
             )
         s = get_settings()
-        await _record_usage_est(
+        await _record_seedream_usage(
             project_id,
-            "seedream",
-            tokens=s.billing_est_seedream_tokens,
+            image_result=img,
             model=s.model_image,
+            shot_id=meta["id"],
         )
         await persist_image(meta, img)
         return img.remote_url or img.local_url
@@ -1111,7 +1172,7 @@ async def _parallel_videos(project_id: int) -> None:
                 hi=cfg.seedance_duration_max,
             )
             try:
-                local_video = await ark.gen_and_wait_video(
+                local_video, task_result = await ark.gen_and_wait_video(
                     meta["image_ref"],
                     prompt,
                     int(dur),
@@ -1160,11 +1221,14 @@ async def _parallel_videos(project_id: int) -> None:
                 raise
         s = get_settings()
         dur = max(float(dur), 2.0)
-        await _record_usage_est(
+        billing_key = "seedance2:video0" if generate_audio else "seedance2:video1"
+        await _record_seedance_usage(
             project_id,
-            "seedance2:video0" if generate_audio else "seedance2:video1",
-            tokens=int(dur * s.billing_est_seedance_tokens_per_sec),
+            billing_key=billing_key,
             model=s.model_video,
+            task_result=task_result,
+            fallback_duration_sec=dur,
+            shot_id=meta["id"],
         )
         async with _db_write_lock():
             async with AsyncSessionLocal() as db:
@@ -1336,7 +1400,7 @@ async def _video_stage(project_id: int) -> None:
                 hi=cfg.seedance_duration_max,
             )
             image_ref = shot.image_ark_url or shot.image_url or ""
-            local_video = await ark.gen_and_wait_video(
+            local_video, task_result = await ark.gen_and_wait_video(
                 image_ref,
                 prompt,
                 int(dur),
@@ -1349,6 +1413,15 @@ async def _video_stage(project_id: int) -> None:
             )
             shot.video_url = local_video
             shot.status = ShotStatus.VIDEO_READY
+            billing_key = "seedance2:video0" if generate_audio else "seedance2:video1"
+            await _record_seedance_usage(
+                project_id,
+                billing_key=billing_key,
+                model=cfg.model_video,
+                task_result=task_result,
+                fallback_duration_sec=max(float(dur), 2.0),
+                shot_id=shot.id,
+            )
             pct = 50 + int(25 * (idx + 1) / max(total, 1))
             project.progress = pct
             await db.commit()
@@ -1623,10 +1696,9 @@ async def regen_shot_image(project_id: int, shot_id: int) -> None:
         project.final_video_url = None
         await db.commit()
     s = get_settings()
-    await _record_usage_est(
+    await _record_seedream_usage(
         project_id,
-        "seedream",
-        tokens=s.billing_est_seedream_tokens,
+        image_result=img,
         model=s.model_image,
         shot_id=shot_id,
     )
@@ -1671,7 +1743,7 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
             hi=cfg.seedance_duration_max,
         )
         image_ref = shot.image_ark_url or shot.image_url or ""
-        local_video = await ark.gen_and_wait_video(
+        local_video, task_result = await ark.gen_and_wait_video(
             image_ref,
             prompt,
             int(dur),
@@ -1687,16 +1759,16 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
         shot.version += 1
         project.final_video_url = None
         project.status = ProjectStatus.VIDEO_READY
+        billing_key = "seedance2:video0" if generate_audio else "seedance2:video1"
+        await _record_seedance_usage(
+            project_id,
+            billing_key=billing_key,
+            model=cfg.model_video,
+            task_result=task_result,
+            fallback_duration_sec=max(float(dur), 2.0),
+            shot_id=shot_id,
+        )
         await db.commit()
-    billing_key = "seedance2:video0" if generate_audio else "seedance2:video1"
-    tok = int(max(float(dur), 2.0) * cfg.billing_est_seedance_tokens_per_sec)
-    await _record_usage_est(
-        project_id,
-        billing_key,
-        tokens=tok,
-        model=cfg.model_video,
-        shot_id=shot_id,
-    )
 
 
 @storage.without_intermediate_oss

@@ -242,7 +242,10 @@ class AdminUsageEventBriefOut(BaseModel):
     model: str = ""
     total_tokens: int = 0
     charge_fen: int = 0
+    cost_fen: int = 0
     estimated: bool = False
+    billing_basis: str = "estimate"
+    billing_basis_label: str = "估算"
     created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
@@ -255,14 +258,19 @@ class AdminUsageEventOut(BaseModel):
     user_id: int
     user_email: str | None = None
     task_run_id: int | None = None
+    project_id: int | None = None
+    drama_project_id: int | None = None
     domain: str | None = None
     capability: str | None = None
     billing_key: str
     model: str = ""
+    provider: str | None = None
     total_tokens: int = 0
     charge_fen: int = 0
     cost_fen: int = 0
     estimated: bool = False
+    billing_basis: str = "estimate"
+    billing_basis_label: str = "估算"
     created_at: datetime | None = None
     task_domain: str | None = None
     task_type: str | None = None

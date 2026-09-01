@@ -20,7 +20,7 @@ from app.services.tasks.runtime import runtime_summary, start_task_runtime, stop
 from app.services.templates_seed import TEMPLATES
 
 settings = get_settings()
-# 业务日志 INFO；DEBUG=true 不再把根日志打成 DEBUG（避免 aiosqlite 刷屏）
+# 业务日志 INFO；DEBUG=true 不再把根日志打成 DEBUG（避免 SQL 驱动刷屏）
 configure_logging(level="INFO", sql_echo=settings.sql_echo)
 logger = logging.getLogger("app.http")
 
@@ -96,7 +96,7 @@ app.include_router(admin_router, prefix="/api")
 @app.on_event("startup")
 async def on_startup() -> None:
     await init_db()
-    await _migrate_sqlite()
+    await _apply_schema_patches()
     async with AsyncSessionLocal() as db:
         from app.services.model_settings import load_model_settings_cache
 
@@ -122,43 +122,26 @@ async def on_shutdown() -> None:
     await dispose_engine()
 
 
-async def _migrate_sqlite() -> None:
-    """Lightweight additive migrations (SQLite + Postgres)."""
-    is_sqlite = settings.database_url.startswith("sqlite")
+async def _pg_columns(conn, table: str) -> set[str]:
+    """读取 information_schema 列名。"""
+    result = await conn.execute(
+        text(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = :table"
+        ),
+        {"table": table},
+    )
+    return {row[0] for row in result.fetchall()}
+
+
+async def _apply_schema_patches() -> None:
+    """Lightweight additive migrations（仅 PostgreSQL）。"""
     async with engine.begin() as conn:
-        if is_sqlite:
-            result = await conn.execute(text("PRAGMA table_info(shots)"))
-            cols = {row[1] for row in result.fetchall()}
-            if "image_ark_url" not in cols:
-                await conn.execute(text("ALTER TABLE shots ADD COLUMN image_ark_url VARCHAR(1024)"))
-            if "overlay_title" not in cols:
-                await conn.execute(text("ALTER TABLE shots ADD COLUMN overlay_title VARCHAR(128) DEFAULT ''"))
-            if "overlay_subtitle" not in cols:
-                await conn.execute(text("ALTER TABLE shots ADD COLUMN overlay_subtitle VARCHAR(256) DEFAULT ''"))
-            if "segment_script" not in cols:
-                await conn.execute(text("ALTER TABLE shots ADD COLUMN segment_script TEXT DEFAULT ''"))
+        scols = await _pg_columns(conn, "shots")
+        if "segment_script" not in scols:
+            await conn.execute(text("ALTER TABLE shots ADD COLUMN segment_script TEXT DEFAULT ''"))
 
-            result = await conn.execute(text("PRAGMA table_info(projects)"))
-            pcols = {row[1] for row in result.fetchall()}
-        else:
-            result = await conn.execute(
-                text(
-                    "SELECT column_name FROM information_schema.columns "
-                    "WHERE table_name = 'shots'"
-                )
-            )
-            scols = {row[0] for row in result.fetchall()}
-            if "segment_script" not in scols:
-                await conn.execute(text("ALTER TABLE shots ADD COLUMN segment_script TEXT DEFAULT ''"))
-
-            result = await conn.execute(
-                text(
-                    "SELECT column_name FROM information_schema.columns "
-                    "WHERE table_name = 'projects'"
-                )
-            )
-            pcols = {row[0] for row in result.fetchall()}
-
+        pcols = await _pg_columns(conn, "projects")
         if "pipeline_mode" not in pcols:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN pipeline_mode VARCHAR(32) DEFAULT 'full'"))
         if "output_ratio" not in pcols:
@@ -177,17 +160,7 @@ async def _migrate_sqlite() -> None:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN extra_prompt TEXT DEFAULT ''"))
 
         # User billing columns
-        if is_sqlite:
-            result = await conn.execute(text("PRAGMA table_info(users)"))
-            ucols = {row[1] for row in result.fetchall()}
-        else:
-            result = await conn.execute(
-                text(
-                    "SELECT column_name FROM information_schema.columns "
-                    "WHERE table_name = 'users'"
-                )
-            )
-            ucols = {row[0] for row in result.fetchall()}
+        ucols = await _pg_columns(conn, "users")
         if "balance_fen" not in ucols:
             await conn.execute(text("ALTER TABLE users ADD COLUMN balance_fen INTEGER DEFAULT 0"))
         if "frozen_fen" not in ucols:
@@ -204,19 +177,13 @@ async def _migrate_sqlite() -> None:
             await conn.execute(text("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(512) DEFAULT ''"))
         if "phone" not in ucols:
             await conn.execute(text("ALTER TABLE users ADD COLUMN phone VARCHAR(32) DEFAULT ''"))
+        if "billing_alert_last_milestone_fen" not in ucols:
+            await conn.execute(
+                text("ALTER TABLE users ADD COLUMN billing_alert_last_milestone_fen INTEGER DEFAULT 0")
+            )
 
         # UsageEvent.drama_project_id for drama module billing
-        if is_sqlite:
-            result = await conn.execute(text("PRAGMA table_info(usage_events)"))
-            uecols = {row[1] for row in result.fetchall()}
-        else:
-            result = await conn.execute(
-                text(
-                    "SELECT column_name FROM information_schema.columns "
-                    "WHERE table_name = 'usage_events'"
-                )
-            )
-            uecols = {row[0] for row in result.fetchall()}
+        uecols = await _pg_columns(conn, "usage_events")
         if "drama_project_id" not in uecols:
             await conn.execute(text("ALTER TABLE usage_events ADD COLUMN drama_project_id INTEGER"))
         if "task_run_id" not in uecols:
@@ -227,41 +194,7 @@ async def _migrate_sqlite() -> None:
             await conn.execute(text("ALTER TABLE usage_events ADD COLUMN capability VARCHAR(16)"))
 
         # Task platform additive columns
-        if is_sqlite:
-            result = await conn.execute(text("PRAGMA table_info(task_runs)"))
-            trcols = {row[1] for row in result.fetchall()}
-            result = await conn.execute(
-                text(
-                    "CREATE TABLE IF NOT EXISTS task_steps ("
-                    "id INTEGER PRIMARY KEY, "
-                    "task_id INTEGER NOT NULL, "
-                    "step_key VARCHAR(64), "
-                    "step_type VARCHAR(64) DEFAULT 'job', "
-                    "status VARCHAR(32) DEFAULT 'pending', "
-                    "attempt_count INTEGER DEFAULT 0, "
-                    "provider_name VARCHAR(64), "
-                    "provider_task_id VARCHAR(128), "
-                    "input_payload JSON, "
-                    "output_payload JSON, "
-                    "error_code VARCHAR(64), "
-                    "error_message TEXT, "
-                    "next_poll_at DATETIME, "
-                    "started_at DATETIME, "
-                    "finished_at DATETIME, "
-                    "created_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
-                    "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
-                    "FOREIGN KEY(task_id) REFERENCES task_runs(id) ON DELETE CASCADE"
-                    ")"
-                )
-            )
-        else:
-            result = await conn.execute(
-                text(
-                    "SELECT column_name FROM information_schema.columns "
-                    "WHERE table_name = 'task_runs'"
-                )
-            )
-            trcols = {row[0] for row in result.fetchall()}
+        trcols = await _pg_columns(conn, "task_runs")
         if "dedupe_key" not in trcols:
             await conn.execute(text("ALTER TABLE task_runs ADD COLUMN dedupe_key VARCHAR(128)"))
         if "batch_key" not in trcols:
@@ -271,13 +204,13 @@ async def _migrate_sqlite() -> None:
         if "current_step_status" not in trcols:
             await conn.execute(text("ALTER TABLE task_runs ADD COLUMN current_step_status VARCHAR(32)"))
         if "scheduled_at" not in trcols:
-            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN scheduled_at DATETIME"))
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN scheduled_at TIMESTAMP"))
         if "next_action_at" not in trcols:
-            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN next_action_at DATETIME"))
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN next_action_at TIMESTAMP"))
         if "lease_token" not in trcols:
             await conn.execute(text("ALTER TABLE task_runs ADD COLUMN lease_token VARCHAR(64)"))
         if "lease_until" not in trcols:
-            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN lease_until DATETIME"))
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN lease_until TIMESTAMP"))
         if "billing_estimate_fen" not in trcols:
             await conn.execute(text("ALTER TABLE task_runs ADD COLUMN billing_estimate_fen INTEGER DEFAULT 0"))
         if "billing_charged_fen" not in trcols:

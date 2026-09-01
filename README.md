@@ -27,18 +27,15 @@
 - Docker 仅用于 **Postgres / Redis**（见 [deploy/README.md](deploy/README.md)）
 
 ```bash
-# 中间件
+# 中间件（Postgres + Redis）
 cp deploy/.env.prod.example deploy/.env.prod
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env.prod up -d
-
-# 或开发只用 Redis + SQLite
-docker run -d --name printfilm-redis -p 6379:6379 redis:7-alpine
 
 cd backend
 python -m venv .venv
 .\.venv\Scripts\activate
 pip install -r requirements.txt
-copy .env.example .env   # 填 ARK_API_KEY；正式库见 deploy/.env.prod.example
+copy .env.example .env   # 填 DATABASE_URL / ARK_API_KEY；正式库见 deploy/.env.prod.example
 
 uvicorn app.main:app --reload --port 8000
 ```
@@ -81,7 +78,7 @@ npm run dev
 
 ## 架构摘要
 
-- FastAPI + PostgreSQL（Docker）/ 本地可 SQLite
+- FastAPI + PostgreSQL（Docker）
 - Redis（可选）：部分进度/基础设施可复用，已不再作为任务平台前提
 - 内置任务平台：`scheduler + executor + poller`（随 FastAPI 进程启动）
 - 前端：React + TS + Vite（用户端）

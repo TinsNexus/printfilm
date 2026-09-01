@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import DialogHost from './components/ui/DialogHost'
+import BillingAlertHost from './components/billing/BillingAlertHost'
 import { DramaGenQueuePanel } from './components/drama/DramaGenQueuePanel'
 import AuthPage from './pages/AuthPage'
 import HistoryPage from './pages/HistoryPage'
@@ -62,6 +63,7 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <DramaGenQueuePanel />
+      <BillingAlertHost />
       <DialogHost />
     </BrowserRouter>
   )

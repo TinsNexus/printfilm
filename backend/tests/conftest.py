@@ -1,4 +1,4 @@
-"""计费集成测试：内存 SQLite + 开启 billing。"""
+"""计费/管理端集成测试：PostgreSQL + 开启 billing。"""
 from __future__ import annotations
 
 import uuid
@@ -6,8 +6,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.config import get_settings
 from app.database import Base
@@ -25,7 +24,7 @@ def billing_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest_asyncio.fixture
 async def db_session(billing_enabled: None) -> AsyncIterator[AsyncSession]:
-    """每个用例独立内存库，自动建表。"""
+    """每个用例外层事务回滚；session.commit 只提交 savepoint，不落库。"""
     # 注册全部 ORM 表
     import app.models  # noqa: F401
     import app.models_agent  # noqa: F401
@@ -34,17 +33,36 @@ async def db_session(billing_enabled: None) -> AsyncIterator[AsyncSession]:
     import app.models_settings  # noqa: F401
     import app.models_tasks  # noqa: F401
 
-    engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    url = (get_settings().database_url or "").strip()
+    if not url.startswith("postgresql"):
+        raise RuntimeError("集成测试需要 PostgreSQL DATABASE_URL（postgresql+asyncpg://...）")
+
+    engine = create_async_engine(url, pool_pre_ping=True)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # 增量列（与 main._apply_schema_patches 保持一致）
+        from sqlalchemy import text
 
-    session_factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
-    async with session_factory() as session:
-        yield session
+        result = await conn.execute(
+            text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = 'public' AND table_name = 'users'"
+            )
+        )
+        ucols = {row[0] for row in result.fetchall()}
+        if "billing_alert_last_milestone_fen" not in ucols:
+            await conn.execute(
+                text("ALTER TABLE users ADD COLUMN billing_alert_last_milestone_fen INTEGER DEFAULT 0")
+            )
+
+    async with engine.connect() as conn:
+        outer = await conn.begin()
+        session = AsyncSession(bind=conn, expire_on_commit=False, join_transaction_mode="create_savepoint")
+        try:
+            yield session
+        finally:
+            await session.close()
+            await outer.rollback()
 
     await engine.dispose()
 

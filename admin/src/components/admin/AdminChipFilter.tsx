@@ -16,10 +16,11 @@ type AdminChipFilterProps = {
 
 // 管理端分类 Chip 筛选
 export function AdminChipFilter({ label, value, options, onChange, className }: AdminChipFilterProps) {
+  const segment = className?.includes("admin-chip-filter--segment");
   return (
     <div className={cn("admin-chip-filter", className)}>
       {label ? <span className="admin-chip-filter-label">{label}</span> : null}
-      <div className="admin-chip-filter-list" role="tablist">
+      <div className={cn("admin-chip-filter-list", segment && "is-segment")} role="tablist">
         {options.map((opt) => {
           const active = value === opt.value;
           return (
@@ -28,7 +29,7 @@ export function AdminChipFilter({ label, value, options, onChange, className }: 
               type="button"
               role="tab"
               aria-selected={active}
-              className={cn("admin-chip", active && "is-active")}
+              className={cn(segment ? "admin-segment-btn" : "admin-chip", active && "is-active")}
               onClick={() => onChange(opt.value)}
             >
               {opt.label}

@@ -1,4 +1,4 @@
-"""统一应用日志：可读业务日志，默认不刷 SQL / aiosqlite DEBUG。"""
+"""统一应用日志：可读业务日志，默认不刷 SQL DEBUG。"""
 
 from __future__ import annotations
 
@@ -27,23 +27,20 @@ def configure_logging(*, level: str = "INFO", sql_echo: bool = False) -> None:
     root.setLevel(logging.INFO)
     logging.getLogger("app").setLevel(getattr(logging, level.upper(), logging.INFO))
 
-    # SQL / SQLite 驱动默认关闭
-    sql_level = logging.INFO if sql_echo else logging.WARNING
+    # SQLAlchemy 驱动默认关闭
     for name in (
         "sqlalchemy",
         "sqlalchemy.engine",
         "sqlalchemy.pool",
         "sqlalchemy.dialects",
-        "aiosqlite",
-        "sqlite3",
+        "asyncpg",
     ):
-        logging.getLogger(name).setLevel(sql_level if name.startswith("sqlalchemy") else logging.WARNING)
+        logging.getLogger(name).setLevel(logging.WARNING)
 
     if sql_echo:
         logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
     else:
         logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
-        logging.getLogger("aiosqlite").setLevel(logging.WARNING)
 
     # 其他噪音
     for name in ("uvicorn.access", "httpx", "httpcore", "celery", "asyncio", "multipart"):
@@ -54,7 +51,7 @@ def configure_logging(*, level: str = "INFO", sql_echo: bool = False) -> None:
 
     if not _configured:
         logging.getLogger("app").info(
-            "日志已配置 app_level=%s sql_echo=%s（已关闭 aiosqlite/SQL DEBUG）",
+            "日志已配置 app_level=%s sql_echo=%s（已关闭 SQL DEBUG）",
             level,
             sql_echo,
         )

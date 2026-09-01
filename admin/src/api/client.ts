@@ -66,12 +66,14 @@ export type AdminUsageBucket = {
   key: string;
   calls: number;
   charge_fen: number;
+  cost_fen?: number;
 };
 
 export type AdminDailyUsage = {
   date: string;
   calls: number;
   charge_fen: number;
+  cost_fen?: number;
 };
 
 export type AdminTopUser = {
@@ -136,10 +138,35 @@ export type AdminStats = {
   top_users_by_charge?: AdminTopUser[];
 };
 
+export type AdminUpstreamUsageDay = {
+  date: string;
+  local_cost_fen: number;
+  local_tokens: number;
+  official_tokens: number;
+  official_cost_fen: number;
+  delta_fen: number;
+  delta_pct?: number | null;
+};
+
+export type AdminUpstreamUsage = {
+  configured: boolean;
+  days: number;
+  last_sync_at?: string | null;
+  series: AdminUpstreamUsageDay[];
+};
+
+export type AdminUpstreamUsageSync = {
+  configured: boolean;
+  synced: number;
+  skipped: number;
+  last_sync_at?: string | null;
+};
+
 export type AdminUserRow = {
   id: number;
   email: string;
   nickname: string;
+  phone?: string;
   quota_left: number;
   balance_fen: number;
   frozen_fen: number;
@@ -149,6 +176,7 @@ export type AdminUserRow = {
   created_at?: string | null;
 };
 
+/** @deprecated 遗留 Celery 队列快照，任务中心已改用 /api/admin/tasks */
 export type AdminOrder = {
   id: number;
   out_trade_no: string;
@@ -230,6 +258,69 @@ export type AdminDramaProject = {
   recent_tasks?: AdminTaskBrief[];
 };
 
+export type AdminDramaAsset = {
+  id: number;
+  project_id: number;
+  project_title?: string | null;
+  user_id?: number | null;
+  user_email?: string | null;
+  type: string;
+  asset_type: string;
+  name?: string | null;
+  cover?: string | null;
+  url?: string | null;
+  has_cover: boolean;
+  generation_status?: string | null;
+  derive_id?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  params?: Record<string, unknown> | null;
+};
+
+export type AdminDramaEpisode = {
+  id: number;
+  project_id: number;
+  project_title?: string | null;
+  user_id?: number | null;
+  user_email?: string | null;
+  name: string;
+  fragment_count: number;
+  fragment_plan_status?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  fragments?: {
+    id: number;
+    sort_order: number;
+    content: string;
+    cover: string;
+    video: string;
+    duration_sec?: number | null;
+    generation_status?: string | null;
+    asset_ref_count: number;
+  }[];
+};
+
+export type AdminDramaFragment = {
+  id: number;
+  episode_id: number;
+  episode_name?: string | null;
+  project_id: number;
+  project_title?: string | null;
+  user_id?: number | null;
+  user_email?: string | null;
+  sort_order: number;
+  content: string;
+  cover: string;
+  video: string;
+  duration_sec?: number | null;
+  generation_status?: string | null;
+  asset_ref_count: number;
+  created_at?: string | null;
+  updated_at?: string | null;
+  params?: Record<string, unknown> | null;
+  asset_ids?: number[];
+};
+
 export type AdminWork = {
   id: number;
   project_id: number;
@@ -262,6 +353,7 @@ export type AdminQueueSummary = {
   sample: AdminQueueTask[];
 };
 
+/** @deprecated 遗留 Celery 队列快照，任务中心已改用 /api/admin/tasks */
 export type AdminQueuesSnapshot = {
   ok: boolean;
   redis_ok: boolean;
@@ -311,7 +403,10 @@ export type AdminUsageEventBrief = {
   model?: string;
   total_tokens?: number;
   charge_fen?: number;
+  cost_fen?: number;
   estimated?: boolean;
+  billing_basis?: string;
+  billing_basis_label?: string;
   created_at?: string | null;
 };
 
@@ -328,10 +423,15 @@ export type AdminUsageEvent = {
   charge_fen?: number;
   cost_fen?: number;
   estimated?: boolean;
+  billing_basis?: string;
+  billing_basis_label?: string;
   created_at?: string | null;
   task_domain?: string | null;
   task_type?: string | null;
   task_status?: string | null;
+  project_id?: number | null;
+  drama_project_id?: number | null;
+  provider?: string | null;
 };
 
 export type AdminUsageEventListRes = {
@@ -501,6 +601,28 @@ export type AdminModelSettings = {
   billing_signup_grant_fen: number;
   quota_enabled: boolean;
   new_user_quota: number;
+  billing_user_alert_enabled: boolean;
+  billing_user_alert_interval_fen: number;
+  billing_admin_cost_alert_enabled: boolean;
+  billing_admin_cost_alert_threshold_fen: number;
+  billing_admin_cost_alert_emails: string;
+  billing_admin_cost_alert_period: string;
+  billing_admin_cost_alert_last_period_key: string;
+  billing_admin_cost_alert_last_level: number;
+  smtp_enabled: boolean;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_user: string;
+  smtp_password: string;
+  smtp_from: string;
+  smtp_use_tls: boolean;
+  has_smtp_password: boolean;
+  volc_access_key_id: string;
+  volc_secret_access_key: string;
+  volc_ark_region: string;
+  volc_ark_usage_enabled: boolean;
+  has_volc_access_key_id: boolean;
+  has_volc_secret_access_key: boolean;
   public_base_url: string;
   ffmpeg_path: string;
   ffprobe_path: string;

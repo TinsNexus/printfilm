@@ -273,6 +273,31 @@ export function TemplateEditorDialog({
                   </div>
                   <Switch checked={form.is_premium} onCheckedChange={(v) => onChange({ is_premium: v })} />
                 </div>
+                {editing ? (
+                  <details className="mt-4 rounded-lg border p-3">
+                    <summary className="cursor-pointer text-sm font-medium">高级配置（只读）</summary>
+                    <div className="mt-3 space-y-3">
+                      <div>
+                        <div className="mb-1 text-xs text-[var(--admin-muted)]">seedance_config</div>
+                        <pre className="admin-json-readonly">
+                          {JSON.stringify(editing.seedance_config ?? {}, null, 2)}
+                        </pre>
+                      </div>
+                      <div>
+                        <div className="mb-1 text-xs text-[var(--admin-muted)]">audio_config</div>
+                        <pre className="admin-json-readonly">
+                          {JSON.stringify(editing.audio_config ?? {}, null, 2)}
+                        </pre>
+                      </div>
+                      <div>
+                        <div className="mb-1 text-xs text-[var(--admin-muted)]">subtitle_config</div>
+                        <pre className="admin-json-readonly">
+                          {JSON.stringify(editing.subtitle_config ?? {}, null, 2)}
+                        </pre>
+                      </div>
+                    </div>
+                  </details>
+                ) : null}
               </div>
             ) : null}
           </div>

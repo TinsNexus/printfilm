@@ -47,6 +47,48 @@ def charge_fen_for_tokens(
     return cost, charge
 
 
+def parse_upstream_cost_fen(data: dict[str, Any] | None) -> int | None:
+    """从火山 usage / 响应块解析上游成本（分）；无则 None。"""
+    if not data:
+        return None
+    usage = data.get("usage") if isinstance(data.get("usage"), dict) else data
+    if not isinstance(usage, dict):
+        return None
+    for key in ("cost_fen", "cost_cents"):
+        if usage.get(key) is not None:
+            try:
+                return max(0, int(usage[key]))
+            except (TypeError, ValueError):
+                pass
+    for key in ("cost", "total_cost", "amount", "cost_yuan", "total_cost_yuan"):
+        if usage.get(key) is not None:
+            try:
+                return max(0, int(math.ceil(float(usage[key]) * 100)))
+            except (TypeError, ValueError):
+                pass
+    return None
+
+
+def charge_fen_for_usage(
+    tokens: int,
+    billing_key: str,
+    *,
+    raw_usage: dict[str, Any] | None = None,
+    settings: Settings | None = None,
+) -> tuple[int, int, bool]:
+    """按火山返回的实际成本或 token 用量计算 (cost_fen, charge_fen, used_upstream_cost)。"""
+    s = settings or get_settings()
+    upstream_cost = parse_upstream_cost_fen(raw_usage)
+    if upstream_cost is not None and upstream_cost > 0:
+        cost = upstream_cost
+        charge = math.ceil(cost * float(s.billing_markup))
+        if charge < 1:
+            charge = 1
+        return cost, charge, True
+    cost, charge = charge_fen_for_tokens(tokens, billing_key, settings=s)
+    return cost, charge, False
+
+
 def parse_usage_dict(data: dict[str, Any] | None) -> dict[str, int]:
     if not data:
         return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}

@@ -1,6 +1,7 @@
 # Admin template CRUD
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import cast, func, or_, select
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -38,14 +39,32 @@ async def templates_meta(
 async def list_templates(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
+    q: str | None = None,
+    is_active: bool | None = None,
+    category: str | None = None,
     _admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> AdminTemplateListOut:
     # All templates including inactive
-    total = int((await db.execute(select(func.count()).select_from(Template))).scalar_one() or 0)
+    stmt = select(Template)
+    count_stmt = select(func.count()).select_from(Template)
+    if q and q.strip():
+        like = f"%{q.strip()}%"
+        filt = or_(Template.id.ilike(like), Template.name.ilike(like), Template.description.ilike(like))
+        stmt = stmt.where(filt)
+        count_stmt = count_stmt.where(filt)
+    if is_active is not None:
+        stmt = stmt.where(Template.is_active == is_active)
+        count_stmt = count_stmt.where(Template.is_active == is_active)
+    if category and category.strip():
+        cat = category.strip()
+        cat_filter = cast(Template.category, JSONB).contains([cat])
+        stmt = stmt.where(cat_filter)
+        count_stmt = count_stmt.where(cat_filter)
+
+    total = int((await db.execute(count_stmt)).scalar_one() or 0)
     result = await db.execute(
-        select(Template)
-        .order_by(Template.sort_order, Template.id)
+        stmt.order_by(Template.sort_order, Template.id)
         .offset((page - 1) * page_size)
         .limit(page_size)
     )

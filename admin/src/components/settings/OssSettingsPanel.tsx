@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { Cloud, Loader2, Save } from "lucide-react";
-import { LabeledControl, SectionTitle, SettingsPanel, SettingsSurface } from "@/components/settings/SettingsPanel";
+import { Cloud } from "lucide-react";
+import { LabeledControl, SectionTitle, SettingsLoading, SettingsPanel, SettingsSurface, SettingsTabShell } from "@/components/settings/SettingsPanel";
 import { SecretField } from "@/components/settings/SecretField";
 import { Switch } from "@/components/ui/switch";
 import { useAdminModelSettings } from "@/hooks/useAdminModelSettings";
@@ -64,35 +64,14 @@ export function OssSettingsPanel() {
   }
 
   if (loading || !form) {
-    return (
-      <div className="admin-panel flex items-center justify-center py-16 text-[#909399]">
-        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-        加载中…
-      </div>
-    );
+    return <SettingsLoading />;
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-semibold text-[#303133]">存储与 CDN</h2>
-          <p className="mt-1 text-sm text-[#909399]">阿里云 OSS 成片上传；TOS / CDN 为可选扩展</p>
-        </div>
-        <button
-          type="button"
-          className="admin-quick-btn !inline-flex !w-auto items-center gap-2 px-4 py-2.5"
-          disabled={saving}
-          onClick={() => void handleSave()}
-        >
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          保存
-        </button>
-      </div>
-
+    <SettingsTabShell onSave={() => void handleSave()} saving={saving}>
       <SettingsSurface>
         <SectionTitle icon={<Cloud className="h-4 w-4" />} title="OSS 状态" />
-        <div className="mt-4 flex flex-wrap items-center gap-3">
+        <div className="mt-2 flex flex-wrap items-center gap-2">
           <span className={cn("admin-status-pill", ossReady ? "is-done" : form.oss_enabled ? "is-warn" : "")}>
             {form.oss_enabled ? (ossReady ? "OSS 已就绪" : "已启用但凭证不完整") : "OSS 未启用"}
           </span>
@@ -100,16 +79,15 @@ export function OssSettingsPanel() {
         </div>
       </SettingsSurface>
 
-      <SettingsPanel title="阿里云 OSS" description="生成文件先落本地 /static，再异步上传 OSS 并回填 URL。">
-        <SettingsSurface>
-          <div className="settings-toggle-row">
-            <div>
-              <strong>启用 OSS</strong>
-              <span>关闭后仅使用本地静态目录</span>
-            </div>
-            <Switch checked={form.oss_enabled} onCheckedChange={(v) => patchField("oss_enabled", v)} />
+      <SettingsPanel title="阿里云 OSS" description="生成文件先落本地，再异步上传 OSS">
+        <div className="settings-toggle-row">
+          <div>
+            <strong>启用 OSS</strong>
+            <span>关闭后仅使用本地静态目录</span>
           </div>
-          <div className="settings-field-grid mt-4">
+          <Switch checked={form.oss_enabled} onCheckedChange={(v) => patchField("oss_enabled", v)} />
+        </div>
+        <div className="settings-field-grid mt-2">
             <LabeledControl label="Endpoint">
               <input
                 className="settings-input"
@@ -177,19 +155,17 @@ export function OssSettingsPanel() {
               }}
             />
           </div>
-          <div className="settings-toggle-row mt-4">
-            <div>
-              <strong>异步上传</strong>
-              <span>先返回本地 URL，后台队列上传 OSS</span>
-            </div>
-            <Switch checked={form.oss_upload_async} onCheckedChange={(v) => patchField("oss_upload_async", v)} />
+        <div className="settings-toggle-row mt-2">
+          <div>
+            <strong>异步上传</strong>
+            <span>先返回本地 URL，后台队列上传 OSS</span>
           </div>
-        </SettingsSurface>
+          <Switch checked={form.oss_upload_async} onCheckedChange={(v) => patchField("oss_upload_async", v)} />
+        </div>
       </SettingsPanel>
 
-      <SettingsPanel title="火山 TOS（可选）" description="历史存储方案，新项目可只配 OSS。">
-        <SettingsSurface>
-          <div className="settings-field-grid">
+      <SettingsPanel title="火山 TOS（可选）" description="历史存储方案，新项目可只配 OSS">
+        <div className="settings-field-grid">
             <LabeledControl label="Endpoint">
               <input
                 className="settings-input"
@@ -231,10 +207,9 @@ export function OssSettingsPanel() {
                 setTosSecretInput("");
                 setClearTosSecret(true);
               }}
-            />
-          </div>
-        </SettingsSurface>
+          />
+        </div>
       </SettingsPanel>
-    </div>
+    </SettingsTabShell>
   );
 }

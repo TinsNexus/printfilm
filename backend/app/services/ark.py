@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 import httpx
 
 from app.config import Settings, get_settings
+from app.services.billing.pricing import parse_upstream_cost_fen, parse_usage_dict
 from app.schemas_routing import ResolvedModelRoute
 from app.services.logical_model_router import resolve_logical_model, resolve_logical_model_id
 from app.services import storage
@@ -159,6 +160,50 @@ class TaskResult:
     url: str | None = None
     last_frame_url: str | None = None
     error: str | None = None
+    total_tokens: int = 0
+    completion_tokens: int = 0
+    raw_usage: dict[str, Any] | None = None
+    provider_task_id: str | None = None
+
+
+# 从 Seedance 任务查询响应解析状态、媒体 URL 与官方 usage
+def _build_task_result_from_payload(data: dict[str, Any]) -> TaskResult:
+    status = str(data.get("status", "")).lower() or "running"
+    usage_parsed = parse_usage_dict(data)
+    total_tokens = int(usage_parsed.get("total_tokens") or 0)
+    completion_tokens = int(usage_parsed.get("completion_tokens") or 0)
+    raw_usage = data.get("usage") if isinstance(data.get("usage"), dict) else None
+
+    if status in {"succeeded", "success"}:
+        url = None
+        content = data.get("content")
+        if isinstance(content, dict):
+            url = content.get("video_url")
+        if not url:
+            url = data.get("video_url")
+        return TaskResult(
+            status="succeeded",
+            url=url,
+            last_frame_url=_extract_seedance_last_frame_url(data),
+            total_tokens=total_tokens,
+            completion_tokens=completion_tokens,
+            raw_usage=raw_usage,
+        )
+    if status in {"failed", "cancelled", "canceled", "expired"}:
+        err = data.get("error") or data.get("message") or status
+        return TaskResult(
+            status="failed",
+            error=str(err),
+            total_tokens=total_tokens,
+            completion_tokens=completion_tokens,
+            raw_usage=raw_usage,
+        )
+    return TaskResult(
+        status="running",
+        total_tokens=total_tokens,
+        completion_tokens=completion_tokens,
+        raw_usage=raw_usage,
+    )
 
 
 # 从 Seedance 任务成功响应中提取尾帧 URL
@@ -240,6 +285,11 @@ def _format_seedance_create_error(
 class ImageResult:
     local_url: str
     remote_url: str | None = None
+    total_tokens: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    raw_usage: dict[str, Any] | None = None
+    upstream_cost_fen: int | None = None
 
 
 class ArkGateway:
@@ -250,13 +300,37 @@ class ArkGateway:
     def settings(self) -> Settings:
         return self._settings_override or get_settings()
 
+    # 优先后台渠道 Key，env 仅作空渠道时的兜底
+    def _ark_api_key(self) -> str:
+        try:
+            from app.services.model_settings import get_routing_snapshot
+
+            channels = get_routing_snapshot().channels
+        except Exception:  # noqa: BLE001
+            channels = []
+        ark_channels = [
+            ch
+            for ch in channels
+            if ch.enabled
+            and (ch.api_key or "").strip()
+            and (
+                ch.protocol == "ark"
+                or ch.api_format == "ark"
+                or "ark.cn-beijing.volces.com" in (ch.base_url or "")
+            )
+        ]
+        if ark_channels:
+            preferred = next((ch for ch in ark_channels if ch.id == "ark-default"), ark_channels[0])
+            return (preferred.api_key or "").strip()
+        return (self.settings.ark_api_key or "").strip()
+
     @property
     def mock(self) -> bool:
-        return self.settings.ark_mock or not self.settings.ark_api_key
+        return self.settings.ark_mock or not self._ark_api_key()
 
     def _headers(self) -> dict[str, str]:
         return {
-            "Authorization": f"Bearer {self.settings.ark_api_key}",
+            "Authorization": f"Bearer {self._ark_api_key()}",
             "Content-Type": "application/json",
         }
 
@@ -595,6 +669,17 @@ class ArkGateway:
                 _raise_seedream_http_error(resp.status_code, resp.text)
             data = resp.json()
 
+        usage_parsed = parse_usage_dict(data)
+        raw_usage = data.get("usage") if isinstance(data.get("usage"), dict) else None
+        if not raw_usage and isinstance(data.get("data"), list) and data["data"]:
+            first = data["data"][0]
+            if isinstance(first, dict) and isinstance(first.get("usage"), dict):
+                raw_usage = first["usage"]
+                usage_parsed = parse_usage_dict({"usage": raw_usage})
+        upstream_cost_fen = parse_upstream_cost_fen(data)
+        if upstream_cost_fen is None and raw_usage:
+            upstream_cost_fen = parse_upstream_cost_fen({"usage": raw_usage})
+
         remote = self._extract_image_url(data)
         if not remote:
             raise RuntimeError(f"Seedream missing url: {json.dumps(data)[:500]}")
@@ -603,7 +688,15 @@ class ArkGateway:
         name = f"shot_{(shot_no or 0):03d}_{hashlib.md5(prompt_hash_src.encode()).hexdigest()[:8]}.png"
         dest = dest_dir / name
         await storage.download_to(remote, dest)
-        return ImageResult(local_url=storage.publish_local(dest), remote_url=remote)
+        return ImageResult(
+            local_url=storage.publish_local(dest),
+            remote_url=remote,
+            total_tokens=int(usage_parsed.get("total_tokens") or 0),
+            prompt_tokens=int(usage_parsed.get("prompt_tokens") or 0),
+            completion_tokens=int(usage_parsed.get("completion_tokens") or 0),
+            raw_usage=raw_usage,
+            upstream_cost_fen=upstream_cost_fen,
+        )
 
     @staticmethod
     def _sanitize_seedream_prompt(prompt: str) -> str:
@@ -872,8 +965,8 @@ class ArkGateway:
         shot_no: int,
         max_attempts: int = 2,
         content_labels: list[str] | None = None,
-    ) -> tuple[str, str | None]:
-        """创建 Seedance 多模态任务并等待完成；返回 (本地视频 URL, 可选本地尾帧 URL)。"""
+    ) -> tuple[str, str | None, TaskResult]:
+        """创建 Seedance 多模态任务并等待完成；返回 (本地视频 URL, 可选本地尾帧 URL, 任务结果)。"""
         def _is_audio_download_error(err: Exception) -> bool:
             msg = str(err)
             return "audio_url" in msg and "resource download failed" in msg
@@ -952,24 +1045,14 @@ class ArkGateway:
                 if resp.status_code >= 400:
                     return TaskResult(status="failed", error=resp.text[:500])
                 data = resp.json()
-                status = str(data.get("status", "")).lower()
-                if status in {"succeeded", "success"}:
-                    url = None
-                    content = data.get("content")
-                    if isinstance(content, dict):
-                        url = content.get("video_url")
-                    if not url:
-                        url = data.get("video_url")
-                    return TaskResult(
-                        status="succeeded",
-                        url=url,
-                        last_frame_url=_extract_seedance_last_frame_url(data),
-                    )
-                if status in {"failed", "cancelled", "canceled", "expired"}:
-                    err = data.get("error") or data.get("message") or status
-                    return TaskResult(status="failed", error=str(err))
+                result = _build_task_result_from_payload(data)
+                result.provider_task_id = task_id
+                if result.status == "succeeded":
+                    return result
+                if result.status == "failed":
+                    return result
                 await asyncio.sleep(self.settings.ark_video_poll_interval)
-        return TaskResult(status="failed", error="poll timeout")
+        return TaskResult(status="failed", error="poll timeout", provider_task_id=task_id)
 
     async def fetch_task_once(self, task_id: str) -> TaskResult:
         """单次查询 Seedance 任务，不阻塞等待。"""
@@ -985,25 +1068,10 @@ class ArkGateway:
                 headers=self._headers(),
             )
         if resp.status_code >= 400:
-            return TaskResult(status="failed", error=resp.text[:500])
-        data = resp.json()
-        status = str(data.get("status", "")).lower() or "running"
-        if status in {"succeeded", "success"}:
-            url = None
-            content = data.get("content")
-            if isinstance(content, dict):
-                url = content.get("video_url")
-            if not url:
-                url = data.get("video_url")
-            return TaskResult(
-                status="succeeded",
-                url=url,
-                last_frame_url=_extract_seedance_last_frame_url(data),
-            )
-        if status in {"failed", "cancelled", "canceled", "expired"}:
-            err = data.get("error") or data.get("message") or status
-            return TaskResult(status="failed", error=str(err))
-        return TaskResult(status="running")
+            return TaskResult(status="failed", error=resp.text[:500], provider_task_id=task_id)
+        result = _build_task_result_from_payload(resp.json())
+        result.provider_task_id = task_id
+        return result
 
     async def save_video_assets_from_result(
         self,
@@ -1048,14 +1116,15 @@ class ArkGateway:
         *,
         project_id: int,
         shot_no: int,
-    ) -> tuple[str, str | None]:
+    ) -> tuple[str, str | None, TaskResult]:
         """等待任务完成并落盘视频；若有尾帧则一并落盘。"""
         result = await self.poll_task(task_id)
-        return await self.save_video_assets_from_result(
+        video_local, last_local = await self.save_video_assets_from_result(
             result,
             project_id=project_id,
             shot_no=shot_no,
         )
+        return video_local, last_local, result
 
     async def wait_video(
         self,
@@ -1063,11 +1132,11 @@ class ArkGateway:
         *,
         project_id: int,
         shot_no: int,
-    ) -> str:
-        video_local, _last = await self.wait_video_assets(
+    ) -> tuple[str, TaskResult]:
+        video_local, _last, result = await self.wait_video_assets(
             task_id, project_id=project_id, shot_no=shot_no
         )
-        return video_local
+        return video_local, result
 
     async def gen_and_wait_video(
         self,
@@ -1082,7 +1151,7 @@ class ArkGateway:
         ratio: str | None = None,
         max_attempts: int = 3,
         generate_audio: bool = False,
-    ) -> str:
+    ) -> tuple[str, TaskResult]:
         """Create Seedance i2v task and wait; retry on summary_caption / transient BodyFormat."""
         last_err: Exception | None = None
         for attempt in range(max_attempts):
@@ -1098,7 +1167,11 @@ class ArkGateway:
                     prompt_as_json=use_json,
                     generate_audio=generate_audio,
                 )
-                return await self.wait_video(task_id, project_id=project_id, shot_no=shot_no)
+                return await self.wait_video(
+                    task_id,
+                    project_id=project_id,
+                    shot_no=shot_no,
+                )
             except Exception as exc:  # noqa: BLE001
                 last_err = exc
                 msg = str(exc)

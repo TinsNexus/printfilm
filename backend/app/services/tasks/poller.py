@@ -213,5 +213,8 @@ async def _poll_ephemeral_deferred_tasks() -> None:
                 poll_status=status,
                 error=str(data.get("error") or "") or None,
                 billing_task_id=task.id,
+                usage_tokens=int((data.get("usage") or {}).get("total_tokens") or 0),
+                completion_tokens=int((data.get("usage") or {}).get("completion_tokens") or 0),
+                raw_usage=data.get("raw_usage") if isinstance(data.get("raw_usage"), dict) else None,
             )
             await db.commit()

@@ -1,12 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Activity, Ban, Eye, Layers, Loader2, RefreshCw, Search } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Activity, Ban, Eye, Layers, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { api, type AdminTaskListRes, type AdminTaskRow, type AdminTaskStats } from "@/api/client";
+import { AdminEntityLink } from "@/components/admin/AdminEntityLink";
+import { AdminSearchInput } from "@/components/admin/AdminSearchInput";
+import { AdminUserSearchSelect } from "@/components/admin/AdminUserSearchSelect";
 import { StatCard } from "@/components/admin/StatCard";
 import { PageSection } from "@/components/admin/PageSection";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 import { PageHeader, Toolbar } from "@/components/ui/page";
 import { PaginationBar } from "@/components/PaginationBar";
+import { useAdminDetailQuery } from "@/hooks/useAdminDetailQuery";
 import { cn, fenToYuan } from "@/lib/utils";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { taskDomainLabel, taskStatusLabel, taskTypeLabel } from "@/lib/statusLabels";
@@ -28,13 +32,14 @@ function formatTime(value: string | null | undefined): string {
   return new Date(value).toLocaleString();
 }
 
-function scopeLabel(task: AdminTaskRow): string {
-  const parts: string[] = [];
-  if (task.drama_project_id) parts.push(`漫剧#${task.drama_project_id}`);
-  if (task.project_id) parts.push(`科普#${task.project_id}`);
-  if (task.episode_id) parts.push(`分集#${task.episode_id}`);
-  if (task.fragment_id) parts.push(`分镜#${task.fragment_id}`);
-  return parts.length ? parts.join(" · ") : "—";
+function scopeLinks(task: AdminTaskRow): ReactNode {
+  const parts: ReactNode[] = [];
+  if (task.drama_project_id) parts.push(<AdminEntityLink key="drama" kind="drama" id={task.drama_project_id} />);
+  if (task.project_id) parts.push(<AdminEntityLink key="project" kind="project" id={task.project_id} />);
+  if (task.episode_id) parts.push(<span key="ep">分集#{task.episode_id}</span>);
+  if (task.fragment_id) parts.push(<span key="frag">分镜#{task.fragment_id}</span>);
+  if (parts.length === 0) return <span className="text-[#909399]">—</span>;
+  return <div className="flex flex-wrap gap-1">{parts}</div>;
 }
 
 function canCancel(task: AdminTaskRow): boolean {
@@ -64,10 +69,11 @@ export function QueuesPage() {
   const [searchInput, setSearchInput] = useState("");
   const [domain, setDomain] = useState("");
   const [status, setStatus] = useState("");
+  const [filterUserId, setFilterUserId] = useState<number | null>(null);
+  const [taskType, setTaskType] = useState("");
   const [viewTab, setViewTab] = useState<"all" | "active">("all");
   const [cancelLoading, setCancelLoading] = useState<number | null>(null);
-  const [detailTaskId, setDetailTaskId] = useState<number | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
+  const taskDetail = useAdminDetailQuery("task");
 
   const loadStats = useCallback(async () => {
     const res = await api<AdminTaskStats>("/api/admin/tasks/stats");
@@ -84,6 +90,8 @@ export function QueuesPage() {
         });
         if (domain) params.set("domain", domain);
         if (status) params.set("status", status);
+        if (filterUserId) params.set("user_id", String(filterUserId));
+        if (taskType.trim()) params.set("task_type", taskType.trim());
         if (q.trim()) params.set("q", q.trim());
         if (viewTab === "active" && !status) params.set("active_only", "true");
         const res = await api<AdminTaskListRes>(`/api/admin/tasks?${params}`);
@@ -97,7 +105,7 @@ export function QueuesPage() {
         setRefreshing(false);
       }
     },
-    [domain, page, pageSize, q, status, viewTab],
+    [domain, filterUserId, page, pageSize, q, status, taskType, viewTab],
   );
 
   const refreshAll = useCallback(
@@ -117,12 +125,16 @@ export function QueuesPage() {
 
   useEffect(() => {
     void refreshAll();
-  }, [page, pageSize, domain, status, q, viewTab, refreshAll]);
+  }, [page, pageSize, domain, status, q, viewTab, filterUserId, taskType, refreshAll]);
 
   useEffect(() => {
     const timer = window.setInterval(() => void refreshAll(true), REFRESH_MS);
     return () => window.clearInterval(timer);
   }, [refreshAll]);
+
+  function openDetail(taskId: number) {
+    taskDetail.open(taskId);
+  }
 
   const handleCancel = useCallback(
     async (task: AdminTaskRow) => {
@@ -146,11 +158,6 @@ export function QueuesPage() {
     const fromStats = stats?.domains.map((d) => d.domain) ?? [];
     return Array.from(new Set(fromStats));
   }, [stats]);
-
-  function openDetail(taskId: number) {
-    setDetailTaskId(taskId);
-    setDetailOpen(true);
-  }
 
   return (
     <div className="admin-page">
@@ -273,76 +280,84 @@ export function QueuesPage() {
             bodyClassName="space-y-4 !pt-0"
           >
             <Toolbar>
-              <label className="admin-field">
-                <span className="admin-field-label">领域</span>
-                <select
-                  className="admin-select"
-                  value={domain}
-                  onChange={(e) => {
-                    setDomain(e.target.value);
+              <select
+                className="admin-select"
+                value={domain}
+                onChange={(e) => {
+                  setDomain(e.target.value);
+                  setPage(1);
+                }}
+              >
+                <option value="">全部领域</option>
+                {domainOptions.map((d) => (
+                  <option key={d} value={d}>
+                    {taskDomainLabel(d)}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="admin-select"
+                value={status}
+                onChange={(e) => {
+                  setStatus(e.target.value);
+                  setPage(1);
+                  if (e.target.value) setViewTab("all");
+                }}
+              >
+                <option value="">全部状态</option>
+                {Object.entries({
+                  pending: "排队中",
+                  leased: "已租约",
+                  running: "执行中",
+                  awaiting_poll: "等待轮询",
+                  cancel_requested: "取消中",
+                  succeeded: "已成功",
+                  failed: "失败",
+                  cancelled: "已取消",
+                }).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <AdminUserSearchSelect
+                value={filterUserId}
+                onChange={(id) => {
+                  setFilterUserId(id);
+                  setPage(1);
+                }}
+              />
+              <input
+                className="admin-input"
+                placeholder="任务类型"
+                value={taskType}
+                onChange={(e) => {
+                  setTaskType(e.target.value);
+                  setPage(1);
+                }}
+              />
+              <AdminSearchInput
+                value={searchInput}
+                onChange={setSearchInput}
+                placeholder="任务类型 / 用户邮箱 / dedupe_key"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    setQ(searchInput);
                     setPage(1);
-                  }}
-                >
-                  <option value="">全部</option>
-                  {domainOptions.map((d) => (
-                    <option key={d} value={d}>
-                      {taskDomainLabel(d)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="admin-field">
-                <span className="admin-field-label">状态</span>
-                <select
-                  className="admin-select"
-                  value={status}
-                  onChange={(e) => {
-                    setStatus(e.target.value);
-                    setPage(1);
-                    if (e.target.value) setViewTab("all");
-                  }}
-                >
-                  <option value="">全部</option>
-                  {Object.entries({
-                    pending: "排队中",
-                    leased: "已租约",
-                    running: "执行中",
-                    awaiting_poll: "等待轮询",
-                    cancel_requested: "取消中",
-                    succeeded: "已成功",
-                    failed: "失败",
-                    cancelled: "已取消",
-                  }).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <form
-                className="flex min-w-[240px] flex-1 flex-wrap items-end gap-2"
-                onSubmit={(e) => {
-                  e.preventDefault();
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className="admin-btn admin-btn-primary admin-filter-action"
+                onClick={() => {
                   setQ(searchInput);
                   setPage(1);
                 }}
               >
-                <label className="admin-field flex-1">
-                  <span className="admin-field-label">搜索</span>
-                  <div className="admin-input-search-wrap">
-                    <Search className="h-4 w-4" />
-                    <input
-                      className="admin-input"
-                      placeholder="任务类型 / 用户邮箱 / dedupe_key"
-                      value={searchInput}
-                      onChange={(e) => setSearchInput(e.target.value)}
-                    />
-                  </div>
-                </label>
-                <button type="submit" className="admin-btn admin-btn-primary">
-                  查询
-                </button>
-              </form>
+                查询
+              </button>
             </Toolbar>
 
             <div className="admin-table-wrap">
@@ -385,11 +400,14 @@ export function QueuesPage() {
                           </div>
                         </td>
                         <td>
-                          <div className="text-xs">{task.user_email ?? `#${task.requested_by}`}</div>
+                          <AdminEntityLink
+                            kind="user"
+                            id={task.requested_by}
+                            label={task.user_email ?? undefined}
+                            className="text-xs"
+                          />
                         </td>
-                        <td className="max-w-[180px] truncate text-xs text-[#909399]" title={scopeLabel(task)}>
-                          {scopeLabel(task)}
-                        </td>
+                        <td className="max-w-[200px] text-xs">{scopeLinks(task)}</td>
                         <td>
                           <span className={`admin-status-pill ${statusClass(task.status)}`}>
                             {taskStatusLabel(task.status)}
@@ -458,9 +476,11 @@ export function QueuesPage() {
       )}
 
       <TaskDetailDialog
-        taskId={detailTaskId}
-        open={detailOpen}
-        onOpenChange={setDetailOpen}
+        taskId={taskDetail.id}
+        open={taskDetail.isOpen}
+        onOpenChange={(open) => {
+          if (!open) taskDetail.close();
+        }}
         onCancelled={() => void refreshAll(true)}
       />
     </div>

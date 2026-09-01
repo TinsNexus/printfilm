@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -50,9 +50,26 @@ class User(Base):
     avatar_url: Mapped[str] = mapped_column(String(512), default="")
     # 联系手机，仅记录，不走短信验证
     phone: Mapped[str] = mapped_column(String(32), default="")
+    # 用户消费里程碑告警：上次已提醒的累计扣费档位（分）
+    billing_alert_last_milestone_fen: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     projects: Mapped[list["Project"]] = relationship(back_populates="owner")
+
+
+class BillingAlertNotification(Base):
+    """待展示的用户额度告警（弹窗）。"""
+
+    __tablename__ = "billing_alert_notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    kind: Mapped[str] = mapped_column(String(32), default="user_milestone")
+    title: Mapped[str] = mapped_column(String(128), default="")
+    message: Mapped[str] = mapped_column(Text, default="")
+    milestone_fen: Mapped[int] = mapped_column(Integer, default=0)
+    acknowledged: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Template(Base):
@@ -203,6 +220,21 @@ class UsageEvent(Base):
     settled: Mapped[bool] = mapped_column(Boolean, default=False)
     raw_usage_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class UpstreamUsageDaily(Base):
+    """方舟官方日用量快照，用于与本地 usage_events 对照。"""
+
+    __tablename__ = "upstream_usage_daily"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    usage_date: Mapped[date] = mapped_column(Date, unique=True, index=True)
+    official_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    official_cost_fen: Mapped[int] = mapped_column(Integer, default=0)
+    local_cost_fen: Mapped[int] = mapped_column(Integer, default=0)
+    local_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    raw_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class WalletLedger(Base):

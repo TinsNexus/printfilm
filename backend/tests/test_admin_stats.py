@@ -82,7 +82,7 @@ async def test_dashboard_daily_usage_pads_seven_days(db_session: AsyncSession) -
     stats = await build_admin_dashboard_stats(db_session)
     daily = stats["daily_usage"]
     assert len(daily) == 7
-    assert all("date" in d and "calls" in d and "charge_fen" in d for d in daily)
+    assert all("date" in d and "calls" in d and "charge_fen" in d and "cost_fen" in d for d in daily)
     # 日期升序且连续
     dates = [d["date"] for d in daily]
     assert dates == sorted(dates)
@@ -101,6 +101,140 @@ async def test_dashboard_daily_usage_pads_seven_days(db_session: AsyncSession) -
     assert stats["usage_cost_total_fen"] == 20
     assert stats["usage_calls_today"] == 1
     assert stats["usage_charge_today_fen"] == 50
+
+
+@pytest.mark.asyncio
+async def test_dashboard_filters_domain_and_capability(db_session: AsyncSession) -> None:
+    """按领域与能力筛选后，分布桶只含匹配数据。"""
+    user = await make_user(db_session)
+    await _add_usage(
+        db_session,
+        user_id=user.id,
+        charge_fen=50,
+        cost_fen=20,
+        created_at=_utc_days_ago(1),
+        capability="image",
+        domain="drama",
+        billing_key="seedream",
+    )
+    await _add_usage(
+        db_session,
+        user_id=user.id,
+        charge_fen=30,
+        cost_fen=10,
+        created_at=_utc_days_ago(1),
+        capability="video",
+        billing_key="seedance2:video0",
+        domain="kepu",
+    )
+    await db_session.commit()
+
+    drama_only = await build_admin_dashboard_stats(db_session, days=7, domain="drama")
+    assert sum(b["calls"] for b in drama_only["usage_by_capability"]) == 1
+    assert drama_only["usage_by_capability"][0]["key"] == "image"
+    assert drama_only["usage_by_capability"][0]["cost_fen"] == 20
+
+    video_only = await build_admin_dashboard_stats(db_session, days=7, capability="video")
+    assert len(video_only["usage_by_domain"]) == 1
+    assert video_only["usage_by_domain"][0]["key"] == "kepu"
+    assert video_only["daily_usage"][-1]["calls"] == 0
+
+
+@pytest.mark.asyncio
+async def test_dashboard_today_window(db_session: AsyncSession) -> None:
+    """days=1 时仅统计今日，趋势序列 1 行。"""
+    user = await make_user(db_session)
+    domain = "test_today_window"
+    await _add_usage(
+        db_session,
+        user_id=user.id,
+        charge_fen=40,
+        cost_fen=12,
+        created_at=_utc_days_ago(0),
+        capability="llm",
+        domain=domain,
+    )
+    await _add_usage(
+        db_session,
+        user_id=user.id,
+        charge_fen=99,
+        created_at=_utc_days_ago(1),
+        capability="llm",
+        domain=domain,
+    )
+    await db_session.commit()
+
+    stats = await build_admin_dashboard_stats(db_session, days=1, domain=domain)
+    assert len(stats["daily_usage"]) == 1
+    today_key = _utc_days_ago(0).date().isoformat()
+    assert stats["daily_usage"][0]["date"] == today_key
+    assert stats["daily_usage"][0]["calls"] == 1
+    assert stats["daily_usage"][0]["charge_fen"] == 40
+    assert sum(b["calls"] for b in stats["usage_by_capability"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_admin_stats_route_days_one(db_session: AsyncSession) -> None:
+    """admin_stats 路由 days=1 返回单日趋势。"""
+    import uuid
+
+    from app.api.admin.dashboard import admin_stats
+
+    admin = await make_user(db_session)
+    admin.email = f"admin-{uuid.uuid4().hex[:8]}@example.com"
+    admin.role = "admin"
+    await db_session.flush()
+
+    domain = "test_stats_route_today"
+    await _add_usage(
+        db_session,
+        user_id=admin.id,
+        charge_fen=25,
+        created_at=_utc_days_ago(0),
+        capability="llm",
+        domain=domain,
+    )
+    await _add_usage(
+        db_session,
+        user_id=admin.id,
+        charge_fen=80,
+        created_at=_utc_days_ago(1),
+        capability="llm",
+        domain=domain,
+    )
+    await db_session.commit()
+
+    out = await admin_stats(
+        days=1,
+        domain=domain,
+        capability="all",
+        _admin=admin,
+        db=db_session,
+    )
+    assert len(out.daily_usage) == 1
+    assert out.daily_usage[0].calls == 1
+    assert out.daily_usage[0].charge_fen == 25
+
+
+@pytest.mark.asyncio
+async def test_dashboard_days_window_padding(db_session: AsyncSession) -> None:
+    """days=14 时趋势序列固定 14 行并补零。"""
+    user = await make_user(db_session)
+    await _add_usage(
+        db_session,
+        user_id=user.id,
+        charge_fen=10,
+        created_at=_utc_days_ago(10),
+        capability="llm",
+    )
+    await db_session.commit()
+
+    stats = await build_admin_dashboard_stats(db_session, days=14)
+    assert len(stats["daily_usage"]) == 14
+    ten_ago = _utc_days_ago(10).date().isoformat()
+    by_day = {d["date"]: d for d in stats["daily_usage"]}
+    assert by_day[ten_ago]["calls"] == 1
+    assert by_day[ten_ago]["charge_fen"] == 10
 
 
 @pytest.mark.asyncio

@@ -556,6 +556,22 @@ export const api = {
       `/api/billing/usage/events?page=${page}&page_size=${pageSize}`,
     )
   },
+  billingAlertsPending() {
+    return request<{
+      items: Array<{
+        id: number
+        kind: string
+        title: string
+        message: string
+        milestone_fen: number
+        milestone_yuan: number
+        created_at?: string | null
+      }>
+    }>('/api/billing/alerts/pending')
+  },
+  billingAlertAck(alertId: number) {
+    return request<{ ok: boolean }>(`/api/billing/alerts/${alertId}/ack`, { method: 'POST' })
+  },
   billingPreflight(params: { domain: string; task_type: string; count?: number }) {
     const q = new URLSearchParams({
       domain: params.domain,

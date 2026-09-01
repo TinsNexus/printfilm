@@ -17,11 +17,11 @@ from app.schemas_api import (
 )
 from app.services.ark import get_ark
 from app.services.billing import (
-    record_line,
     run_billed_ephemeral,
     run_billed_ephemeral_deferred,
     settle_deferred_video_poll,
 )
+from app.services.drama.billing_util import record_seedream_image_usage
 from app.services.studio_tools import poll_video_task, ratio_to_size
 from app.services import storage
 
@@ -69,14 +69,13 @@ async def generate_image(
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=502, detail=str(exc)[:400]) from exc
 
-        await record_line(
+        await record_seedream_image_usage(
             db,
             user_id=user.id,
-            billing_key="seedream",
             model=get_settings().model_image,
-            estimated=True,
             domain="api",
-            raw={"source": "api_v1_image"},
+            image_result=result,
+            extra_raw={"source": "api_v1_image"},
         )
         url = result.local_url or result.remote_url or ""
         if url:
@@ -214,6 +213,9 @@ async def get_task(
         provider_task_id=tid,
         poll_status=str(data.get("status") or ""),
         error=str(data.get("error") or "") or None,
+        usage_tokens=int((data.get("usage") or {}).get("total_tokens") or 0),
+        completion_tokens=int((data.get("usage") or {}).get("completion_tokens") or 0),
+        raw_usage=data.get("raw_usage") if isinstance(data.get("raw_usage"), dict) else None,
     )
     await db.commit()
     return V1GenerationOut(

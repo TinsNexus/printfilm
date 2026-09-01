@@ -12,8 +12,7 @@ from app.config import get_settings
 from app.models import User
 from app.models_drama import DramaAsset, DramaProject
 from app.services.ark import get_ark
-from app.services.billing import record_line
-from app.services.drama.billing_util import seedance_video_billing_tokens
+from app.services.drama.billing_util import record_seedance_video_usage, seedance_billing_key
 from app.services.drama.build_seedance_generate_body import (
     build_seedance_generate_body,
     drama_asset_to_payload,
@@ -108,7 +107,7 @@ async def generate_asset_video(
             "duration_fallback": duration,
         }
     )
-    local_video, local_last_frame = await ark.gen_and_wait_seedance_body(
+    local_video, local_last_frame, task_result = await ark.gen_and_wait_seedance_body(
         body,
         project_id=project.id,
         shot_no=asset.id,
@@ -148,16 +147,16 @@ async def generate_asset_video(
     }
     asset.params = params
 
-    await record_line(
+    await record_seedance_video_usage(
         db,
         user_id=user.id,
-        project_id=None,
-        drama_project_id=project.id,
-        billing_key="seedance2:video0",
+        billing_key=seedance_billing_key(generate_audio=True),
         model=settings.model_video,
-        tokens=seedance_video_billing_tokens(duration),
-        estimated=True,
         domain="drama",
+        task_result=task_result,
+        fallback_duration_sec=duration,
+        provider_task_id=getattr(task_result, "provider_task_id", None),
+        drama_project_id=project.id,
     )
     await db.commit()
     await db.refresh(asset)

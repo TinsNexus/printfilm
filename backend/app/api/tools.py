@@ -161,6 +161,9 @@ async def get_tool_task(
             poll_status=str(data.get("status") or ""),
             error=str(data.get("error") or "") or None,
             billing_task_id=billing_task_id,
+            usage_tokens=int((data.get("usage") or {}).get("total_tokens") or 0),
+            completion_tokens=int((data.get("usage") or {}).get("completion_tokens") or 0),
+            raw_usage=data.get("raw_usage") if isinstance(data.get("raw_usage"), dict) else None,
         )
     await update_tool_run_task(db, user.id, tid, data)
     await db.commit()

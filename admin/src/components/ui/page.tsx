@@ -45,7 +45,11 @@ type ToolbarProps = {
   className?: string;
 };
 
-// 筛选 / 搜索工具条
+// 筛选 / 搜索工具条（与 AdminFilterBar 一致）
 export function Toolbar({ children, className }: ToolbarProps) {
-  return <div className={cn("admin-filter-bar", className)}>{children}</div>;
+  return (
+    <div className={cn("admin-filter-bar", className)}>
+      <div className="admin-filter-bar-main">{children}</div>
+    </div>
+  );
 }

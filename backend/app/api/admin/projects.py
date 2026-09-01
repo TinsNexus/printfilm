@@ -97,9 +97,20 @@ async def get_project(
     if not row:
         raise HTTPException(status_code=404, detail="项目不存在")
     project, email, scount = row
-    data = AdminProjectDetailOut.model_validate(project)
-    data.user_email = email
-    data.shot_count = int(scount or 0)
+    base = AdminProjectOut.model_validate(project)
+    payload = base.model_dump()
+    payload.update(
+        {
+            "user_email": email,
+            "shot_count": int(scount or 0),
+            "source_type": project.source_type,
+            "source_text": project.source_text,
+            "resolution_mode": project.resolution_mode,
+            "output_ratio": project.output_ratio or "",
+            "voice_id": project.voice_id or "",
+        }
+    )
+    data = AdminProjectDetailOut(**payload)
 
     usage = await aggregate_usage_summary(db, project_id=project_id)
     assert isinstance(usage, dict)

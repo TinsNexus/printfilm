@@ -1,6 +1,6 @@
 # Admin work audit (visibility / audit_status)
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -16,6 +16,8 @@ router = APIRouter()
 async def list_works(
     audit_status: str | None = None,
     visibility: str | None = None,
+    q: str | None = None,
+    user_id: int | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     _admin: User = Depends(get_current_admin),
@@ -32,6 +34,14 @@ async def list_works(
     if visibility and visibility.strip():
         stmt = stmt.where(Work.visibility == visibility.strip())
         count_stmt = count_stmt.where(Work.visibility == visibility.strip())
+    if user_id is not None:
+        stmt = stmt.where(Work.user_id == user_id)
+        count_stmt = count_stmt.where(Work.user_id == user_id)
+    if q and q.strip():
+        like = f"%{q.strip()}%"
+        filt = Work.title.ilike(like)
+        stmt = stmt.where(filt)
+        count_stmt = count_stmt.where(filt)
 
     total = int((await db.execute(count_stmt)).scalar_one() or 0)
     rows = (

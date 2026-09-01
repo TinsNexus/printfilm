@@ -14,19 +14,37 @@ router = APIRouter()
 @router.get("/users", response_model=AdminUserListOut)
 async def list_users(
     q: str | None = None,
+    plan: str | None = None,
+    role: str | None = None,
+    billing_unlimited: bool | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     _admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> AdminUserListOut:
-    # Paginated user search by email / nickname
+    # Paginated user search by email / nickname / id
     stmt = select(User)
     count_stmt = select(func.count()).select_from(User)
     if q and q.strip():
-        like = f"%{q.strip()}%"
+        raw = q.strip()
+        like = f"%{raw}%"
+        id_match = None
+        if raw.isdigit():
+            id_match = int(raw)
         filt = or_(User.email.ilike(like), User.nickname.ilike(like))
+        if id_match is not None:
+            filt = or_(filt, User.id == id_match)
         stmt = stmt.where(filt)
         count_stmt = count_stmt.where(filt)
+    if plan and plan.strip():
+        stmt = stmt.where(User.plan == plan.strip())
+        count_stmt = count_stmt.where(User.plan == plan.strip())
+    if role and role.strip():
+        stmt = stmt.where(User.role == role.strip())
+        count_stmt = count_stmt.where(User.role == role.strip())
+    if billing_unlimited is not None:
+        stmt = stmt.where(User.billing_unlimited == billing_unlimited)
+        count_stmt = count_stmt.where(User.billing_unlimited == billing_unlimited)
 
     total = int((await db.execute(count_stmt)).scalar_one() or 0)
     result = await db.execute(

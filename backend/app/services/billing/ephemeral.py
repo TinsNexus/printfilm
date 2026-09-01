@@ -291,6 +291,10 @@ async def settle_deferred_video_poll(
     poll_status: str,
     error: str | None = None,
     billing_task_id: int | None = None,
+    usage_tokens: int = 0,
+    completion_tokens: int = 0,
+    raw_usage: dict | None = None,
+    billing_key: str | None = None,
 ) -> None:
     """轮询终态后结算轻量视频任务：成功才记 seedance 用量。
 
@@ -333,17 +337,32 @@ async def settle_deferred_video_poll(
     if terminal == "succeeded":
         payload = task.payload if isinstance(task.payload, dict) else {}
         async with billing_scope(task.id):
-            await record_line(
+            from app.services.drama.billing_util import record_seedance_video_usage, seedance_billing_key
+
+            generate_audio = bool(payload.get("generate_audio", True))
+            key = billing_key or seedance_billing_key(generate_audio=generate_audio)
+            task_result = None
+            if usage_tokens > 0:
+                from app.services.ark import TaskResult
+
+                task_result = TaskResult(
+                    status="succeeded",
+                    total_tokens=int(usage_tokens),
+                    completion_tokens=int(completion_tokens or usage_tokens),
+                    raw_usage=raw_usage,
+                )
+            await record_seedance_video_usage(
                 db,
                 user_id=user.id,
-                billing_key="seedance2:video0",
+                billing_key=key,
                 model=get_settings().model_video,
-                estimated=True,
-                domain=task.domain,
-                raw={
-                    "source": f"deferred_poll:{task.task_type}",
-                    "duration": payload.get("duration"),
-                },
+                domain=task.domain or "api",
+                task_result=task_result,
+                fallback_duration_sec=payload.get("duration"),
+                provider_task_id=provider_task_id,
+                project_id=task.project_id,
+                drama_project_id=task.drama_project_id,
+                shot_id=task.shot_id,
             )
         task.status = "succeeded"
         task.progress_percent = 100

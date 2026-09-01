@@ -112,6 +112,33 @@ class AdminModelSettingsOut(BaseModel):
     quota_enabled: bool = False
     new_user_quota: int = 5
 
+    # 额度告警
+    billing_user_alert_enabled: bool = True
+    billing_user_alert_interval_fen: int = 1000
+    billing_admin_cost_alert_enabled: bool = False
+    billing_admin_cost_alert_threshold_fen: int = 0
+    billing_admin_cost_alert_emails: str = ""
+    billing_admin_cost_alert_period: str = "monthly"
+    billing_admin_cost_alert_last_period_key: str = ""
+    billing_admin_cost_alert_last_level: int = 0
+
+    smtp_enabled: bool = False
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_use_tls: bool = True
+    has_smtp_password: bool = False
+
+    # 火山管控面用量查询（GetInferenceUsage，后台配置，不入 .env）
+    volc_access_key_id: str = ""
+    volc_secret_access_key: str = ""
+    volc_ark_region: str = "cn-beijing"
+    volc_ark_usage_enabled: bool = True
+    has_volc_access_key_id: bool = False
+    has_volc_secret_access_key: bool = False
+
     # 站点与工具
     public_base_url: str = ""
     ffmpeg_path: str = "ffmpeg"
@@ -212,6 +239,29 @@ class AdminModelSettingsPatch(BaseModel):
     quota_enabled: bool | None = None
     new_user_quota: int | None = None
 
+    billing_user_alert_enabled: bool | None = None
+    billing_user_alert_interval_fen: int | None = None
+    billing_admin_cost_alert_enabled: bool | None = None
+    billing_admin_cost_alert_threshold_fen: int | None = None
+    billing_admin_cost_alert_emails: str | None = None
+    billing_admin_cost_alert_period: str | None = None
+
+    smtp_enabled: bool | None = None
+    smtp_host: str | None = None
+    smtp_port: int | None = None
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    smtp_from: str | None = None
+    smtp_use_tls: bool | None = None
+    clear_smtp_password: bool = False
+
+    volc_access_key_id: str | None = None
+    volc_secret_access_key: str | None = None
+    volc_ark_region: str | None = None
+    volc_ark_usage_enabled: bool | None = None
+    clear_volc_access_key_id: bool = False
+    clear_volc_secret_access_key: bool = False
+
     public_base_url: str | None = None
     ffmpeg_path: str | None = None
     ffprobe_path: str | None = None
@@ -305,6 +355,25 @@ def model_config_field_names() -> tuple[str, ...]:
         "billing_signup_grant_fen",
         "quota_enabled",
         "new_user_quota",
+        "billing_user_alert_enabled",
+        "billing_user_alert_interval_fen",
+        "billing_admin_cost_alert_enabled",
+        "billing_admin_cost_alert_threshold_fen",
+        "billing_admin_cost_alert_emails",
+        "billing_admin_cost_alert_period",
+        "billing_admin_cost_alert_last_period_key",
+        "billing_admin_cost_alert_last_level",
+        "smtp_enabled",
+        "smtp_host",
+        "smtp_port",
+        "smtp_user",
+        "smtp_password",
+        "smtp_from",
+        "smtp_use_tls",
+        "volc_access_key_id",
+        "volc_secret_access_key",
+        "volc_ark_region",
+        "volc_ark_usage_enabled",
         "public_base_url",
         "ffmpeg_path",
         "ffprobe_path",
@@ -321,6 +390,9 @@ SECRET_FIELD_FLAGS: dict[str, str] = {
     "tos_access_key": "has_tos_access_key",
     "tos_secret_key": "has_tos_secret_key",
     "epay_key": "has_epay_key",
+    "volc_access_key_id": "has_volc_access_key_id",
+    "volc_secret_access_key": "has_volc_secret_access_key",
+    "smtp_password": "has_smtp_password",
 }
 
 SECRET_FIELDS = tuple(SECRET_FIELD_FLAGS.keys())

@@ -1,5 +1,7 @@
 # Dashboard stats for admin console
-from fastapi import APIRouter, Depends
+from typing import Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -9,20 +11,33 @@ from app.schemas import (
     AdminDailyUsageOut,
     AdminStatsOut,
     AdminTopUserOut,
+    AdminUpstreamUsageOut,
+    AdminUpstreamUsageSyncOut,
     AdminUsageBucketOut,
 )
 from app.services.admin.stats import build_admin_dashboard_stats
+from app.services.admin.upstream_usage import build_upstream_usage_compare, sync_upstream_usage
 
 router = APIRouter()
+
+StatsWindowDays = Literal[1, 7, 14, 30]
 
 
 @router.get("/stats", response_model=AdminStatsOut)
 async def admin_stats(
+    days: StatsWindowDays = Query(default=7, description="趋势与分布时间窗口（天）"),
+    domain: str = Query(default="all", max_length=32, description="领域筛选，all 为全部"),
+    capability: str = Query(default="all", max_length=32, description="能力筛选，all 为全部"),
     _admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> AdminStatsOut:
     """用户/充值 + AI 调用量/费用/趋势/排行。"""
-    raw = await build_admin_dashboard_stats(db)
+    raw = await build_admin_dashboard_stats(
+        db,
+        days=days,
+        domain=domain.strip() or "all",
+        capability=capability.strip() or "all",
+    )
     return AdminStatsOut(
         user_count=raw["user_count"],
         order_paid_total_fen=raw["order_paid_total_fen"],
@@ -43,3 +58,29 @@ async def admin_stats(
         daily_usage=[AdminDailyUsageOut(**x) for x in raw["daily_usage"]],
         top_users_by_charge=[AdminTopUserOut(**x) for x in raw["top_users_by_charge"]],
     )
+
+
+@router.get("/stats/upstream-usage", response_model=AdminUpstreamUsageOut)
+async def admin_upstream_usage(
+    days: int = Query(30, ge=1, le=90),
+    _admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+) -> AdminUpstreamUsageOut:
+    """近 N 日官方用量与本地 seedance 成本对照。"""
+    raw = await build_upstream_usage_compare(db, days=days)
+    return AdminUpstreamUsageOut(**raw)
+
+
+@router.post("/stats/upstream-usage/sync", response_model=AdminUpstreamUsageSyncOut)
+async def admin_upstream_usage_sync(
+    days: int = Query(30, ge=1, le=90),
+    force: bool = Query(False),
+    _admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+) -> AdminUpstreamUsageSyncOut:
+    """手动刷新官方用量快照。"""
+    try:
+        raw = await sync_upstream_usage(db, days=days, force=force)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return AdminUpstreamUsageSyncOut(**raw)

@@ -329,14 +329,15 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
                           <th>billing_key</th>
                           <th>模型</th>
                           <th>Tokens</th>
-                          <th>费用</th>
-                          <th>估算</th>
+                          <th>扣费</th>
+                          <th>上游成本</th>
+                          <th>计费依据</th>
                         </tr>
                       </thead>
                       <tbody>
                         {(task.usage_lines?.length ?? 0) === 0 ? (
                           <tr>
-                            <td colSpan={7} className="text-center text-sm text-[#909399]">
+                            <td colSpan={8} className="text-center text-sm text-[#909399]">
                               暂无用量记录
                             </td>
                           </tr>
@@ -349,7 +350,8 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
                               <td className="max-w-[120px] truncate text-xs">{line.model || "—"}</td>
                               <td>{line.total_tokens ?? 0}</td>
                               <td>¥{fenToYuan(line.charge_fen ?? 0)}</td>
-                              <td>{line.estimated ? "估算" : "实测"}</td>
+                              <td>¥{fenToYuan(line.cost_fen ?? 0)}</td>
+                              <td>{line.billing_basis_label ?? (line.estimated ? "估算" : "实测")}</td>
                             </tr>
                           ))
                         )}

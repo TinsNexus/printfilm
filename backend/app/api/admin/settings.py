@@ -1,5 +1,6 @@
 # Admin model / provider settings API
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -7,6 +8,7 @@ from app.deps import get_current_admin
 from app.models import User
 from app.schemas_routing import AdminRoutingSettingsOut, AdminRoutingSettingsPatch, AdminRoutingSettingsSaveOut
 from app.schemas_settings import AdminModelSettingsOut, AdminModelSettingsPatch, AdminModelSettingsSaveOut, AdminModelSettingsImportEnvOut
+from app.services.ark_model_catalog import list_ark_models
 from app.services.model_settings import (
     get_admin_model_settings,
     get_admin_routing_settings,
@@ -16,6 +18,11 @@ from app.services.model_settings import (
 )
 
 router = APIRouter()
+
+
+class AdminArkModelsRequest(BaseModel):
+    capability: str = "all"
+    api_key: str | None = Field(default=None, max_length=512)
 
 
 @router.get("/settings/routing", response_model=AdminRoutingSettingsOut)
@@ -76,3 +83,21 @@ async def admin_import_model_settings_from_env(
         imported_fields=imported,
         skipped_secret_fields=skipped,
     )
+
+
+@router.post("/settings/ark/models")
+async def admin_list_ark_models(
+    body: AdminArkModelsRequest,
+    _admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """拉取火山方舟模型目录（临时 Key 仅走 POST body，避免进入 URL 日志）。"""
+    try:
+        models = await list_ark_models(
+            db,
+            capability=body.capability,
+            api_key_override=body.api_key,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"models": models}

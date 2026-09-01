@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -39,11 +38,8 @@ from app.services.drama.generation import (
     apply_fragment_video_assets,
     build_failed_generation_params,
     deserialize_fragment_video_prepared,
-    fragment_generation_status,
     generate_asset_image,
-    generate_fragment_video,
     prepare_fragment_video_for_submit,
-    project_link_last_frame_enabled,
     serialize_fragment_video_prepared,
     submit_prepared_fragment_video,
 )
@@ -51,8 +47,6 @@ from app.services.drama.visual_prompt import resolve_visual_prompt_for_asset
 
 logger = logging.getLogger(__name__)
 
-# in-process fallback handles
-_running: dict[str, asyncio.Task] = {}
 # 分集视频取消标记（episode_id）
 _video_cancelled_episodes: set[int] = set()
 ACTIVE_VIDEO_GEN_STATUSES = frozenset({"queued", "running", "generating"})
@@ -73,21 +67,6 @@ def _clear_episode_video_cancelled(episode_id: int) -> None:
 def clear_episode_video_cancelled(episode_id: int) -> None:
     """新入队分镜视频前清除进程内取消标记，避免误把新任务立刻作废。"""
     _clear_episode_video_cancelled(episode_id)
-
-
-def _cancel_inprocess_episode_video(episode_id: int) -> bool:
-    # 同时取消旧版整集任务与按分镜拆开的进程内任务
-    cancelled = False
-    prefix = f"frag:{int(episode_id)}:"
-    epgen_key = f"epgen:{int(episode_id)}"
-    for key, task in list(_running.items()):
-        if key != epgen_key and not str(key).startswith(prefix):
-            continue
-        if task is None or task.done():
-            continue
-        task.cancel()
-        cancelled = True
-    return cancelled
 
 
 async def _reset_fragment_video_generation(
@@ -115,21 +94,19 @@ async def _reset_fragment_video_generation(
 
 
 async def cancel_episode_video_jobs(episode_id: int) -> dict[str, Any]:
-    """取消单集视频任务：终止进程内任务并重置分镜状态。"""
+    """取消单集视频任务：标记取消并重置分镜生成状态。"""
     _mark_episode_video_cancelled(episode_id)
-    cancelled_inprocess = _cancel_inprocess_episode_video(episode_id)
     async with AsyncSessionLocal() as db:
         fragments = await _reset_fragment_video_generation(db, episode_id=episode_id)
     logger.info(
-        "取消分集视频 episode_id=%s inprocess=%s fragments=%s",
+        "取消分集视频 episode_id=%s fragments=%s",
         episode_id,
-        cancelled_inprocess,
         fragments,
     )
     return {
         "ok": True,
         "episode_id": episode_id,
-        "inprocess": cancelled_inprocess,
+        "inprocess": 0,
         "purged": 0,
         "revoked": 0,
         "fragments": fragments,
@@ -149,7 +126,6 @@ async def cancel_all_episode_video_jobs() -> dict[str, Any]:
                 episode_ids.add(int(frag.episode_id))
     for ep_id in list(episode_ids):
         _mark_episode_video_cancelled(ep_id)
-        _cancel_inprocess_episode_video(ep_id)
 
     async with AsyncSessionLocal() as db:
         fragments = await _reset_fragment_video_generation(db)
@@ -165,10 +141,6 @@ async def cancel_all_episode_video_jobs() -> dict[str, Any]:
         "fragments": fragments,
         "episodes": len(episode_ids),
     }
-
-
-def _job_key(kind: str, entity_id: int) -> str:
-    return f"{kind}:{entity_id}"
 
 
 async def _enqueue_drama_task(
@@ -454,19 +426,6 @@ async def run_episode_scripts_job(project_id: int, force: bool = False) -> dict[
 # ---------- episode fragment plan (LLM) ----------
 
 
-def dispatch_episode_fragment_plan_job(episode_id: int, *, fallback_rules: bool = True) -> str:
-    # Legacy：进程内 dispatch，无任务平台计费。API 已改 create_task(fragment_plan)；无外部调用方。
-    key = _job_key("fragplan", episode_id)
-    if key in _running and not _running[key].done():
-        logger.info("dispatch 单集分镜 → 进程内已在跑 episode_id=%s", episode_id)
-        return "in-process"
-    _running[key] = asyncio.create_task(
-        run_episode_fragment_plan_job(episode_id, fallback_rules=fallback_rules)
-    )
-    logger.info("dispatch 单集分镜 → 进程内新建 episode_id=%s", episode_id)
-    return "in-process"
-
-
 async def run_episode_fragment_plan_job(
     episode_id: int,
     *,
@@ -684,319 +643,7 @@ async def run_episode_fragment_plan_job(
         }
 
 
-# ---------- episode video ----------
-
-
-async def _queued_remaining_fragment_ids(fragment_ids: list[int]) -> list[int]:
-    # 取消后库里已不是 queued，不再派发下一镜
-    still: list[int] = []
-    async with AsyncSessionLocal() as db:
-        for fid in fragment_ids:
-            frag = await db.get(DramaEpisodeFragment, int(fid))
-            if not frag:
-                continue
-            status = str(fragment_generation_status(frag).get("status") or "")
-            if status == "queued":
-                still.append(int(fid))
-    return still
-
-
-async def _fail_remaining_fragment_videos(fragment_ids: list[int], error: str) -> None:
-    # 上一镜失败/取消后，后续镜无法取尾帧，标记失败避免一直「排队中」
-    if not fragment_ids:
-        return
-    async with AsyncSessionLocal() as db:
-        changed = 0
-        for fid in fragment_ids:
-            frag = await db.get(DramaEpisodeFragment, int(fid))
-            if not frag:
-                continue
-            params = dict(frag.params or {})
-            gen = params.get("generation") if isinstance(params.get("generation"), dict) else {}
-            status = str(gen.get("status") or "")
-            if status not in ACTIVE_VIDEO_GEN_STATUSES:
-                continue
-            params["generation"] = build_failed_generation_params(
-                gen if isinstance(gen, dict) else None,
-                error,
-            )
-            frag.params = params
-            changed += 1
-        if changed:
-            await db.commit()
-        logger.info("后续分镜已标记失败 count=%s error=%s", changed, error[:80])
-
-
-async def _run_fragment_chain_inprocess(
-    episode_id: int,
-    user_id: int,
-    fragment_ids: list[int],
-) -> None:
-    # 进程内按镜序生成，后一镜等上一镜写出尾帧
-    remaining = [int(x) for x in fragment_ids]
-    while remaining:
-        if _is_episode_video_cancelled(episode_id):
-            return
-        fid = remaining.pop(0)
-        ok = await _generate_one_fragment_video(
-            episode_id=episode_id,
-            user_id=user_id,
-            fragment_id=fid,
-            sem=asyncio.Semaphore(1),
-        )
-        if ok:
-            continue
-        if remaining and not _is_episode_video_cancelled(episode_id):
-            await _fail_remaining_fragment_videos(remaining, "上一镜失败，无法衔接尾帧")
-        return
-
-
-def dispatch_episode_generate_job(
-    episode_id: int,
-    user_id: int,
-    fragment_ids: list[int],
-    *,
-    sequential: bool = True,
-) -> str:
-    # Legacy：进程内 dispatch，无任务平台计费。API 已改 create_task(fragment_video)；无外部调用方。
-    ids = [int(x) for x in fragment_ids]
-    _clear_episode_video_cancelled(episode_id)
-    if not ids:
-        return "queued"
-
-    if sequential:
-        key = f"epgen:{int(episode_id)}"
-        existing = _running.get(key)
-        if existing and not existing.done():
-            logger.info("dispatch 分镜视频链 → 进程内已在跑 episode_id=%s", episode_id)
-            return "in-process"
-        _running[key] = asyncio.create_task(
-            _run_fragment_chain_inprocess(episode_id, user_id, ids)
-        )
-        logger.info(
-            "dispatch 分镜视频链 → 进程内异步 episode_id=%s fragments=%s",
-            episode_id,
-            len(ids),
-        )
-        return "in-process"
-
-    for fid in ids:
-        key = f"frag:{int(episode_id)}:{int(fid)}"
-        existing = _running.get(key)
-        if existing and not existing.done():
-            continue
-        _running[key] = asyncio.create_task(
-            _generate_one_fragment_video(
-                episode_id=episode_id,
-                user_id=user_id,
-                fragment_id=int(fid),
-                sem=asyncio.Semaphore(1),
-            )
-        )
-    logger.info(
-        "dispatch 分镜视频并行 → 进程内异步 episode_id=%s fragments=%s",
-        episode_id,
-        len(ids),
-    )
-    return "in-process"
-
-
-# Legacy：单分镜同步生成（独立 DB session）。任务平台请用 submit_fragment_video_task。
-async def _generate_one_fragment_video(
-    *,
-    episode_id: int,
-    user_id: int,
-    fragment_id: int,
-    sem: asyncio.Semaphore,
-) -> bool:
-    async with sem:
-        async with AsyncSessionLocal() as db:
-            ep = await db.get(
-                DramaEpisode,
-                episode_id,
-                options=[
-                    selectinload(DramaEpisode.project).selectinload(DramaProject.script),
-                ],
-            )
-            if not ep or not ep.project:
-                logger.warning(
-                    "分镜视频跳过：分集/项目不存在 episode_id=%s fragment_id=%s",
-                    episode_id,
-                    fragment_id,
-                )
-                return False
-            project = ep.project
-            user = await db.get(User, user_id)
-            if not user:
-                return False
-            frag = await db.get(
-                DramaEpisodeFragment,
-                fragment_id,
-                options=[
-                    selectinload(DramaEpisodeFragment.asset_references).selectinload(
-                        DramaFragmentAssetRef.asset
-                    )
-                ],
-            )
-            if not frag or frag.episode_id != episode_id:
-                return False
-
-            gen = frag.params.get("generation") if isinstance(frag.params, dict) else None
-            gen_status = str(gen.get("status") or "") if isinstance(gen, dict) else ""
-            if _is_episode_video_cancelled(episode_id) or gen_status == "cancelled":
-                params = dict(frag.params or {})
-                params.pop("generation_attempts", None)
-                params["generation"] = {"status": "cancelled", "error": "任务已取消"}
-                frag.params = params
-                await db.commit()
-                logger.info(
-                    "分镜视频已取消 fragment_id=%s episode_id=%s",
-                    fragment_id,
-                    episode_id,
-                )
-                return False
-
-            params = dict(frag.params or {})
-            persisted_attempts = int(params.get("generation_attempts") or 0)
-            prev_attempts = persisted_attempts
-            if isinstance(gen, dict):
-                prev_attempts = max(prev_attempts, int(gen.get("attempts") or 0))
-            max_attempts = max(1, int(get_settings().drama_fragment_max_attempts or 3))
-            attempts = prev_attempts + 1
-            if attempts > max_attempts:
-                params["generation_attempts"] = prev_attempts
-                params["generation"] = build_failed_generation_params(
-                    gen if isinstance(gen, dict) else None,
-                    f"分镜重试超过上限（{max_attempts} 次）",
-                    attempts=prev_attempts,
-                    attempt_limit=max_attempts,
-                )
-                frag.params = params
-                await db.commit()
-                logger.warning(
-                    "分镜视频跳过：超过重试上限 fragment_id=%s attempts=%s limit=%s",
-                    fragment_id,
-                    prev_attempts,
-                    max_attempts,
-                )
-                return False
-            params["generation_attempts"] = attempts
-            params["generation"] = {
-                "status": "running",
-                "attempts": attempts,
-                "attempt_limit": max_attempts,
-            }
-            frag.params = params
-            await db.commit()
-            try:
-                logger.info(
-                    "生成分镜视频 fragment_id=%s episode_id=%s attempt=%s/%s",
-                    fragment_id,
-                    episode_id,
-                    attempts,
-                    max_attempts,
-                )
-                await generate_fragment_video(db, user, project, frag)
-                await db.refresh(frag)
-                params = dict(frag.params or {})
-                last_frame = ""
-                if isinstance(frag.params, dict):
-                    raw = frag.params.get("lastFrameUrl") or frag.params.get("last_frame_url")
-                    if isinstance(raw, str):
-                        last_frame = raw
-                params.pop("generation_attempts", None)
-                params["generation"] = {
-                    "status": "done",
-                    "video": frag.video,
-                    "cover": frag.cover,
-                    "lastFrameUrl": last_frame or None,
-                    "attempts": attempts,
-                    "attempt_limit": max_attempts,
-                }
-                if last_frame:
-                    params["lastFrameUrl"] = last_frame
-                frag.params = params
-                await db.commit()
-                return True
-            except Exception as exc:  # noqa: BLE001
-                params = dict(frag.params or {})
-                prev_gen = params.get("generation") if isinstance(params.get("generation"), dict) else None
-                params["generation_attempts"] = attempts
-                params["generation"] = build_failed_generation_params(
-                    prev_gen if isinstance(prev_gen, dict) else None,
-                    str(exc),
-                    attempts=attempts,
-                    attempt_limit=max_attempts,
-                )
-                frag.params = params
-                await db.commit()
-                logger.exception(
-                    "分镜视频失败 fragment_id=%s attempt=%s/%s",
-                    fragment_id,
-                    attempts,
-                    max_attempts,
-                )
-                return False
-
-
-async def run_fragment_generate_job(
-    episode_id: int,
-    user_id: int,
-    fragment_id: int,
-    remaining_ids: list[int] | None = None,
-) -> dict[str, Any]:
-    # Legacy：单镜 + 链式衔接的进程内路径，无任务平台计费。
-    remaining = [int(x) for x in (remaining_ids or [])]
-    logger.info(
-        "开始生成分镜视频 episode_id=%s fragment_id=%s rest=%s",
-        episode_id,
-        fragment_id,
-        len(remaining),
-    )
-    ok = await _generate_one_fragment_video(
-        episode_id=episode_id,
-        user_id=user_id,
-        fragment_id=int(fragment_id),
-        sem=asyncio.Semaphore(1),
-    )
-    logger.info(
-        "分镜视频结束 episode_id=%s fragment_id=%s ok=%s rest=%s",
-        episode_id,
-        fragment_id,
-        ok,
-        len(remaining),
-    )
-    if remaining and not _is_episode_video_cancelled(episode_id):
-        if ok:
-            still_queued: list[int] = []
-            async with AsyncSessionLocal() as db:
-                for fid in remaining:
-                    frag = await db.get(DramaEpisodeFragment, int(fid))
-                    if not frag:
-                        continue
-                    gen = frag.params.get("generation") if isinstance(frag.params, dict) else None
-                    status = str(gen.get("status") or "") if isinstance(gen, dict) else ""
-                    if status in {"queued", "running"}:
-                        still_queued.append(int(fid))
-            if still_queued:
-                next_id = still_queued[0]
-                rest = still_queued[1:]
-                asyncio.create_task(_run_fragment_chain_inprocess(episode_id, user_id, still_queued))
-                logger.info(
-                    "已衔接下一镜 episode_id=%s next=%s rest=%s",
-                    episode_id,
-                    next_id,
-                    len(rest),
-                )
-        else:
-            await _fail_remaining_fragment_videos(remaining, "上一镜失败，无法衔接尾帧")
-    return {
-        "ok": ok,
-        "episode_id": episode_id,
-        "fragment_id": fragment_id,
-        "remaining": len(remaining),
-    }
-
+# ---------- episode video (task platform) ----------
 
 # 任务平台（NIO）：Worker 短生命周期 — prepare → submit → 注册 awaiting_poll，由 Selector 轮询。
 async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
@@ -1234,90 +881,13 @@ async def poll_fragment_video_task(task_id: int) -> None:
                 local_last_frame=local_last_frame,
                 attempts=attempts,
                 attempt_limit=attempt_limit,
+                task_result=result,
+                provider_task_id=task.provider_task_id,
             )
             batch_index = int(payload.get("batch_index", 0))
             await activate_next_sequential_task(db, task.batch_key, batch_index)
             task.progress_percent = 100
             await _complete_task(db, task, {"ok": True, "fragment_id": fragment_id})
-
-
-async def run_episode_generate_job(
-    episode_id: int,
-    user_id: int,
-    fragment_ids: list[int],
-) -> dict[str, Any]:
-    # Legacy：整批分镜进程内生成，绕过任务平台 freeze/settle。handlers 已改 submit_fragment_video_task。
-    _clear_episode_video_cancelled(episode_id)
-    logger.info(
-        "开始生成分集视频 episode_id=%s fragments=%s",
-        episode_id,
-        len(fragment_ids),
-    )
-    async with AsyncSessionLocal() as db:
-        ep = await db.get(
-            DramaEpisode,
-            episode_id,
-            options=[
-                selectinload(DramaEpisode.project).selectinload(DramaProject.script),
-            ],
-        )
-        if not ep:
-            logger.warning("分集视频失败：分集不存在 episode_id=%s", episode_id)
-            return {"ok": False, "error": "missing_episode"}
-        project = ep.project
-        user = await db.get(User, user_id)
-        if not project or not user:
-            return {"ok": False, "error": "missing_project_or_user"}
-
-        # valid_ids 属于本集且存在的分镜（保持入队顺序）
-        valid_ids: list[int] = []
-        for fid in fragment_ids:
-            frag = await db.get(DramaEpisodeFragment, fid)
-            if frag and frag.episode_id == episode_id:
-                valid_ids.append(fid)
-        link = project_link_last_frame_enabled(project)
-
-    if link:
-        # 旧版整集任务也按镜序，避免并行丢掉尾帧
-        logger.info(
-            "分集视频串行衔接 episode_id=%s fragments=%s",
-            episode_id,
-            len(valid_ids),
-        )
-        await _run_fragment_chain_inprocess(episode_id, user_id, valid_ids)
-        _clear_episode_video_cancelled(episode_id)
-        return {"ok": True, "episode_id": episode_id}
-
-    # 未开启衔接时按 Seedance 并发上限并行
-    limit = max(1, int(get_settings().pipeline_video_concurrency or 10))
-    sem = asyncio.Semaphore(limit)
-    logger.info(
-        "分集视频并发 episode_id=%s concurrency=%s fragments=%s",
-        episode_id,
-        limit,
-        len(valid_ids),
-    )
-    results = await asyncio.gather(
-        *[
-            _generate_one_fragment_video(
-                episode_id=episode_id,
-                user_id=user_id,
-                fragment_id=fid,
-                sem=sem,
-            )
-            for fid in valid_ids
-        ]
-    )
-    ok_count = sum(1 for ok in results if ok)
-    fail_count = len(results) - ok_count
-    _clear_episode_video_cancelled(episode_id)
-    logger.info(
-        "分集视频结束 episode_id=%s ok=%s fail=%s",
-        episode_id,
-        ok_count,
-        fail_count,
-    )
-    return {"ok": True, "episode_id": episode_id}
 
 
 # ---------- asset image ----------

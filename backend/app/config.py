@@ -1,10 +1,18 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
+_ENV_FILE = _BACKEND_DIR / ".env"
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=str(_ENV_FILE) if _ENV_FILE.is_file() else ".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     app_name: str = "PRINTFILM"
     debug: bool = True
@@ -13,8 +21,8 @@ class Settings(BaseSettings):
     secret_key: str = "dev-secret-change-me"
     access_token_expire_minutes: int = 60 * 24 * 7
 
-    database_url: str = "sqlite+aiosqlite:///./ai_movie.db"
-    database_url_sync: str = "sqlite:///./ai_movie.db"
+    database_url: str = "postgresql+asyncpg://printfilm:change-me-strong-db-password@127.0.0.1:15432/printfilm"
+    database_url_sync: str = "postgresql+psycopg2://printfilm:change-me-strong-db-password@127.0.0.1:15432/printfilm"
     # Postgres 连接池（统一任务平台 / API 共用）
     db_pool_size: int = 5
     db_max_overflow: int = 5
@@ -63,8 +71,6 @@ class Settings(BaseSettings):
     drama_user_video_job_limit: int = 12
     # 单个分镜视频最大尝试次数；超过后直接失败，避免长时间卡在同一镜
     drama_fragment_max_attempts: int = 3
-    # 已废弃：科普不再直出口播（即使 .env 为 true 也会被管线忽略）
-    kepu_seedance_generate_audio: bool = False
     # 科普 Seedance 仍出音轨：只要操作/环境音效，不要口播与 BGM
     kepu_seedance_sfx_audio: bool = True
 
@@ -101,6 +107,33 @@ class Settings(BaseSettings):
     billing_est_seedance_tokens_per_sec: int = 20_000
     # Signup grant (fen)
     billing_signup_grant_fen: int = 500
+
+    # 用户消费里程碑弹窗（累计扣费每达 interval 分提醒一次；1000 = ¥10）
+    billing_user_alert_enabled: bool = True
+    billing_user_alert_interval_fen: int = 1000
+
+    # 平台总费用邮件告警（按上游 cost_fen 聚合）
+    billing_admin_cost_alert_enabled: bool = False
+    billing_admin_cost_alert_threshold_fen: int = 0
+    billing_admin_cost_alert_emails: str = ""
+    billing_admin_cost_alert_period: str = "monthly"
+    billing_admin_cost_alert_last_period_key: str = ""
+    billing_admin_cost_alert_last_level: int = 0
+
+    # SMTP（管理员费用告警邮件）
+    smtp_enabled: bool = False
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_use_tls: bool = True
+
+    # 火山方舟管控面用量查询（GetInferenceUsage，与 ARK_API_KEY 分离）
+    volc_access_key_id: str = ""
+    volc_secret_access_key: str = ""
+    volc_ark_region: str = "cn-beijing"
+    volc_ark_usage_enabled: bool = True
 
     # Epay (pay.gitcc.com)
     epay_api_url: str = "https://pay.gitcc.com"

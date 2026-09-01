@@ -1,4 +1,4 @@
-"""Async SQLAlchemy engine / session for API and task runtime."""
+"""Async SQLAlchemy engine / session for API and task runtime（仅 PostgreSQL）。"""
 
 from __future__ import annotations
 
@@ -15,10 +15,18 @@ settings = get_settings()
 class Base(DeclarativeBase):
     pass
 
+
+def _require_postgres(url: str) -> None:
+    """拒绝非 Postgres 连接串，避免误连 SQLite。"""
+    if not (url or "").startswith("postgresql"):
+        raise RuntimeError(
+            "仅支持 PostgreSQL。请设置 DATABASE_URL=postgresql+asyncpg://..."
+            f"（当前：{(url or '')[:48]!r}）"
+        )
+
+
 def _postgres_pool_kwargs() -> dict:
-    """Build QueuePool kwargs for Postgres; empty for SQLite."""
-    if not settings.database_url.startswith("postgresql"):
-        return {}
+    """Build QueuePool kwargs for Postgres."""
     return {
         "pool_pre_ping": True,
         "pool_size": max(1, int(settings.db_pool_size)),
@@ -27,6 +35,8 @@ def _postgres_pool_kwargs() -> dict:
         "pool_timeout": max(5, int(settings.db_pool_timeout_sec)),
     }
 
+
+_require_postgres(settings.database_url)
 
 _engine_kwargs: dict = {"echo": bool(settings.sql_echo)}
 _engine_kwargs.update(_postgres_pool_kwargs())
@@ -62,9 +72,7 @@ async def dispose_engine() -> None:
 
 
 def pool_status() -> dict | None:
-    """Snapshot SQLAlchemy pool counters for /api/health (Postgres only)."""
-    if not settings.database_url.startswith("postgresql"):
-        return None
+    """Snapshot SQLAlchemy pool counters for /api/health."""
     pool = engine.pool
     return {
         "role": "api",

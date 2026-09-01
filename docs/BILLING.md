@@ -24,6 +24,10 @@ charge_fen = ceil(tokens / 1e6 * provider_yuan_per_m * markup * 100)
 | seedream | 8（按次折合约；有 usage 则用 usage） |
 | tts | 2（按次估价） |
 
+Seedance 视频任务成功后，优先读取官方「查询视频生成任务」响应中的 `usage.total_tokens` 写入 `usage_events`（`estimated=false`）；仅在上游未返回 usage 时回退到时长估算。
+
+管理端「官方用量对照」需配置 `VOLC_ACCESS_KEY_ID` / `VOLC_SECRET_ACCESS_KEY`，通过方舟管控面 `GetInferenceUsage` 拉取账号日用量并与本地 seedance 成本对照。
+
 ## TaskRun 计费流程
 
 每个 `TaskRun` 独立走「预扣 → 记录用量 → 结算」：
@@ -134,12 +138,15 @@ EPAY_RETURN_URL=https://your-site.example.com/pricing?paid=1
 | POST | `/api/billing/epay/notify` | 易支付回调 |
 | GET | `/api/admin/usage-events` | 管理端用量明细分页 |
 | GET | `/api/admin/tasks/{id}` | 任务详情含 `usage_lines` 与计费字段 |
+| GET | `/api/admin/stats/upstream-usage` | 近 N 日官方/本地 seedance 成本对照 |
+| POST | `/api/admin/stats/upstream-usage/sync` | 手动刷新官方用量快照 |
 
 ## 管理端
 
 - **订单与流水** → 「用量明细」Tab：按用户/任务/领域筛选 `usage_events`。
 - **任务队列** → 列表「费用」列显示 `billing_charged_fen`（冻结中显示预扣）。
 - **任务详情** → 「计费」Tab：预扣/实扣/退回 + 用量行列表。
+- **仪表盘** → 「Seedance 官方用量对照」：本地成本 vs 方舟 `GetInferenceUsage`（需 `VOLC_ACCESS_KEY_ID` / `VOLC_SECRET_ACCESS_KEY`）。
 
 ## 验收清单
 
@@ -147,5 +154,7 @@ EPAY_RETURN_URL=https://your-site.example.com/pricing?paid=1
 2. 漫剧分镜视频/资产生成：有 `task_run_id` 的用量行，任务结束扣费。
 3. 漫剧聊天 / 选题扩写 / Skill 优化 / 音色描述 / 开放 API / 工作室工具：响应含 `task_id`（轻量 TaskRun），余额变化正确。
 4. 管理端可按 `task_run_id` 或 `billing_key=llm_chat` 查到每条 LLM/图/视频/TTS 费用。
+5. Seedance 视频成功后 `usage_events.estimated=false` 且 `total_tokens` 与官方任务查询一致。
+6. 配置火山 AK/SK 后，管理端可刷新并查看近 30 日官方/本地成本对照。
 
 Demo 账号可设 `billing_unlimited=true` 跳过扣费。

@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.models import UsageEvent
 from app.services.billing.context import get_current_task_run_id
-from app.services.billing.pricing import billing_key_to_capability, charge_fen_for_tokens
+from app.services.billing.pricing import billing_key_to_capability, charge_fen_for_usage
 
 
 async def record_line(
@@ -47,7 +47,17 @@ async def record_line(
         elif billing_key.startswith("seedance"):
             total = s.billing_est_seedance_tokens_per_sec * 5
             estimated = True
-    cost, charge = charge_fen_for_tokens(total, billing_key, settings=s)
+    cost, charge, from_upstream = charge_fen_for_usage(
+        total, billing_key, raw_usage=raw, settings=s
+    )
+    if from_upstream:
+        estimated = False
+    elif total > 0 and not estimated:
+        pass
+    elif total > 0 and estimated and raw:
+        usage_parsed = raw.get("usage") if isinstance(raw.get("usage"), dict) else raw
+        if isinstance(usage_parsed, dict) and int(usage_parsed.get("total_tokens") or 0) > 0:
+            estimated = False
     capability = billing_key_to_capability(billing_key)
     ev = UsageEvent(
         user_id=user_id,

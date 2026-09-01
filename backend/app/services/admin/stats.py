@@ -33,23 +33,33 @@ def _day_key(value: Any) -> str:
 
 
 async def _usage_day_expr(db: AsyncSession):
-    """
-    按日历日分桶。
-    Postgres 用 CAST AS DATE；SQLite 用 date()（cast(Date) 会踩到结果处理器）。
-    """
-    conn = await db.connection()
-    if conn.dialect.name.startswith("postgres"):
-        return cast(UsageEvent.created_at, Date)
-    return func.date(UsageEvent.created_at)
+    """按日历日分桶（PostgreSQL CAST AS DATE）。"""
+    _ = db
+    return cast(UsageEvent.created_at, Date)
+
+
+def _usage_scope_filters(
+    *,
+    domain: str = "all",
+    capability: str = "all",
+) -> list[Any]:
+    """领域 / 能力筛选条件（不含时间）。"""
+    filters: list[Any] = []
+    if domain and domain != "all":
+        filters.append(UsageEvent.domain == domain)
+    if capability and capability != "all":
+        filters.append(UsageEvent.capability == capability)
+    return filters
 
 
 async def _usage_window_totals(
     db: AsyncSession,
     *,
     since: datetime | None = None,
+    scope_filters: list[Any] | None = None,
 ) -> dict[str, int]:
     """聚合 usage_events：calls / charge / cost。"""
-    filters = []
+    filters: list[Any] = list(scope_filters or [])
     if since is not None:
         filters.append(UsageEvent.created_at >= since)
     stmt = select(
@@ -72,6 +82,7 @@ async def _group_usage(
     *,
     group_col,
     since: datetime | None = None,
+    scope_filters: list[Any] | None = None,
     limit: int | None = None,
 ) -> list[dict[str, Any]]:
     """按某一列分组聚合 usage。"""
@@ -81,27 +92,43 @@ async def _group_usage(
             key.label("key"),
             func.count(UsageEvent.id).label("calls"),
             func.coalesce(func.sum(UsageEvent.charge_fen), 0).label("charge_fen"),
+            func.coalesce(func.sum(UsageEvent.cost_fen), 0).label("cost_fen"),
         )
         .group_by(key)
         .order_by(func.coalesce(func.sum(UsageEvent.charge_fen), 0).desc())
     )
+    filters: list[Any] = list(scope_filters or [])
     if since is not None:
-        stmt = stmt.where(UsageEvent.created_at >= since)
+        filters.append(UsageEvent.created_at >= since)
+    for clause in filters:
+        stmt = stmt.where(clause)
     if limit is not None:
         stmt = stmt.limit(limit)
     rows = (await db.execute(stmt)).all()
     return [
-        {"key": str(r.key or "unknown"), "calls": int(r.calls or 0), "charge_fen": int(r.charge_fen or 0)}
+        {
+            "key": str(r.key or "unknown"),
+            "calls": int(r.calls or 0),
+            "charge_fen": int(r.charge_fen or 0),
+            "cost_fen": int(r.cost_fen or 0),
+        }
         for r in rows
     ]
 
 
-async def build_admin_dashboard_stats(db: AsyncSession) -> dict[str, Any]:
+async def build_admin_dashboard_stats(
+    db: AsyncSession,
+    *,
+    days: int = 7,
+    domain: str = "all",
+    capability: str = "all",
+) -> dict[str, Any]:
     """组装管理端仪表盘全部统计字段。"""
     today = _utc_today_start()
     month = _utc_month_start()
-    week_ago = today - timedelta(days=6)
-    month_ago = today - timedelta(days=29)
+    window_days = max(1, min(30, int(days)))
+    range_start = today - timedelta(days=window_days - 1)
+    scope = _usage_scope_filters(domain=domain, capability=capability)
 
     user_count = int((await db.execute(select(func.count()).select_from(User))).scalar_one() or 0)
     drama_project_count = int(
@@ -138,52 +165,67 @@ async def build_admin_dashboard_stats(db: AsyncSession) -> dict[str, Any]:
     today_u = await _usage_window_totals(db, since=today)
     month_u = await _usage_window_totals(db, since=month)
 
-    by_capability = await _group_usage(db, group_col=UsageEvent.capability, since=month)
-    by_domain = await _group_usage(db, group_col=UsageEvent.domain, since=month)
+    by_capability = await _group_usage(
+        db, group_col=UsageEvent.capability, since=range_start, scope_filters=scope
+    )
+    by_domain = await _group_usage(
+        db, group_col=UsageEvent.domain, since=range_start, scope_filters=scope
+    )
 
-    # 近 7 日按日趋势（方言安全的日分桶）
+    # 按日趋势（筛选窗口内补零）
     day_expr = await _usage_day_expr(db)
-    daily_rows = (
-        await db.execute(
-            select(
-                day_expr.label("day"),
-                func.count(UsageEvent.id).label("calls"),
-                func.coalesce(func.sum(UsageEvent.charge_fen), 0).label("charge_fen"),
-            )
-            .where(UsageEvent.created_at >= week_ago)
-            .group_by(day_expr)
-            .order_by(day_expr.asc())
+    daily_stmt = (
+        select(
+            day_expr.label("day"),
+            func.count(UsageEvent.id).label("calls"),
+            func.coalesce(func.sum(UsageEvent.charge_fen), 0).label("charge_fen"),
+            func.coalesce(func.sum(UsageEvent.cost_fen), 0).label("cost_fen"),
         )
-    ).all()
+        .where(UsageEvent.created_at >= range_start)
+        .group_by(day_expr)
+        .order_by(day_expr.asc())
+    )
+    for clause in scope:
+        daily_stmt = daily_stmt.where(clause)
+    daily_rows = (await db.execute(daily_stmt)).all()
     daily_map: dict[str, dict[str, int]] = {}
     for r in daily_rows:
         daily_map[_day_key(r.day)] = {
             "calls": int(r.calls or 0),
             "charge_fen": int(r.charge_fen or 0),
+            "cost_fen": int(r.cost_fen or 0),
         }
     daily_usage: list[dict[str, Any]] = []
-    for i in range(7):
-        key = (week_ago + timedelta(days=i)).date().isoformat()
-        hit = daily_map.get(key) or {"calls": 0, "charge_fen": 0}
-        daily_usage.append({"date": key, "calls": hit["calls"], "charge_fen": hit["charge_fen"]})
-
-    # 近 30 日用户消费 Top10
-    owner = aliased(User)
-    top_rows = (
-        await db.execute(
-            select(
-                UsageEvent.user_id,
-                owner.email,
-                func.count(UsageEvent.id).label("calls"),
-                func.coalesce(func.sum(UsageEvent.charge_fen), 0).label("charge_fen"),
-            )
-            .outerjoin(owner, owner.id == UsageEvent.user_id)
-            .where(UsageEvent.created_at >= month_ago)
-            .group_by(UsageEvent.user_id, owner.email)
-            .order_by(func.coalesce(func.sum(UsageEvent.charge_fen), 0).desc())
-            .limit(10)
+    for i in range(window_days):
+        key = (range_start + timedelta(days=i)).date().isoformat()
+        hit = daily_map.get(key) or {"calls": 0, "charge_fen": 0, "cost_fen": 0}
+        daily_usage.append(
+            {
+                "date": key,
+                "calls": hit["calls"],
+                "charge_fen": hit["charge_fen"],
+                "cost_fen": hit["cost_fen"],
+            }
         )
-    ).all()
+
+    # 筛选窗口内用户消费 Top10
+    owner = aliased(User)
+    top_stmt = (
+        select(
+            UsageEvent.user_id,
+            owner.email,
+            func.count(UsageEvent.id).label("calls"),
+            func.coalesce(func.sum(UsageEvent.charge_fen), 0).label("charge_fen"),
+        )
+        .outerjoin(owner, owner.id == UsageEvent.user_id)
+        .where(UsageEvent.created_at >= range_start)
+        .group_by(UsageEvent.user_id, owner.email)
+        .order_by(func.coalesce(func.sum(UsageEvent.charge_fen), 0).desc())
+        .limit(10)
+    )
+    for clause in scope:
+        top_stmt = top_stmt.where(clause)
+    top_rows = (await db.execute(top_stmt)).all()
     top_users_by_charge = [
         {
             "user_id": int(r.user_id),

@@ -6,6 +6,13 @@ import { LoginPage } from "@/pages/LoginPage";
 import { OrdersPage } from "@/pages/OrdersPage";
 import { ProjectsPage } from "@/pages/ProjectsPage";
 import { DramaProjectsPage } from "@/pages/DramaProjectsPage";
+import { DramaAssetDetailPage } from "@/pages/drama/DramaAssetDetailPage";
+import { DramaAssetsPage } from "@/pages/drama/DramaAssetsPage";
+import { DramaEpisodeDetailPage } from "@/pages/drama/DramaEpisodeDetailPage";
+import { DramaEpisodesPage } from "@/pages/drama/DramaEpisodesPage";
+import { DramaFragmentDetailPage } from "@/pages/drama/DramaFragmentDetailPage";
+import { DramaFragmentsPage } from "@/pages/drama/DramaFragmentsPage";
+import { DramaProjectDetailPage } from "@/pages/drama/DramaProjectDetailPage";
 import { QueuesPage } from "@/pages/QueuesPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { TemplatesPage } from "@/pages/TemplatesPage";
@@ -34,6 +41,13 @@ export default function App() {
           <Route path="orders" element={<OrdersPage />} />
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="drama-projects" element={<DramaProjectsPage />} />
+          <Route path="drama-projects/:projectId" element={<DramaProjectDetailPage />} />
+          <Route path="drama-assets" element={<DramaAssetsPage />} />
+          <Route path="drama-assets/:assetId" element={<DramaAssetDetailPage />} />
+          <Route path="drama-episodes" element={<DramaEpisodesPage />} />
+          <Route path="drama-episodes/:episodeId" element={<DramaEpisodeDetailPage />} />
+          <Route path="drama-fragments" element={<DramaFragmentsPage />} />
+          <Route path="drama-fragments/:fragmentId" element={<DramaFragmentDetailPage />} />
           <Route path="works" element={<WorksPage />} />
           <Route path="templates" element={<TemplatesPage />} />
           <Route path="queues" element={<QueuesPage />} />

@@ -12,9 +12,13 @@ import {
 
   Film,
 
+  Image,
+
   Layers,
 
   LayoutDashboard,
+
+  ListVideo,
 
   LogOut,
 
@@ -47,6 +51,8 @@ type NavItem = {
   icon: typeof LayoutDashboard;
 
   end?: boolean;
+
+  matchPrefix?: boolean;
 
 };
 
@@ -84,9 +90,25 @@ const navGroups: NavGroup[] = [
 
       { to: "/projects", label: "科普项目", icon: Clapperboard },
 
-      { to: "/drama-projects", label: "漫剧项目", icon: Film },
-
       { to: "/works", label: "作品审核", icon: FileVideo },
+
+    ],
+
+  },
+
+  {
+
+    label: "漫剧",
+
+    items: [
+
+      { to: "/drama-projects", label: "漫剧项目", icon: Film, matchPrefix: true },
+
+      { to: "/drama-assets", label: "资产库", icon: Image, matchPrefix: true },
+
+      { to: "/drama-episodes", label: "分集管理", icon: ListVideo, matchPrefix: true },
+
+      { to: "/drama-fragments", label: "分镜管理", icon: Layers, matchPrefix: true },
 
     ],
 
@@ -130,6 +152,12 @@ const titles: Record<string, string> = {
 
   "/drama-projects": "漫剧项目",
 
+  "/drama-assets": "资产库",
+
+  "/drama-episodes": "分集管理",
+
+  "/drama-fragments": "分镜管理",
+
   "/works": "作品审核",
 
   "/templates": "模板管理",
@@ -139,6 +167,22 @@ const titles: Record<string, string> = {
   "/queues": "任务中心",
 
 };
+
+
+
+function resolveTitle(pathname: string): string {
+
+  if (pathname.startsWith("/drama-projects/")) return "漫剧项目详情";
+
+  if (pathname.startsWith("/drama-assets/")) return "资产详情";
+
+  if (pathname.startsWith("/drama-episodes/")) return "分集详情";
+
+  if (pathname.startsWith("/drama-fragments/")) return "分镜详情";
+
+  return titles[pathname] ?? "管理后台";
+
+}
 
 
 
@@ -174,7 +218,7 @@ export function AdminLayout() {
 
 
 
-  const title = titles[location.pathname] ?? "管理后台";
+  const title = resolveTitle(location.pathname);
 
   const initial = (user?.nickname || user?.email || "A").slice(0, 1).toUpperCase();
 
@@ -220,9 +264,21 @@ export function AdminLayout() {
 
                   to={item.to}
 
-                  end={item.end}
+                  end={item.end ?? !item.matchPrefix}
 
-                  className={({ isActive }) => cn("admin-nav-item", isActive && "is-active")}
+                  className={({ isActive }) =>
+
+                    cn(
+
+                      "admin-nav-item",
+
+                      (isActive || (item.matchPrefix && location.pathname.startsWith(`${item.to}/`))) &&
+
+                        "is-active",
+
+                    )
+
+                  }
 
                   title={item.label}
 

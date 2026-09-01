@@ -214,6 +214,46 @@ async def usage_summary(
     }
 
 
+@router.get("/alerts/pending")
+async def billing_alerts_pending(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """待展示的用户额度告警（弹窗）。"""
+    from app.services.billing.alerts import list_pending_user_alerts
+
+    rows = await list_pending_user_alerts(db, user.id)
+    return {
+        "items": [
+            {
+                "id": row.id,
+                "kind": row.kind,
+                "title": row.title,
+                "message": row.message,
+                "milestone_fen": int(row.milestone_fen or 0),
+                "milestone_yuan": round(int(row.milestone_fen or 0) / 100, 2),
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in rows
+        ]
+    }
+
+
+@router.post("/alerts/{alert_id}/ack")
+async def billing_alert_ack(
+    alert_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    from app.services.billing.alerts import acknowledge_user_alert
+
+    ok = await acknowledge_user_alert(db, user.id, alert_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="告警不存在")
+    await db.commit()
+    return {"ok": True}
+
+
 @router.get("/usage/events")
 async def usage_events(
     db: AsyncSession = Depends(get_db),

@@ -1,8 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Clapperboard, Image as ImageIcon, Loader2, Mic, Plus, Save, Trash2, Type } from "lucide-react";
+import { Mic, Plus, Trash2, Type } from "lucide-react";
 import { toast } from "sonner";
 import { api, type AdminRoutingSettings } from "@/api/client";
-import { LabeledControl, SectionTitle, SettingsPanel, SettingsSurface } from "@/components/settings/SettingsPanel";
+import {
+  ArkVolcMediaPanel,
+  ARK_BASE,
+  ARK_VOLC_CHANNEL_ID,
+  consolidateArkVolcChannels,
+  DEFAULT_IMAGE_MODEL,
+  DEFAULT_VIDEO_MODEL,
+  inferVolcMediaDraft,
+  resolveDefaultModelsFromUpstream,
+  type VolcMediaDraft,
+} from "@/components/settings/ArkVolcMediaPanel";
+import { LabeledControl, SectionTitle, SettingsLoading, SettingsPanel, SettingsSurface, SettingsTabShell } from "@/components/settings/SettingsPanel";
 import { cn } from "@/lib/utils";
 
 type ChannelDraft = AdminRoutingSettings["system_channels"][number] & {
@@ -17,10 +28,6 @@ const CAPABILITY_LABELS: Record<Capability, string> = {
   video: "视频",
   audio: "语音",
 };
-
-const ARK_BASE = "https://ark.cn-beijing.volces.com/api/v3";
-const DEFAULT_VIDEO_MODEL = "doubao-seedance-2-5-260628";
-const DEFAULT_IMAGE_MODEL = "doubao-seedream-5-0-260128";
 
 // 与后端 infer_model_capability 对齐，用于渠道能力徽标
 function inferCapability(model: string, protocol: string): Capability {
@@ -56,11 +63,20 @@ export function RoutingSettingsPanel() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [selectedChannelId, setSelectedChannelId] = useState("");
+  const [volcDraft, setVolcDraft] = useState<VolcMediaDraft>({
+    imageModel: "",
+    image45Model: "",
+    videoModel: "",
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api<AdminRoutingSettings>("/api/admin/settings/routing");
+      const arkChannel =
+        res.system_channels.find((c) => c.id === ARK_VOLC_CHANNEL_ID) ??
+        res.system_channels.find((c) => c.protocol === "ark");
+      setVolcDraft(inferVolcMediaDraft(arkChannel?.models ?? [], inferCapability));
       setData(res);
       setSelectedChannelId((prev) => prev || res.system_channels[0]?.id || "");
       setApiKeyInputs({});
@@ -84,8 +100,15 @@ export function RoutingSettingsPanel() {
     [apiKeyInputs, data],
   );
 
-  const selectedChannel = channels.find((item) => item.id === selectedChannelId) ?? channels[0];
-  const hasVideoChannel = channels.some((ch) => channelCapabilities(ch).includes("video"));
+  const otherChannels = useMemo(
+    () => channels.filter((item) => item.id !== ARK_VOLC_CHANNEL_ID),
+    [channels],
+  );
+  const selectedChannel =
+    otherChannels.find((item) => item.id === selectedChannelId) ?? otherChannels[0];
+  const arkVolcChannel =
+    channels.find((c) => c.id === ARK_VOLC_CHANNEL_ID) ?? channels.find((c) => c.protocol === "ark");
+  const hasVideoChannel = Boolean(volcDraft.videoModel || arkVolcChannel);
   const videoLogicalModels = (data?.logical_models ?? []).filter((m) => m.capability === "video");
 
   function updateChannel(channelId: string, patch: Partial<AdminRoutingSettings["system_channels"][number]>) {
@@ -216,35 +239,73 @@ export function RoutingSettingsPanel() {
     if (!data) return;
     setSaving(true);
     try {
-      const nextDefaults = { ...data.default_models };
-      // 保存时若未设默认视频模型，且渠道含视频能力，尽量落到 seedance / 首个视频逻辑模型
-      if (!nextDefaults.video_model) {
-        const preferred =
-          data.logical_models.find((m) => m.capability === "video" && m.id === "seedance-2.5") ??
-          data.logical_models.find((m) => m.capability === "video");
-        if (preferred) nextDefaults.video_model = preferred.id;
-      }
+      const existingArk = data.system_channels.find((c) => c.id === ARK_VOLC_CHANNEL_ID) ?? arkVolcChannel;
+      const { channels: mergedChannels } = consolidateArkVolcChannels(
+        data.system_channels,
+        volcDraft,
+        existingArk,
+      );
 
       const res = await api<{ settings: AdminRoutingSettings }>("/api/admin/settings/routing", {
         method: "PATCH",
         body: JSON.stringify({
-          system_channels: data.system_channels.map((channel) => ({
+          system_channels: mergedChannels.map((channel) => ({
             id: channel.id,
             name: channel.name,
             base_url: channel.base_url,
             api_key: apiKeyInputs[channel.id]?.trim() || undefined,
             api_format: channel.api_format,
             protocol: channel.protocol,
-            models: channel.models,
+            models: channel.id === ARK_VOLC_CHANNEL_ID
+              ? [...new Set([volcDraft.imageModel, volcDraft.image45Model, volcDraft.videoModel].filter(Boolean))]
+              : channel.models,
             enabled: channel.enabled,
             sort_order: channel.sort_order,
           })),
           logical_models: data.logical_models,
-          default_models: nextDefaults,
+          default_models: data.default_models,
         }),
       });
-      setData(res.settings);
+
+      let nextDefaults = resolveDefaultModelsFromUpstream(res.settings, volcDraft);
+      if (!nextDefaults.video_model) {
+        const preferred =
+          res.settings.logical_models.find((m) => m.capability === "video" && m.id === "seedance-2.5") ??
+          res.settings.logical_models.find((m) => m.capability === "video");
+        if (preferred) nextDefaults = { ...nextDefaults, video_model: preferred.id };
+      }
+
+      const arkKey = apiKeyInputs[ARK_VOLC_CHANNEL_ID]?.trim();
+      if (
+        nextDefaults.image_model !== res.settings.default_models.image_model ||
+        nextDefaults.video_model !== res.settings.default_models.video_model
+      ) {
+        const res2 = await api<{ settings: AdminRoutingSettings }>("/api/admin/settings/routing", {
+          method: "PATCH",
+          body: JSON.stringify({
+            default_models: nextDefaults,
+          }),
+        });
+        setData(res2.settings);
+      } else {
+        setData(res.settings);
+      }
+
+      if (arkKey || volcDraft.imageModel || volcDraft.videoModel) {
+        await api("/api/admin/settings/models", {
+          method: "PATCH",
+          body: JSON.stringify({
+            ark_api_key: arkKey || undefined,
+            ark_base_url: ARK_BASE,
+            model_image: volcDraft.imageModel || undefined,
+            model_image_45: volcDraft.image45Model || undefined,
+            model_video: volcDraft.videoModel || undefined,
+          }),
+        });
+      }
+
       setApiKeyInputs({});
+      await load();
       toast.success("路由配置已保存");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "保存失败");
@@ -254,38 +315,15 @@ export function RoutingSettingsPanel() {
   }
 
   if (loading && !data) {
-    return (
-      <div className="admin-panel flex items-center justify-center py-16 text-[#909399]">
-        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-        加载路由配置…
-      </div>
-    );
+    return <SettingsLoading label="加载路由配置…" />;
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-semibold text-[#303133]">模型路由</h2>
-          <p className="mt-1 text-sm text-[#909399]">
-            上游渠道（含视频）+ 逻辑模型绑定 + 默认模型。视频须用 ARK 协议与 Seedance 模型 ID。
-          </p>
-        </div>
-        <button
-          type="button"
-          className="admin-quick-btn !inline-flex !w-auto items-center gap-2 px-4 py-2.5"
-          disabled={saving}
-          onClick={() => void handleSave()}
-        >
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          保存路由
-        </button>
-      </div>
-
+    <SettingsTabShell onSave={() => void handleSave()} saving={saving} saveLabel="保存路由">
       {(data?.validation_errors.length ?? 0) > 0 ? (
         <SettingsSurface className="border-[#fde2e2] bg-[#fef0f0]">
-          <div className="text-sm font-medium text-[#f56c6c]">配置校验</div>
-          <ul className="mt-2 space-y-1 text-xs text-[#f56c6c]">
+          <div className="text-xs font-medium text-[#f56c6c]">配置校验</div>
+          <ul className="mt-1 space-y-0.5 text-xs text-[#f56c6c]">
             {data?.validation_errors.map((item) => (
               <li key={item}>· {item}</li>
             ))}
@@ -293,48 +331,27 @@ export function RoutingSettingsPanel() {
         </SettingsSurface>
       ) : null}
 
+      <ArkVolcMediaPanel
+        channelId={ARK_VOLC_CHANNEL_ID}
+        hasApiKey={Boolean(arkVolcChannel?.has_api_key)}
+        apiKeyInput={apiKeyInputs[ARK_VOLC_CHANNEL_ID] ?? ""}
+        onApiKeyChange={(value) => setApiKeyInputs((prev) => ({ ...prev, [ARK_VOLC_CHANNEL_ID]: value }))}
+        draft={volcDraft}
+        onDraftChange={(patch) => setVolcDraft((prev) => ({ ...prev, ...patch }))}
+      />
+
       {!hasVideoChannel ? (
         <SettingsSurface className="border-[#faecd8] bg-[#fdf6ec]">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-medium text-[#e6a23c]">尚未配置视频渠道</div>
-              <div className="mt-1 text-xs text-[#909399]">
-                点击「添加视频渠道」，填入火山方舟 API Key，保存后即可生成 Seedance 视频。
-              </div>
-            </div>
-            <button
-              type="button"
-              className="admin-quick-btn !inline-flex !w-auto items-center gap-2 px-3 py-2"
-              onClick={() => addPreset("video")}
-            >
-              <Clapperboard className="h-4 w-4" />
-              添加视频渠道
-            </button>
-          </div>
+          <div className="text-xs font-medium text-[#e6a23c]">请在上方选择默认视频模型并保存</div>
         </SettingsSurface>
       ) : null}
 
       <SettingsPanel
-        title="上游渠道"
-        description="物理网关：Base URL、协议、上游模型列表。视频请用「添加视频渠道」或协议选 ARK。"
+        className="settings-panel--compact"
+        title="其他上游渠道"
+        description="文本 LLM、语音 TTS 等"
       >
-        <div className="mb-3 flex flex-wrap gap-2">
-          <button
-            type="button"
-            className="admin-quick-btn !inline-flex !w-auto !flex-row items-center gap-1.5 px-3 py-1.5 text-xs"
-            onClick={() => addPreset("video")}
-          >
-            <Clapperboard className="h-3.5 w-3.5" />
-            添加视频渠道
-          </button>
-          <button
-            type="button"
-            className="admin-quick-btn !inline-flex !w-auto !flex-row items-center gap-1.5 px-3 py-1.5 text-xs"
-            onClick={() => addPreset("image")}
-          >
-            <ImageIcon className="h-3.5 w-3.5" />
-            添加生图渠道
-          </button>
+        <div className="mb-2 flex flex-wrap gap-1.5">
           <button
             type="button"
             className="admin-quick-btn !inline-flex !w-auto !flex-row items-center gap-1.5 px-3 py-1.5 text-xs"
@@ -361,16 +378,16 @@ export function RoutingSettingsPanel() {
           </button>
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
-          <div className="space-y-2">
-            {channels.map((channel) => {
+        <div className="grid gap-2 xl:grid-cols-[200px_minmax(0,1fr)]">
+          <div className="space-y-1.5">
+            {otherChannels.map((channel) => {
               const caps = channelCapabilities(channel);
               return (
                 <button
                   key={channel.id}
                   type="button"
                   className={cn(
-                    "w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors",
+                    "w-full rounded-lg border px-2.5 py-1.5 text-left text-sm transition-colors",
                     selectedChannel?.id === channel.id
                       ? "border-[#67c23a] bg-[#f0f9eb]"
                       : "border-[#ebeef5] bg-white hover:border-[#dcdfe6]",
@@ -495,11 +512,12 @@ export function RoutingSettingsPanel() {
                   />
                 </LabeledControl>
                 <LabeledControl
+                  className="settings-field-span-full"
                   label="上游模型（每行一个）"
                   hint="视频示例：doubao-seedance-2-5-260628"
                 >
                   <textarea
-                    className="settings-input min-h-[120px] py-2 font-mono text-xs"
+                    className="settings-input min-h-[96px] py-2 font-mono text-xs"
                     value={selectedChannel.models.join("\n")}
                     onChange={(e) =>
                       updateChannel(selectedChannel.id, {
@@ -517,8 +535,12 @@ export function RoutingSettingsPanel() {
         </div>
       </SettingsPanel>
 
-      <SettingsPanel title="逻辑模型" description="保存渠道后自动 sync；视频能力会出现在下方「视频」分组。">
-        <div className="space-y-4">
+      <SettingsPanel
+        className="settings-panel--compact"
+        title="逻辑模型"
+        description="保存渠道后自动同步"
+      >
+        <div className="space-y-3">
           {(["video", "image", "text", "audio"] as const).map((cap) => {
             const models = (data?.logical_models ?? []).filter((m) => m.capability === cap);
             if (models.length === 0 && cap !== "video") return null;
@@ -579,8 +601,8 @@ export function RoutingSettingsPanel() {
         </div>
       </SettingsPanel>
 
-      <SettingsPanel title="默认模型" description="各能力默认逻辑模型 ID。视频未就绪时下拉为空。">
-        <div className="settings-field-grid">
+      <SettingsPanel className="settings-panel--compact" title="默认模型" description="各能力默认逻辑模型">
+        <div className="settings-field-grid settings-field-grid--4">
           {(["text_model", "image_model", "video_model", "audio_model"] as const).map((key) => {
             const cap = key.replace("_model", "") as Capability;
             const options = (data?.logical_models ?? []).filter((model) => model.capability === cap);
@@ -617,6 +639,6 @@ export function RoutingSettingsPanel() {
           })}
         </div>
       </SettingsPanel>
-    </div>
+    </SettingsTabShell>
   );
 }

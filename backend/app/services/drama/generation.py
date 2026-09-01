@@ -17,7 +17,7 @@ from app.config import get_settings
 from app.models import User
 from app.models_drama import DramaAsset, DramaEpisode, DramaEpisodeFragment, DramaFragmentAssetRef, DramaProject
 from app.services.ark import get_ark
-from app.services.drama.billing_util import seedance_video_billing_tokens
+from app.services.drama.billing_util import record_seedance_video_usage, record_seedream_image_usage, seedance_billing_key
 from app.services.drama.output_settings import (
     infer_aspect_ratio_from_pixels,
     resolve_episode_video_output,
@@ -1013,15 +1013,13 @@ async def generate_asset_image(
             )
     logger.info("Seedream 返回 project_id=%s url=%s", project.id, (url or "")[:100])
 
-    await record_line(
+    await record_seedream_image_usage(
         db,
         user_id=user.id,
-        project_id=None,
-        drama_project_id=project.id,
-        billing_key="seedream",
         model=model or settings.model_image,
-        estimated=True,
         domain="drama",
+        image_result=result,
+        drama_project_id=project.id,
     )
 
     # gen_meta 写入资产 params，便于前端回显上次选项
@@ -1118,200 +1116,6 @@ def build_fragment_ref_payloads(
     return ref_payloads
 
 
-async def generate_fragment_video(
-    db: AsyncSession,
-    user: User,
-    project: DramaProject,
-    fragment: DramaEpisodeFragment,
-) -> DramaEpisodeFragment:
-    """为单个分镜片段生成 Seedance 视频（含参考图与角色音色 reference_audio）。"""
-    settings = get_settings()
-    ark = get_ark()
-    prompt = (fragment.content or "").strip() or "短剧分镜"
-    duration = int(fragment.duration_sec or 8)
-    duration = max(settings.seedance_duration_min, min(duration, settings.seedance_duration_max))
-    episode = await db.get(DramaEpisode, fragment.episode_id)
-    ratio, resolution = resolve_episode_video_output(
-        episode.params if episode else None,
-        project.params,
-    )
-
-    refs = (
-        await db.execute(
-            select(DramaFragmentAssetRef)
-            .where(DramaFragmentAssetRef.fragment_id == fragment.id)
-            .order_by(DramaFragmentAssetRef.id.asc())
-        )
-    ).scalars().all()
-    ref_assets: list[DramaAsset] = []
-    seen_ids: set[int] = set()
-    for ref in refs:
-        if ref.asset_id in seen_ids:
-            continue
-        asset = await db.get(DramaAsset, ref.asset_id)
-        if asset:
-            seen_ids.add(ref.asset_id)
-            ref_assets.append(asset)
-
-    # 缺图的引用资产先动态生图，再组 Seedance 参考
-    ref_assets = await ensure_fragment_reference_images(
-        db,
-        user,
-        project,
-        fragment,
-        ref_assets=ref_assets,
-    )
-    # 已有本地图的资产同步上 OSS，避免 Seedance 拿不到公网 URL
-    ref_assets = await ensure_reference_assets_public_urls(db, ref_assets)
-    ref_assets = await ensure_fragment_reference_audios(
-        db,
-        user,
-        project,
-        fragment,
-        ref_assets,
-    )
-
-    ref_payloads = build_fragment_ref_payloads(project, ref_assets)
-    style_id = str((project.params or {}).get("image_style_id") or "").strip() or None
-    catalog = build_seedance_reference_catalog(ref_payloads)
-
-    continuity_url: str | None = None
-    if project_link_last_frame_enabled(project):
-        prev = await find_previous_episode_fragment(db, fragment)
-        continuity_url = read_fragment_last_frame_url(prev)
-        if continuity_url:
-            continuity_url = storage_svc_early_republish(continuity_url)
-
-    t0 = time.time()
-    image_url = ""
-    for item in catalog.images:
-        image_url = item.url
-        break
-
-    local_last_frame: str | None = None
-    burn_subtitles = resolve_episode_burn_subtitles(episode.params if episode else None)
-    if ref_payloads and (catalog.images or catalog.audios):
-        body = build_seedance_generate_body(
-            {
-                "content": prompt,
-                "reference": ref_payloads,
-                "video_style_id": style_id,
-                "aspect_ratio": ratio,
-                "resolution": resolution,
-                "duration_fallback": duration,
-                "continuity_first_frame_url": continuity_url,
-                "burn_subtitles": burn_subtitles,
-            }
-        )
-        content_labels = describe_seedance_content_slots(
-            ref_payloads,
-            continuity_url,
-            has_text=bool((prompt or "").strip()),
-        )
-        local_video, local_last_frame = await ark.gen_and_wait_seedance_body(
-            body,
-            project_id=project.id,
-            shot_no=fragment.id,
-            content_labels=content_labels,
-        )
-    elif image_url:
-        local_video = await ark.gen_and_wait_video(
-            image_url,
-            prompt,
-            duration,
-            project_id=project.id,
-            shot_no=fragment.id,
-            ratio=ratio,
-            generate_audio=True,
-        )
-    else:
-        still = await ark.gen_image(
-            prompt[:500],
-            project_id=project.id,
-            shot_no=fragment.id,
-            size=seedream_still_size_for_video_ratio(ratio),
-        )
-        await record_line(
-            db,
-            user_id=user.id,
-            project_id=None,
-            drama_project_id=project.id,
-            billing_key="seedream",
-            model=settings.model_image,
-            estimated=True,
-            domain="drama",
-        )
-        image_url = still.local_url or ""
-        local_video = await ark.gen_and_wait_video(
-            still.local_url,
-            prompt,
-            duration,
-            project_id=project.id,
-            shot_no=fragment.id,
-            ratio=ratio,
-            generate_audio=True,
-        )
-
-    # Seedance 成片落盘后立即同步 OSS，避免库里长期留 /static
-    from app.services import storage as storage_svc
-    from app.services.ffmpeg_compose import extract_video_poster_frame
-
-    # 覆盖前先归档旧成片（复制为独立 hist 文件）
-    archive_fragment_video_version(fragment)
-    video_url = storage_svc.republish_url(local_video, sync=True) or local_video
-    # 封面必须来自成片帧，禁止用角色/场景参考图冒充
-    cover_url = ""
-    video_path = storage_svc.local_path_from_url(local_video)
-    if video_path is None and isinstance(local_video, str) and not local_video.startswith("http"):
-        candidate = Path(local_video)
-        if candidate.exists():
-            video_path = candidate
-    if video_path and video_path.exists():
-        poster_dest = (
-            storage_svc.project_dir(project.id)
-            / f"shot_{fragment.id}_{int(time.time())}_cover.jpg"
-        )
-        if extract_video_poster_frame(video_path, poster_dest):
-            cover_src = storage_svc.rel_static_url(poster_dest)
-            cover_url = storage_svc.republish_url(cover_src, sync=True) or cover_src
-    last_frame_url = None
-    if local_last_frame:
-        last_frame_url = storage_svc.republish_url(local_last_frame, sync=True) or local_last_frame
-        if not cover_url:
-            cover_url = last_frame_url
-    fragment.video = video_url
-    fragment.cover = cover_url or ""
-    write_fragment_last_frame_url(fragment, last_frame_url)
-    write_fragment_video_output_meta(
-        fragment,
-        aspect_ratio=ratio,
-        resolution=resolution,
-        video_path=video_path,
-    )
-    await record_line(
-        db,
-        user_id=user.id,
-        project_id=None,
-        drama_project_id=project.id,
-        billing_key="seedance2:video0",
-        model=settings.model_video,
-        tokens=seedance_video_billing_tokens(fragment.duration_sec),
-        estimated=True,
-        domain="drama",
-    )
-    await db.commit()
-    await db.refresh(fragment)
-    logger.info(
-        "fragment video done id=%s secs=%.1f url=%s last_frame=%s continuity=%s",
-        fragment.id,
-        time.time() - t0,
-        (video_url or "")[:80],
-        bool(last_frame_url),
-        bool(continuity_url),
-    )
-    return fragment
-
-
 @dataclass
 class FragmentVideoPrepared:
     """分镜视频提交前上下文（Worker 准备阶段产物，写入 task.payload）。"""
@@ -1325,13 +1129,6 @@ class FragmentVideoPrepared:
     resolution: str = "480p"
     generate_audio: bool = True
     content_labels: list[str] | None = None
-
-
-@dataclass
-class FragmentVideoSubmitResult:
-    """分镜视频提交结果：一律异步轮询，不在 Worker 内阻塞等待。"""
-
-    provider_task_id: str
 
 
 # Worker 准备阶段：参考图 / 衔接帧 / 请求体（可耗时，但不等待上游成片）。
@@ -1521,18 +1318,6 @@ def deserialize_fragment_video_prepared(raw: dict[str, Any]) -> FragmentVideoPre
     )
 
 
-# 兼容旧调用：准备 + 提交，不在 Worker 内 wait。
-async def submit_fragment_video_generation(
-    db: AsyncSession,
-    user: User,
-    project: DramaProject,
-    fragment: DramaEpisodeFragment,
-) -> FragmentVideoSubmitResult:
-    prepared = await prepare_fragment_video_for_submit(db, user, project, fragment)
-    provider_task_id = await submit_prepared_fragment_video(prepared, project_id=project.id)
-    return FragmentVideoSubmitResult(provider_task_id=provider_task_id)
-
-
 # 将本地/上游视频落盘结果写回分镜并计费。
 async def apply_fragment_video_assets(
     db: AsyncSession,
@@ -1544,6 +1329,8 @@ async def apply_fragment_video_assets(
     local_last_frame: str | None = None,
     attempts: int = 1,
     attempt_limit: int = 3,
+    task_result: "TaskResult | None" = None,
+    provider_task_id: str | None = None,
 ) -> DramaEpisodeFragment:
     from app.services import storage as storage_svc
     from app.services.ffmpeg_compose import extract_video_poster_frame
@@ -1600,16 +1387,17 @@ async def apply_fragment_video_assets(
     if last_frame_url:
         params["lastFrameUrl"] = last_frame_url
     fragment.params = params
-    await record_line(
+    generate_audio = bool((fragment.params or {}).get("generate_audio", True))
+    await record_seedance_video_usage(
         db,
         user_id=user.id,
-        project_id=None,
-        drama_project_id=project.id,
-        billing_key="seedance2:video0",
+        billing_key=seedance_billing_key(generate_audio=generate_audio),
         model=settings.model_video,
-        tokens=seedance_video_billing_tokens(fragment.duration_sec),
-        estimated=True,
         domain="drama",
+        task_result=task_result,
+        fallback_duration_sec=fragment.duration_sec,
+        provider_task_id=provider_task_id,
+        drama_project_id=project.id,
     )
     await db.commit()
     await db.refresh(fragment)

@@ -242,6 +242,10 @@ async def settle_task(db: AsyncSession, task_id: int) -> dict[str, int]:
         if events:
             task.billing_status = "settled"
         await db.flush()
+        if charged > 0 and user:
+            from app.services.billing.alerts import process_billing_alerts_after_charge
+
+            await process_billing_alerts_after_charge(db, user, charged_fen=charged)
         return {"charged": charged, "refunded": 0}
 
     frozen_for_task = int(task.billing_estimate_fen or 0)
@@ -290,6 +294,10 @@ async def settle_task(db: AsyncSession, task_id: int) -> dict[str, int]:
         note=f"charged={charged} freeze={frozen_for_task} refund={refund}",
     )
     await db.flush()
+    if charged > 0 and user:
+        from app.services.billing.alerts import process_billing_alerts_after_charge
+
+        await process_billing_alerts_after_charge(db, user, charged_fen=charged)
     return {"charged": charged, "refunded": refund}
 
 
@@ -351,6 +359,10 @@ async def settle_project(db: AsyncSession, project_id: int) -> dict[str, int]:
         note=f"charged={charged} refund={refund}",
     )
     await db.flush()
+    if charged > 0 and user:
+        from app.services.billing.alerts import process_billing_alerts_after_charge
+
+        await process_billing_alerts_after_charge(db, user, charged_fen=charged)
     return {"charged": charged, "refunded": refund}
 
 
@@ -437,6 +449,9 @@ async def settle_usage_charge(
         user.balance_fen = locked.balance_fen
         user.frozen_fen = locked.frozen_fen
     await db.flush()
+    from app.services.billing.alerts import process_billing_alerts_after_charge
+
+    await process_billing_alerts_after_charge(db, target, charged_fen=need)
 
 
 async def get_task_usage_lines(db: AsyncSession, task_id: int) -> list[UsageEvent]:

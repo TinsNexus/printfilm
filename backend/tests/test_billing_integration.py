@@ -1,4 +1,4 @@
-"""TaskRun 计费链路集成测试（内存 SQLite）。"""
+"""TaskRun 计费链路集成测试（PostgreSQL）。"""
 from __future__ import annotations
 
 import pytest
@@ -224,15 +224,20 @@ async def test_settle_deferred_video_poll_idempotent_on_success(db_session: Asyn
         provider_task_id="upstream-ok-1",
         poll_status="succeeded",
         billing_task_id=task.id,
+        usage_tokens=120_000,
+        completion_tokens=120_000,
     )
     await db_session.commit()
 
     assert task.billing_status == "settled"
     assert task.status == "succeeded"
-    first_count = len(
-        (await db_session.execute(select(UsageEvent).where(UsageEvent.task_run_id == task.id))).scalars().all()
-    )
+    usage_rows = (
+        await db_session.execute(select(UsageEvent).where(UsageEvent.task_run_id == task.id))
+    ).scalars().all()
+    first_count = len(usage_rows)
     assert first_count == 1
+    assert usage_rows[0].total_tokens == 120_000
+    assert usage_rows[0].estimated is False
     charged = int(task.billing_charged_fen or 0)
     balance_after = user.balance_fen
 

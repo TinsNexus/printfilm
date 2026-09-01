@@ -68,7 +68,7 @@ export function TemplatesPage() {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // 加载模板分页列表
+  // 加载模板分页列表（服务端筛选）
   async function load(nextPage = page) {
     setLoading(true);
     try {
@@ -76,6 +76,10 @@ export function TemplatesPage() {
         page: String(nextPage),
         page_size: String(TEMPLATE_PAGE_SIZE),
       });
+      if (q.trim()) params.set("q", q.trim());
+      if (categoryFilter) params.set("category", categoryFilter);
+      if (statusFilter === "active") params.set("is_active", "true");
+      if (statusFilter === "inactive") params.set("is_active", "false");
       setData(await api<ListRes>(`/api/admin/templates?${params}`));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "加载失败");
@@ -119,21 +123,9 @@ export function TemplatesPage() {
 
   const filteredItems = useMemo(() => {
     const items = data?.items ?? [];
-    const keyword = q.trim().toLowerCase();
-    return items.filter((t) => {
-      if (statusFilter === "active" && !t.is_active) return false;
-      if (statusFilter === "inactive" && t.is_active) return false;
-      if (statusFilter === "premium" && !t.is_premium) return false;
-      if (categoryFilter && !(t.category || []).includes(categoryFilter)) return false;
-      if (!keyword) return true;
-      return (
-        t.id.toLowerCase().includes(keyword) ||
-        t.name.toLowerCase().includes(keyword) ||
-        (t.description || "").toLowerCase().includes(keyword) ||
-        (t.category || []).some((c) => c.toLowerCase().includes(keyword))
-      );
-    });
-  }, [data?.items, q, statusFilter, categoryFilter]);
+    if (statusFilter !== "premium") return items;
+    return items.filter((t) => t.is_premium);
+  }, [data?.items, statusFilter]);
 
   // 打开新建弹窗
   function openCreate() {
@@ -142,28 +134,33 @@ export function TemplatesPage() {
     setOpen(true);
   }
 
-  // 打开编辑弹窗
-  function openEdit(tpl: AdminTemplate) {
-    setEditing(tpl);
-    setForm({
-      id: tpl.id,
-      name: tpl.name,
-      description: tpl.description,
-      category: (tpl.category || []).join(","),
-      preview_cover: tpl.preview_cover,
-      style_prefix: tpl.style_prefix,
-      character_prompt: seedreamText(tpl.seedream_config, "character_prompt"),
-      extra_prompt: seedreamText(tpl.seedream_config, "extra_prompt"),
-      negative_prompt: tpl.negative_prompt,
-      default_ratio: tpl.default_ratio,
-      shot_duration_min: tpl.shot_duration_min,
-      shot_duration_max: tpl.shot_duration_max,
-      llm_system_addon: tpl.llm_system_addon,
-      sort_order: tpl.sort_order,
-      is_active: tpl.is_active,
-      is_premium: tpl.is_premium,
-    });
-    setOpen(true);
+  // 打开编辑弹窗（拉取最新配置）
+  async function openEdit(tpl: AdminTemplate) {
+    try {
+      const fresh = await api<AdminTemplate>(`/api/admin/templates/${tpl.id}`);
+      setEditing(fresh);
+      setForm({
+        id: fresh.id,
+        name: fresh.name,
+        description: fresh.description,
+        category: (fresh.category || []).join(","),
+        preview_cover: fresh.preview_cover,
+        style_prefix: fresh.style_prefix,
+        character_prompt: seedreamText(fresh.seedream_config, "character_prompt"),
+        extra_prompt: seedreamText(fresh.seedream_config, "extra_prompt"),
+        negative_prompt: fresh.negative_prompt,
+        default_ratio: fresh.default_ratio,
+        shot_duration_min: fresh.shot_duration_min,
+        shot_duration_max: fresh.shot_duration_max,
+        llm_system_addon: fresh.llm_system_addon,
+        sort_order: fresh.sort_order,
+        is_active: fresh.is_active,
+        is_premium: fresh.is_premium,
+      });
+      setOpen(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "加载模板详情失败");
+    }
   }
 
   // 创建或更新模板
@@ -288,19 +285,41 @@ export function TemplatesPage() {
           placeholder="搜索名称 / ID / 描述 / 分类"
           value={q}
           onChange={setQ}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              setPage(1);
+              void load(1);
+            }
+          }}
         />
         <AdminSelect
           className="w-36"
           value={statusFilter}
           options={STATUS_OPTIONS}
-          onChange={setStatusFilter}
+          onChange={(v) => {
+            setStatusFilter(v);
+            setPage(1);
+          }}
         />
         <AdminChipFilter
           label="分类"
           value={categoryFilter}
           options={categoryOptions}
-          onChange={setCategoryFilter}
+          onChange={(v) => {
+            setCategoryFilter(v);
+            setPage(1);
+          }}
         />
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            setPage(1);
+            void load(1);
+          }}
+        >
+          筛选
+        </Button>
       </AdminFilterBar>
 
       {loading ? (
@@ -321,7 +340,7 @@ export function TemplatesPage() {
             <TemplateCard
               key={t.id}
               template={t}
-              onEdit={openEdit}
+              onEdit={(tpl) => void openEdit(tpl)}
               onDelete={(id) => setDeleteTarget(id)}
               onToggleActive={(id, v) => void quickPatch(id, { is_active: v })}
               onTogglePremium={(id, v) => void quickPatch(id, { is_premium: v })}
