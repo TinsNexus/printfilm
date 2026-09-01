@@ -266,11 +266,84 @@ class ProjectListOut(BaseModel):
     stats: ProjectListStats
 
 
+class AdminUsageBucketOut(BaseModel):
+    """按 capability / domain 聚合桶。"""
+
+    key: str
+    calls: int = 0
+    charge_fen: int = 0
+
+
+class AdminDailyUsageOut(BaseModel):
+    date: str
+    calls: int = 0
+    charge_fen: int = 0
+
+
+class AdminTopUserOut(BaseModel):
+    user_id: int
+    email: str | None = None
+    calls: int = 0
+    charge_fen: int = 0
+
+
+class AdminProjectUsageOut(BaseModel):
+    """项目级用量摘要。"""
+
+    charge_fen: int = 0
+    cost_fen: int = 0
+    tokens: int = 0
+    calls: int = 0
+    image_gens: int = 0
+    video_gens: int = 0
+    llm_calls: int = 0
+    tts_gens: int = 0
+
+
+class AdminTaskBriefOut(BaseModel):
+    """关联任务简要行。"""
+
+    id: int
+    domain: str
+    task_type: str
+    status: str
+    progress_percent: int = 0
+    billing_charged_fen: int = 0
+    billing_estimate_fen: int = 0
+    error_message: str | None = None
+    created_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
+class AdminShotBriefOut(BaseModel):
+    id: int
+    shot_no: int
+    status: str
+    has_image: bool = False
+    has_video: bool = False
+    has_audio: bool = False
+    duration: float = 0
+
+
 class AdminStatsOut(BaseModel):
     user_count: int
     order_paid_total_fen: int
     order_paid_today_fen: int
     project_status_counts: dict[str, int]
+    drama_project_count: int = 0
+    usage_calls_today: int = 0
+    usage_calls_month: int = 0
+    usage_calls_total: int = 0
+    usage_charge_today_fen: int = 0
+    usage_charge_month_fen: int = 0
+    usage_charge_total_fen: int = 0
+    usage_cost_today_fen: int = 0
+    usage_cost_month_fen: int = 0
+    usage_cost_total_fen: int = 0
+    usage_by_capability: list[AdminUsageBucketOut] = Field(default_factory=list)
+    usage_by_domain: list[AdminUsageBucketOut] = Field(default_factory=list)
+    daily_usage: list[AdminDailyUsageOut] = Field(default_factory=list)
+    top_users_by_charge: list[AdminTopUserOut] = Field(default_factory=list)
 
 
 class AdminQueueTaskOut(BaseModel):
@@ -399,6 +472,7 @@ class AdminProjectOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     shot_count: int = 0
+    charge_fen: int = 0
 
     model_config = {"from_attributes": True}
 
@@ -414,6 +488,9 @@ class AdminProjectDetailOut(AdminProjectOut):
     resolution_mode: str
     output_ratio: str
     voice_id: str
+    usage: AdminProjectUsageOut = Field(default_factory=AdminProjectUsageOut)
+    shots: list[AdminShotBriefOut] = Field(default_factory=list)
+    recent_tasks: list[AdminTaskBriefOut] = Field(default_factory=list)
 
 
 class AdminWorkOut(BaseModel):

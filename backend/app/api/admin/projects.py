@@ -7,7 +7,17 @@ from sqlalchemy.orm import aliased
 from app.database import get_db
 from app.deps import get_current_admin
 from app.models import Project, Shot, User
-from app.schemas import AdminProjectDetailOut, AdminProjectListOut, AdminProjectOut, PageMeta
+from app.models_tasks import TaskRun
+from app.schemas import (
+    AdminProjectDetailOut,
+    AdminProjectListOut,
+    AdminProjectOut,
+    AdminProjectUsageOut,
+    AdminShotBriefOut,
+    AdminTaskBriefOut,
+    PageMeta,
+)
+from app.services.admin.stats import aggregate_usage_summary
 
 router = APIRouter()
 
@@ -49,11 +59,16 @@ async def list_projects(
         )
     ).all()
 
+    project_ids = [int(project.id) for project, _, _ in rows]
+    usage_map = await aggregate_usage_summary(db, project_ids=project_ids)
+    assert isinstance(usage_map, dict)
+
     items: list[AdminProjectOut] = []
     for project, email, scount in rows:
         data = AdminProjectOut.model_validate(project)
         data.user_email = email
         data.shot_count = int(scount or 0)
+        data.charge_fen = int((usage_map.get(project.id) or {}).get("charge_fen") or 0)
         items.append(data)
 
     return AdminProjectListOut(
@@ -85,4 +100,59 @@ async def get_project(
     data = AdminProjectDetailOut.model_validate(project)
     data.user_email = email
     data.shot_count = int(scount or 0)
+
+    usage = await aggregate_usage_summary(db, project_id=project_id)
+    assert isinstance(usage, dict)
+    data.usage = AdminProjectUsageOut(**usage)
+    data.charge_fen = int(usage.get("charge_fen") or 0)
+
+    shots = list(
+        (
+            await db.execute(
+                select(Shot).where(Shot.project_id == project_id).order_by(Shot.shot_no.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    data.shots = [
+        AdminShotBriefOut(
+            id=s.id,
+            shot_no=int(s.shot_no or 0),
+            status=str(s.status or ""),
+            has_image=bool(s.image_url),
+            has_video=bool(s.video_url),
+            has_audio=bool(s.audio_url),
+            duration=float(s.duration or 0),
+        )
+        for s in shots
+    ]
+
+    tasks = list(
+        (
+            await db.execute(
+                select(TaskRun)
+                .where(TaskRun.project_id == project_id)
+                .order_by(TaskRun.id.desc())
+                .limit(20)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    data.recent_tasks = [
+        AdminTaskBriefOut(
+            id=t.id,
+            domain=str(t.domain or ""),
+            task_type=str(t.task_type or ""),
+            status=str(t.status or ""),
+            progress_percent=int(t.progress_percent or 0),
+            billing_charged_fen=int(t.billing_charged_fen or 0),
+            billing_estimate_fen=int(t.billing_estimate_fen or 0),
+            error_message=t.error_message,
+            created_at=t.created_at,
+            finished_at=t.finished_at,
+        )
+        for t in tasks
+    ]
     return data
