@@ -82,7 +82,7 @@ const navGroups: NavGroup[] = [
 
       { to: "/orders", label: "订单流水", icon: Receipt },
 
-      { to: "/projects", label: "项目管理", icon: Clapperboard },
+      { to: "/projects", label: "科普项目", icon: Clapperboard },
 
       { to: "/drama-projects", label: "漫剧项目", icon: Film },
 
@@ -126,7 +126,7 @@ const titles: Record<string, string> = {
 
   "/orders": "订单流水",
 
-  "/projects": "项目管理",
+  "/projects": "科普项目",
 
   "/drama-projects": "漫剧项目",
 

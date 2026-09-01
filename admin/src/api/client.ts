@@ -62,11 +62,78 @@ export async function loginAsAdmin(email: string, password: string): Promise<Adm
   return me;
 }
 
+export type AdminUsageBucket = {
+  key: string;
+  calls: number;
+  charge_fen: number;
+};
+
+export type AdminDailyUsage = {
+  date: string;
+  calls: number;
+  charge_fen: number;
+};
+
+export type AdminTopUser = {
+  user_id: number;
+  email?: string | null;
+  calls: number;
+  charge_fen: number;
+};
+
+export type AdminProjectUsage = {
+  charge_fen: number;
+  cost_fen: number;
+  tokens: number;
+  calls: number;
+  image_gens: number;
+  video_gens: number;
+  llm_calls: number;
+  tts_gens?: number;
+};
+
+export type AdminTaskBrief = {
+  id: number;
+  domain: string;
+  task_type: string;
+  status: string;
+  progress_percent: number;
+  billing_charged_fen: number;
+  billing_estimate_fen: number;
+  error_message?: string | null;
+  created_at?: string | null;
+  finished_at?: string | null;
+};
+
+export type AdminShotBrief = {
+  id: number;
+  shot_no: number;
+  status: string;
+  has_image: boolean;
+  has_video: boolean;
+  has_audio: boolean;
+  duration: number;
+};
+
 export type AdminStats = {
   user_count: number;
   order_paid_total_fen: number;
   order_paid_today_fen: number;
   project_status_counts: Record<string, number>;
+  drama_project_count?: number;
+  usage_calls_today?: number;
+  usage_calls_month?: number;
+  usage_calls_total?: number;
+  usage_charge_today_fen?: number;
+  usage_charge_month_fen?: number;
+  usage_charge_total_fen?: number;
+  usage_cost_today_fen?: number;
+  usage_cost_month_fen?: number;
+  usage_cost_total_fen?: number;
+  usage_by_capability?: AdminUsageBucket[];
+  usage_by_domain?: AdminUsageBucket[];
+  daily_usage?: AdminDailyUsage[];
+  top_users_by_charge?: AdminTopUser[];
 };
 
 export type AdminUserRow = {
@@ -125,11 +192,42 @@ export type AdminProject = {
   created_at: string;
   updated_at: string;
   shot_count: number;
+  charge_fen?: number;
   source_type?: string;
   source_text?: string;
   resolution_mode?: string;
   output_ratio?: string;
   voice_id?: string;
+  usage?: AdminProjectUsage;
+  shots?: AdminShotBrief[];
+  recent_tasks?: AdminTaskBrief[];
+};
+
+export type AdminDramaProject = {
+  id: number;
+  user_id: number;
+  user_email?: string | null;
+  title: string;
+  description?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  episode_count?: number;
+  asset_count?: number;
+  fragment_count?: number;
+  charge_fen?: number;
+  summary_status?: string | null;
+  assets_seed_status?: string | null;
+  episode_content_status?: string | null;
+  usage?: AdminProjectUsage;
+  episodes?: { id: number; name: string; fragment_count: number; fragment_plan_status?: string | null }[];
+  assets?: {
+    id: number;
+    type: string;
+    name?: string | null;
+    has_cover: boolean;
+    generation_status?: string | null;
+  }[];
+  recent_tasks?: AdminTaskBrief[];
 };
 
 export type AdminWork = {

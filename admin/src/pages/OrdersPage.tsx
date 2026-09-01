@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { api, type AdminLedger, type AdminOrder, type AdminUsageEventListRes, type PageMeta } from "@/api/client";
 import { PaginationBar } from "@/components/PaginationBar";
@@ -16,6 +17,12 @@ import { ledgerKindLabel, orderStatusLabel, payTypeLabel, taskDomainLabel } from
 type OrderRes = { items: AdminOrder[]; meta: PageMeta };
 type LedgerRes = { items: AdminLedger[]; meta: PageMeta };
 
+const ORDER_TABS = new Set(["orders", "ledger", "usage"]);
+
+function tabFromSearch(raw: string | null): string {
+  return raw && ORDER_TABS.has(raw) ? raw : "orders";
+}
+
 // Orders and wallet ledger tabs
 export function OrdersPage() {
   /*
@@ -29,7 +36,8 @@ export function OrdersPage() {
    * orders order list
    * ledger ledger list
    */
-  const [tab, setTab] = useState("orders");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [tab, setTab] = useState(() => tabFromSearch(searchParams.get("tab")));
   const [orderStatus, setOrderStatus] = useState("");
   const [orderUserId, setOrderUserId] = useState("");
   const [ledgerKind, setLedgerKind] = useState("");
@@ -91,6 +99,11 @@ export function OrdersPage() {
   }
 
   useEffect(() => {
+    const next = tabFromSearch(searchParams.get("tab"));
+    setTab((prev) => (prev === next ? prev : next));
+  }, [searchParams]);
+
+  useEffect(() => {
     void loadOrders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderPage]);
@@ -105,10 +118,18 @@ export function OrdersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usagePage]);
 
+  function onTabChange(next: string) {
+    setTab(next);
+    const params = new URLSearchParams(searchParams);
+    if (next === "orders") params.delete("tab");
+    else params.set("tab", next);
+    setSearchParams(params, { replace: true });
+  }
+
   return (
     <div className="admin-list-page">
       <PageHeader description="查看充值单、钱包流水与 AI 用量明细" />
-      <Tabs value={tab} onValueChange={setTab}>
+      <Tabs value={tab} onValueChange={onTabChange}>
         <TabsList>
           <TabsTrigger value="orders">充值订单</TabsTrigger>
           <TabsTrigger value="ledger">钱包流水</TabsTrigger>
