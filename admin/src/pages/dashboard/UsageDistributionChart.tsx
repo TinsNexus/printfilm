@@ -27,6 +27,8 @@ type UsageDistributionChartProps = {
   metric: DashboardMetric;
   labelForKey: (key: string) => string;
   variant?: "bar" | "donut";
+  chartHeight?: number;
+  yAxisWidth?: number;
 };
 
 function readMetric(row: AdminUsageBucket, metric: DashboardMetric): number {
@@ -46,6 +48,8 @@ export function UsageDistributionChart({
   metric,
   labelForKey,
   variant = "bar",
+  chartHeight = 220,
+  yAxisWidth = 72,
 }: UsageDistributionChartProps) {
   const chartData = data
     .map((row) => ({
@@ -109,13 +113,13 @@ export function UsageDistributionChart({
 
   return (
     <div className="admin-chart-wrap admin-chart-wrap--compact">
-      <ResponsiveContainer width="100%" height={220}>
+      <ResponsiveContainer width="100%" height={chartHeight}>
         <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 8, left: 0, bottom: 0 }}>
           <XAxis type="number" hide />
           <YAxis
             type="category"
             dataKey="name"
-            width={72}
+            width={yAxisWidth}
             tick={{ fill: "var(--admin-muted)", fontSize: 11 }}
             axisLine={false}
             tickLine={false}

@@ -2,7 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
-type DashboardKpiTone = "teal" | "blue" | "purple" | "sand";
+type DashboardKpiTone = "teal" | "blue" | "purple" | "sand" | "rose" | "mint" | "slate";
 
 type DashboardKpiCardProps = {
   label: string;

@@ -68,11 +68,17 @@ export function UsersPage() {
 
   useEffect(() => {
     void load();
-    void api<AdminStats>("/api/admin/stats?days=7")
-      .then(setStats)
-      .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pageSize]);
+
+  useEffect(() => {
+    void api<AdminStats>("/api/admin/stats?days=7")
+      .then(setStats)
+      .catch((err) => {
+        setStats(null);
+        toast.error(err instanceof Error ? err.message : "统计加载失败");
+      });
+  }, []);
 
   useEffect(() => {
     if (!userDetail.id || !data?.items) return;
@@ -161,12 +167,12 @@ export function UsersPage() {
           { label: "总用户数", value: stats?.user_count ?? data?.meta.total ?? (loading ? "…" : "—") },
           {
             label: "本月调用",
-            value: stats?.usage_calls_month ?? (loading ? "…" : "—"),
+            value: stats != null ? stats.usage_calls_month ?? 0 : loading ? "…" : "—",
             hint: stats ? `今日 ${stats.usage_calls_today ?? 0} 次` : undefined,
           },
           {
             label: "累计调用",
-            value: stats?.usage_calls_total ?? (loading ? "…" : "—"),
+            value: stats != null ? stats.usage_calls_total ?? 0 : loading ? "…" : "—",
           },
         ]}
       />

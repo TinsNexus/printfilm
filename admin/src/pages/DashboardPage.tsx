@@ -29,8 +29,14 @@ import {
   type DashboardFilterState,
 } from "@/pages/dashboard/DashboardFilters";
 import { DashboardKpiCard } from "@/pages/dashboard/DashboardKpiCard";
+import { DashboardInsightGrid } from "@/pages/dashboard/DashboardInsightGrid";
+import { DashboardPeriodKpis } from "@/pages/dashboard/DashboardPeriodKpis";
 import { DashboardSectionTabs, type DashboardSection } from "@/pages/dashboard/DashboardSectionTabs";
+import { buildDomainInsights } from "@/pages/dashboard/dashboardInsightMaps";
+import { buildFinanceInsights, buildProjectInsights } from "@/pages/dashboard/dashboardSectionInsights";
+import { sumDailyUsage } from "@/pages/dashboard/dashboardMetrics";
 import { UsageDistributionChart } from "@/pages/dashboard/UsageDistributionChart";
+import { TopUsersRankingChart } from "@/pages/dashboard/TopUsersRankingChart";
 import { UsageTrendChart } from "@/pages/dashboard/UsageTrendChart";
 
 type OrderRes = { items: AdminOrder[]; meta: PageMeta };
@@ -127,6 +133,11 @@ export function DashboardPage() {
   const topUsers = stats?.top_users_by_charge ?? [];
   const rangeLabel = dashboardRangeLabel(filters.days);
   const showUsageFilters = section === "overview" || section === "usage";
+  const domainInsights = buildDomainInsights(byDomain, filters.metric, domainChartLabel);
+  const financeInsights = buildFinanceInsights(stats, upstreamUsage);
+  const projectInsights = buildProjectInsights(stats, sumDailyUsage(daily));
+  const metricHint =
+    filters.metric === "cost" ? "上游成本" : filters.metric === "calls" ? "调用次数" : "扣费金额";
 
   return (
     <div className="admin-page admin-dashboard-page">
@@ -166,6 +177,7 @@ export function DashboardPage() {
       <DashboardSectionTabs value={section} onChange={setSection} />
 
       {showUsageFilters ? <DashboardFilters value={filters} onChange={setFilters} /> : null}
+      {showUsageFilters ? <DashboardPeriodKpis stats={stats} filters={filters} loading={loading} /> : null}
 
       {section === "overview" ? (
         <>
@@ -181,7 +193,7 @@ export function DashboardPage() {
 
             <PageSection
               title="能力分布"
-              description={rangeLabel}
+              description={`${rangeLabel} · ${metricHint}`}
               bodyClassName="!pt-2"
               className="admin-dashboard-chart-side admin-dashboard-glass min-h-0"
             >
@@ -194,55 +206,40 @@ export function DashboardPage() {
             </PageSection>
           </div>
 
-          <div className="admin-dashboard-mini-row">
+          <PageSection
+            title={`用户消费 TOP3（${rangeLabel}）`}
+            actions={
+              <Link to="/orders?tab=usage" className="admin-link">
+                更多 →
+              </Link>
+            }
+            bodyClassName="!pt-2"
+            className="admin-dashboard-glass min-h-0"
+          >
+            <TopUsersRankingChart users={topUsers.slice(0, 3)} metric="charge" />
+          </PageSection>
+
+          <div className="admin-dashboard-charts">
             <PageSection
-              title="今日已付"
-              bodyClassName="!pt-0"
-              className="admin-dashboard-glass min-h-0"
+              title="领域分布"
+              description={`${rangeLabel} · ${metricHint}`}
+              bodyClassName="!pt-2"
+              className="admin-dashboard-chart-main admin-dashboard-glass min-h-0"
             >
-              <div className="admin-dashboard-mini-metric">
-                {kpiReady ? `¥${fenToYuan(stats!.order_paid_today_fen)}` : kpiPlaceholder}
-              </div>
-              <p className="admin-dashboard-mini-desc">今日充值到账</p>
+              <UsageDistributionChart
+                data={byDomain}
+                metric={filters.metric}
+                labelForKey={domainChartLabel}
+                variant="bar"
+              />
             </PageSection>
             <PageSection
-              title="今日调用"
-              bodyClassName="!pt-0"
-              className="admin-dashboard-glass min-h-0"
+              title="领域洞察"
+              description={`${rangeLabel} · ${metricHint}`}
+              bodyClassName="!pt-2"
+              className="admin-dashboard-chart-side admin-dashboard-glass min-h-0"
             >
-              <div className="admin-dashboard-mini-metric">
-                {kpiReady ? stats!.usage_calls_today ?? 0 : kpiPlaceholder}
-              </div>
-              <p className="admin-dashboard-mini-desc">
-                {kpiReady ? `本月 ${stats!.usage_calls_month ?? 0} 次` : "调用次数"}
-              </p>
-            </PageSection>
-            <PageSection
-              title={`用户消费 TOP3（${rangeLabel}）`}
-              actions={
-                <Link to="/orders?tab=usage" className="admin-link">
-                  更多 →
-                </Link>
-              }
-              bodyClassName="!pt-0"
-              className="admin-dashboard-glass min-h-0 admin-dashboard-mini-wide"
-            >
-              <div className="admin-dashboard-rank-list">
-                {topUsers.length === 0 ? (
-                  <div className="admin-chart-empty !min-h-[120px]">暂无排行</div>
-                ) : (
-                  topUsers.slice(0, 3).map((u, idx) => (
-                    <div key={u.user_id} className="admin-dashboard-rank-item">
-                      <span className="admin-dashboard-rank-no">{idx + 1}</span>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm">{u.email ?? `用户 ${u.user_id}`}</div>
-                        <div className="text-[11px] text-[var(--admin-muted)]">{u.calls} 次调用</div>
-                      </div>
-                      <span className="admin-dashboard-rank-amount">¥{fenToYuan(u.charge_fen)}</span>
-                    </div>
-                  ))
-                )}
-              </div>
+              <DashboardInsightGrid items={domainInsights} columns={2} />
             </PageSection>
           </div>
         </>
@@ -262,7 +259,7 @@ export function DashboardPage() {
 
             <PageSection
               title="能力分布"
-              description={rangeLabel}
+              description={`${rangeLabel} · ${metricHint}`}
               bodyClassName="!pt-2"
               className="admin-dashboard-chart-side admin-dashboard-glass min-h-0"
             >
@@ -275,8 +272,13 @@ export function DashboardPage() {
             </PageSection>
           </div>
 
-          <div className="admin-dashboard-body">
-            <PageSection title="领域分布" description={rangeLabel} bodyClassName="!pt-2" className="admin-dashboard-glass min-h-0">
+          <div className="admin-dashboard-charts">
+            <PageSection
+              title="领域分布"
+              description={`${rangeLabel} · ${metricHint}`}
+              bodyClassName="!pt-2"
+              className="admin-dashboard-chart-main admin-dashboard-glass min-h-0"
+            >
               <UsageDistributionChart
                 data={byDomain}
                 metric={filters.metric}
@@ -284,7 +286,6 @@ export function DashboardPage() {
                 variant="bar"
               />
             </PageSection>
-
             <PageSection
               title={`用户消费排行（${rangeLabel}）`}
               actions={
@@ -292,44 +293,11 @@ export function DashboardPage() {
                   用量明细 →
                 </Link>
               }
-              bodyClassName="!pt-0"
-              className="admin-dashboard-glass min-h-0"
+              description={metricHint}
+              bodyClassName="!pt-2"
+              className="admin-dashboard-chart-side admin-dashboard-glass min-h-0"
             >
-              <div className="admin-table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>用户</th>
-                      <th>调用</th>
-                      <th>扣费</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {topUsers.length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="!text-center text-[var(--admin-muted)]">
-                          暂无排行
-                        </td>
-                      </tr>
-                    ) : (
-                      topUsers.map((u, idx) => (
-                        <tr key={u.user_id}>
-                          <td>{idx + 1}</td>
-                          <td>
-                            <AdminEntityLink kind="user" id={u.user_id} label={u.email ?? undefined} />
-                            <div className="font-mono text-[11px] text-[var(--admin-muted)]">
-                              ID {u.user_id}
-                            </div>
-                          </td>
-                          <td>{u.calls}</td>
-                          <td>¥{fenToYuan(u.charge_fen)}</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+              <TopUsersRankingChart users={topUsers} metric={filters.metric} />
             </PageSection>
           </div>
         </>
@@ -337,6 +305,20 @@ export function DashboardPage() {
 
       {section === "finance" ? (
         <div className="admin-dashboard-body admin-dashboard-body--finance">
+          <PageSection
+            title="财务概览"
+            description="充值、扣费、成本与毛利"
+            actions={
+              <Link to="/finance" className="admin-link">
+                财务列表 →
+              </Link>
+            }
+            bodyClassName="!pt-2"
+            className="admin-dashboard-glass min-h-0 admin-dashboard-body--full"
+          >
+            <DashboardInsightGrid items={financeInsights} columns={3} />
+          </PageSection>
+
           <PageSection
             title="Seedance 官方用量对照"
             description={
@@ -443,6 +425,15 @@ export function DashboardPage() {
 
       {section === "projects" ? (
         <>
+          <PageSection
+            title="运维概览"
+            description="项目规模、调用与状态分布"
+            bodyClassName="!pt-2"
+            className="admin-dashboard-glass min-h-0"
+          >
+            <DashboardInsightGrid items={projectInsights} columns={4} />
+          </PageSection>
+
           <div className="admin-dashboard-project-row">
             <PageSection
               title="AI短视频项目状态"
