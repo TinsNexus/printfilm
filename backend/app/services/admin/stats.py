@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import Date, case, cast, func, select
+from sqlalchemy import Date, case, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -38,6 +38,32 @@ async def _usage_day_expr(db: AsyncSession):
     return cast(UsageEvent.created_at, Date)
 
 
+def _derived_capability_expr():
+    """能力分桶：优先已写入 capability，否则按 billing_key 推导。"""
+    return case(
+        (UsageEvent.capability.is_not(None), UsageEvent.capability),
+        (UsageEvent.billing_key == "llm_chat", "llm"),
+        (UsageEvent.billing_key == "seedream", "image"),
+        (UsageEvent.billing_key.like("seedance%"), "video"),
+        (UsageEvent.billing_key == "tts", "tts"),
+        else_="unknown",
+    )
+
+
+def _capability_scope_clause(capability: str) -> Any:
+    """能力筛选：兼容历史记录 capability 为空但 billing_key 可识别的情况。"""
+    cap = (capability or "").strip().lower()
+    if cap == "llm":
+        return or_(UsageEvent.capability == "llm", UsageEvent.billing_key == "llm_chat")
+    if cap == "image":
+        return or_(UsageEvent.capability == "image", UsageEvent.billing_key == "seedream")
+    if cap == "video":
+        return or_(UsageEvent.capability == "video", UsageEvent.billing_key.like("seedance%"))
+    if cap == "tts":
+        return or_(UsageEvent.capability == "tts", UsageEvent.billing_key == "tts")
+    return UsageEvent.capability == cap
+
+
 def _usage_scope_filters(
     *,
     domain: str = "all",
@@ -48,7 +74,7 @@ def _usage_scope_filters(
     if domain and domain != "all":
         filters.append(UsageEvent.domain == domain)
     if capability and capability != "all":
-        filters.append(UsageEvent.capability == capability)
+        filters.append(_capability_scope_clause(capability))
     return filters
 
 
@@ -166,7 +192,7 @@ async def build_admin_dashboard_stats(
     month_u = await _usage_window_totals(db, since=month)
 
     by_capability = await _group_usage(
-        db, group_col=UsageEvent.capability, since=range_start, scope_filters=scope
+        db, group_col=_derived_capability_expr(), since=range_start, scope_filters=scope
     )
     by_domain = await _group_usage(
         db, group_col=UsageEvent.domain, since=range_start, scope_filters=scope

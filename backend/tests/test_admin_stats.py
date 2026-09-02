@@ -174,6 +174,30 @@ async def test_dashboard_today_window(db_session: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
+async def test_admin_stats_http_query_days_accepts_string_query() -> None:
+    """HTTP ?days=7 应能解析为 int，不能因 Literal 校验返回 422。"""
+    import httpx
+    from httpx import ASGITransport
+
+    from app.main import app
+
+    transport = ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        login = await client.post("/api/auth/login", json={"email": "demo@example.com", "password": "demo1234"})
+        if login.status_code != 200:
+            pytest.skip("demo 账号不可用，跳过 HTTP stats 回归")
+        token = login.json()["access_token"]
+        res = await client.get(
+            "/api/admin/stats?days=7",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert "usage_calls_month" in body
+    assert "usage_calls_total" in body
+
+
+@pytest.mark.asyncio
 async def test_admin_stats_route_days_one(db_session: AsyncSession) -> None:
     """admin_stats 路由 days=1 返回单日趋势。"""
     import uuid
@@ -256,6 +280,38 @@ async def test_dashboard_top_users_by_charge(db_session: AsyncSession) -> None:
     assert top[0]["email"] == high.email
     assert top[1]["user_id"] == low.id
     assert top[1]["charge_fen"] == 10
+
+
+@pytest.mark.asyncio
+async def test_dashboard_capability_derived_from_billing_key(db_session: AsyncSession) -> None:
+    """capability 为空时按 billing_key 归入能力分布，避免全部落到 unknown。"""
+    user = await make_user(db_session)
+    domain = "test_cap_derived_domain"
+    await _add_usage(
+        db_session,
+        user_id=user.id,
+        charge_fen=500,
+        billing_key="seedance2:video0",
+        capability=None,  # type: ignore[arg-type]
+        domain=domain,
+        created_at=_utc_days_ago(0),
+    )
+    await _add_usage(
+        db_session,
+        user_id=user.id,
+        charge_fen=80,
+        billing_key="llm_chat",
+        capability=None,  # type: ignore[arg-type]
+        domain=domain,
+        created_at=_utc_days_ago(0),
+    )
+    await db_session.commit()
+
+    stats = await build_admin_dashboard_stats(db_session, days=7, domain=domain)
+    by_cap = {row["key"]: row for row in stats["usage_by_capability"]}
+    assert by_cap.get("unknown", {}).get("charge_fen", 0) == 0
+    assert by_cap["video"]["charge_fen"] == 500
+    assert by_cap["llm"]["charge_fen"] == 80
 
 
 @pytest.mark.asyncio

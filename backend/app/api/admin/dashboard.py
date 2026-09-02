@@ -1,6 +1,4 @@
 # Dashboard stats for admin console
-from typing import Literal
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,21 +18,27 @@ from app.services.admin.upstream_usage import build_upstream_usage_compare, sync
 
 router = APIRouter()
 
-StatsWindowDays = Literal[1, 7, 14, 30]
+_ALLOWED_STATS_DAYS = frozenset({1, 7, 14, 30})
+
+
+def _normalize_stats_days(raw: int) -> int:
+    """HTTP query 的 days 先按 int 解析，再收敛到允许档位。"""
+    return raw if raw in _ALLOWED_STATS_DAYS else 7
 
 
 @router.get("/stats", response_model=AdminStatsOut)
 async def admin_stats(
-    days: StatsWindowDays = Query(default=7, description="趋势与分布时间窗口（天）"),
+    days: int = Query(default=7, ge=1, le=30, description="趋势与分布时间窗口（天）"),
     domain: str = Query(default="all", max_length=32, description="领域筛选，all 为全部"),
     capability: str = Query(default="all", max_length=32, description="能力筛选，all 为全部"),
     _admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> AdminStatsOut:
     """用户/充值 + AI 调用量/费用/趋势/排行。"""
+    window_days = _normalize_stats_days(days)
     raw = await build_admin_dashboard_stats(
         db,
-        days=days,
+        days=window_days,
         domain=domain.strip() or "all",
         capability=capability.strip() or "all",
     )
