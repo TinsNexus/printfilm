@@ -5,6 +5,7 @@ import { api } from '../api'
 import BrandMark from '../components/BrandMark'
 import LanguageSwitch from '../components/layout/LanguageSwitch'
 import { useI18n } from '../i18n'
+import { isValidAuthPassword, isValidEmailInput } from '../lib/validateAuthForm'
 
 // 仅允许站内相对路径回跳，防止开放重定向
 function safeNextPath(raw: string | null, fallback = '/') {
@@ -28,12 +29,27 @@ export default function AuthPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
+
+    const trimmedEmail = email.trim()
+    if (mode === 'register' && !nickname.trim()) {
+      setError(t('auth.nicknameRequired'))
+      return
+    }
+    if (!isValidEmailInput(trimmedEmail)) {
+      setError(t('auth.emailInvalid'))
+      return
+    }
+    if (!isValidAuthPassword(password)) {
+      setError(password.length > 64 ? t('auth.passwordTooLong') : t('auth.passwordTooShort'))
+      return
+    }
+
     setLoading(true)
     try {
       const res =
         mode === 'login'
-          ? await api.login(email, password)
-          : await api.register(email, password, nickname)
+          ? await api.login(trimmedEmail, password)
+          : await api.register(trimmedEmail, password, nickname.trim())
       localStorage.setItem('token', res.access_token)
       nav(nextPath)
     } catch (err) {
@@ -51,33 +67,39 @@ export default function AuthPage() {
           <LanguageSwitch />
         </div>
         <h1>{mode === 'login' ? t('auth.loginTitle') : t('auth.registerTitle')}</h1>
-        <form onSubmit={onSubmit} className="stack">
+        <form onSubmit={onSubmit} className="stack" noValidate>
           {mode === 'register' && (
             <label>
               {t('auth.nickname')}
-              <input value={nickname} onChange={(e) => setNickname(e.target.value)} required />
+              <input value={nickname} onChange={(e) => setNickname(e.target.value)} />
             </label>
           )}
           <label>
             {t('auth.email')}
             <input
               type="email"
+              inputMode="email"
+              autoComplete="username"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
+              onChange={(e) => {
+                setEmail(e.target.value)
+                if (error) setError('')
+              }}
             />
           </label>
           <label>
             {t('auth.password')}
             <input
               type="password"
+              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              minLength={6}
-              required
+              onChange={(e) => {
+                setPassword(e.target.value)
+                if (error) setError('')
+              }}
             />
           </label>
-          {error && <p className="error">{error}</p>}
+          {error ? <p className="error" role="alert">{error}</p> : null}
           <button className="btn primary" disabled={loading}>
             {loading ? t('auth.processing') : mode === 'login' ? t('auth.login') : t('auth.register')}
           </button>
@@ -85,7 +107,11 @@ export default function AuthPage() {
         <button
           type="button"
           className="linkish"
-          onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
+          onClick={() => {
+            setMode(mode === 'login' ? 'register' : 'login')
+            setError('')
+            setNickname('')
+          }}
         >
           {mode === 'login' ? t('auth.toRegister') : t('auth.toLogin')}
         </button>
