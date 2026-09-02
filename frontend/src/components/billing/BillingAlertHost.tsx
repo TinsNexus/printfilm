@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
-import { api } from '../api'
-import { dialog } from '../lib/dialog'
+import { api } from '../../api'
+import { dialog } from '../../lib/dialog'
 
 type BillingAlertItem = {
   id: number
