@@ -21,6 +21,14 @@ export const DEFAULT_DASHBOARD_FILTERS: DashboardFilterState = {
   metric: "charge",
 };
 
+/** 运维 Tab 固定全量 30 日，不受隐藏筛选影响 */
+export const PROJECTS_DASHBOARD_FILTERS: DashboardFilterState = {
+  days: "30",
+  domain: "all",
+  capability: "all",
+  metric: "charge",
+};
+
 const DAY_OPTIONS = [
   { value: "1", label: "今日" },
   { value: "7", label: "近 7 日" },
@@ -100,12 +108,13 @@ export function DashboardFilters({ value, onChange }: DashboardFiltersProps) {
   );
 }
 
-/** 拼接 stats API 查询串（指标仅前端使用） */
+/** 拼接 stats API 查询串 */
 export function buildStatsQuery(filters: DashboardFilterState): string {
   const params = new URLSearchParams({
     days: filters.days,
     domain: filters.domain,
     capability: filters.capability,
+    top_metric: filters.metric,
   });
   return `/api/admin/stats?${params.toString()}`;
 }

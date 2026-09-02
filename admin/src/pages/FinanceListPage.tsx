@@ -37,6 +37,7 @@ export function FinanceListPage() {
       const res = await api<AdminFinanceDaily>(`/api/admin/finance/daily?days=${days}`);
       setData(res);
     } catch (err) {
+      setData(null);
       toast.error(err instanceof Error ? err.message : "财务列表加载失败");
     } finally {
       setLoading(false);
@@ -62,6 +63,7 @@ export function FinanceListPage() {
 
   const rows = [...(data?.series ?? [])].reverse();
   const totals = data?.totals;
+  const rangeMismatch = data != null && String(data.days) !== days;
 
   return (
     <div className="admin-page">
@@ -80,7 +82,9 @@ export function FinanceListPage() {
       <PageSection
         title="财务列表"
         description={
-          data?.configured
+          rangeMismatch
+            ? "数据与当前时间范围不一致，请重新加载"
+            : data?.configured
             ? `近 ${days} 日 · 实际成本来自方舟官方用量${data.last_sync_at ? ` · 最近同步 ${new Date(data.last_sync_at).toLocaleString()}` : ""}`
             : "未配置火山 Access Key，实际成本列为空；可在「系统设置 → 支付计费 → 上游成本监控」配置后刷新"
         }
@@ -144,7 +148,10 @@ export function FinanceListPage() {
                       <TableCell>
                         {totals.actual_cost_fen > 0 ? `¥${fenToYuan(totals.actual_cost_fen)}` : "—"}
                       </TableCell>
-                      <TableCell className={profitClass(totals.profit_fen)}>¥{fenToYuan(totals.profit_fen)}</TableCell>
+                      <TableCell className={profitClass(totals.profit_fen)}>
+                        ¥{fenToYuan(totals.profit_fen)}
+                        {totals.profit_pct != null ? ` (${totals.profit_pct}%)` : ""}
+                      </TableCell>
                     </TableRow>
                   ) : null}
                 </>

@@ -81,6 +81,7 @@ export type AdminTopUser = {
   email?: string | null;
   calls: number;
   charge_fen: number;
+  cost_fen?: number;
 };
 
 export type AdminProjectUsage = {
@@ -178,6 +179,7 @@ export type AdminFinanceDailyTotals = {
   tokens: number;
   actual_cost_fen: number;
   profit_fen: number;
+  profit_pct?: number | null;
 };
 
 export type AdminFinanceDaily = {

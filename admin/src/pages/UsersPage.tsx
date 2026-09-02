@@ -164,7 +164,7 @@ export function UsersPage() {
 
       <AdminListStats
         items={[
-          { label: "总用户数", value: stats?.user_count ?? data?.meta.total ?? (loading ? "…" : "—") },
+          { label: "总用户数", value: stats?.user_count ?? (loading ? "…" : "—") },
           {
             label: "本月调用",
             value: stats != null ? stats.usage_calls_month ?? 0 : loading ? "…" : "—",

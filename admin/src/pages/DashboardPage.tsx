@@ -26,6 +26,7 @@ import {
   dashboardRangeLabel,
   DashboardFilters,
   DEFAULT_DASHBOARD_FILTERS,
+  PROJECTS_DASHBOARD_FILTERS,
   type DashboardFilterState,
 } from "@/pages/dashboard/DashboardFilters";
 import { DashboardKpiCard } from "@/pages/dashboard/DashboardKpiCard";
@@ -47,6 +48,7 @@ const CAPABILITY_LABELS: Record<string, string> = {
   video: "视频",
   tts: "配音",
   unknown: "其他",
+  other: "其他",
 };
 
 function statusClass(status: string): string {
@@ -117,10 +119,12 @@ export function DashboardPage() {
 
   const kpiReady = Boolean(stats);
   const kpiPlaceholder = loading ? "…" : "—";
+  const statsFilters = section === "projects" ? PROJECTS_DASHBOARD_FILTERS : filters;
+  const projectsRangeLabel = dashboardRangeLabel(PROJECTS_DASHBOARD_FILTERS.days);
 
   useEffect(() => {
-    void loadData(filters);
-  }, [filters, loadData]);
+    void loadData(statsFilters);
+  }, [statsFilters, loadData]);
 
   useEffect(() => {
     void loadUpstreamUsage();
@@ -216,7 +220,7 @@ export function DashboardPage() {
             bodyClassName="!pt-2"
             className="admin-dashboard-glass min-h-0"
           >
-            <TopUsersRankingChart users={topUsers.slice(0, 3)} metric="charge" />
+            <TopUsersRankingChart users={topUsers.slice(0, 3)} metric={filters.metric} />
           </PageSection>
 
           <div className="admin-dashboard-charts">
@@ -478,7 +482,7 @@ export function DashboardPage() {
             </PageSection>
           </div>
 
-          <PageSection title={`领域分布（${rangeLabel}）`} bodyClassName="!pt-2" className="admin-dashboard-glass min-h-0">
+          <PageSection title={`领域分布（${projectsRangeLabel}）`} bodyClassName="!pt-2" className="admin-dashboard-glass min-h-0">
             <UsageDistributionChart
               data={byDomain}
               metric="charge"
