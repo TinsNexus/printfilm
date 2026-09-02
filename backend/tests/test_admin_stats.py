@@ -232,6 +232,7 @@ async def test_admin_stats_route_days_one(db_session: AsyncSession) -> None:
         days=1,
         domain=domain,
         capability="all",
+        top_metric="charge",
         _admin=admin,
         db=db_session,
     )
@@ -266,20 +267,88 @@ async def test_dashboard_top_users_by_charge(db_session: AsyncSession) -> None:
     """近 30 日按扣费排序，最多 10 人。"""
     high = await make_user(db_session)
     low = await make_user(db_session)
-    await _add_usage(db_session, user_id=high.id, charge_fen=900, created_at=_utc_days_ago(1))
-    await _add_usage(db_session, user_id=high.id, charge_fen=100, created_at=_utc_days_ago(5))
-    await _add_usage(db_session, user_id=low.id, charge_fen=10, created_at=_utc_days_ago(1))
+    domain = "test_top_users_charge"
+    await _add_usage(
+        db_session, user_id=high.id, charge_fen=900, created_at=_utc_days_ago(1), domain=domain
+    )
+    await _add_usage(
+        db_session, user_id=high.id, charge_fen=100, created_at=_utc_days_ago(5), domain=domain
+    )
+    await _add_usage(
+        db_session, user_id=low.id, charge_fen=10, created_at=_utc_days_ago(1), domain=domain
+    )
     await db_session.commit()
 
-    stats = await build_admin_dashboard_stats(db_session)
+    stats = await build_admin_dashboard_stats(db_session, days=30, domain=domain)
     top = stats["top_users_by_charge"]
-    assert len(top) >= 2
+    assert len(top) == 2
     assert top[0]["user_id"] == high.id
     assert top[0]["charge_fen"] == 1000
     assert top[0]["calls"] == 2
     assert top[0]["email"] == high.email
     assert top[1]["user_id"] == low.id
     assert top[1]["charge_fen"] == 10
+
+
+@pytest.mark.asyncio
+async def test_dashboard_top_users_by_cost(db_session: AsyncSession) -> None:
+    """top_metric=cost 时按上游成本排序。"""
+    high = await make_user(db_session)
+    low = await make_user(db_session)
+    domain = "test_top_users_cost"
+    await _add_usage(
+        db_session,
+        user_id=high.id,
+        charge_fen=10,
+        cost_fen=500,
+        created_at=_utc_days_ago(1),
+        domain=domain,
+    )
+    await _add_usage(
+        db_session,
+        user_id=low.id,
+        charge_fen=900,
+        cost_fen=50,
+        created_at=_utc_days_ago(1),
+        domain=domain,
+    )
+    await db_session.commit()
+
+    stats = await build_admin_dashboard_stats(db_session, days=30, domain=domain, top_metric="cost")
+    top = stats["top_users_by_charge"]
+    assert len(top) == 2
+    assert top[0]["user_id"] == high.id
+    assert top[0]["cost_fen"] == 500
+    assert top[1]["user_id"] == low.id
+    assert top[1]["cost_fen"] == 50
+
+
+@pytest.mark.asyncio
+async def test_validate_stats_days_rejects_invalid_value() -> None:
+    from fastapi import HTTPException
+
+    from app.api.admin.dashboard import _validate_stats_days
+
+    assert _validate_stats_days(7) == 7
+    with pytest.raises(HTTPException) as exc:
+        _validate_stats_days(5)
+    assert exc.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_admin_stats_http_query_days_invalid_returns_422() -> None:
+    """非法 days 档位应返回 422。"""
+    import httpx
+    from httpx import ASGITransport
+
+    from app.main import app
+
+    transport = ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        res = await client.get("/api/admin/stats?days=5")
+    assert res.status_code in (401, 422)
+    if res.status_code == 422:
+        assert "days must be one of" in res.text
 
 
 @pytest.mark.asyncio
@@ -310,6 +379,7 @@ async def test_dashboard_capability_derived_from_billing_key(db_session: AsyncSe
     stats = await build_admin_dashboard_stats(db_session, days=7, domain=domain)
     by_cap = {row["key"]: row for row in stats["usage_by_capability"]}
     assert by_cap.get("unknown", {}).get("charge_fen", 0) == 0
+    assert by_cap.get("other", {}).get("charge_fen", 0) == 0
     assert by_cap["video"]["charge_fen"] == 500
     assert by_cap["llm"]["charge_fen"] == 80
 

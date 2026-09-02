@@ -122,6 +122,9 @@ async def build_finance_daily_list(
             last_sync_at = snap.fetched_at.isoformat()
         cur += timedelta(days=1)
 
+    if totals["charge_fen"] > 0:
+        totals["profit_pct"] = round(totals["profit_fen"] / totals["charge_fen"] * 100.0, 2)
+
     return {
         "configured": volc_usage_configured(),
         "days": window_days,

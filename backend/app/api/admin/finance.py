@@ -1,5 +1,5 @@
 # Admin finance daily ledger API
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -31,6 +31,9 @@ async def admin_finance_daily_sync(
     db: AsyncSession = Depends(get_db),
 ) -> AdminFinanceDailyOut:
     """刷新官方上游成本快照后返回财务列表。"""
-    await sync_upstream_usage(db, days=days, force=force)
+    try:
+        await sync_upstream_usage(db, days=days, force=force)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     raw = await build_finance_daily_list(db, days=days)
     return AdminFinanceDailyOut(**raw)

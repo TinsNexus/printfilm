@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import Date, case, cast, func, or_, select
+from sqlalchemy import Date, case, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -39,29 +39,24 @@ async def _usage_day_expr(db: AsyncSession):
 
 
 def _derived_capability_expr():
-    """能力分桶：优先已写入 capability，否则按 billing_key 推导。"""
+    """能力分桶：优先 billing_key 推导，与 billing_key_to_capability 语义一致。"""
     return case(
-        (UsageEvent.capability.is_not(None), UsageEvent.capability),
         (UsageEvent.billing_key == "llm_chat", "llm"),
         (UsageEvent.billing_key == "seedream", "image"),
         (UsageEvent.billing_key.like("seedance%"), "video"),
         (UsageEvent.billing_key == "tts", "tts"),
-        else_="unknown",
+        (UsageEvent.billing_key.is_not(None), "other"),
+        (UsageEvent.capability.is_not(None), UsageEvent.capability),
+        else_="other",
     )
 
 
 def _capability_scope_clause(capability: str) -> Any:
-    """能力筛选：兼容历史记录 capability 为空但 billing_key 可识别的情况。"""
+    """能力筛选：与分桶共用推导表达式。"""
     cap = (capability or "").strip().lower()
-    if cap == "llm":
-        return or_(UsageEvent.capability == "llm", UsageEvent.billing_key == "llm_chat")
-    if cap == "image":
-        return or_(UsageEvent.capability == "image", UsageEvent.billing_key == "seedream")
-    if cap == "video":
-        return or_(UsageEvent.capability == "video", UsageEvent.billing_key.like("seedance%"))
-    if cap == "tts":
-        return or_(UsageEvent.capability == "tts", UsageEvent.billing_key == "tts")
-    return UsageEvent.capability == cap
+    if not cap or cap == "all":
+        return True
+    return _derived_capability_expr() == cap
 
 
 def _usage_scope_filters(
@@ -148,6 +143,7 @@ async def build_admin_dashboard_stats(
     days: int = 7,
     domain: str = "all",
     capability: str = "all",
+    top_metric: str = "charge",
 ) -> dict[str, Any]:
     """组装管理端仪表盘全部统计字段。"""
     today = _utc_today_start()
@@ -234,19 +230,26 @@ async def build_admin_dashboard_stats(
             }
         )
 
-    # 筛选窗口内用户消费 Top10
+    # 筛选窗口内用户 Top10（按指标排序）
     owner = aliased(User)
+    metric_key = (top_metric or "charge").strip().lower()
+    order_col = func.coalesce(func.sum(UsageEvent.charge_fen), 0)
+    if metric_key == "cost":
+        order_col = func.coalesce(func.sum(UsageEvent.cost_fen), 0)
+    elif metric_key == "calls":
+        order_col = func.count(UsageEvent.id)
     top_stmt = (
         select(
             UsageEvent.user_id,
             owner.email,
             func.count(UsageEvent.id).label("calls"),
             func.coalesce(func.sum(UsageEvent.charge_fen), 0).label("charge_fen"),
+            func.coalesce(func.sum(UsageEvent.cost_fen), 0).label("cost_fen"),
         )
         .outerjoin(owner, owner.id == UsageEvent.user_id)
         .where(UsageEvent.created_at >= range_start)
         .group_by(UsageEvent.user_id, owner.email)
-        .order_by(func.coalesce(func.sum(UsageEvent.charge_fen), 0).desc())
+        .order_by(order_col.desc())
         .limit(10)
     )
     for clause in scope:
@@ -258,6 +261,7 @@ async def build_admin_dashboard_stats(
             "email": r.email,
             "calls": int(r.calls or 0),
             "charge_fen": int(r.charge_fen or 0),
+            "cost_fen": int(r.cost_fen or 0),
         }
         for r in top_rows
     ]

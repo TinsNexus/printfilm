@@ -71,3 +71,5 @@ async def test_finance_daily_list_includes_new_usage(db_session: AsyncSession) -
         cost_fen=after_row["cost_fen"],
         actual_cost_fen=after_row["actual_cost_fen"],
     )
+    if after["totals"]["charge_fen"] > 0:
+        assert after["totals"]["profit_pct"] is not None

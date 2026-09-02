@@ -287,6 +287,7 @@ class AdminTopUserOut(BaseModel):
     email: str | None = None
     calls: int = 0
     charge_fen: int = 0
+    cost_fen: int = 0
 
 
 class AdminUpstreamUsageDayOut(BaseModel):
@@ -333,6 +334,7 @@ class AdminFinanceDailyTotalsOut(BaseModel):
     tokens: int = 0
     actual_cost_fen: int = 0
     profit_fen: int = 0
+    profit_pct: float | None = None
 
 
 class AdminFinanceDailyOut(BaseModel):
