@@ -3,6 +3,7 @@ from fastapi import APIRouter
 
 from app.api.admin import (
     dashboard,
+    finance,
     drama_assets,
     drama_episodes,
     drama_fragments,
@@ -21,6 +22,7 @@ from app.api.admin import (
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 router.include_router(dashboard.router)
+router.include_router(finance.router)
 router.include_router(queues.router)
 router.include_router(tasks.router)
 router.include_router(settings.router)

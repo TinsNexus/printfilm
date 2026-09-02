@@ -315,6 +315,34 @@ class AdminUpstreamUsageSyncOut(BaseModel):
     last_sync_at: str | None = None
 
 
+class AdminFinanceDailyRowOut(BaseModel):
+    """单日财务对照行。"""
+
+    date: str
+    charge_fen: int = 0
+    cost_fen: int = 0
+    tokens: int = 0
+    actual_cost_fen: int = 0
+    profit_fen: int = 0
+    profit_pct: float | None = None
+
+
+class AdminFinanceDailyTotalsOut(BaseModel):
+    charge_fen: int = 0
+    cost_fen: int = 0
+    tokens: int = 0
+    actual_cost_fen: int = 0
+    profit_fen: int = 0
+
+
+class AdminFinanceDailyOut(BaseModel):
+    configured: bool = False
+    days: int = 30
+    last_sync_at: str | None = None
+    totals: AdminFinanceDailyTotalsOut = Field(default_factory=AdminFinanceDailyTotalsOut)
+    series: list[AdminFinanceDailyRowOut] = Field(default_factory=list)
+
+
 class AdminProjectUsageOut(BaseModel):
     """项目级用量摘要。"""
 
