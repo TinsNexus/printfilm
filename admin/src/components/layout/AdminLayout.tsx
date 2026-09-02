@@ -34,6 +34,8 @@ import {
 
   Users,
 
+  Wallet,
+
 } from "lucide-react";
 
 import { clearAuth, getCachedUser } from "@/lib/auth";
@@ -87,6 +89,7 @@ const navGroups: NavGroup[] = [
       { to: "/users", label: "用户管理", icon: Users },
 
       { to: "/orders", label: "订单流水", icon: Receipt },
+      { to: "/finance", label: "财务列表", icon: Wallet },
 
       { to: "/projects", label: "科普项目", icon: Clapperboard },
 
@@ -147,6 +150,7 @@ const titles: Record<string, string> = {
   "/users": "用户管理",
 
   "/orders": "订单流水",
+  "/finance": "财务列表",
 
   "/projects": "科普项目",
 

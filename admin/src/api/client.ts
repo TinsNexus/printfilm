@@ -162,6 +162,32 @@ export type AdminUpstreamUsageSync = {
   last_sync_at?: string | null;
 };
 
+export type AdminFinanceDailyRow = {
+  date: string;
+  charge_fen: number;
+  cost_fen: number;
+  tokens: number;
+  actual_cost_fen: number;
+  profit_fen: number;
+  profit_pct?: number | null;
+};
+
+export type AdminFinanceDailyTotals = {
+  charge_fen: number;
+  cost_fen: number;
+  tokens: number;
+  actual_cost_fen: number;
+  profit_fen: number;
+};
+
+export type AdminFinanceDaily = {
+  configured: boolean;
+  days: number;
+  last_sync_at?: string | null;
+  totals: AdminFinanceDailyTotals;
+  series: AdminFinanceDailyRow[];
+};
+
 export type AdminUserRow = {
   id: number;
   email: string;
