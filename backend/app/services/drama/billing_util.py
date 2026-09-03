@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -28,6 +28,15 @@ def seedance_billing_key(*, generate_audio: bool = True) -> str:
     return "seedance2:video0" if generate_audio else "seedance2:video1"
 
 
+# 匹配 raw JSON 中的 provider_task_id 字段（带 key，避免裸 ID 子串误伤；兼容 dumps 空格）
+def _provider_task_id_match(provider_id: str):
+    pid = provider_id.replace("\\", "\\\\").replace('"', '\\"')
+    return or_(
+        UsageEvent.raw_usage_json.contains(f'"provider_task_id": "{pid}"'),
+        UsageEvent.raw_usage_json.contains(f'"provider_task_id":"{pid}"'),
+    )
+
+
 async def record_seedance_video_usage(
     db: AsyncSession,
     *,
@@ -44,9 +53,11 @@ async def record_seedance_video_usage(
 ) -> UsageEvent:
     """按官方任务 usage / 成本或时长估算写入 Seedance 视频用量行。
 
-    同一 task_run + billing_key 已有用量时幂等返回首行，避免并发收尾双记。
+    幂等：同 task_run+billing_key，或同 provider_task_id 已有行时直接返回，避免并发收尾双记。
     """
     tid = get_current_task_run_id()
+    provider_id = (provider_task_id or "").strip()
+
     if tid is not None:
         existing = (
             await db.execute(
@@ -62,14 +73,32 @@ async def record_seedance_video_usage(
         if existing is not None:
             return existing
 
+    # 无 billing_scope 时仍可按上游任务 ID 精确去重
+    if provider_id:
+        by_provider = (
+            await db.execute(
+                select(UsageEvent)
+                .where(
+                    UsageEvent.user_id == int(user_id),
+                    UsageEvent.billing_key == billing_key,
+                    UsageEvent.raw_usage_json.is_not(None),
+                    _provider_task_id_match(provider_id),
+                )
+                .order_by(UsageEvent.id.asc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if by_provider is not None:
+            return by_provider
+
     if (
         (not task_result or int(getattr(task_result, "total_tokens", 0) or 0) <= 0)
-        and provider_task_id
+        and provider_id
     ):
         from app.services.ark import get_ark
 
         try:
-            refreshed = await get_ark().fetch_task_once(provider_task_id.strip())
+            refreshed = await get_ark().fetch_task_once(provider_id)
             if int(getattr(refreshed, "total_tokens", 0) or 0) > 0 or refreshed.raw_usage:
                 task_result = refreshed
         except Exception:  # noqa: BLE001
@@ -81,8 +110,10 @@ async def record_seedance_video_usage(
     raw: dict[str, Any] | None = None
     if raw_usage:
         raw = {"usage": dict(raw_usage)}
-    elif provider_task_id:
-        raw = {"provider_task_id": provider_task_id, "usage": raw_usage or {}}
+    elif provider_id:
+        raw = {"usage": {}}
+    if provider_id:
+        raw = {**(raw or {}), "provider_task_id": provider_id}
 
     from app.services.billing.pricing import parse_upstream_cost_fen
 

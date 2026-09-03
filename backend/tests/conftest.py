@@ -72,7 +72,6 @@ async def make_user(
     *,
     balance_fen: int = 100_000,
     frozen_fen: int = 0,
-    billing_unlimited: bool = False,
 ) -> User:
     """创建测试用户。"""
     user = User(
@@ -80,7 +79,6 @@ async def make_user(
         hashed_password="test",
         balance_fen=balance_fen,
         frozen_fen=frozen_fen,
-        billing_unlimited=billing_unlimited,
     )
     db.add(user)
     await db.flush()

@@ -104,8 +104,6 @@ async def process_user_milestone_alert(
     interval = int(s.billing_user_alert_interval_fen or 0)
     if interval <= 0:
         return []
-    if getattr(user, "billing_unlimited", False):
-        return []
 
     total = await _user_total_charge_fen(db, int(user.id))
     last = int(getattr(user, "billing_alert_last_milestone_fen", 0) or 0)

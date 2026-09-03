@@ -44,7 +44,6 @@ class User(Base):
     balance_fen: Mapped[int] = mapped_column(Integer, default=0)
     frozen_fen: Mapped[int] = mapped_column(Integer, default=0)
     plan: Mapped[str] = mapped_column(String(32), default="free")
-    billing_unlimited: Mapped[bool] = mapped_column(Boolean, default=False)
     # user | admin
     role: Mapped[str] = mapped_column(String(16), default="user")
     avatar_url: Mapped[str] = mapped_column(String(512), default="")

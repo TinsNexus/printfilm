@@ -121,7 +121,7 @@ async def run_billed_ephemeral(
         task.status = "failed"
         task.error_code = "insufficient_balance"
         task.error_message = "余额不足"
-        # 未预扣成功，保持 none，勿标 skipped（skipped 表示无限额跳过扣费）
+        # 未预扣成功，保持 none，勿标 skipped（skipped 表示全局关闭计费）
         task.billing_status = "none"
         await db.flush()
         raise

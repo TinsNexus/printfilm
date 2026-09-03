@@ -16,7 +16,6 @@ async def list_users(
     q: str | None = None,
     plan: str | None = None,
     role: str | None = None,
-    billing_unlimited: bool | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     _admin: User = Depends(get_current_admin),
@@ -42,9 +41,6 @@ async def list_users(
     if role and role.strip():
         stmt = stmt.where(User.role == role.strip())
         count_stmt = count_stmt.where(User.role == role.strip())
-    if billing_unlimited is not None:
-        stmt = stmt.where(User.billing_unlimited == billing_unlimited)
-        count_stmt = count_stmt.where(User.billing_unlimited == billing_unlimited)
 
     total = int((await db.execute(count_stmt)).scalar_one() or 0)
     result = await db.execute(
@@ -64,16 +60,13 @@ async def patch_user(
     admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> AdminUserOut:
-    # Update plan / unlimited / role; balance changes write WalletLedger
+    # Update plan / role; balance changes write WalletLedger
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
 
     if body.plan is not None:
         user.plan = body.plan.strip() or "free"
-
-    if body.billing_unlimited is not None:
-        user.billing_unlimited = bool(body.billing_unlimited)
 
     if body.role is not None:
         role = body.role.strip()

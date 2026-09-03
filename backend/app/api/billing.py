@@ -46,7 +46,6 @@ async def wallet(user: User = Depends(get_current_user)) -> dict:
         "frozen_yuan": round(int(user.frozen_fen or 0) / 100, 2),
         "plan": user.plan or "free",
         "billing_enabled": settings.billing_enabled,
-        "billing_unlimited": bool(user.billing_unlimited),
         "markup": settings.billing_markup,
     }
 

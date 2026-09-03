@@ -12,7 +12,6 @@ export type AdminUser = {
   role: string;
   plan: string;
   balance_fen: number;
-  billing_unlimited: boolean;
 };
 
 // Read stored JWT

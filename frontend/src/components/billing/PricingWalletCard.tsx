@@ -12,7 +12,6 @@ type Props = {
 
 function planLabel(wallet: Wallet | null) {
   if (!wallet) return 'Free'
-  if (wallet.billing_unlimited) return 'Unlimited'
   const p = (wallet.plan || 'free').toLowerCase()
   if (p === 'free') return 'Free'
   if (p === 'pro') return 'Pro'

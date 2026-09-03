@@ -146,11 +146,8 @@ export default function SettingsPage() {
     nav('/')
   }
 
-  const planLabel = wallet?.billing_unlimited
-    ? 'Unlimited'
-    : (wallet?.plan || 'free').toLowerCase() === 'pro'
-      ? 'Pro'
-      : 'Free'
+  const plan = (wallet?.plan || 'free').toLowerCase()
+  const planLabel = plan === 'pro' ? 'Pro' : plan === 'free' ? 'Free' : wallet?.plan || 'Free'
 
   return (
     <AppShell>

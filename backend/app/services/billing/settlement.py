@@ -29,12 +29,10 @@ _PENDING_BILLING_TASK_STATUSES = frozenset(
 
 
 def billing_active(user: User | None = None, settings: Settings | None = None) -> bool:
+    """全局计费开关；user 参数保留兼容调用方，不再按用户跳过扣费。"""
+    _ = user
     s = settings or get_settings()
-    if not s.billing_enabled:
-        return False
-    if user is not None and getattr(user, "billing_unlimited", False):
-        return False
-    return True
+    return bool(s.billing_enabled)
 
 
 async def _ledger(
@@ -266,7 +264,7 @@ async def settle_task(db: AsyncSession, task_id: int) -> dict[str, int]:
             "refunded": int(task.billing_refunded_fen or 0),
         }
     if task.billing_status == "skipped" and not events:
-        # 无限额且无用量：结算完成，统一标 settled 便于管理端展示
+        # 全局关闭计费且无用量：结算完成，统一标 settled 便于管理端展示
         task.billing_status = "settled"
         task.billing_charged_fen = int(task.billing_charged_fen or 0)
         await db.flush()
@@ -279,7 +277,7 @@ async def settle_task(db: AsyncSession, task_id: int) -> dict[str, int]:
     for e in events:
         e.settled = True
 
-    # 无限额/跳过扣费：标记用量已结算，不动钱包，任务标 settled
+    # 全局关闭计费：标记用量已结算，不动钱包，任务标 settled
     if task.billing_status == "skipped":
         task.billing_charged_fen = charged
         task.billing_status = "settled"

@@ -51,7 +51,7 @@ async def execute_task_run(task_id: int) -> None:
             task.error_code = "insufficient_balance"
             task.error_message = str(exc)[:500]
             task.finished_at = datetime.now(UTC)
-            # 未预扣成功，保持 none（skipped 仅表示无限额跳过扣费）
+            # 未预扣成功，保持 none（skipped 仅表示全局关闭计费）
             task.billing_status = "none"
             await append_task_event(
                 db,

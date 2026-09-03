@@ -96,7 +96,6 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
                   { label: "余额", value: `¥${fenToYuan(user.balance_fen)}` },
                   { label: "冻结", value: `¥${fenToYuan(user.frozen_fen)}` },
                   { label: "剩余额度", value: user.quota_left },
-                  { label: "无限额度", value: user.billing_unlimited ? "是" : "否" },
                   {
                     label: "注册时间",
                     value: user.created_at ? new Date(user.created_at).toLocaleString() : "—",

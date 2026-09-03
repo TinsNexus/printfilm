@@ -13,7 +13,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState, PageHeader } from "@/components/ui/page";
 import { Select } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useAdminDetailQuery } from "@/hooks/useAdminDetailQuery";
 import { formatAccountId } from "@/lib/admin-account";
@@ -27,7 +26,6 @@ export function UsersPage() {
   const [q, setQ] = useState("");
   const [planFilter, setPlanFilter] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
-  const [unlimitedFilter, setUnlimitedFilter] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [data, setData] = useState<ListRes | null>(null);
@@ -37,7 +35,6 @@ export function UsersPage() {
   const [detailUser, setDetailUser] = useState<AdminUserRow | null>(null);
   const [form, setForm] = useState({
     plan: "free",
-    billing_unlimited: false,
     role: "user",
     balance_yuan: "0",
     balance_note: "",
@@ -55,8 +52,6 @@ export function UsersPage() {
       if (nextQ.trim()) params.set("q", nextQ.trim());
       if (planFilter) params.set("plan", planFilter);
       if (roleFilter) params.set("role", roleFilter);
-      if (unlimitedFilter === "yes") params.set("billing_unlimited", "true");
-      if (unlimitedFilter === "no") params.set("billing_unlimited", "false");
       const res = await api<ListRes>(`/api/admin/users?${params}`);
       setData(res);
     } catch (err) {
@@ -90,7 +85,6 @@ export function UsersPage() {
     setEditing(user);
     setForm({
       plan: user.plan || "free",
-      billing_unlimited: !!user.billing_unlimited,
       role: user.role || "user",
       balance_yuan: fenToYuan(user.balance_fen),
       balance_note: "",
@@ -107,7 +101,6 @@ export function UsersPage() {
         method: "PATCH",
         body: JSON.stringify({
           plan: form.plan,
-          billing_unlimited: form.billing_unlimited,
           role: form.role,
           balance_fen: balanceFen,
           balance_note: form.balance_note || undefined,
@@ -130,7 +123,7 @@ export function UsersPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader description="搜索用户，调整套餐、余额与无限额度" />
+      <PageHeader description="搜索用户，调整套餐与余额" />
 
       <AdminFilterBar>
         <AdminSearchInput
@@ -152,13 +145,8 @@ export function UsersPage() {
           <option value="user">user</option>
           <option value="admin">admin</option>
         </Select>
-        <Select value={unlimitedFilter} onChange={(e) => setUnlimitedFilter(e.target.value)}>
-          <option value="">无限额度</option>
-          <option value="yes">是</option>
-          <option value="no">否</option>
-        </Select>
-        <Button size="sm" className="admin-filter-action" onClick={applyFilters}>
-          搜索
+        <Button size="sm" className="admin-filter-action" onClick={applyFilters} disabled={loading}>
+          {loading ? "加载中…" : "搜索"}
         </Button>
       </AdminFilterBar>
 
@@ -167,12 +155,12 @@ export function UsersPage() {
           { label: "总用户数", value: stats?.user_count ?? (loading ? "…" : "—") },
           {
             label: "本月调用",
-            value: stats != null ? stats.usage_calls_month ?? 0 : loading ? "…" : "—",
+            value: stats != null ? (stats.usage_calls_month ?? 0) : loading ? "…" : "—",
             hint: stats ? `今日 ${stats.usage_calls_today ?? 0} 次` : undefined,
           },
           {
             label: "累计调用",
-            value: stats != null ? stats.usage_calls_total ?? 0 : loading ? "…" : "—",
+            value: stats != null ? (stats.usage_calls_total ?? 0) : loading ? "…" : "—",
           },
         ]}
       />
@@ -190,7 +178,6 @@ export function UsersPage() {
               <TableHead>冻结</TableHead>
               <TableHead>剩余额度</TableHead>
               <TableHead>角色</TableHead>
-              <TableHead>无限</TableHead>
               <TableHead>注册时间</TableHead>
               <TableHead className="w-[140px]">操作</TableHead>
             </TableRow>
@@ -210,11 +197,6 @@ export function UsersPage() {
                 <TableCell>{u.quota_left}</TableCell>
                 <TableCell>
                   <Badge variant={u.role === "admin" ? "success" : "secondary"}>{u.role}</Badge>
-                </TableCell>
-                <TableCell>
-                  <Badge variant={u.billing_unlimited ? "warning" : "secondary"}>
-                    {u.billing_unlimited ? "是" : "否"}
-                  </Badge>
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">
                   {u.created_at ? new Date(u.created_at).toLocaleString() : "—"}
@@ -240,7 +222,7 @@ export function UsersPage() {
             ))}
             {!loading && (data?.items.length ?? 0) === 0 && (
               <TableRow>
-                <TableCell colSpan={12} className="p-0">
+                <TableCell colSpan={11} className="p-0">
                   <EmptyState title="暂无用户" description="试试换个关键词搜索" />
                 </TableCell>
               </TableRow>
@@ -310,16 +292,6 @@ export function UsersPage() {
               placeholder="管理员备注"
             />
           </AdminField>
-          <div className="admin-form-switch-row admin-form-grid--full">
-            <div>
-              <strong>无限额度</strong>
-              <p>开启后该用户调用不计费上限</p>
-            </div>
-            <Switch
-              checked={form.billing_unlimited}
-              onCheckedChange={(v) => setForm((f) => ({ ...f, billing_unlimited: v }))}
-            />
-          </div>
         </div>
       </AdminModal>
     </div>

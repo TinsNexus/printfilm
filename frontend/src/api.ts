@@ -169,7 +169,6 @@ export type User = {
   balance_fen?: number
   frozen_fen?: number
   plan?: string
-  billing_unlimited?: boolean
   avatar_url?: string
   phone?: string
 }
@@ -233,7 +232,6 @@ export type Wallet = {
   frozen_yuan: number
   plan: string
   billing_enabled: boolean
-  billing_unlimited: boolean
   markup: number
 }
 

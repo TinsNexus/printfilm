@@ -199,7 +199,6 @@ export type AdminUserRow = {
   balance_fen: number;
   frozen_fen: number;
   plan: string;
-  billing_unlimited: boolean;
   role: string;
   created_at?: string | null;
 };

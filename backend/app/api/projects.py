@@ -1025,7 +1025,7 @@ async def quota(user: User = Depends(get_current_user)) -> dict:
     return {
         "quota_left": user.quota_left,
         "quota_enabled": settings.quota_enabled,
-        "unlimited": (not settings.billing_enabled) or bool(user.billing_unlimited),
+        "unlimited": not settings.billing_enabled,
         "billing_enabled": settings.billing_enabled,
         "balance_fen": int(getattr(user, "balance_fen", 0) or 0),
         "frozen_fen": int(getattr(user, "frozen_fen", 0) or 0),

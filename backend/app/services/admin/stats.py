@@ -5,12 +5,16 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import Date, case, cast, func, select
+from sqlalchemy import Date, case, cast, func, or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.models import Order, Project, UsageEvent, User
 from app.models_drama import DramaProject
+
+# 同一 task 内只应有一行的计费 key（并发双记时需折叠）；llm/tts 等同 key 多行合法保留
+_SINGLE_SHOT_BILLING_KEY_PREFIXES = ("seedance",)
+_SINGLE_SHOT_BILLING_KEYS = frozenset({"seedream"})
 
 
 def _utc_today_start() -> datetime:
@@ -324,11 +328,20 @@ def _row_to_usage_summary(row: Any) -> dict[str, int]:
     }
 
 
+def _single_shot_billing_key_filter():
+    """单次调用类 billing_key：seedance* / seedream。"""
+    clauses = [UsageEvent.billing_key.like(f"{p}%") for p in _SINGLE_SHOT_BILLING_KEY_PREFIXES]
+    if _SINGLE_SHOT_BILLING_KEYS:
+        clauses.append(UsageEvent.billing_key.in_(tuple(_SINGLE_SHOT_BILLING_KEYS)))
+    return or_(*clauses)
+
+
 def _deduped_usage_event_ids_subq():
     """
-    同一 task_run + billing_key 只保留最早一条用量行，避免并发重复记费把项目汇总抬高。
-    无 task_run_id 的孤儿行全部保留。
+    仅对单次调用类 key 按 task_run+billing_key 保留最早一行，避免并发双记抬高汇总。
+    llm_chat / tts 等同 key 多行全部保留；无 task_run_id 的孤儿行全部保留。
     """
+    single_shot = _single_shot_billing_key_filter()
     ranked = (
         select(
             UsageEvent.id.label("id"),
@@ -339,12 +352,16 @@ def _deduped_usage_event_ids_subq():
             )
             .label("rn"),
         )
-        .where(UsageEvent.task_run_id.is_not(None))
+        .where(UsageEvent.task_run_id.is_not(None), single_shot)
         .subquery()
     )
-    with_task = select(ranked.c.id).where(ranked.c.rn == 1)
+    deduped_single = select(ranked.c.id).where(ranked.c.rn == 1)
+    keep_multi = select(UsageEvent.id).where(
+        UsageEvent.task_run_id.is_not(None),
+        ~single_shot,
+    )
     orphans = select(UsageEvent.id).where(UsageEvent.task_run_id.is_(None))
-    return with_task.union_all(orphans).subquery()
+    return union_all(deduped_single, keep_multi, orphans).subquery()
 
 
 async def _sum_task_charged_fen(

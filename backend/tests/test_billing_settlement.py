@@ -12,9 +12,15 @@ from app.services.billing.http import http_exception_for_value_error
 from app.services.billing.settlement import billing_active, freeze_for_task, settle_task
 
 
-def test_billing_active_respects_unlimited() -> None:
-    user = User(id=1, billing_unlimited=True)
-    assert billing_active(user) is False
+def test_billing_active_follows_global_switch(monkeypatch) -> None:
+    from app.config import get_settings
+
+    user = User(id=1)
+    settings = get_settings()
+    monkeypatch.setattr(settings, "billing_enabled", True)
+    assert billing_active(user, settings) is True
+    monkeypatch.setattr(settings, "billing_enabled", False)
+    assert billing_active(user, settings) is False
 
 
 def test_http_exception_maps_insufficient_balance_to_402() -> None:
@@ -102,3 +108,67 @@ async def test_settle_task_noop_when_already_settled() -> None:
     out = await settle_task(db, 1)
     assert out == {"charged": 100, "refunded": 50}
     assert db.execute.await_count == 1
+
+
+def test_fragment_video_already_applied_requires_done_generation() -> None:
+    from app.models_drama import DramaEpisodeFragment
+    from app.services.drama.jobs import _fragment_video_already_applied
+
+    empty = DramaEpisodeFragment(id=1, video="", params={})
+    assert _fragment_video_already_applied(empty) is False
+    assert _fragment_video_already_applied(None) is False
+
+    done = DramaEpisodeFragment(
+        id=2,
+        video="https://cdn.example/v.mp4",
+        params={"generation": {"status": "done"}},
+    )
+    assert _fragment_video_already_applied(done) is True
+
+    pending = DramaEpisodeFragment(
+        id=3,
+        video="https://cdn.example/v.mp4",
+        params={"generation": {"status": "running"}},
+    )
+    assert _fragment_video_already_applied(pending) is False
+
+
+@pytest.mark.asyncio
+async def test_recover_complete_skips_when_not_awaiting_poll() -> None:
+    """已收敛任务不再二次 activate / complete。"""
+    from app.services.drama.jobs import _recover_complete_fragment_video
+
+    done = TaskRun(id=42, status="succeeded", batch_key="b1")
+    lock_result = MagicMock()
+    lock_result.scalar_one_or_none = MagicMock(return_value=done)
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=lock_result)
+
+    ok = await _recover_complete_fragment_video(
+        db, 42, fragment_id=9, batch_key="b1", batch_index=0
+    )
+    assert ok is False
+
+
+@pytest.mark.asyncio
+async def test_record_seedance_dedupes_by_provider_task_id() -> None:
+    """无 billing_scope 时仍按 provider_task_id 幂等。"""
+    from app.services.drama.billing_util import record_seedance_video_usage
+
+    existing = MagicMock()
+    existing.id = 11
+    by_provider = MagicMock()
+    by_provider.scalar_one_or_none = MagicMock(return_value=existing)
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=by_provider)
+
+    out = await record_seedance_video_usage(
+        db,
+        user_id=401,
+        billing_key="seedance2:video0",
+        model="seedance",
+        domain="drama",
+        provider_task_id="prov-abc-1",
+    )
+    assert out is existing
+    db.execute.assert_awaited()

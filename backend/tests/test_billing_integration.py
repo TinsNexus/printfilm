@@ -165,9 +165,16 @@ async def test_ensure_balance_for_task_batch_rejects_insufficient(db_session: As
 
 
 @pytest.mark.asyncio
-async def test_unlimited_user_skips_wallet_but_settles_usage(db_session: AsyncSession) -> None:
-    """billing_unlimited：不扣钱包，但用量行应标记 settled。"""
-    user = await make_user(db_session, balance_fen=0, billing_unlimited=True)
+async def test_billing_disabled_skips_wallet_but_settles_usage(
+    db_session: AsyncSession, monkeypatch
+) -> None:
+    """全局关闭计费：不扣钱包，但用量行应标记 settled。"""
+    from app.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "billing_enabled", False)
+
+    user = await make_user(db_session, balance_fen=0)
     task = await make_task(db_session, user, domain="drama", task_type="agent_chat")
     await db_session.commit()
 

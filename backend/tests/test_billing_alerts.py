@@ -69,20 +69,6 @@ async def test_user_milestone_creates_popup_notification(db_session: AsyncSessio
 
 
 @pytest.mark.asyncio
-async def test_user_milestone_skips_unlimited(db_session: AsyncSession, monkeypatch) -> None:
-    settings = __import__("app.config", fromlist=["get_settings"]).get_settings()
-    monkeypatch.setattr(settings, "billing_user_alert_enabled", True)
-    monkeypatch.setattr(settings, "billing_user_alert_interval_fen", 1000)
-
-    user = await make_user(db_session, billing_unlimited=True)
-    await _add_settled_usage(db_session, user_id=user.id, charge_fen=5000)
-    await db_session.commit()
-
-    created = await process_user_milestone_alert(db_session, user, settings=settings)
-    assert created == []
-
-
-@pytest.mark.asyncio
 async def test_admin_cost_alert_sends_email_once_per_level(db_session: AsyncSession, monkeypatch) -> None:
     settings = __import__("app.config", fromlist=["get_settings"]).get_settings()
     monkeypatch.setattr(settings, "billing_admin_cost_alert_enabled", True)

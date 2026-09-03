@@ -106,9 +106,9 @@ sequenceDiagram
 
 余额不足：`freeze_for_task` 失败 → HTTP 402（`create_task` 入队前同步预检，或轻量任务预扣失败）。
 
-`billing_unlimited`：预扣时 `billing_status=skipped`（不冻钱包）；`settle_task` 后标 `settled`，usage 行 `settled=true`（仅统计，不扣钱包）。
+全局关闭计费（`BILLING_ENABLED=false`）：预扣时 `billing_status=skipped`（不冻钱包）；`settle_task` 后标 `settled`，usage 行 `settled=true`（仅统计，不扣钱包）。
 
-余额不足失败：`billing_status` 保持 `none`（未成功预扣，勿与无限额 `skipped` 混淆）。
+余额不足失败：`billing_status` 保持 `none`（未成功预扣，勿与全局关闭计费的 `skipped` 混淆）。
 
 api/studio 轻量视频：`awaiting_poll` 由 Selector 后台轮询；超过 `ark_video_poll_timeout` 自动失败并解冻。
 
@@ -156,5 +156,3 @@ EPAY_RETURN_URL=https://your-site.example.com/pricing?paid=1
 4. 管理端可按 `task_run_id` 或 `billing_key=llm_chat` 查到每条 LLM/图/视频/TTS 费用。
 5. Seedance 视频成功后 `usage_events.estimated=false` 且 `total_tokens` 与官方任务查询一致。
 6. 配置火山 AK/SK 后，管理端可刷新并查看近 30 日官方/本地成本对照。
-
-Demo 账号可设 `billing_unlimited=true` 跳过扣费。

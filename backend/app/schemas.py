@@ -32,7 +32,6 @@ class UserOut(BaseModel):
     balance_fen: int = 0
     frozen_fen: int = 0
     plan: str = "free"
-    billing_unlimited: bool = False
     role: str = "user"
     avatar_url: str = ""
     phone: str = ""
@@ -446,7 +445,6 @@ class AdminUserOut(BaseModel):
     balance_fen: int
     frozen_fen: int
     plan: str
-    billing_unlimited: bool
     role: str
     phone: str = ""
     created_at: datetime | None = None
@@ -466,7 +464,6 @@ class AdminUserListOut(BaseModel):
 
 class AdminUserPatch(BaseModel):
     plan: str | None = None
-    billing_unlimited: bool | None = None
     role: str | None = None
     # Absolute target balance in fen; when set, write ledger delta
     balance_fen: int | None = None

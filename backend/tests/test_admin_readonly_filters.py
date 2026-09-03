@@ -35,16 +35,15 @@ async def _valid_user(db: AsyncSession, **kwargs: object) -> User:
 
 
 @pytest.mark.asyncio
-async def test_admin_users_filter_plan_and_unlimited(db_session: AsyncSession) -> None:
+async def test_admin_users_filter_plan(db_session: AsyncSession) -> None:
     admin = await _make_admin(db_session)
-    pro = await _valid_user(db_session, plan="pro", billing_unlimited=True)
-    await _valid_user(db_session, plan="free", billing_unlimited=False)
+    pro = await _valid_user(db_session, plan="pro")
+    await _valid_user(db_session, plan="free")
     await db_session.commit()
 
     res = await list_users(
         plan="pro",
         role=None,
-        billing_unlimited=True,
         q=None,
         page=1,
         page_size=20,
@@ -53,7 +52,7 @@ async def test_admin_users_filter_plan_and_unlimited(db_session: AsyncSession) -
     )
     ids = {u.id for u in res.items}
     assert pro.id in ids
-    assert all(u.plan == "pro" and u.billing_unlimited for u in res.items)
+    assert all(u.plan == "pro" for u in res.items)
 
 
 @pytest.mark.asyncio
@@ -66,7 +65,6 @@ async def test_admin_users_search_by_numeric_id(db_session: AsyncSession) -> Non
         q=str(target.id),
         plan=None,
         role=None,
-        billing_unlimited=None,
         page=1,
         page_size=5,
         _admin=admin,

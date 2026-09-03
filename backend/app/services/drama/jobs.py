@@ -803,13 +803,62 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
         return {"awaiting_poll": True, "provider_task_id": provider_task_id}
 
 
+# 分镜视频收尾认领窗口：期内其它 poller 不得再入下载；超时仅作崩溃恢复。
+_FRAGMENT_FINALIZE_CLAIM_TTL = timedelta(hours=6)
+
+
+# 统一解析 TaskRun.next_action_at 的时区，便于与 now 比较。
+def _aware_utc(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt
+
+
+# 分镜是否已落成片（崩溃恢复时可跳过重复下载）。
+def _fragment_video_already_applied(frag: DramaEpisodeFragment | None) -> bool:
+    if frag is None or not (frag.video or "").strip():
+        return False
+    params = frag.params if isinstance(frag.params, dict) else {}
+    gen = params.get("generation") if isinstance(params.get("generation"), dict) else {}
+    return str(gen.get("status") or "").strip().lower() == "done"
+
+
+# 行锁后补完成分镜视频任务；已非 awaiting_poll 则跳过，避免并发双 complete。
+async def _recover_complete_fragment_video(
+    db: AsyncSession,
+    task_id: int,
+    *,
+    fragment_id: int,
+    batch_key: str | None,
+    batch_index: int,
+    recovered: bool = True,
+) -> bool:
+    from app.services.billing.settlement import _lock_task
+    from app.services.tasks.executor import _complete_task
+    from app.services.tasks.service import activate_next_sequential_task
+
+    locked = await _lock_task(db, int(task_id))
+    if not locked or locked.status != "awaiting_poll":
+        return False
+    # 先 complete（commit 后锁释放），再激活后续；避免 activate 提前 commit 导致并发双 complete
+    locked.progress_percent = 100
+    result_payload: dict[str, Any] = {"ok": True, "fragment_id": int(fragment_id)}
+    if recovered:
+        result_payload["recovered"] = True
+    await _complete_task(db, locked, result_payload)
+    await activate_next_sequential_task(db, batch_key, batch_index)
+    return True
+
+
 # 任务平台：轮询 awaiting_poll 的分镜视频任务。
 async def poll_fragment_video_task(task_id: int) -> None:
     from app.services.ark import get_ark
     from app.services.billing.context import billing_scope
     from app.services.billing.settlement import _lock_task
-    from app.services.tasks.executor import _complete_task, _fail_task
-    from app.services.tasks.service import activate_next_sequential_task, get_task_for_runtime
+    from app.services.tasks.executor import _fail_task
+    from app.services.tasks.service import get_task_for_runtime
 
     async with billing_scope(task_id):
         async with AsyncSessionLocal() as db:
@@ -828,12 +877,9 @@ async def poll_fragment_video_task(task_id: int) -> None:
 
             # 收尾认领窗口未到期：跳过，避免并发下载双记费
             if (task.current_step_status or "") == "finalizing":
-                na = task.next_action_at
-                if na is not None:
-                    if na.tzinfo is None:
-                        na = na.replace(tzinfo=UTC)
-                    if na > now:
-                        return
+                na = _aware_utc(task.next_action_at)
+                if na is not None and na > now:
+                    return
 
             if task.cancel_requested or _is_episode_video_cancelled(episode_id):
                 await _fail_task(db, task, RuntimeError("任务已取消"))
@@ -842,6 +888,17 @@ async def poll_fragment_video_task(task_id: int) -> None:
             frag_probe = await db.get(DramaEpisodeFragment, fragment_id) if fragment_id > 0 else None
             if fragment_id <= 0 or frag_probe is None:
                 await _fail_task(db, task, RuntimeError("分镜已变更，请重新生成"))
+                return
+
+            # 成片已落盘（含 apply 成功后 complete 失败）：行锁后只补完成
+            if _fragment_video_already_applied(frag_probe):
+                await _recover_complete_fragment_video(
+                    db,
+                    int(task.id),
+                    fragment_id=fragment_id,
+                    batch_key=task.batch_key,
+                    batch_index=int(payload.get("batch_index", 0)),
+                )
                 return
 
             result = await get_ark().fetch_task_once(task.provider_task_id)
@@ -878,38 +935,64 @@ async def poll_fragment_video_task(task_id: int) -> None:
             if not locked or locked.status != "awaiting_poll":
                 return
             if (locked.current_step_status or "") == "finalizing":
-                na = locked.next_action_at
-                if na is not None:
-                    if na.tzinfo is None:
-                        na = na.replace(tzinfo=UTC)
-                    if na > now:
-                        return
+                na = _aware_utc(locked.next_action_at)
+                if na is not None and na > now:
+                    return
+            # 认领前后成片已在：行锁后只补完成（避免 apply 后异常释放认领再二次下载）
+            if _fragment_video_already_applied(frag):
+                await _recover_complete_fragment_video(
+                    db,
+                    int(locked.id),
+                    fragment_id=fragment_id,
+                    batch_key=locked.batch_key,
+                    batch_index=int(payload.get("batch_index", 0)),
+                )
+                return
             locked.current_step_status = "finalizing"
             locked.progress_percent = max(int(locked.progress_percent or 0), 90)
-            locked.next_action_at = now + timedelta(minutes=30)
+            locked.next_action_at = now + _FRAGMENT_FINALIZE_CLAIM_TTL
             await db.commit()
 
-            local_video, local_last_frame = await get_ark().save_video_assets_from_result(
-                result,
-                project_id=ep.project.id,
-                shot_no=fragment_id,
-            )
-            await apply_fragment_video_assets(
-                db,
-                user,
-                ep.project,
-                frag,
-                local_video=local_video,
-                local_last_frame=local_last_frame,
-                attempts=attempts,
-                attempt_limit=attempt_limit,
-                task_result=result,
-                provider_task_id=task.provider_task_id,
-            )
-            batch_index = int(payload.get("batch_index", 0))
-            await activate_next_sequential_task(db, task.batch_key, batch_index)
-            task.progress_percent = 100
-            await _complete_task(db, task, {"ok": True, "fragment_id": fragment_id})
+            try:
+                local_video, local_last_frame = await get_ark().save_video_assets_from_result(
+                    result,
+                    project_id=ep.project.id,
+                    shot_no=fragment_id,
+                )
+                await apply_fragment_video_assets(
+                    db,
+                    user,
+                    ep.project,
+                    frag,
+                    local_video=local_video,
+                    local_last_frame=local_last_frame,
+                    attempts=attempts,
+                    attempt_limit=attempt_limit,
+                    task_result=result,
+                    provider_task_id=task.provider_task_id,
+                )
+                # 与恢复路径同一套行锁 complete，避免 apply 后并发双 complete
+                await _recover_complete_fragment_video(
+                    db,
+                    int(task_id),
+                    fragment_id=fragment_id,
+                    batch_key=task.batch_key,
+                    batch_index=int(payload.get("batch_index", 0)),
+                    recovered=False,
+                )
+            except Exception:
+                # 下载/落盘失败：释放认领，短间隔重试；勿把 next_action 缩到 8s 却仍标 finalizing
+                async with AsyncSessionLocal() as release_db:
+                    stalled = await _lock_task(release_db, int(task_id))
+                    if (
+                        stalled
+                        and stalled.status == "awaiting_poll"
+                        and (stalled.current_step_status or "") == "finalizing"
+                    ):
+                        stalled.current_step_status = "polling"
+                        stalled.next_action_at = datetime.now(UTC) + timedelta(seconds=poll_interval)
+                        await release_db.commit()
+                raise
 
 
 # ---------- asset image ----------

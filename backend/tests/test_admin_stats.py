@@ -30,12 +30,14 @@ async def _add_usage(
     project_id: int | None = None,
     drama_project_id: int | None = None,
     total_tokens: int = 100,
+    task_run_id: int | None = None,
 ) -> UsageEvent:
     """写入一条用量事件。"""
     ev = UsageEvent(
         user_id=user_id,
         project_id=project_id,
         drama_project_id=drama_project_id,
+        task_run_id=task_run_id,
         domain=domain,
         capability=capability,
         billing_key=billing_key,
@@ -451,3 +453,55 @@ async def test_aggregate_drama_project_usage(db_session: AsyncSession) -> None:
     assert summary["cost_fen"] == 8
     assert summary["tokens"] == 50
     assert summary["tts_gens"] == 1
+
+
+@pytest.mark.asyncio
+async def test_aggregate_keeps_multi_llm_dedupes_seedance(db_session: AsyncSession) -> None:
+    """同 task 下 llm_chat 多行保留；seedance 重复行只计一条。"""
+    user = await make_user(db_session)
+    # drama_project_id 无 FK，避免依赖 projects 行；用高位 id 降低脏数据干扰
+    did = 880_001_903
+    tid = 9001
+    await _add_usage(
+        db_session,
+        user_id=user.id,
+        drama_project_id=did,
+        task_run_id=tid,
+        charge_fen=5,
+        billing_key="llm_chat",
+        capability="llm",
+    )
+    await _add_usage(
+        db_session,
+        user_id=user.id,
+        drama_project_id=did,
+        task_run_id=tid,
+        charge_fen=7,
+        billing_key="llm_chat",
+        capability="llm",
+    )
+    await _add_usage(
+        db_session,
+        user_id=user.id,
+        drama_project_id=did,
+        task_run_id=tid,
+        charge_fen=20,
+        billing_key="seedance2:video0",
+        capability="video",
+    )
+    await _add_usage(
+        db_session,
+        user_id=user.id,
+        drama_project_id=did,
+        task_run_id=tid,
+        charge_fen=20,
+        billing_key="seedance2:video0",
+        capability="video",
+    )
+    await db_session.commit()
+
+    summary = await aggregate_usage_summary(db_session, drama_project_id=did)
+    assert summary["llm_calls"] == 2
+    assert summary["video_gens"] == 1
+    assert summary["calls"] == 3
+    assert summary["charge_fen"] == 5 + 7 + 20

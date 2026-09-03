@@ -170,10 +170,6 @@ async def _apply_schema_patches() -> None:
             await conn.execute(text("ALTER TABLE users ADD COLUMN frozen_fen INTEGER DEFAULT 0"))
         if "plan" not in ucols:
             await conn.execute(text("ALTER TABLE users ADD COLUMN plan VARCHAR(32) DEFAULT 'free'"))
-        if "billing_unlimited" not in ucols:
-            await conn.execute(
-                text("ALTER TABLE users ADD COLUMN billing_unlimited BOOLEAN DEFAULT FALSE")
-            )
         if "role" not in ucols:
             await conn.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR(16) DEFAULT 'user'"))
         if "avatar_url" not in ucols:

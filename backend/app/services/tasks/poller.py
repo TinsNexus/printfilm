@@ -14,6 +14,9 @@ from app.models_tasks import TaskRun
 from app.services.billing.settlement import settle_task
 from app.services.tasks.service import append_task_event
 
+# 与 drama.jobs 收尾认领态一致：异常时勿缩短仍在 finalizing 的 next_action_at
+_FRAGMENT_FINALIZE_STEP = "finalizing"
+
 logger = logging.getLogger("app.tasks.poller")
 
 _poller_task: asyncio.Task | None = None
@@ -134,6 +137,9 @@ async def _poll_one_task(task_id: int) -> None:
         async with AsyncSessionLocal() as db:
             task = await db.get(TaskRun, task_id)
             if not task or task.status != "awaiting_poll":
+                return
+            # 仍在收尾认领中：保留长 TTL，避免并发 poller 挤进下载窗口
+            if (task.current_step_status or "") == _FRAGMENT_FINALIZE_STEP:
                 return
             poll_interval = max(1.0, float(get_settings().ark_video_poll_interval or 8.0))
             task.next_action_at = datetime.now(UTC) + timedelta(seconds=poll_interval)
