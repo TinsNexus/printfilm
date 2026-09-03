@@ -10,21 +10,13 @@ type Props = {
   onHistory: () => void
 }
 
-function planLabel(wallet: Wallet | null) {
-  if (!wallet) return 'Free'
-  const p = (wallet.plan || 'free').toLowerCase()
-  if (p === 'free') return 'Free'
-  if (p === 'pro') return 'Pro'
-  return wallet.plan
-}
-
 function formatUpdated(d: Date | null) {
   if (!d) return '—'
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-/** 定价页深色余额卡片：余额展示、冻结/套餐、充值记录 */
+/** 定价页深色余额卡片：余额、本月消耗、冻结、充值记录 */
 export default function PricingWalletCard({ wallet, usage, loggedIn, updatedAt, onHistory }: Props) {
   const [balanceVisible, setBalanceVisible] = useState(true)
 
@@ -67,14 +59,10 @@ export default function PricingWalletCard({ wallet, usage, loggedIn, updatedAt, 
           <dd>{loggedIn ? `¥${monthCharge.toFixed(2)}` : '—'}</dd>
         </div>
         <div>
-          <dt>当前套餐</dt>
-          <dd>{planLabel(wallet)}</dd>
+          <dt>冻结金额</dt>
+          <dd>{loggedIn ? `¥${frozenYuan.toFixed(2)}` : '—'}</dd>
         </div>
       </dl>
-
-      {frozenYuan > 0 ? (
-        <p className="pf-pricing-wallet-dark-frozen">冻结中 ¥{frozenYuan.toFixed(2)}</p>
-      ) : null}
 
       <p className="pf-pricing-wallet-dark-updated">更新于 {formatUpdated(updatedAt)}</p>
     </aside>

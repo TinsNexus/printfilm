@@ -146,9 +146,6 @@ export default function SettingsPage() {
     nav('/')
   }
 
-  const plan = (wallet?.plan || 'free').toLowerCase()
-  const planLabel = plan === 'pro' ? 'Pro' : plan === 'free' ? 'Free' : wallet?.plan || 'Free'
-
   return (
     <AppShell>
       <div className="pf-settings">
@@ -158,7 +155,6 @@ export default function SettingsPage() {
             <div>
               <strong>{user?.nickname || t('common.creator')}</strong>
               <p className="pf-muted">ID: {user?.id ?? '—'}</p>
-              <span className="pf-settings-plan">{t('settings.planScheme', { plan: planLabel })}</span>
             </div>
           </div>
           <nav className="pf-settings-nav" aria-label={t('settings.nav')}>
@@ -306,10 +302,6 @@ export default function SettingsPage() {
                 <div>
                   <span className="pf-muted">{t('settings.frozen')}</span>
                   <em>¥{(wallet?.frozen_yuan ?? 0).toFixed(2)}</em>
-                </div>
-                <div>
-                  <span className="pf-muted">{t('settings.currentPlan')}</span>
-                  <em>{planLabel}</em>
                 </div>
               </div>
               <MonthlyUsageCard variant="compact" showTopup={false} />
