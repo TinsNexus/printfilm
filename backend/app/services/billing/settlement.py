@@ -62,16 +62,26 @@ async def _ledger(
 
 
 async def _lock_user(db: AsyncSession, user_id: int) -> User | None:
-    """行锁用户钱包，避免并发预扣/结算透支。"""
+    """行锁用户钱包，避免并发预扣/结算透支；populate_existing 防止会话内过期余额。"""
     return (
-        await db.execute(select(User).where(User.id == int(user_id)).with_for_update())
+        await db.execute(
+            select(User)
+            .where(User.id == int(user_id))
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
     ).scalar_one_or_none()
 
 
 async def _lock_task(db: AsyncSession, task_id: int) -> TaskRun | None:
-    """行锁 TaskRun，保证结算/预扣幂等。"""
+    """行锁 TaskRun，保证结算/预扣幂等；populate_existing 防止会话内过期 billing_status。"""
     return (
-        await db.execute(select(TaskRun).where(TaskRun.id == int(task_id)).with_for_update())
+        await db.execute(
+            select(TaskRun)
+            .where(TaskRun.id == int(task_id))
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
     ).scalar_one_or_none()
 
 
@@ -207,6 +217,35 @@ async def settle_task(db: AsyncSession, task_id: int) -> dict[str, int]:
             "refunded": int(task.billing_refunded_fen or 0),
         }
 
+    # 钱包侧幂等：已有 unfreeze/settle 流水则只对齐状态，禁止二次退还
+    if task.billing_status == "frozen":
+        prior = (
+            await db.execute(
+                select(WalletLedger.id)
+                .where(
+                    WalletLedger.ref_type == "task_run",
+                    WalletLedger.ref_id == str(task_id),
+                    WalletLedger.kind.in_(("unfreeze", "settle")),
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if prior is not None:
+            result = await db.execute(
+                select(UsageEvent).where(
+                    UsageEvent.task_run_id == task_id,
+                    UsageEvent.settled.is_(False),
+                )
+            )
+            for e in result.scalars().all():
+                e.settled = True
+            task.billing_status = "settled"
+            await db.flush()
+            return {
+                "charged": int(task.billing_charged_fen or 0),
+                "refunded": int(task.billing_refunded_fen or 0),
+            }
+
     result = await db.execute(
         select(UsageEvent).where(
             UsageEvent.task_run_id == task_id,
@@ -214,6 +253,18 @@ async def settle_task(db: AsyncSession, task_id: int) -> dict[str, int]:
         )
     )
     events = list(result.scalars().all())
+    # 用量已结但状态仍 frozen（异常中断）：按已落账实扣对齐，禁止把整笔预扣当退款
+    if (
+        task.billing_status == "frozen"
+        and not events
+        and int(task.billing_charged_fen or 0) > 0
+    ):
+        task.billing_status = "settled"
+        await db.flush()
+        return {
+            "charged": int(task.billing_charged_fen or 0),
+            "refunded": int(task.billing_refunded_fen or 0),
+        }
     if task.billing_status == "skipped" and not events:
         # 无限额且无用量：结算完成，统一标 settled 便于管理端展示
         task.billing_status = "settled"

@@ -324,6 +324,135 @@ def _row_to_usage_summary(row: Any) -> dict[str, int]:
     }
 
 
+def _deduped_usage_event_ids_subq():
+    """
+    同一 task_run + billing_key 只保留最早一条用量行，避免并发重复记费把项目汇总抬高。
+    无 task_run_id 的孤儿行全部保留。
+    """
+    ranked = (
+        select(
+            UsageEvent.id.label("id"),
+            func.row_number()
+            .over(
+                partition_by=(UsageEvent.task_run_id, UsageEvent.billing_key),
+                order_by=UsageEvent.id.asc(),
+            )
+            .label("rn"),
+        )
+        .where(UsageEvent.task_run_id.is_not(None))
+        .subquery()
+    )
+    with_task = select(ranked.c.id).where(ranked.c.rn == 1)
+    orphans = select(UsageEvent.id).where(UsageEvent.task_run_id.is_(None))
+    return with_task.union_all(orphans).subquery()
+
+
+async def _sum_task_charged_fen(
+    db: AsyncSession,
+    *,
+    project_ids: list[int] | None = None,
+    drama_project_ids: list[int] | None = None,
+) -> dict[int, int]:
+    """按任务实扣汇总（钱包结算口径）。"""
+    from app.models_tasks import TaskRun
+
+    if project_ids is not None:
+        if not project_ids:
+            return {}
+        rows = (
+            await db.execute(
+                select(
+                    TaskRun.project_id,
+                    func.coalesce(func.sum(TaskRun.billing_charged_fen), 0),
+                )
+                .where(TaskRun.project_id.in_(project_ids))
+                .group_by(TaskRun.project_id)
+            )
+        ).all()
+        return {int(r[0]): int(r[1] or 0) for r in rows if r[0] is not None}
+
+    if drama_project_ids is not None:
+        if not drama_project_ids:
+            return {}
+        rows = (
+            await db.execute(
+                select(
+                    TaskRun.drama_project_id,
+                    func.coalesce(func.sum(TaskRun.billing_charged_fen), 0),
+                )
+                .where(TaskRun.drama_project_id.in_(drama_project_ids))
+                .group_by(TaskRun.drama_project_id)
+            )
+        ).all()
+        return {int(r[0]): int(r[1] or 0) for r in rows if r[0] is not None}
+    return {}
+
+
+async def _sum_orphan_usage_charge_fen(
+    db: AsyncSession,
+    *,
+    scope_col,
+    scope_ids: list[int],
+) -> dict[int, int]:
+    """无 task_run_id 的用量扣费（未走 TaskRun 结算的历史/旁路行）。"""
+    if not scope_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(
+                scope_col,
+                func.coalesce(func.sum(UsageEvent.charge_fen), 0),
+            )
+            .where(scope_col.in_(scope_ids), UsageEvent.task_run_id.is_(None))
+            .group_by(scope_col)
+        )
+    ).all()
+    return {int(r[0]): int(r[1] or 0) for r in rows if r[0] is not None}
+
+
+async def _aggregate_usage_by_scope(
+    db: AsyncSession,
+    *,
+    scope_col,
+    scope_ids: list[int],
+    project_ids: list[int] | None = None,
+    drama_project_ids: list[int] | None = None,
+) -> dict[int, dict[str, Any]]:
+    """按项目/漫剧项目聚合去重后的用量行；扣费用任务实扣+孤儿用量。"""
+    image_case, video_case, llm_case, tts_case = _usage_billing_cases()
+    empty = _empty_usage_summary()
+    if not scope_ids:
+        return {}
+    deduped = _deduped_usage_event_ids_subq()
+    result = await db.execute(
+        select(
+            scope_col,
+            func.coalesce(func.sum(UsageEvent.charge_fen), 0),
+            func.coalesce(func.sum(UsageEvent.cost_fen), 0),
+            func.coalesce(func.sum(UsageEvent.total_tokens), 0),
+            func.count(UsageEvent.id),
+            func.coalesce(func.sum(image_case), 0),
+            func.coalesce(func.sum(video_case), 0),
+            func.coalesce(func.sum(llm_case), 0),
+            func.coalesce(func.sum(tts_case), 0),
+        )
+        .where(scope_col.in_(scope_ids), UsageEvent.id.in_(select(deduped.c.id)))
+        .group_by(scope_col)
+    )
+    out: dict[int, dict[str, Any]] = {pid: dict(empty) for pid in scope_ids}
+    for row in result.all():
+        out[int(row[0])] = _row_to_usage_summary(row[1:])
+
+    charged_map = await _sum_task_charged_fen(
+        db, project_ids=project_ids, drama_project_ids=drama_project_ids
+    )
+    orphan_map = await _sum_orphan_usage_charge_fen(db, scope_col=scope_col, scope_ids=scope_ids)
+    for pid in scope_ids:
+        if pid in charged_map or pid in orphan_map:
+            out[pid]["charge_fen"] = int(charged_map.get(pid, 0)) + int(orphan_map.get(pid, 0))
+    return out
+
+
 async def aggregate_usage_summary(
     db: AsyncSession,
     *,
@@ -336,77 +465,30 @@ async def aggregate_usage_summary(
     项目级用量汇总。
     - 单项目：传 project_id 或 drama_project_id，返回一条 dict
     - 批量：传 project_ids 或 drama_project_ids，返回 {id: dict}
+    扣费 = TaskRun 实扣 + 无任务孤儿用量；调用/成本按去重后的 usage 行统计。
     """
-    image_case, video_case, llm_case, tts_case = _usage_billing_cases()
     empty = _empty_usage_summary()
 
     if project_ids is not None:
-        if not project_ids:
-            return {}
-        result = await db.execute(
-            select(
-                UsageEvent.project_id,
-                func.coalesce(func.sum(UsageEvent.charge_fen), 0),
-                func.coalesce(func.sum(UsageEvent.cost_fen), 0),
-                func.coalesce(func.sum(UsageEvent.total_tokens), 0),
-                func.count(UsageEvent.id),
-                func.coalesce(func.sum(image_case), 0),
-                func.coalesce(func.sum(video_case), 0),
-                func.coalesce(func.sum(llm_case), 0),
-                func.coalesce(func.sum(tts_case), 0),
-            )
-            .where(UsageEvent.project_id.in_(project_ids))
-            .group_by(UsageEvent.project_id)
+        return await _aggregate_usage_by_scope(
+            db,
+            scope_col=UsageEvent.project_id,
+            scope_ids=project_ids,
+            project_ids=project_ids,
         )
-        out: dict[int, dict[str, Any]] = {pid: dict(empty) for pid in project_ids}
-        for row in result.all():
-            pid = int(row[0])
-            out[pid] = _row_to_usage_summary(row[1:])
-        return out
 
     if drama_project_ids is not None:
-        if not drama_project_ids:
-            return {}
-        result = await db.execute(
-            select(
-                UsageEvent.drama_project_id,
-                func.coalesce(func.sum(UsageEvent.charge_fen), 0),
-                func.coalesce(func.sum(UsageEvent.cost_fen), 0),
-                func.coalesce(func.sum(UsageEvent.total_tokens), 0),
-                func.count(UsageEvent.id),
-                func.coalesce(func.sum(image_case), 0),
-                func.coalesce(func.sum(video_case), 0),
-                func.coalesce(func.sum(llm_case), 0),
-                func.coalesce(func.sum(tts_case), 0),
-            )
-            .where(UsageEvent.drama_project_id.in_(drama_project_ids))
-            .group_by(UsageEvent.drama_project_id)
+        return await _aggregate_usage_by_scope(
+            db,
+            scope_col=UsageEvent.drama_project_id,
+            scope_ids=drama_project_ids,
+            drama_project_ids=drama_project_ids,
         )
-        out_d: dict[int, dict[str, Any]] = {pid: dict(empty) for pid in drama_project_ids}
-        for row in result.all():
-            pid = int(row[0])
-            out_d[pid] = _row_to_usage_summary(row[1:])
-        return out_d
 
-    filters = []
     if project_id is not None:
-        filters.append(UsageEvent.project_id == project_id)
-    elif drama_project_id is not None:
-        filters.append(UsageEvent.drama_project_id == drama_project_id)
-    else:
-        return dict(empty)
-
-    stmt = select(
-        func.coalesce(func.sum(UsageEvent.charge_fen), 0),
-        func.coalesce(func.sum(UsageEvent.cost_fen), 0),
-        func.coalesce(func.sum(UsageEvent.total_tokens), 0),
-        func.count(UsageEvent.id),
-        func.coalesce(func.sum(image_case), 0),
-        func.coalesce(func.sum(video_case), 0),
-        func.coalesce(func.sum(llm_case), 0),
-        func.coalesce(func.sum(tts_case), 0),
-    )
-    for clause in filters:
-        stmt = stmt.where(clause)
-    row = (await db.execute(stmt)).one()
-    return _row_to_usage_summary(row)
+        batch = await aggregate_usage_summary(db, project_ids=[project_id])
+        return batch.get(project_id, dict(empty))
+    if drama_project_id is not None:
+        batch = await aggregate_usage_summary(db, drama_project_ids=[drama_project_id])
+        return batch.get(drama_project_id, dict(empty))
+    return dict(empty)

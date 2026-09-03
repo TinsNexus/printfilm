@@ -9,7 +9,7 @@ import pytest
 from app.models import User
 from app.models_tasks import TaskRun
 from app.services.billing.http import http_exception_for_value_error
-from app.services.billing.settlement import billing_active, freeze_for_task
+from app.services.billing.settlement import billing_active, freeze_for_task, settle_task
 
 
 def test_billing_active_respects_unlimited() -> None:
@@ -52,3 +52,53 @@ async def test_freeze_for_task_idempotent_when_already_frozen() -> None:
     # 幂等早退：不应再查用户或写 ledger
     assert db.execute.await_count == 1
     db.flush.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_settle_task_idempotent_when_prior_unfreeze_ledger() -> None:
+    """并发二次结算：已有 unfreeze 流水时禁止再次退款。"""
+    task = TaskRun(
+        id=3056,
+        domain="drama",
+        task_type="fragment_video",
+        requested_by=401,
+        billing_status="frozen",
+        billing_estimate_fen=2650,
+        billing_charged_fen=1661,
+        billing_refunded_fen=989,
+    )
+
+    lock_result = MagicMock()
+    lock_result.scalar_one_or_none = MagicMock(return_value=task)
+    prior_result = MagicMock()
+    prior_result.scalar_one_or_none = MagicMock(return_value=1)
+    usage_result = MagicMock()
+    usage_result.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))
+
+    db = MagicMock()
+    db.execute = AsyncMock(side_effect=[lock_result, prior_result, usage_result])
+    db.flush = AsyncMock()
+
+    out = await settle_task(db, 3056)
+
+    assert out == {"charged": 1661, "refunded": 989}
+    assert task.billing_status == "settled"
+    db.flush.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_settle_task_noop_when_already_settled() -> None:
+    task = TaskRun(
+        id=1,
+        billing_status="settled",
+        billing_charged_fen=100,
+        billing_refunded_fen=50,
+    )
+    lock_result = MagicMock()
+    lock_result.scalar_one_or_none = MagicMock(return_value=task)
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=lock_result)
+
+    out = await settle_task(db, 1)
+    assert out == {"charged": 100, "refunded": 50}
+    assert db.execute.await_count == 1

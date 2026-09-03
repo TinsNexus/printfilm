@@ -807,6 +807,7 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
 async def poll_fragment_video_task(task_id: int) -> None:
     from app.services.ark import get_ark
     from app.services.billing.context import billing_scope
+    from app.services.billing.settlement import _lock_task
     from app.services.tasks.executor import _complete_task, _fail_task
     from app.services.tasks.service import activate_next_sequential_task, get_task_for_runtime
 
@@ -824,6 +825,15 @@ async def poll_fragment_video_task(task_id: int) -> None:
             attempt_limit = int(payload.get("attempt_limit") or get_settings().drama_fragment_max_attempts or 3)
             poll_interval = max(1.0, float(get_settings().ark_video_poll_interval or 8.0))
             now = datetime.now(UTC)
+
+            # 收尾认领窗口未到期：跳过，避免并发下载双记费
+            if (task.current_step_status or "") == "finalizing":
+                na = task.next_action_at
+                if na is not None:
+                    if na.tzinfo is None:
+                        na = na.replace(tzinfo=UTC)
+                    if na > now:
+                        return
 
             if task.cancel_requested or _is_episode_video_cancelled(episode_id):
                 await _fail_task(db, task, RuntimeError("任务已取消"))
@@ -863,8 +873,20 @@ async def poll_fragment_video_task(task_id: int) -> None:
                 await _fail_task(db, task, RuntimeError("分镜已变更，请重新生成"))
                 return
 
-            task.current_step_status = "finalizing"
-            task.progress_percent = max(int(task.progress_percent or 0), 90)
+            # 行锁认领：仅第一个收尾者进入下载；窗口内其余看到 finalizing 后退出
+            locked = await _lock_task(db, int(task.id))
+            if not locked or locked.status != "awaiting_poll":
+                return
+            if (locked.current_step_status or "") == "finalizing":
+                na = locked.next_action_at
+                if na is not None:
+                    if na.tzinfo is None:
+                        na = na.replace(tzinfo=UTC)
+                    if na > now:
+                        return
+            locked.current_step_status = "finalizing"
+            locked.progress_percent = max(int(locked.progress_percent or 0), 90)
+            locked.next_action_at = now + timedelta(minutes=30)
             await db.commit()
 
             local_video, local_last_frame = await get_ark().save_video_assets_from_result(

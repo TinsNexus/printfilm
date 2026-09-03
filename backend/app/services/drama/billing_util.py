@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.models import UsageEvent, User
 from app.services.billing import record_line
+from app.services.billing.context import get_current_task_run_id
 from app.services.drama.seed import SeedAssetsResult
 
 if TYPE_CHECKING:
@@ -40,7 +42,26 @@ async def record_seedance_video_usage(
     project_id: int | None = None,
     shot_id: int | None = None,
 ) -> UsageEvent:
-    """按官方任务 usage / 成本或时长估算写入 Seedance 视频用量行。"""
+    """按官方任务 usage / 成本或时长估算写入 Seedance 视频用量行。
+
+    同一 task_run + billing_key 已有用量时幂等返回首行，避免并发收尾双记。
+    """
+    tid = get_current_task_run_id()
+    if tid is not None:
+        existing = (
+            await db.execute(
+                select(UsageEvent)
+                .where(
+                    UsageEvent.task_run_id == int(tid),
+                    UsageEvent.billing_key == billing_key,
+                )
+                .order_by(UsageEvent.id.asc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            return existing
+
     if (
         (not task_result or int(getattr(task_result, "total_tokens", 0) or 0) <= 0)
         and provider_task_id
