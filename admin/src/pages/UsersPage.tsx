@@ -176,7 +176,6 @@ export function UsersPage() {
               <TableHead>套餐</TableHead>
               <TableHead>余额</TableHead>
               <TableHead>冻结</TableHead>
-              <TableHead>剩余额度</TableHead>
               <TableHead>角色</TableHead>
               <TableHead>注册时间</TableHead>
               <TableHead className="w-[140px]">操作</TableHead>
@@ -194,7 +193,6 @@ export function UsersPage() {
                 </TableCell>
                 <TableCell className="tabular-nums">¥{fenToYuan(u.balance_fen)}</TableCell>
                 <TableCell className="tabular-nums">¥{fenToYuan(u.frozen_fen)}</TableCell>
-                <TableCell>{u.quota_left}</TableCell>
                 <TableCell>
                   <Badge variant={u.role === "admin" ? "success" : "secondary"}>{u.role}</Badge>
                 </TableCell>
@@ -222,7 +220,7 @@ export function UsersPage() {
             ))}
             {!loading && (data?.items.length ?? 0) === 0 && (
               <TableRow>
-                <TableCell colSpan={11} className="p-0">
+                <TableCell colSpan={10} className="p-0">
                   <EmptyState title="暂无用户" description="试试换个关键词搜索" />
                 </TableCell>
               </TableRow>
