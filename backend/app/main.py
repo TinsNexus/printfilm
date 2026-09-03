@@ -161,6 +161,9 @@ async def _apply_schema_patches() -> None:
 
         # User billing columns
         ucols = await _pg_columns(conn, "users")
+        # 早期库可能无 create_all 后缺此列（模型有、补丁曾遗漏）
+        if "quota_left" not in ucols:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN quota_left INTEGER DEFAULT 5"))
         if "balance_fen" not in ucols:
             await conn.execute(text("ALTER TABLE users ADD COLUMN balance_fen INTEGER DEFAULT 0"))
         if "frozen_fen" not in ucols:
