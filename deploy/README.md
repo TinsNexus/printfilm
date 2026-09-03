@@ -1,8 +1,8 @@
 # PRINTFILM 部署（Docker 只跑库与缓存）
 
-> **生产站点发布（kepu.printfilm.com / admin）** 请以 [docs/DEPLOY.md](../docs/DEPLOY.md) 为准；每次发布写 [docs/releases/](../docs/releases/)。  
+> **生产站点发布（www.printfilm.com / admin.printfilm.com；kepu 旧站保留）** 请以 [docs/DEPLOY.md](../docs/DEPLOY.md) 为准；每次发布写 [docs/releases/](../docs/releases/)。  
 > 本文仅描述 Postgres/Redis compose 与本机跑 API 的补充说明。**不要**用 OSS 上传前端 dist 代替机器发布。  
-> 杭州全量脚本：`deploy/scripts/deploy_kepu_8136.py`。默认**不**改 nginx / **不**跑 certbot / **不**动 Postgres·Redis 容器；改站点设 `SETUP_NGINX=1`，签证书设 `SETUP_TLS=1`，重建中间件设 `SETUP_INFRA=1`。
+> 杭州全量脚本：`deploy/scripts/deploy_kepu_8136.py`。默认**不**改 nginx / **不**跑 certbot / **不**动 Postgres·Redis 容器；改站点设 `SETUP_NGINX=1`，签证书设 `SETUP_TLS=1`，重建中间件设 `SETUP_INFRA=1`。验收 Host 用 **www.printfilm.com**。
 
 ## 分工
 

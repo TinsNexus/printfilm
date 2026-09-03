@@ -134,8 +134,15 @@ def is_local_static_url(url: str | None) -> bool:
     base = settings.public_base_url.rstrip("/")
     if url.startswith(f"{base}/static/"):
         return True
-    # 历史拼写错误域名、本地调试地址
-    for host in ("kepu.printfilm.com", "kepu.printtfilm.com", "127.0.0.1:8000", "localhost:8000"):
+    # 主站 / 旧站 / 历史拼写错误域名、本地调试地址
+    for host in (
+        "www.printfilm.com",
+        "printfilm.com",
+        "kepu.printfilm.com",
+        "kepu.printtfilm.com",
+        "127.0.0.1:8000",
+        "localhost:8000",
+    ):
         for scheme in ("https://", "http://"):
             if url.startswith(f"{scheme}{host}/static/"):
                 return True

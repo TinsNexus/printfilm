@@ -1,16 +1,16 @@
-# 线上发布流程（kepu.printfilm.com）
+# 线上发布流程（www.printfilm.com）
 
 生产站点：**不是**把前端 dist 丢到 OSS 当「发布」。OSS 仅用于成片/分镜等媒体；站点由服务器 nginx + systemd 托管。
 
 | 站点 | 地址 | 静态根目录 |
 |------|------|------------|
-| 用户前台 | https://kepu.printfilm.com/ | `/opt/ai_movie/frontend/dist` |
-| 用户前台（别名） | https://www.printfilm.com/ 、 https://printfilm.com/ | 同上 |
-| 管理后台 | https://admin.kepu.printfilm.com/ | `/opt/ai_movie/admin/dist` |
-| 管理后台（别名） | https://admin.printfilm.com/ | 同上 |
+| 用户前台（主） | https://www.printfilm.com/ 、 https://printfilm.com/ | `/opt/ai_movie/frontend/dist` |
+| 用户前台（旧站保留） | https://kepu.printfilm.com/ | 同上 |
+| 管理后台（主） | https://admin.printfilm.com/ | `/opt/ai_movie/admin/dist` |
+| 管理后台（旧站保留） | https://admin.kepu.printfilm.com/ | 同上 |
 | API | 同源 `/api` → `127.0.0.1:8000` | uvicorn `ai-movie-api` |
 
-服务器路径约定：`/opt/ai_movie`。Postgres/Redis 走本机 Docker（端口 `15432` / `16379`，与旧 kepu 隔离）。
+服务器路径约定：`/opt/ai_movie`。Postgres/Redis 走本机 Docker（端口 `15432` / `16379`，与旧 kepu 隔离）。发布验收 Host 用 **www / admin.printfilm.com**，勿再以 `kepu.printtfilm.com` 为主。
 
 ---
 
@@ -129,10 +129,11 @@ cd /opt/ai_movie/admin && npm ci && npm run build
 systemctl status ai-movie-api ai-movie-worker
 journalctl -u ai-movie-api -n 80 --no-pager
 curl -fsS http://127.0.0.1:8000/api/health
-curl -fsSI https://kepu.printfilm.com/ | head
 curl -fsSI https://www.printfilm.com/ | head
-curl -fsSI https://admin.kepu.printfilm.com/ | head
 curl -fsSI https://admin.printfilm.com/ | head
+# 旧站保留（可选）
+curl -fsSI https://kepu.printfilm.com/ | head
+curl -fsSI https://admin.kepu.printfilm.com/ | head
 ```
 
 API 起不来时优先看：启动 seed 是否卡在 OSS、双 worker `create_all` 竞态、`.env` 是否被覆盖。
@@ -143,7 +144,7 @@ API 起不来时优先看：启动 seed 是否卡在 OSS、双 worker `create_al
 
 - `EPAY_PID` / `EPAY_KEY` 与开发环境一致即可（见本机 `backend/.env`，勿写入公开文档）。
 - **`EPAY_NOTIFY_URL` 不能含 `/api/`**：`pay.gitcc.com` 防火墙会拦含 `/api/` 的回调 URL。
-- 生产使用：`https://kepu.printfilm.com/epay/notify`
+- 生产使用：`https://www.printfilm.com/epay/notify`（勿再写 kepu / printtfilm）
 - nginx 将 `location = /epay/notify` 反代到 `http://127.0.0.1:8000/api/billing/epay/notify`
 
 ---

@@ -177,7 +177,7 @@ docs/            产品与工程文档（本规范所在处）
 ## 8. 安全与配置
 
 - 示例配置只放 `*.example`；真实值只在服务器 / 本机 `.env`。
-- CORS 只放真实前台域名（含 `kepu.printfilm.com`、`www.printfilm.com`、`admin.kepu.printfilm.com`、`admin.printfilm.com` 等）。
+- CORS 只放真实前台域名（主站 `www.printfilm.com` / `admin.printfilm.com`，旧站 `kepu.printfilm.com` / `admin.kepu.printfilm.com` 等）。
 - 管理接口必须 `role=admin`；bootstrap 邮箱仅提升已有用户，不造号。
 
 ---

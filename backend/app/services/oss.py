@@ -73,21 +73,21 @@ def ensure_browser_cors() -> None:
         for o in (s.cors_origins or "").split(",")
         if o.strip()
     ]
-    # Production site + common local/dev
+    # Production site + common local/dev（主站 www 优先）
     for extra in (
-        "https://kepu.printfilm.com",
-        "http://kepu.printfilm.com",
-        "https://kepu.printtfilm.com",
-        "http://kepu.printtfilm.com",
-        "https://admin.kepu.printtfilm.com",
-        "http://admin.kepu.printtfilm.com",
         "https://www.printfilm.com",
         "http://www.printfilm.com",
         "https://printfilm.com",
         "http://printfilm.com",
-        "https://admin.kepu.printfilm.com",
         "https://admin.printfilm.com",
         "http://admin.printfilm.com",
+        "https://kepu.printfilm.com",
+        "http://kepu.printfilm.com",
+        "https://admin.kepu.printfilm.com",
+        "https://kepu.printtfilm.com",
+        "http://kepu.printtfilm.com",
+        "https://admin.kepu.printtfilm.com",
+        "http://admin.kepu.printtfilm.com",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:4173",

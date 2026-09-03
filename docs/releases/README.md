@@ -1,6 +1,6 @@
 # 发布记录
 
-每次对 **https://kepu.printfilm.com/** / **https://www.printfilm.com/** / **https://admin.kepu.printfilm.com/** / **https://admin.printfilm.com/** 的发布或线上热修，都在本目录留下一条记录。
+每次对 **https://www.printfilm.com/** / **https://admin.printfilm.com/**（旧站 **https://kepu.printfilm.com/** / **https://admin.kepu.printfilm.com/** 保留）的发布或线上热修，都在本目录留下一条记录。
 
 ## 约定
 
@@ -22,9 +22,9 @@
 - **变更摘要**：
   - …
 - **验证**：
-  - [ ] `https://kepu.printfilm.com/api/health`
+  - [ ] `https://www.printfilm.com/api/health`
   - [ ] 前台首页 200
-  - [ ] （如有）admin 首页 200
+  - [ ] （如有）admin 首页 200（`https://admin.printfilm.com/`）
   - [ ] （如有）相关业务冒烟
 - **备注 / 回滚**：
 ```
@@ -33,6 +33,7 @@
 
 | 日期 | 摘要 | 文件 |
 |------|------|------|
+| 2026-09-03 | 主站切 www；双结算防护全量 | [2026-09-03.md](./2026-09-03.md) |
 | 2026-09-03 | 分镜视频双结算防护；杭州全量 | [2026-09-03.md](./2026-09-03.md) |
 | 2026-08-31 | 资产生图 TaskRun 未 commit 热修 | [2026-08-31.md](./2026-08-31.md) |
 | 2026-08-31 | 计费预检 + 生图排队态；杭州全量 | [2026-08-31.md](./2026-08-31.md) |
