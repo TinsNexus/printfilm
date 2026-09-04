@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
-import { Loader2, Save } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useSettingsSaveSlot } from "@/components/settings/SettingsSaveContext";
 
 type PanelProps = {
   title: string;
@@ -33,23 +35,27 @@ type SettingsTabShellProps = {
   saveLabel?: string;
 };
 
-// Tab 内容区：右上角统一保存按钮
+// Tab 内容区：把保存动作注册到页头，不再单独占一行工具条
 export function SettingsTabShell({ children, onSave, saving, saveLabel = "保存" }: SettingsTabShellProps) {
+  const { registerSave } = useSettingsSaveSlot();
+  const onSaveRef = useRef(onSave);
+  onSaveRef.current = onSave;
+
+  useEffect(() => {
+    if (!onSave) {
+      registerSave(null);
+      return () => registerSave(null);
+    }
+    registerSave({
+      onSave: () => onSaveRef.current?.(),
+      saving,
+      label: saveLabel,
+    });
+    return () => registerSave(null);
+  }, [onSave ? true : false, saving, saveLabel, registerSave]);
+
   return (
     <div className="settings-tab-shell">
-      {onSave ? (
-        <div className="settings-tab-toolbar">
-          <button
-            type="button"
-            className="admin-quick-btn settings-save-btn"
-            disabled={saving}
-            onClick={() => void onSave()}
-          >
-            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-            {saveLabel}
-          </button>
-        </div>
-      ) : null}
       <div className="settings-tab-body">{children}</div>
     </div>
   );
@@ -99,4 +105,41 @@ export function LabeledControl({
 // 内嵌子面板（浅灰底，用于状态条或独立分组）
 export function SettingsSurface({ children, className = "" }: { children: ReactNode; className?: string }) {
   return <div className={cn("settings-surface", className)}>{children}</div>;
+}
+
+export type SettingsStatusItem = {
+  id: string;
+  label: string;
+  ready: boolean;
+  readyText?: string;
+  pendingText?: string;
+};
+
+// 顶部就绪/状态条（与模型路由一致）
+export function SettingsStatusBar({
+  title,
+  items,
+  extra,
+}: {
+  title: string;
+  items: SettingsStatusItem[];
+  extra?: ReactNode;
+}) {
+  return (
+    <SettingsSurface className="settings-readiness-bar">
+      <div className="settings-readiness-title-row">
+        <div className="settings-readiness-title">{title}</div>
+        {extra}
+      </div>
+      <div className="settings-readiness-row">
+        {items.map((item) => (
+          <div key={item.id} className={cn("settings-readiness-item", item.ready && "is-ready")}>
+            <span className={cn("settings-readiness-dot", item.ready ? "is-on" : "is-off")} />
+            <span>{item.label}</span>
+            <em>{item.ready ? item.readyText ?? "已配置" : item.pendingText ?? "未就绪"}</em>
+          </div>
+        ))}
+      </div>
+    </SettingsSurface>
+  );
 }

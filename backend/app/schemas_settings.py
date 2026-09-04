@@ -105,7 +105,7 @@ class AdminModelSettingsOut(BaseModel):
     billing_seedream_per_m: float = 8.0
     billing_tts_per_m: float = 2.0
     billing_est_llm_tokens: int = 80_000
-    billing_est_seedream_tokens: int = 20_000
+    billing_est_seedream_tokens: int = 45_000
     billing_est_tts_tokens: int = 5_000
     billing_est_seedance_tokens_per_sec: int = 20_000
     billing_signup_grant_fen: int = 500

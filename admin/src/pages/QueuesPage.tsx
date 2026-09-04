@@ -11,6 +11,7 @@ import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 import { PageHeader, Toolbar } from "@/components/ui/page";
 import { PaginationBar } from "@/components/PaginationBar";
 import { useAdminDetailQuery } from "@/hooks/useAdminDetailQuery";
+import { compactJsonPreview, hasJsonContent } from "@/lib/jsonPreview";
 import { cn, fenToYuan } from "@/lib/utils";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { taskDomainLabel, taskStatusLabel, taskTypeLabel } from "@/lib/statusLabels";
@@ -32,10 +33,34 @@ function formatTime(value: string | null | undefined): string {
   return new Date(value).toLocaleString();
 }
 
+// 阻止冒泡到行 onClick，避免链接跳转时同时打开详情
+function stopRowClick(e: { stopPropagation: () => void }) {
+  e.stopPropagation();
+}
+
 function scopeLinks(task: AdminTaskRow): ReactNode {
   const parts: ReactNode[] = [];
-  if (task.drama_project_id) parts.push(<AdminEntityLink key="drama" kind="drama" id={task.drama_project_id} />);
-  if (task.project_id) parts.push(<AdminEntityLink key="project" kind="project" id={task.project_id} />);
+  if (task.drama_project_id) {
+    parts.push(
+      <span key="drama" onClick={stopRowClick}>
+        <AdminEntityLink kind="drama" id={task.drama_project_id} />
+      </span>,
+    );
+  }
+  if (task.project_id) {
+    parts.push(
+      <span key="project" onClick={stopRowClick}>
+        <AdminEntityLink kind="project" id={task.project_id} />
+      </span>,
+    );
+  }
+  if (task.asset_id) {
+    parts.push(
+      <span key="asset" onClick={stopRowClick}>
+        <AdminEntityLink kind="drama_asset" id={task.asset_id} />
+      </span>,
+    );
+  }
   if (task.episode_id) parts.push(<span key="ep">分集#{task.episode_id}</span>);
   if (task.fragment_id) parts.push(<span key="frag">分镜#{task.fragment_id}</span>);
   if (parts.length === 0) return <span className="text-[#909399]">—</span>;
@@ -44,6 +69,20 @@ function scopeLinks(task: AdminTaskRow): ReactNode {
 
 function canCancel(task: AdminTaskRow): boolean {
   return task.cancelable && !TERMINAL_STATUSES.has(task.status);
+}
+
+// 列表单元格：参数/结果单行摘要；title 也截断，避免巨 payload 塞进 DOM
+function jsonCell(value: Record<string, unknown> | null | undefined) {
+  if (!hasJsonContent(value)) {
+    return <span className="text-[#909399]">—</span>;
+  }
+  const preview = compactJsonPreview(value, 72);
+  const tip = compactJsonPreview(value, 280);
+  return (
+    <pre className="task-list-json" title={tip}>
+      {preview}
+    </pre>
+  );
 }
 
 // 统一任务平台监控页
@@ -371,6 +410,8 @@ export function QueuesPage() {
                     <th>状态</th>
                     <th>进度</th>
                     <th>费用</th>
+                    <th>提交参数</th>
+                    <th>结果</th>
                     <th>时间</th>
                     <th>操作</th>
                   </tr>
@@ -378,7 +419,7 @@ export function QueuesPage() {
                 <tbody>
                   {(data?.items.length ?? 0) === 0 ? (
                     <tr>
-                      <td colSpan={9}>
+                      <td colSpan={11}>
                         <div className="admin-empty !py-10">
                           <div className="admin-empty-title">暂无任务</div>
                           <div className="admin-empty-desc">切换到「全部」查看历史任务</div>
@@ -399,7 +440,7 @@ export function QueuesPage() {
                             {taskTypeLabel(task.task_type)}
                           </div>
                         </td>
-                        <td>
+                        <td onClick={stopRowClick}>
                           <AdminEntityLink
                             kind="user"
                             id={task.requested_by}
@@ -407,7 +448,9 @@ export function QueuesPage() {
                             className="text-xs"
                           />
                         </td>
-                        <td className="max-w-[200px] text-xs">{scopeLinks(task)}</td>
+                        <td className="max-w-[200px] text-xs" onClick={stopRowClick}>
+                          {scopeLinks(task)}
+                        </td>
                         <td>
                           <span className={`admin-status-pill ${statusClass(task.status)}`}>
                             {taskStatusLabel(task.status)}
@@ -426,6 +469,8 @@ export function QueuesPage() {
                               ? `预扣 ¥${fenToYuan(task.billing_estimate_fen ?? 0)}`
                               : "—"}
                         </td>
+                        <td className="task-list-json-cell">{jsonCell(task.payload)}</td>
+                        <td className="task-list-json-cell">{jsonCell(task.result_payload)}</td>
                         <td className="text-xs text-[#909399]">
                           <div>创建 {formatTime(task.created_at)}</div>
                           {task.started_at ? <div>开始 {formatTime(task.started_at)}</div> : null}

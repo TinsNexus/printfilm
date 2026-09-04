@@ -16,6 +16,7 @@ from app.services.model_settings import (
     patch_admin_model_settings,
     patch_admin_routing_settings,
 )
+from app.services.upstream_model_catalog import list_upstream_models
 
 router = APIRouter()
 
@@ -23,6 +24,16 @@ router = APIRouter()
 class AdminArkModelsRequest(BaseModel):
     capability: str = "all"
     api_key: str | None = Field(default=None, max_length=512)
+
+
+class AdminUpstreamModelsRequest(BaseModel):
+    """按渠道凭证拉取上游 /models 目录。"""
+
+    channel_id: str | None = Field(default=None, max_length=64)
+    protocol: str = Field(default="auto", max_length=32)
+    base_url: str = Field(default="", max_length=512)
+    api_key: str | None = Field(default=None, max_length=512)
+    capability: str = Field(default="all", max_length=32)
 
 
 @router.get("/settings/routing", response_model=AdminRoutingSettingsOut)
@@ -97,6 +108,27 @@ async def admin_list_ark_models(
             db,
             capability=body.capability,
             api_key_override=body.api_key,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"models": models}
+
+
+@router.post("/settings/upstream/models")
+async def admin_list_upstream_models(
+    body: AdminUpstreamModelsRequest,
+    _admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """按渠道协议拉取上游可用模型（OpenAI 兼容或方舟）。"""
+    try:
+        models = await list_upstream_models(
+            db,
+            channel_id=body.channel_id,
+            protocol=body.protocol,
+            base_url=body.base_url,
+            api_key_override=body.api_key,
+            capability=body.capability,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -39,7 +39,7 @@ function modelOptions(
 
 /** 火山方舟生图/视频：固定渠道 + 手动拉取模型 */
 export function ArkVolcMediaPanel({
-  channelId,
+  channelId: _channelId,
   hasApiKey,
   apiKeyInput,
   onApiKeyChange,
@@ -94,12 +94,12 @@ export function ArkVolcMediaPanel({
   return (
     <SettingsPanel
       className="settings-panel--compact"
-      title="火山方舟（生图 / 视频）"
-      description={`固定 Base URL · ${ARK_BASE} · 渠道 ${channelId}`}
+      title="2. 火山方舟媒体专区"
+      description={`固定 Base URL · ${ARK_BASE}`}
       actions={
         <button
           type="button"
-          className="admin-quick-btn !inline-flex !w-auto items-center gap-1.5 px-3 py-1.5 text-xs"
+          className="admin-btn admin-btn-secondary settings-mini-btn"
           disabled={fetching || !canFetch}
           onClick={() => void fetchModels()}
         >

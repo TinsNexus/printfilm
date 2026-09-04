@@ -1,10 +1,14 @@
 import { useMemo, useState } from "react";
-import { BarChart3, Bell, CreditCard, Mail, Wallet } from "lucide-react";
-import { LabeledControl, SectionTitle, SettingsLoading, SettingsPanel, SettingsSurface, SettingsTabShell } from "@/components/settings/SettingsPanel";
+import {
+  LabeledControl,
+  SettingsLoading,
+  SettingsPanel,
+  SettingsStatusBar,
+  SettingsTabShell,
+} from "@/components/settings/SettingsPanel";
 import { SecretField } from "@/components/settings/SecretField";
 import { Switch } from "@/components/ui/switch";
 import { useAdminModelSettings } from "@/hooks/useAdminModelSettings";
-import { cn } from "@/lib/utils";
 
 // 易支付与 Token 计费配置
 export function PaymentSettingsPanel() {
@@ -23,6 +27,19 @@ export function PaymentSettingsPanel() {
     const hasKey = (form.has_epay_key && !clearEpayKey) || epayKeyInput.trim().length > 0;
     return Boolean(form.epay_pid && form.epay_api_url && hasKey);
   }, [form, clearEpayKey, epayKeyInput]);
+
+  const volcReady = useMemo(() => {
+    if (!form) return false;
+    const hasAk = (form.has_volc_access_key_id && !clearVolcAk) || volcAkInput.trim().length > 0;
+    const hasSk = (form.has_volc_secret_access_key && !clearVolcSk) || volcSkInput.trim().length > 0;
+    return Boolean(form.volc_ark_usage_enabled && hasAk && hasSk);
+  }, [form, clearVolcAk, clearVolcSk, volcAkInput, volcSkInput]);
+
+  const smtpReady = useMemo(() => {
+    if (!form?.smtp_enabled) return false;
+    const hasPass = (form.has_smtp_password && !clearSmtpPassword) || smtpPasswordInput.trim().length > 0;
+    return Boolean(form.smtp_host && form.smtp_from && hasPass);
+  }, [form, clearSmtpPassword, smtpPasswordInput]);
 
   async function handleSave() {
     if (!form) return;
@@ -88,20 +105,47 @@ export function PaymentSettingsPanel() {
 
   return (
     <SettingsTabShell onSave={() => void handleSave()} saving={saving}>
-      <SettingsSurface>
-        <SectionTitle icon={<CreditCard className="h-4 w-4" />} title="支付就绪" />
-        <div className="mt-2 flex flex-wrap gap-2">
-          <span className={cn("admin-status-pill", epayReady ? "is-done" : "is-warn")}>
-            {epayReady ? "易支付已配置" : "易支付未完整配置"}
-          </span>
-          <span className={cn("admin-status-pill", form.billing_enabled ? "is-done" : "")}>
-            {form.billing_enabled ? "Token 计费已开启" : "Token 计费已关闭"}
-          </span>
-        </div>
-      </SettingsSurface>
+      <SettingsStatusBar
+        title="支付就绪状态"
+        items={[
+          {
+            id: "epay",
+            label: "易支付",
+            ready: epayReady,
+            readyText: "已配置",
+            pendingText: "未完整",
+          },
+          {
+            id: "billing",
+            label: "Token 计费",
+            ready: form.billing_enabled,
+            readyText: "已开启",
+            pendingText: "已关闭",
+          },
+          {
+            id: "volc",
+            label: "上游成本",
+            ready: volcReady,
+            readyText: "已启用",
+            pendingText: form.volc_ark_usage_enabled ? "缺凭证" : "未启用",
+          },
+          {
+            id: "smtp",
+            label: "SMTP",
+            ready: smtpReady,
+            readyText: "已配置",
+            pendingText: form.smtp_enabled ? "不完整" : "未启用",
+          },
+        ]}
+      />
 
-      <SettingsPanel title="易支付 Epay" description="生产回调请用 /epay/notify，勿含 /api/">
-        <div className="settings-field-grid">
+      <div className="settings-routing-grid">
+        <SettingsPanel
+          className="settings-panel--compact"
+          title="1. 易支付 Epay"
+          description="生产回调请用 /epay/notify，勿含 /api/"
+        >
+          <div className="settings-field-grid">
             <LabeledControl label="网关地址">
               <input
                 className="settings-input"
@@ -127,14 +171,14 @@ export function PaymentSettingsPanel() {
                 setClearEpayKey(true);
               }}
             />
-            <LabeledControl label="异步通知 URL" hint="生产：{域名}/epay/notify">
+            <LabeledControl label="异步通知 URL" hint="生产：{域名}/epay/notify" className="settings-field-span-full">
               <input
                 className="settings-input"
                 value={form.epay_notify_url}
                 onChange={(e) => patchField("epay_notify_url", e.target.value)}
               />
             </LabeledControl>
-            <LabeledControl label="同步跳转 URL">
+            <LabeledControl label="同步跳转 URL" className="settings-field-span-full">
               <input
                 className="settings-input"
                 value={form.epay_return_url}
@@ -142,18 +186,21 @@ export function PaymentSettingsPanel() {
               />
             </LabeledControl>
           </div>
-      </SettingsPanel>
+        </SettingsPanel>
 
-      <SettingsPanel title="Token 计费" description="按上游成本 × markup 扣费">
-        <SectionTitle icon={<Wallet className="h-4 w-4" />} title="开关与系数" />
-        <div className="settings-toggle-row">
+        <SettingsPanel
+          className="settings-panel--compact"
+          title="2. Token 计费"
+          description="按上游成本 × markup 扣费"
+        >
+          <div className="settings-toggle-row">
             <div>
               <strong>启用 Token 计费</strong>
-              <span>关闭后生成不扣余额（管理员可单独豁免）</span>
+              <span>关闭后生成不扣余额</span>
             </div>
             <Switch checked={form.billing_enabled} onCheckedChange={(v) => patchField("billing_enabled", v)} />
           </div>
-        <div className="settings-field-grid mt-2">
+          <div className="settings-field-grid mt-3">
             <LabeledControl label="加价系数 markup">
               <input
                 className="settings-input"
@@ -185,8 +232,8 @@ export function PaymentSettingsPanel() {
             </LabeledControl>
           </div>
 
-          <SectionTitle icon={<Wallet className="h-4 w-4" />} title="单价（元 / 百万 token）" />
-          <div className="settings-field-grid mt-2">
+          <div className="settings-subsection-title">单价（元 / 百万 token）</div>
+          <div className="settings-field-grid">
             <LabeledControl label="LLM">
               <input
                 className="settings-input"
@@ -234,8 +281,8 @@ export function PaymentSettingsPanel() {
             </LabeledControl>
           </div>
 
-          <SectionTitle icon={<Wallet className="h-4 w-4" />} title="估算 token（缺 usage 时）" />
-          <div className="settings-field-grid mt-2">
+          <div className="settings-subsection-title">估算 token（缺 usage 时）</div>
+          <div className="settings-field-grid">
             <LabeledControl label="LLM 估算">
               <input
                 className="settings-input"
@@ -270,14 +317,14 @@ export function PaymentSettingsPanel() {
             </LabeledControl>
           </div>
 
-          <div className="settings-toggle-row mt-2">
+          <div className="settings-toggle-row mt-3">
             <div>
-              <strong>旧版次数配额（quota_enabled）</strong>
+              <strong>旧版次数配额</strong>
               <span>与 Token 计费并存时以 billing_enabled 为准</span>
             </div>
             <Switch checked={form.quota_enabled} onCheckedChange={(v) => patchField("quota_enabled", v)} />
           </div>
-        <div className="settings-field-grid mt-2">
+          <div className="settings-field-grid mt-2">
             <LabeledControl label="新用户默认次数">
               <input
                 className="settings-input"
@@ -288,22 +335,27 @@ export function PaymentSettingsPanel() {
               />
             </LabeledControl>
           </div>
-      </SettingsPanel>
+        </SettingsPanel>
+      </div>
 
-      <SettingsPanel title="额度告警" description="用户消费提醒与平台费用邮件告警">
-          <SectionTitle icon={<Bell className="h-4 w-4" />} title="用户消费提醒" />
+      <div className="settings-routing-grid">
+        <SettingsPanel
+          className="settings-panel--compact"
+          title="3. 额度告警与 SMTP"
+          description="用户消费提醒与平台费用邮件"
+        >
           <div className="settings-toggle-row">
             <div>
-              <strong>启用用户弹窗提醒</strong>
-              <span>用户累计扣费每达间隔档位弹出一次提示</span>
+              <strong>用户弹窗提醒</strong>
+              <span>累计扣费每达间隔档位弹出一次</span>
             </div>
             <Switch
               checked={form.billing_user_alert_enabled}
               onCheckedChange={(v) => patchField("billing_user_alert_enabled", v)}
             />
           </div>
-        <div className="settings-field-grid mt-2">
-            <LabeledControl label="提醒间隔（分）" hint="1000 = ¥10；100000 = ¥1000">
+          <div className="settings-field-grid mt-2">
+            <LabeledControl label="提醒间隔（分）" hint="1000 = ¥10">
               <input
                 className="settings-input"
                 type="number"
@@ -314,19 +366,18 @@ export function PaymentSettingsPanel() {
             </LabeledControl>
           </div>
 
-          <SectionTitle icon={<Mail className="h-4 w-4" />} title="平台费用邮件告警" />
-          <div className="settings-toggle-row">
+          <div className="settings-toggle-row mt-3">
             <div>
-              <strong>启用管理员邮件告警</strong>
-              <span>按上游 cost 汇总，达到阈值后发送邮件</span>
+              <strong>管理员邮件告警</strong>
+              <span>按上游 cost 汇总达阈值后发信</span>
             </div>
             <Switch
               checked={form.billing_admin_cost_alert_enabled}
               onCheckedChange={(v) => patchField("billing_admin_cost_alert_enabled", v)}
             />
           </div>
-        <div className="settings-field-grid mt-2">
-            <LabeledControl label="告警阈值（分）" hint="例：500000 = ¥5000">
+          <div className="settings-field-grid mt-2">
+            <LabeledControl label="告警阈值（分）">
               <input
                 className="settings-input"
                 type="number"
@@ -339,7 +390,7 @@ export function PaymentSettingsPanel() {
             </LabeledControl>
             <LabeledControl label="统计周期">
               <select
-                className="settings-input"
+                className="settings-select"
                 value={form.billing_admin_cost_alert_period}
                 onChange={(e) => patchField("billing_admin_cost_alert_period", e.target.value)}
               >
@@ -348,31 +399,24 @@ export function PaymentSettingsPanel() {
                 <option value="all_time">累计</option>
               </select>
             </LabeledControl>
-            <LabeledControl label="收件邮箱" hint="逗号分隔；留空则发给全部管理员">
+            <LabeledControl label="收件邮箱" hint="逗号分隔" className="settings-field-span-full">
               <input
                 className="settings-input"
-                placeholder="admin@example.com,ops@example.com"
+                placeholder="admin@example.com"
                 value={form.billing_admin_cost_alert_emails}
                 onChange={(e) => patchField("billing_admin_cost_alert_emails", e.target.value)}
               />
             </LabeledControl>
           </div>
-          {(form.billing_admin_cost_alert_last_period_key || form.billing_admin_cost_alert_last_level > 0) && (
-            <p className="mt-2 text-xs text-[#909399]">
-              上次告警：周期 {form.billing_admin_cost_alert_last_period_key || "—"}，档位{" "}
-              {form.billing_admin_cost_alert_last_level}
-            </p>
-          )}
 
-          <SectionTitle icon={<Mail className="h-4 w-4" />} title="SMTP 发信" />
-          <div className="settings-toggle-row">
+          <div className="settings-toggle-row mt-3">
             <div>
               <strong>启用 SMTP</strong>
-              <span>邮件告警依赖 SMTP 配置</span>
+              <span>邮件告警依赖 SMTP</span>
             </div>
             <Switch checked={form.smtp_enabled} onCheckedChange={(v) => patchField("smtp_enabled", v)} />
           </div>
-        <div className="settings-field-grid mt-2">
+          <div className="settings-field-grid mt-2">
             <LabeledControl label="SMTP 主机">
               <input
                 className="settings-input"
@@ -390,15 +434,14 @@ export function PaymentSettingsPanel() {
                 onChange={(e) => patchField("smtp_port", Number(e.target.value))}
               />
             </LabeledControl>
-            <LabeledControl label="发件人地址">
+            <LabeledControl label="发件人">
               <input
                 className="settings-input"
-                placeholder="noreply@example.com"
                 value={form.smtp_from}
                 onChange={(e) => patchField("smtp_from", e.target.value)}
               />
             </LabeledControl>
-            <LabeledControl label="SMTP 用户名">
+            <LabeledControl label="用户名">
               <input
                 className="settings-input"
                 value={form.smtp_user}
@@ -415,30 +458,30 @@ export function PaymentSettingsPanel() {
                 setClearSmtpPassword(true);
               }}
             />
-            <LabeledControl label="TLS">
-              <div className="settings-toggle-row !mt-0">
-                <Switch
-                  checked={form.smtp_use_tls}
-                  onCheckedChange={(v) => patchField("smtp_use_tls", v)}
-                />
+            <LabeledControl label="使用 TLS">
+              <div className="settings-inline-switch">
+                <Switch checked={form.smtp_use_tls} onCheckedChange={(v) => patchField("smtp_use_tls", v)} />
               </div>
             </LabeledControl>
           </div>
-      </SettingsPanel>
+        </SettingsPanel>
 
-      <SettingsPanel title="上游成本监控" description="火山 GetInferenceUsage，与方舟 API Key 分离">
-          <SectionTitle icon={<BarChart3 className="h-4 w-4" />} title="火山 Access Key" />
+        <SettingsPanel
+          className="settings-panel--compact"
+          title="4. 上游成本监控"
+          description="火山 GetInferenceUsage，与方舟 API Key 分离"
+        >
           <div className="settings-toggle-row">
             <div>
               <strong>启用官方用量拉取</strong>
-              <span>关闭后仪表盘仅展示本地 seedance 成本</span>
+              <span>关闭后仪表盘仅展示本地成本</span>
             </div>
             <Switch
               checked={form.volc_ark_usage_enabled}
               onCheckedChange={(v) => patchField("volc_ark_usage_enabled", v)}
             />
           </div>
-        <div className="settings-field-grid mt-2">
+          <div className="settings-field-grid mt-3">
             <SecretField
               label="Access Key ID"
               value={volcAkInput}
@@ -467,7 +510,8 @@ export function PaymentSettingsPanel() {
               />
             </LabeledControl>
           </div>
-      </SettingsPanel>
+        </SettingsPanel>
+      </div>
     </SettingsTabShell>
   );
 }

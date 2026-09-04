@@ -414,6 +414,8 @@ export type AdminTaskRow = {
   drama_project_id?: number | null;
   episode_id?: number | null;
   fragment_id?: number | null;
+  asset_id?: number | null;
+  script_id?: number | null;
   created_at?: string | null;
   started_at?: string | null;
   finished_at?: string | null;
@@ -421,6 +423,10 @@ export type AdminTaskRow = {
   billing_charged_fen?: number;
   billing_refunded_fen?: number;
   billing_status?: string;
+  /** 提交参数（入队 payload） */
+  payload?: Record<string, unknown> | null;
+  /** 执行结果 */
+  result_payload?: Record<string, unknown> | null;
 };
 
 export type AdminUsageEventBrief = {

@@ -102,7 +102,8 @@ class Settings(BaseSettings):
     billing_tts_per_m: float = 2.0
     # Fallback tokens when API omits usage
     billing_est_llm_tokens: int = 80_000
-    billing_est_seedream_tokens: int = 20_000
+    # Seedream 单张实测约 3–3.5 万 tokens；预估略留余量，避免预扣远高于实扣
+    billing_est_seedream_tokens: int = 45_000
     billing_est_tts_tokens: int = 5_000
     billing_est_seedance_tokens_per_sec: int = 20_000
     # Signup grant (fen)

@@ -36,7 +36,7 @@ export function SecretField({
             autoComplete="new-password"
           />
           {configured && onClear ? (
-            <button type="button" className="admin-quick-btn shrink-0 px-3 text-xs" onClick={onClear}>
+            <button type="button" className="admin-btn admin-btn-secondary settings-mini-btn" onClick={onClear}>
               清除
             </button>
           ) : null}

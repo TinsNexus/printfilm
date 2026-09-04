@@ -7,13 +7,28 @@ from app.config import get_settings
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import User, WalletLedger
-from app.schemas import LoginRequest, ProfileUpdateRequest, RegisterRequest, TokenResponse, UserOut, ChangePasswordRequest
+from app.schemas import (
+    ChangePasswordRequest,
+    ForgotPasswordRequest,
+    LoginRequest,
+    ProfileUpdateRequest,
+    RegisterRequest,
+    ResetPasswordRequest,
+    TokenResponse,
+    UserOut,
+)
 from app.services import storage
 from app.services.auth import (
     create_access_token,
     get_user_by_email,
     hash_password,
     verify_password,
+)
+from app.services.password_reset import (
+    InvalidTokenError,
+    RedisUnavailableError,
+    apply_password_reset,
+    request_password_reset,
 )
 from app.services.profile import ProfileError, prepare_profile_update
 
@@ -80,6 +95,33 @@ async def change_password(
         raise HTTPException(status_code=400, detail="新密码不能与当前密码相同")
     user.hashed_password = hash_password(body.new_password)
     await db.commit()
+    return {"ok": True}
+
+
+@router.post("/forgot-password")
+async def forgot_password(
+    body: ForgotPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, object]:
+    """发送密码重置邮件；统一成功文案，避免邮箱枚举。"""
+    try:
+        return await request_password_reset(db, str(body.email))
+    except RedisUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/reset-password")
+async def reset_password(
+    body: ResetPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, bool]:
+    """用邮件中的一次性 token 设置新密码。"""
+    try:
+        await apply_password_reset(db, token=body.token, new_password=body.new_password)
+    except RedisUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except InvalidTokenError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True}
 
 

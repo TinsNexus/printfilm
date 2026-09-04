@@ -96,6 +96,12 @@
   color: var(--crimson);
 }
 
+.auth-notice {
+  color: #027a48;
+  margin: 0;
+  font-size: 0.95rem;
+}
+
 @media (max-width: 900px) {
   .auth-shell {
     grid-template-columns: 1fr;

@@ -43,6 +43,10 @@ async def execute_task_run(task_id: int) -> None:
             await db.commit()
             return
 
+        # 在 freeze_for_task 之前读取 steps：_lock_task(populate_existing=True)
+        # 会卸掉已预加载的关系，之后访问 task.steps 会触发异步懒加载抛 MissingGreenlet。
+        step = task.steps[0] if task.steps else None
+
         try:
             await freeze_for_task(db, task)
         except ValueError as exc:
@@ -64,7 +68,6 @@ async def execute_task_run(task_id: int) -> None:
             await db.commit()
             return
 
-        step = task.steps[0] if task.steps else None
         now = datetime.now(UTC)
         task.status = "running"
         task.started_at = task.started_at or now
@@ -89,10 +92,10 @@ async def execute_task_run(task_id: int) -> None:
                     return
                 handler = get_task_handler(task.domain, task.task_type)
                 result = await handler.executor(task) if handler else {"ok": False, "error": "missing_handler"}
+                # 重新加载（含 selectinload steps）；勿 refresh，会卸掉关系再触发懒加载。
                 task = await get_task_for_runtime(db, task_id)
                 if not task:
                     return
-                await db.refresh(task)
                 if isinstance(result, dict) and (result.get("deferred") or result.get("awaiting_poll")):
                     await db.commit()
                     return

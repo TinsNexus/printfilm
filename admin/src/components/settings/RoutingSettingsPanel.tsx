@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Mic, Plus, Trash2, Type } from "lucide-react";
+import { Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, type AdminRoutingSettings } from "@/api/client";
 import {
@@ -7,13 +7,19 @@ import {
   ARK_BASE,
   ARK_VOLC_CHANNEL_ID,
   consolidateArkVolcChannels,
-  DEFAULT_IMAGE_MODEL,
   DEFAULT_VIDEO_MODEL,
   inferVolcMediaDraft,
   resolveDefaultModelsFromUpstream,
   type VolcMediaDraft,
 } from "@/components/settings/ArkVolcMediaPanel";
-import { LabeledControl, SectionTitle, SettingsLoading, SettingsPanel, SettingsSurface, SettingsTabShell } from "@/components/settings/SettingsPanel";
+import {
+  LabeledControl,
+  SettingsLoading,
+  SettingsPanel,
+  SettingsSurface,
+  SettingsTabShell,
+} from "@/components/settings/SettingsPanel";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 type ChannelDraft = AdminRoutingSettings["system_channels"][number] & {
@@ -22,11 +28,20 @@ type ChannelDraft = AdminRoutingSettings["system_channels"][number] & {
 
 type Capability = "text" | "image" | "video" | "audio";
 
+type UpstreamModelOption = { id: string; label: string; capability: string };
+
 const CAPABILITY_LABELS: Record<Capability, string> = {
   text: "文本",
   image: "图像",
   video: "视频",
   audio: "语音",
+};
+
+const PROTOCOL_LABELS: Record<string, string> = {
+  auto: "自动",
+  openai: "OpenAI 兼容",
+  ark: "ARK（生图/视频）",
+  volc_tts: "豆包 TTS",
 };
 
 // 与后端 infer_model_capability 对齐，用于渠道能力徽标
@@ -56,13 +71,35 @@ function channelCapabilities(channel: AdminRoutingSettings["system_channels"][nu
   return Array.from(caps);
 }
 
-// 渠道 + 逻辑模型路由配置面板
+// 计算路由就绪条
+function buildReadiness(data: AdminRoutingSettings | null) {
+  const channels = data?.system_channels ?? [];
+  const enabled = channels.filter((c) => c.enabled);
+  const hasCap = (cap: Capability) =>
+    enabled.some(
+      (c) =>
+        (c.has_api_key || Boolean(c.api_key)) &&
+        (channelCapabilities(c).includes(cap) || c.models.some((m) => inferCapability(m, c.protocol) === cap)),
+    );
+  return [
+    { id: "text", label: "文本路由", ready: hasCap("text") || Boolean(data?.default_models.text_model) },
+    { id: "image", label: "图像路由", ready: hasCap("image") || Boolean(data?.default_models.image_model) },
+    { id: "video", label: "视频路由", ready: hasCap("video") || Boolean(data?.default_models.video_model) },
+    { id: "audio", label: "语音路由", ready: hasCap("audio") || Boolean(data?.default_models.audio_model) },
+    { id: "secret", label: "密钥加密存储", ready: true },
+  ] as const;
+}
+
+// 渠道 + 逻辑模型路由配置面板（设计稿：就绪条 + 主从渠道 + 方舟专区 + 逻辑路由表）
 export function RoutingSettingsPanel() {
   const [data, setData] = useState<AdminRoutingSettings | null>(null);
   const [apiKeyInputs, setApiKeyInputs] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [selectedChannelId, setSelectedChannelId] = useState("");
+  const [upstreamModels, setUpstreamModels] = useState<UpstreamModelOption[]>([]);
+  const [fetchingModels, setFetchingModels] = useState(false);
+  const [manualModel, setManualModel] = useState("");
   const [volcDraft, setVolcDraft] = useState<VolcMediaDraft>({
     imageModel: "",
     image45Model: "",
@@ -80,6 +117,7 @@ export function RoutingSettingsPanel() {
       setData(res);
       setSelectedChannelId((prev) => prev || res.system_channels[0]?.id || "");
       setApiKeyInputs({});
+      setUpstreamModels([]);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "加载路由配置失败");
     } finally {
@@ -100,16 +138,27 @@ export function RoutingSettingsPanel() {
     [apiKeyInputs, data],
   );
 
-  const otherChannels = useMemo(
-    () => channels.filter((item) => item.id !== ARK_VOLC_CHANNEL_ID),
-    [channels],
-  );
   const selectedChannel =
-    otherChannels.find((item) => item.id === selectedChannelId) ?? otherChannels[0];
+    channels.find((item) => item.id === selectedChannelId) ?? channels[0] ?? null;
   const arkVolcChannel =
     channels.find((c) => c.id === ARK_VOLC_CHANNEL_ID) ?? channels.find((c) => c.protocol === "ark");
-  const hasVideoChannel = Boolean(volcDraft.videoModel || arkVolcChannel);
-  const videoLogicalModels = (data?.logical_models ?? []).filter((m) => m.capability === "video");
+  const readiness = buildReadiness(data);
+
+  const catalogModels = useMemo(() => {
+    if (!selectedChannel) return [] as UpstreamModelOption[];
+    const map = new Map<string, UpstreamModelOption>();
+    for (const m of upstreamModels) map.set(m.id, m);
+    for (const id of selectedChannel.models) {
+      if (!map.has(id)) {
+        map.set(id, {
+          id,
+          label: id,
+          capability: inferCapability(id, selectedChannel.protocol),
+        });
+      }
+    }
+    return Array.from(map.values());
+  }, [selectedChannel, upstreamModels]);
 
   function updateChannel(channelId: string, patch: Partial<AdminRoutingSettings["system_channels"][number]>) {
     setData((prev) =>
@@ -134,80 +183,16 @@ export function RoutingSettingsPanel() {
         : prev,
     );
     setSelectedChannelId(channel.id);
+    setUpstreamModels([]);
   }
 
-  // 空白通用渠道
+  // 新增空白 OpenAI 兼容渠道
   function addChannel() {
     const id = `channel-${Date.now()}`;
     insertChannel({
       id,
       name: "新渠道",
       base_url: "",
-      api_key: "",
-      has_api_key: false,
-      api_format: "openai",
-      protocol: "auto",
-      models: [],
-      enabled: true,
-      sort_order: channels.length,
-    });
-  }
-
-  // 快捷新增：视频 / 图像 / 文本 / 语音
-  function addPreset(kind: Capability) {
-    const stamp = Date.now();
-    if (kind === "video") {
-      insertChannel({
-        id: `ark-video-${stamp}`,
-        name: "火山方舟视频",
-        base_url: ARK_BASE,
-        api_key: "",
-        has_api_key: false,
-        api_format: "ark",
-        protocol: "ark",
-        models: [DEFAULT_VIDEO_MODEL],
-        enabled: true,
-        sort_order: channels.length,
-      });
-      toast.message("已加入视频渠道草稿", {
-        description: "填写方舟 API Key，确认上游 Seedance 模型 ID 后点「保存路由」",
-      });
-      return;
-    }
-    if (kind === "image") {
-      insertChannel({
-        id: `ark-image-${stamp}`,
-        name: "火山方舟生图",
-        base_url: ARK_BASE,
-        api_key: "",
-        has_api_key: false,
-        api_format: "ark",
-        protocol: "ark",
-        models: [DEFAULT_IMAGE_MODEL],
-        enabled: true,
-        sort_order: channels.length,
-      });
-      return;
-    }
-    if (kind === "audio") {
-      insertChannel({
-        id: `volc-tts-${stamp}`,
-        name: "豆包语音 TTS",
-        base_url: "",
-        api_key: "",
-        has_api_key: false,
-        api_format: "openai",
-        protocol: "volc_tts",
-        models: ["zh_female_cancan_mars_bigtts"],
-        enabled: true,
-        sort_order: channels.length,
-      });
-      return;
-    }
-    insertChannel({
-      id: `openai-text-${stamp}`,
-      name: "OpenAI 兼容文本",
-      base_url: "https://api.openai.com/v1",
       api_key: "",
       has_api_key: false,
       api_format: "openai",
@@ -219,6 +204,10 @@ export function RoutingSettingsPanel() {
   }
 
   function removeChannel(channelId: string) {
+    if (channelId === ARK_VOLC_CHANNEL_ID) {
+      toast.error("火山方舟媒体渠道请通过下方专区管理，不可直接删除");
+      return;
+    }
     setData((prev) =>
       prev
         ? {
@@ -233,6 +222,58 @@ export function RoutingSettingsPanel() {
           }
         : prev,
     );
+    setUpstreamModels([]);
+  }
+
+  // 从上游 /models 拉取可用模型
+  async function fetchUpstreamModels() {
+    if (!selectedChannel) return;
+    const keyInput = apiKeyInputs[selectedChannel.id]?.trim();
+    if (!selectedChannel.has_api_key && !keyInput) {
+      toast.error("请先填写 API Key");
+      return;
+    }
+    if (selectedChannel.protocol === "volc_tts") {
+      toast.error("豆包 TTS 请手动填写音色 ID");
+      return;
+    }
+    setFetchingModels(true);
+    try {
+      const res = await api<{ models: UpstreamModelOption[] }>("/api/admin/settings/upstream/models", {
+        method: "POST",
+        body: JSON.stringify({
+          channel_id: selectedChannel.id,
+          protocol: selectedChannel.protocol,
+          base_url: selectedChannel.base_url,
+          api_key: keyInput || undefined,
+          capability: "all",
+        }),
+      });
+      setUpstreamModels(res.models);
+      toast.success(`已拉取 ${res.models.length} 个可用模型`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "拉取模型失败");
+    } finally {
+      setFetchingModels(false);
+    }
+  }
+
+  function toggleModel(modelId: string, checked: boolean) {
+    if (!selectedChannel) return;
+    const next = checked
+      ? [...new Set([...selectedChannel.models, modelId])]
+      : selectedChannel.models.filter((id) => id !== modelId);
+    updateChannel(selectedChannel.id, { models: next });
+  }
+
+  function addManualModel() {
+    if (!selectedChannel) return;
+    const id = manualModel.trim();
+    if (!id) return;
+    if (!selectedChannel.models.includes(id)) {
+      updateChannel(selectedChannel.id, { models: [...selectedChannel.models, id] });
+    }
+    setManualModel("");
   }
 
   async function handleSave() {
@@ -256,9 +297,14 @@ export function RoutingSettingsPanel() {
             api_key: apiKeyInputs[channel.id]?.trim() || undefined,
             api_format: channel.api_format,
             protocol: channel.protocol,
-            models: channel.id === ARK_VOLC_CHANNEL_ID
-              ? [...new Set([volcDraft.imageModel, volcDraft.image45Model, volcDraft.videoModel].filter(Boolean))]
-              : channel.models,
+            models:
+              channel.id === ARK_VOLC_CHANNEL_ID
+                ? [
+                    ...new Set(
+                      [volcDraft.imageModel, volcDraft.image45Model, volcDraft.videoModel].filter(Boolean),
+                    ),
+                  ]
+                : channel.models,
             enabled: channel.enabled,
             sort_order: channel.sort_order,
           })),
@@ -319,7 +365,20 @@ export function RoutingSettingsPanel() {
   }
 
   return (
-    <SettingsTabShell onSave={() => void handleSave()} saving={saving} saveLabel="保存路由">
+    <SettingsTabShell onSave={() => void handleSave()} saving={saving} saveLabel="保存">
+      <SettingsSurface className="settings-readiness-bar">
+        <div className="settings-readiness-title">路由就绪状态</div>
+        <div className="settings-readiness-row">
+          {readiness.map((item) => (
+            <div key={item.id} className={cn("settings-readiness-item", item.ready && "is-ready")}>
+              <span className={cn("settings-readiness-dot", item.ready ? "is-on" : "is-off")} />
+              <span>{item.label}</span>
+              <em>{item.ready ? (item.id === "secret" ? "已启用" : "已配置") : "未就绪"}</em>
+            </div>
+          ))}
+        </div>
+      </SettingsSurface>
+
       {(data?.validation_errors.length ?? 0) > 0 ? (
         <SettingsSurface className="border-[#fde2e2] bg-[#fef0f0]">
           <div className="text-xs font-medium text-[#f56c6c]">配置校验</div>
@@ -331,314 +390,320 @@ export function RoutingSettingsPanel() {
         </SettingsSurface>
       ) : null}
 
-      <ArkVolcMediaPanel
-        channelId={ARK_VOLC_CHANNEL_ID}
-        hasApiKey={Boolean(arkVolcChannel?.has_api_key)}
-        apiKeyInput={apiKeyInputs[ARK_VOLC_CHANNEL_ID] ?? ""}
-        onApiKeyChange={(value) => setApiKeyInputs((prev) => ({ ...prev, [ARK_VOLC_CHANNEL_ID]: value }))}
-        draft={volcDraft}
-        onDraftChange={(patch) => setVolcDraft((prev) => ({ ...prev, ...patch }))}
-      />
-
-      {!hasVideoChannel ? (
-        <SettingsSurface className="border-[#faecd8] bg-[#fdf6ec]">
-          <div className="text-xs font-medium text-[#e6a23c]">请在上方选择默认视频模型并保存</div>
-        </SettingsSurface>
-      ) : null}
-
-      <SettingsPanel
-        className="settings-panel--compact"
-        title="其他上游渠道"
-        description="文本 LLM、语音 TTS 等"
-      >
-        <div className="mb-2 flex flex-wrap gap-1.5">
-          <button
-            type="button"
-            className="admin-quick-btn !inline-flex !w-auto !flex-row items-center gap-1.5 px-3 py-1.5 text-xs"
-            onClick={() => addPreset("text")}
-          >
-            <Type className="h-3.5 w-3.5" />
-            添加文本渠道
-          </button>
-          <button
-            type="button"
-            className="admin-quick-btn !inline-flex !w-auto !flex-row items-center gap-1.5 px-3 py-1.5 text-xs"
-            onClick={() => addPreset("audio")}
-          >
-            <Mic className="h-3.5 w-3.5" />
-            添加语音渠道
-          </button>
-          <button
-            type="button"
-            className="rounded-lg border border-dashed border-[#dcdfe6] px-3 py-1.5 text-xs text-[#606266] hover:border-[#67c23a]"
-            onClick={addChannel}
-          >
-            <Plus className="mr-1 inline h-3.5 w-3.5" />
-            空白渠道
-          </button>
-        </div>
-
-        <div className="grid gap-2 xl:grid-cols-[200px_minmax(0,1fr)]">
-          <div className="space-y-1.5">
-            {otherChannels.map((channel) => {
+      <div className="settings-routing-grid">
+        <SettingsPanel
+          className="settings-panel--compact"
+          title="1. 渠道管理"
+          description="启用上游渠道并维护凭证"
+          actions={
+            <button type="button" className="admin-btn admin-btn-secondary settings-mini-btn" onClick={addChannel}>
+              <Plus className="h-3.5 w-3.5" />
+              添加渠道
+            </button>
+          }
+        >
+          <div className="settings-channel-list">
+            {channels.map((channel) => {
               const caps = channelCapabilities(channel);
               return (
                 <button
                   key={channel.id}
                   type="button"
                   className={cn(
-                    "w-full rounded-lg border px-2.5 py-1.5 text-left text-sm transition-colors",
-                    selectedChannel?.id === channel.id
-                      ? "border-[#67c23a] bg-[#f0f9eb]"
-                      : "border-[#ebeef5] bg-white hover:border-[#dcdfe6]",
+                    "settings-channel-item",
+                    selectedChannel?.id === channel.id && "is-active",
                   )}
-                  onClick={() => setSelectedChannelId(channel.id)}
+                  onClick={() => {
+                    setSelectedChannelId(channel.id);
+                    setUpstreamModels([]);
+                    setManualModel("");
+                  }}
                 >
-                  <div className="font-medium text-[#303133]">{channel.name}</div>
-                  <div className="mt-0.5 truncate font-mono text-[11px] text-[#909399]">{channel.id}</div>
-                  <div className="mt-1.5 flex flex-wrap gap-1">
+                  <div className="settings-channel-item-top">
+                    <strong>{channel.name}</strong>
+                    <span
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                      role="presentation"
+                    >
+                      <Switch
+                        checked={channel.enabled}
+                        onCheckedChange={(checked) => {
+                          updateChannel(channel.id, { enabled: checked });
+                        }}
+                      />
+                    </span>
+                  </div>
+                  <div className="settings-channel-item-meta">
                     {caps.map((cap) => (
-                      <span
-                        key={cap}
-                        className={cn(
-                          "rounded px-1.5 py-0.5 text-[10px]",
-                          cap === "video"
-                            ? "bg-[#ecf5ff] text-[#409eff]"
-                            : cap === "image"
-                              ? "bg-[#f0f9eb] text-[#67c23a]"
-                              : cap === "audio"
-                                ? "bg-[#fdf6ec] text-[#e6a23c]"
-                                : "bg-[#f4f4f5] text-[#909399]",
-                        )}
-                      >
+                      <span key={cap} className={cn("settings-cap-tag", `is-${cap}`)}>
                         {CAPABILITY_LABELS[cap]}
                       </span>
                     ))}
-                    {!channel.enabled ? (
-                      <span className="rounded bg-[#fef0f0] px-1.5 py-0.5 text-[10px] text-[#f56c6c]">停用</span>
-                    ) : null}
                     {channel.has_api_key ? (
-                      <span className="rounded bg-[#f4f4f5] px-1.5 py-0.5 text-[10px] text-[#909399]">已有 Key</span>
+                      <span className="settings-cap-tag">已有 Key</span>
                     ) : (
-                      <span className="rounded bg-[#fef0f0] px-1.5 py-0.5 text-[10px] text-[#f56c6c]">缺 Key</span>
+                      <span className="settings-cap-tag is-warn">缺 Key</span>
                     )}
                   </div>
                 </button>
               );
             })}
+            {channels.length === 0 ? (
+              <div className="settings-empty-hint">暂无渠道，点击右上角添加</div>
+            ) : null}
           </div>
+        </SettingsPanel>
 
+        <SettingsPanel
+          className="settings-panel--compact"
+          title={`渠道配置${selectedChannel ? `（当前: ${selectedChannel.name}）` : ""}`}
+          description="密钥留空保存不修改；可用模型从上游拉取"
+          actions={
+            selectedChannel && selectedChannel.id !== ARK_VOLC_CHANNEL_ID ? (
+              <button
+                type="button"
+                className="admin-btn admin-btn-danger settings-mini-btn"
+                onClick={() => removeChannel(selectedChannel.id)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                删除
+              </button>
+            ) : null
+          }
+        >
           {selectedChannel ? (
-            <SettingsSurface>
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <SectionTitle icon={<Plus className="h-4 w-4" />} title="渠道详情" />
-                <button
-                  type="button"
-                  className="rounded-lg border border-[#fde2e2] px-2 py-1 text-xs text-[#f56c6c]"
-                  onClick={() => removeChannel(selectedChannel.id)}
+            <div className="settings-field-grid">
+              <LabeledControl label="名称">
+                <input
+                  className="settings-input"
+                  value={selectedChannel.name}
+                  onChange={(e) => updateChannel(selectedChannel.id, { name: e.target.value })}
+                />
+              </LabeledControl>
+              <LabeledControl label="协议">
+                <select
+                  className="settings-select"
+                  value={selectedChannel.protocol}
+                  onChange={(e) =>
+                    updateChannel(selectedChannel.id, {
+                      protocol: e.target.value as AdminRoutingSettings["system_channels"][number]["protocol"],
+                      api_format:
+                        e.target.value === "ark"
+                          ? "ark"
+                          : selectedChannel.api_format === "ark"
+                            ? "openai"
+                            : selectedChannel.api_format,
+                    })
+                  }
                 >
-                  <Trash2 className="mr-1 inline h-3.5 w-3.5" />
-                  删除
-                </button>
-              </div>
-              {channelCapabilities(selectedChannel).includes("video") ? (
-                <div className="mb-3 rounded-lg border border-[#d9ecff] bg-[#ecf5ff] px-3 py-2 text-xs text-[#409eff]">
-                  当前为视频相关渠道：协议请保持 ARK，上游模型需含 seedance（如{" "}
-                  <span className="font-mono">{DEFAULT_VIDEO_MODEL}</span>），并填写方舟 API Key。
-                </div>
-              ) : null}
-              <div className="settings-field-grid">
-                <LabeledControl label="名称">
-                  <input
-                    className="settings-input"
-                    value={selectedChannel.name}
-                    onChange={(e) => updateChannel(selectedChannel.id, { name: e.target.value })}
-                  />
-                </LabeledControl>
-                <LabeledControl label="启用">
-                  <select
-                    className="settings-select"
-                    value={selectedChannel.enabled ? "1" : "0"}
-                    onChange={(e) =>
-                      updateChannel(selectedChannel.id, { enabled: e.target.value === "1" })
-                    }
-                  >
-                    <option value="1">启用</option>
-                    <option value="0">停用</option>
-                  </select>
-                </LabeledControl>
-                <LabeledControl label="Base URL">
-                  <input
-                    className="settings-input"
-                    value={selectedChannel.base_url}
-                    onChange={(e) => updateChannel(selectedChannel.id, { base_url: e.target.value })}
-                    placeholder={ARK_BASE}
-                  />
-                </LabeledControl>
-                <LabeledControl label="协议" hint="视频必须选 ARK">
-                  <select
-                    className="settings-select"
-                    value={selectedChannel.protocol}
-                    onChange={(e) =>
-                      updateChannel(selectedChannel.id, {
-                        protocol: e.target.value as AdminRoutingSettings["system_channels"][number]["protocol"],
-                        api_format:
-                          e.target.value === "ark"
-                            ? "ark"
-                            : selectedChannel.api_format === "ark"
-                              ? "openai"
-                              : selectedChannel.api_format,
-                      })
-                    }
-                  >
-                    <option value="auto">自动</option>
-                    <option value="openai">OpenAI（仅文本）</option>
-                    <option value="ark">ARK（生图/视频）</option>
-                    <option value="volc_tts">豆包 TTS</option>
-                  </select>
-                </LabeledControl>
-                <LabeledControl
-                  label="API Key"
-                  hint={selectedChannel.has_api_key ? "已保存，留空不修改" : "视频请填火山方舟 Key"}
-                >
+                  {Object.entries(PROTOCOL_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </LabeledControl>
+              <LabeledControl label="Base URL" className="settings-field-span-full">
+                <input
+                  className="settings-input"
+                  value={selectedChannel.base_url}
+                  onChange={(e) => updateChannel(selectedChannel.id, { base_url: e.target.value })}
+                  placeholder={selectedChannel.protocol === "ark" ? ARK_BASE : "https://api.example.com/v1"}
+                />
+              </LabeledControl>
+              <LabeledControl
+                label="API Key"
+                hint={selectedChannel.has_api_key ? "已保存，留空不修改" : "未配置"}
+                className="settings-field-span-full"
+              >
+                <div className="settings-secret-row">
                   <input
                     className="settings-input is-secret"
                     type="password"
-                    placeholder={selectedChannel.has_api_key ? "已保存，留空则不修改" : "未配置"}
+                    placeholder={selectedChannel.has_api_key ? "已保存，留空则不修改" : "输入 API Key"}
                     value={selectedChannel.api_key_input}
                     onChange={(e) =>
                       setApiKeyInputs((prev) => ({ ...prev, [selectedChannel.id]: e.target.value }))
                     }
                   />
-                </LabeledControl>
-                <LabeledControl
-                  className="settings-field-span-full"
-                  label="上游模型（每行一个）"
-                  hint="视频示例：doubao-seedance-2-5-260628"
-                >
-                  <textarea
-                    className="settings-input min-h-[96px] py-2 font-mono text-xs"
-                    value={selectedChannel.models.join("\n")}
-                    onChange={(e) =>
-                      updateChannel(selectedChannel.id, {
-                        models: e.target.value
-                          .split("\n")
-                          .map((line) => line.trim())
-                          .filter(Boolean),
-                      })
-                    }
-                  />
-                </LabeledControl>
-              </div>
-            </SettingsSurface>
-          ) : null}
-        </div>
-      </SettingsPanel>
-
-      <SettingsPanel
-        className="settings-panel--compact"
-        title="逻辑模型"
-        description="保存渠道后自动同步"
-      >
-        <div className="space-y-3">
-          {(["video", "image", "text", "audio"] as const).map((cap) => {
-            const models = (data?.logical_models ?? []).filter((m) => m.capability === cap);
-            if (models.length === 0 && cap !== "video") return null;
-            return (
-              <div key={cap}>
-                <div className="mb-2 text-xs font-medium text-[#909399]">
-                  {CAPABILITY_LABELS[cap]}
-                  {cap === "video" && models.length === 0 ? " · 暂无，请先添加并保存视频渠道" : ""}
+                  {selectedChannel.has_api_key || selectedChannel.api_key_input ? (
+                    <button
+                      type="button"
+                      className="admin-btn admin-btn-secondary settings-mini-btn"
+                      onClick={() => setApiKeyInputs((prev) => ({ ...prev, [selectedChannel.id]: "" }))}
+                    >
+                      清除密钥
+                    </button>
+                  ) : null}
                 </div>
-                {models.length === 0 && cap === "video" ? (
-                  <SettingsSurface className="text-xs text-[#909399]">
-                    保存含 Seedance 的 ARK 渠道后，这里会出现视频逻辑模型。
-                  </SettingsSurface>
-                ) : (
-                  <div className="space-y-3">
-                    {models.map((model) => (
-                      <SettingsSurface key={model.id}>
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <div className="text-sm font-medium text-[#303133]">{model.name || model.id}</div>
-                            <div className="font-mono text-[11px] text-[#909399]">
-                              {model.id} · {CAPABILITY_LABELS[model.capability]}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="mt-3 admin-table-wrap">
-                          <table>
-                            <thead>
-                              <tr>
-                                <th>渠道</th>
-                                <th>上游模型</th>
-                                <th>优先级</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {model.bindings.map((binding) => {
-                                const channel = data?.system_channels.find(
-                                  (item) => item.id === binding.channel_id,
-                                );
-                                return (
-                                  <tr key={binding.id}>
-                                    <td>{channel?.name ?? binding.channel_id}</td>
-                                    <td className="font-mono text-xs">{binding.upstream_model}</td>
-                                    <td>{binding.priority}</td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      </SettingsSurface>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </SettingsPanel>
-
-      <SettingsPanel className="settings-panel--compact" title="默认模型" description="各能力默认逻辑模型">
-        <div className="settings-field-grid settings-field-grid--4">
-          {(["text_model", "image_model", "video_model", "audio_model"] as const).map((key) => {
-            const cap = key.replace("_model", "") as Capability;
-            const options = (data?.logical_models ?? []).filter((model) => model.capability === cap);
-            return (
-              <LabeledControl key={key} label={CAPABILITY_LABELS[cap] + "默认"}>
-                <select
-                  className="settings-select"
-                  value={data?.default_models[key] ?? ""}
-                  onChange={(e) =>
-                    setData((prev) =>
-                      prev
-                        ? {
-                            ...prev,
-                            default_models: { ...prev.default_models, [key]: e.target.value },
-                          }
-                        : prev,
-                    )
-                  }
-                >
-                  <option value="">未设置</option>
-                  {options.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.name || model.id}
-                    </option>
-                  ))}
-                </select>
-                {key === "video_model" && options.length === 0 ? (
-                  <div className="mt-1 text-[11px] text-[#e6a23c]">
-                    无视频逻辑模型（当前 {videoLogicalModels.length} 个）— 请添加视频渠道并保存
-                  </div>
-                ) : null}
               </LabeledControl>
-            );
-          })}
-        </div>
-      </SettingsPanel>
+
+              <LabeledControl
+                className="settings-field-span-full"
+                label="可用模型"
+                hint={
+                  selectedChannel.protocol === "volc_tts"
+                    ? "TTS 请手动填写音色 ID"
+                    : "点击「从上游拉取」后勾选；也可手动追加"
+                }
+              >
+                <div className="settings-model-toolbar">
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn-secondary settings-mini-btn"
+                    disabled={fetchingModels || selectedChannel.protocol === "volc_tts"}
+                    onClick={() => void fetchUpstreamModels()}
+                  >
+                    {fetchingModels ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3.5 w-3.5" />
+                    )}
+                    从上游拉取
+                  </button>
+                  <span className="settings-model-count">
+                    已选 {selectedChannel.models.length}
+                    {upstreamModels.length > 0 ? ` / 上游 ${upstreamModels.length}` : ""}
+                  </span>
+                </div>
+                <div className="settings-model-catalog">
+                  {catalogModels.length === 0 ? (
+                    <div className="settings-empty-hint">
+                      {selectedChannel.protocol === "volc_tts"
+                        ? "在下方手动添加音色 ID"
+                        : "尚未拉取，请先配置 Key 后点击「从上游拉取」"}
+                    </div>
+                  ) : (
+                    catalogModels.map((model) => {
+                      const checked = selectedChannel.models.includes(model.id);
+                      return (
+                        <label key={model.id} className={cn("settings-model-option", checked && "is-checked")}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => toggleModel(model.id, e.target.checked)}
+                          />
+                          <span className="font-mono text-xs">{model.id}</span>
+                          <em className={cn("settings-cap-tag", `is-${model.capability}`)}>
+                            {CAPABILITY_LABELS[(model.capability as Capability) || "text"] || model.capability}
+                          </em>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+                <div className="settings-model-manual">
+                  <input
+                    className="settings-input"
+                    value={manualModel}
+                    onChange={(e) => setManualModel(e.target.value)}
+                    placeholder={
+                      selectedChannel.protocol === "volc_tts"
+                        ? "手动添加音色 ID"
+                        : `手动追加（如 ${DEFAULT_VIDEO_MODEL}）`
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addManualModel();
+                      }
+                    }}
+                  />
+                  <button type="button" className="admin-btn admin-btn-secondary settings-mini-btn" onClick={addManualModel}>
+                    添加
+                  </button>
+                </div>
+              </LabeledControl>
+            </div>
+          ) : (
+            <div className="settings-empty-hint">请选择左侧渠道</div>
+          )}
+        </SettingsPanel>
+      </div>
+
+      <div className="settings-routing-grid">
+        <ArkVolcMediaPanel
+          channelId={ARK_VOLC_CHANNEL_ID}
+          hasApiKey={Boolean(arkVolcChannel?.has_api_key)}
+          apiKeyInput={apiKeyInputs[ARK_VOLC_CHANNEL_ID] ?? ""}
+          onApiKeyChange={(value) => setApiKeyInputs((prev) => ({ ...prev, [ARK_VOLC_CHANNEL_ID]: value }))}
+          draft={volcDraft}
+          onDraftChange={(patch) => setVolcDraft((prev) => ({ ...prev, ...patch }))}
+        />
+
+        <SettingsPanel
+          className="settings-panel--compact"
+          title="3. 逻辑模型路由"
+          description="能力 → 默认渠道 / 上游模型"
+        >
+          <div className="settings-field-grid settings-field-grid--2 mb-3">
+            {(["text_model", "image_model", "video_model", "audio_model"] as const).map((key) => {
+              const cap = key.replace("_model", "") as Capability;
+              const options = (data?.logical_models ?? []).filter((model) => model.capability === cap);
+              return (
+                <LabeledControl key={key} label={`${CAPABILITY_LABELS[cap]}默认`}>
+                  <select
+                    className="settings-select"
+                    value={data?.default_models[key] ?? ""}
+                    onChange={(e) =>
+                      setData((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              default_models: { ...prev.default_models, [key]: e.target.value },
+                            }
+                          : prev,
+                      )
+                    }
+                  >
+                    <option value="">未设置</option>
+                    {options.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.name || model.id}
+                      </option>
+                    ))}
+                  </select>
+                </LabeledControl>
+              );
+            })}
+          </div>
+          <div className="admin-table-wrap settings-logic-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>能力</th>
+                  <th>默认渠道</th>
+                  <th>上游模型</th>
+                  <th>优先级</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(data?.logical_models ?? []).flatMap((model) =>
+                  model.bindings.map((binding) => {
+                    const channel = data?.system_channels.find((item) => item.id === binding.channel_id);
+                    return (
+                      <tr key={`${model.id}-${binding.id}`}>
+                        <td>{CAPABILITY_LABELS[model.capability]}</td>
+                        <td>{channel?.name ?? binding.channel_id}</td>
+                        <td className="font-mono text-xs">{binding.upstream_model}</td>
+                        <td>{binding.priority}</td>
+                      </tr>
+                    );
+                  }),
+                )}
+                {(data?.logical_models ?? []).every((m) => m.bindings.length === 0) ? (
+                  <tr>
+                    <td colSpan={4} className="text-center text-[#909399]">
+                      保存渠道后将自动同步逻辑路由
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </SettingsPanel>
+      </div>
     </SettingsTabShell>
   );
 }

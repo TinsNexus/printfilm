@@ -1,10 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  Children,
+  isValidElement,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { Ban, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { api, type AdminTaskDetail } from "@/api/client";
+import { AdminEntityLink } from "@/components/admin/AdminEntityLink";
 import { AdminModal } from "@/components/admin/AdminModal";
 import { Button } from "@/components/ui/button";
 import { taskDomainLabel, taskStatusLabel, taskTypeLabel } from "@/lib/statusLabels";
+import { hasJsonContent, prettyJson } from "@/lib/jsonPreview";
 import { cn, fenToYuan } from "@/lib/utils";
 
 type TaskDetailDialogProps = {
@@ -18,6 +27,28 @@ type DetailTab = "overview" | "billing" | "steps" | "events" | "json";
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
 
+const PAYLOAD_FIELD_LABELS: Record<string, string> = {
+  prompt: "提示词",
+  name: "名称",
+  kind: "类型",
+  model_id: "模型",
+  image_style_id: "风格",
+  aspect_ratio: "画幅",
+  resolution: "分辨率",
+  duration_sec: "时长(秒)",
+  duration: "时长",
+  force: "强制重跑",
+  total: "总数",
+  project_id: "科普项目 ID",
+  user_id: "用户 ID",
+  asset_id: "资产 ID",
+  episode_count: "集数",
+  phase: "阶段",
+  sync: "同步",
+  refresh_prompts: "刷新提示词",
+  reextract_props: "重抽道具",
+};
+
 // 格式化时间为本地字符串
 function fmtTime(value: string | null | undefined): string {
   if (!value) return "—";
@@ -26,12 +57,7 @@ function fmtTime(value: string | null | undefined): string {
 
 // 美化 JSON 展示
 function fmtJson(value: unknown): string {
-  if (value == null) return "—";
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
+  return prettyJson(value);
 }
 
 // 状态 pill 样式
@@ -41,6 +67,59 @@ function statusClass(status: string): string {
   if (status === "failed") return "is-fail";
   if (status === "cancelled" || status === "cancel_requested") return "is-warn";
   return "is-warn";
+}
+
+// 仅在有值时渲染一行定义列表项
+function DlRow({ label, children }: { label: string; children: ReactNode }) {
+  if (children == null || children === "" || children === "—") return null;
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>{children}</dd>
+    </div>
+  );
+}
+
+// DlRow 未渲染时 children 仍是元素描述符；按 props 判断是否会出内容。
+function dlRowWillShow(child: ReactNode): boolean {
+  if (child == null || child === false) return false;
+  if (!isValidElement(child)) return Boolean(child);
+  if (child.type !== DlRow) return true;
+  const c = (child.props as { children?: ReactNode }).children;
+  return c != null && c !== "" && c !== "—";
+}
+
+// 有内容才包一层 section，避免「标识」等空壳标题
+function DetailSection({ title, children }: { title: string; children: ReactNode }) {
+  const visible = Children.toArray(children).filter(dlRowWillShow);
+  if (visible.length === 0) return null;
+  return (
+    <section className="task-detail-section">
+      <h4>{title}</h4>
+      <dl className="task-detail-dl">{visible}</dl>
+    </section>
+  );
+}
+
+// 从 payload 抽出可读字段摘要（其余仍看下方 JSON）
+function payloadSummaryRows(
+  payload: Record<string, unknown> | null | undefined,
+): Array<{ key: string; label: string; value: string }> {
+  if (!payload || typeof payload !== "object") return [];
+  const rows: Array<{ key: string; label: string; value: string }> = [];
+  for (const [key, label] of Object.entries(PAYLOAD_FIELD_LABELS)) {
+    if (!(key in payload)) continue;
+    const raw = payload[key];
+    if (raw == null || raw === "") continue;
+    if (typeof raw === "boolean") {
+      rows.push({ key, label, value: raw ? "是" : "否" });
+      continue;
+    }
+    const text = String(raw).trim();
+    if (!text) continue;
+    rows.push({ key, label, value: text.length > 240 ? `${text.slice(0, 240)}…` : text });
+  }
+  return rows;
 }
 
 // 任务详情弹窗：概览 / 步骤 / 事件 / 原始 JSON
@@ -80,6 +159,8 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
     if (!task) return false;
     return task.status === "pending" && !task.next_action_at && Boolean(task.batch_key);
   }, [task]);
+
+  const payloadRows = useMemo(() => payloadSummaryRows(task?.payload ?? null), [task?.payload]);
 
   async function handleCancel() {
     if (!task || !canCancel) return;
@@ -184,84 +265,57 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
                       {task.current_step_status ? ` · ${task.current_step_status}` : ""}
                     </p>
                   ) : null}
-                  {task.error_message ? (
-                    <pre className="task-detail-error">{task.error_message}</pre>
+                  {task.error_code || task.error_message ? (
+                    <pre className="task-detail-error">
+                      {[task.error_code, task.error_message].filter(Boolean).join(" · ")}
+                    </pre>
                   ) : null}
                 </section>
 
-                <section className="task-detail-section">
-                  <h4>调度</h4>
-                  <dl className="task-detail-dl">
-                    <div>
-                      <dt>优先级</dt>
-                      <dd>{task.priority}</dd>
-                    </div>
-                    <div>
-                      <dt>next_action_at</dt>
-                      <dd>{fmtTime(task.next_action_at)}</dd>
-                    </div>
-                    <div>
-                      <dt>scheduled_at</dt>
-                      <dd>{fmtTime(task.scheduled_at)}</dd>
-                    </div>
-                    <div>
-                      <dt>租约到期</dt>
-                      <dd>{fmtTime(task.lease_until)}</dd>
-                    </div>
-                    <div>
-                      <dt>provider_task_id</dt>
-                      <dd className="font-mono text-xs">{task.provider_task_id ?? "—"}</dd>
-                    </div>
-                  </dl>
-                </section>
+                <DetailSection title="调度">
+                  <DlRow label="优先级">{task.priority}</DlRow>
+                  <DlRow label="scheduled_at">{task.scheduled_at ? fmtTime(task.scheduled_at) : null}</DlRow>
+                  <DlRow label="next_action_at">{task.next_action_at ? fmtTime(task.next_action_at) : null}</DlRow>
+                  <DlRow label="租约到期">{task.lease_until ? fmtTime(task.lease_until) : null}</DlRow>
+                  <DlRow label="provider_task_id">
+                    {task.provider_task_id ? (
+                      <span className="font-mono text-xs break-all">{task.provider_task_id}</span>
+                    ) : null}
+                  </DlRow>
+                </DetailSection>
 
-                <section className="task-detail-section">
-                  <h4>关联实体</h4>
-                  <dl className="task-detail-dl">
-                    <div>
-                      <dt>用户</dt>
-                      <dd>{task.user_email ?? `#${task.requested_by}`}</dd>
-                    </div>
-                    <div>
-                      <dt>漫剧项目</dt>
-                      <dd>{task.drama_project_id ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt>分集</dt>
-                      <dd>{task.episode_id ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt>分镜</dt>
-                      <dd>{task.fragment_id ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt>科普项目</dt>
-                      <dd>{task.project_id ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt>镜头</dt>
-                      <dd>{task.shot_id ?? "—"}</dd>
-                    </div>
-                  </dl>
-                </section>
+                <DetailSection title="关联实体">
+                  <DlRow label="用户">
+                    <AdminEntityLink kind="user" id={task.requested_by} label={task.user_email ?? undefined} />
+                  </DlRow>
+                  <DlRow label="漫剧项目">
+                    {task.drama_project_id ? <AdminEntityLink kind="drama" id={task.drama_project_id} /> : null}
+                  </DlRow>
+                  <DlRow label="资产">
+                    {task.asset_id ? <AdminEntityLink kind="drama_asset" id={task.asset_id} /> : null}
+                  </DlRow>
+                  <DlRow label="剧本">{task.script_id ? `#${task.script_id}` : null}</DlRow>
+                  <DlRow label="分集">{task.episode_id ? `#${task.episode_id}` : null}</DlRow>
+                  <DlRow label="分镜">{task.fragment_id ? `#${task.fragment_id}` : null}</DlRow>
+                  <DlRow label="科普项目">
+                    {task.project_id ? <AdminEntityLink kind="project" id={task.project_id} /> : null}
+                  </DlRow>
+                  <DlRow label="镜头">{task.shot_id ? `#${task.shot_id}` : null}</DlRow>
+                </DetailSection>
 
-                <section className="task-detail-section">
-                  <h4>标识</h4>
-                  <dl className="task-detail-dl">
-                    <div>
-                      <dt>batch_key</dt>
-                      <dd className="font-mono text-xs break-all">{task.batch_key ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt>dedupe_key</dt>
-                      <dd className="font-mono text-xs break-all">{task.dedupe_key ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt>client_request_id</dt>
-                      <dd className="font-mono text-xs break-all">{task.client_request_id ?? "—"}</dd>
-                    </div>
-                  </dl>
-                </section>
+                <DetailSection title="标识">
+                  <DlRow label="dedupe_key">
+                    {task.dedupe_key ? <span className="font-mono text-xs break-all">{task.dedupe_key}</span> : null}
+                  </DlRow>
+                  <DlRow label="batch_key">
+                    {task.batch_key ? <span className="font-mono text-xs break-all">{task.batch_key}</span> : null}
+                  </DlRow>
+                  <DlRow label="client_request_id">
+                    {task.client_request_id ? (
+                      <span className="font-mono text-xs break-all">{task.client_request_id}</span>
+                    ) : null}
+                  </DlRow>
+                </DetailSection>
 
                 <section className="task-detail-section task-detail-section--full">
                   <h4>时间线</h4>
@@ -285,12 +339,35 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
                   </dl>
                 </section>
 
-                {task.result_payload && Object.keys(task.result_payload).length > 0 ? (
-                  <section className="task-detail-section task-detail-section--full">
-                    <h4>结果摘要</h4>
+                <section className="task-detail-section task-detail-section--full">
+                  <h4>提交参数</h4>
+                  {payloadRows.length > 0 ? (
+                    <dl className="task-detail-dl task-detail-dl--payload mb-3">
+                      {payloadRows.map((row) => (
+                        <div key={row.key}>
+                          <dt>{row.label}</dt>
+                          <dd className={row.key === "prompt" ? "whitespace-pre-wrap break-words" : "break-all"}>
+                            {row.value}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  ) : null}
+                  {hasJsonContent(task.payload) ? (
+                    <pre className="task-detail-json">{fmtJson(task.payload)}</pre>
+                  ) : (
+                    <p className="task-detail-meta">无提交参数</p>
+                  )}
+                </section>
+
+                <section className="task-detail-section task-detail-section--full">
+                  <h4>结果</h4>
+                  {hasJsonContent(task.result_payload) ? (
                     <pre className="task-detail-json">{fmtJson(task.result_payload)}</pre>
-                  </section>
-                ) : null}
+                  ) : (
+                    <p className="task-detail-meta">暂无结果（未完成或未回写 result_payload）</p>
+                  )}
+                </section>
               </div>
             ) : null}
 
