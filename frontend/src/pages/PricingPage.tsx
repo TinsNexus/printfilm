@@ -100,8 +100,9 @@ export default function PricingPage() {
         pay_type: order.pay_type,
         amount_fen: order.amount_fen,
         credit_fen: order.credit_fen,
-        // 只用服务端筛过的扫码内容；勿回退 payurl（易支付收银台链接扫出会打开站点）
+        pay_mode: order.pay_mode || (order.qr_payload || order.qrcode ? 'qr' : 'redirect'),
         qr_payload: order.qr_payload || order.qrcode || order.img || '',
+        payurl: order.payurl || order.submit_url || '',
         img: order.img,
         expire_seconds: order.expire_seconds ?? 300,
       })

@@ -11,7 +11,10 @@ export type PayCheckout = {
   pay_type: 'alipay' | 'wxpay' | string
   amount_fen: number
   credit_fen: number
+  /** qr=弹窗扫码；redirect=新开易支付收银台 */
+  pay_mode?: 'qr' | 'redirect' | string
   qr_payload: string
+  payurl?: string
   img?: string
   expire_seconds?: number
 }
@@ -33,14 +36,13 @@ function formatRemain(sec: number) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
-/** 扫码支付弹窗：展示二维码、倒计时，并轮询订单状态 */
+/** 扫码支付弹窗：展示二维码或等待收银台回跳，并轮询订单状态 */
 export default function PaymentModal({ open, checkout, onClose, onPaid }: Props) {
   /*
    * qrDataUrl 二维码 data URL
    * remain 剩余秒数
    * status 当前状态文案
    * checking 手动确认中
-   * expired 是否已过期
    */
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [remain, setRemain] = useState(300)
@@ -65,22 +67,43 @@ export default function PaymentModal({ open, checkout, onClose, onPaid }: Props)
     onClose()
   }
 
+  /** 新开易支付收银台（支付宝无原生码时） */
+  function openCashier() {
+    const url = (checkout?.payurl || '').trim()
+    if (!url) {
+      setError('未获取到支付链接，请稍后重试')
+      return
+    }
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
   useEffect(() => {
     if (!open || !checkout) return
     /*
      * expiredAt 过期时间戳
+     * isRedirect 是否收银台跳转模式
      * payload 需编码为二维码的内容
      */
     const expiredAt = Date.now() + (checkout.expire_seconds ?? 300) * 1000
+    const payurl = (checkout.payurl || '').trim()
+    const isRedirect = checkout.pay_mode === 'redirect' || (!checkout.qr_payload && !!payurl)
     setRemain(checkout.expire_seconds ?? 300)
     setStatus('waiting')
     setError('')
     setChecking(false)
+    setQrDataUrl('')
 
     const payload = checkout.qr_payload || checkout.img || ''
     let cancelled = false
 
     async function paintQr() {
+      if (isRedirect) {
+        // 无原生二维码：直接新开易支付站点，弹窗仅等待到账
+        if (!cancelled && payurl) {
+          window.open(payurl, '_blank', 'noopener,noreferrer')
+        }
+        return
+      }
       if (!payload) {
         setQrDataUrl('')
         setError('未获取到支付二维码，请稍后重试')
@@ -153,7 +176,11 @@ export default function PaymentModal({ open, checkout, onClose, onPaid }: Props)
         setStatus('paid')
         handlePaid()
       } else {
-        setError('尚未检测到支付结果，请稍后再试或继续扫码')
+        setError(
+          checkout.pay_mode === 'redirect'
+            ? '尚未检测到支付结果，请在支付页完成后再试'
+            : '尚未检测到支付结果，请稍后再试或继续扫码',
+        )
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : '查询失败')
@@ -165,8 +192,19 @@ export default function PaymentModal({ open, checkout, onClose, onPaid }: Props)
   if (!checkout) return null
 
   const isAlipay = checkout.pay_type === 'alipay'
-  const title = isAlipay ? '支付宝扫码支付' : '微信扫码支付'
-  const tip = isAlipay ? '请使用支付宝扫码完成支付' : '请使用微信扫码完成支付'
+  const isRedirect = checkout.pay_mode === 'redirect' || (!checkout.qr_payload && !!checkout.payurl)
+  const title = isRedirect
+    ? isAlipay
+      ? '支付宝支付'
+      : '微信支付'
+    : isAlipay
+      ? '支付宝扫码支付'
+      : '微信扫码支付'
+  const tip = isRedirect
+    ? '已打开易支付页面，请在新窗口完成支付；完成后返回本页等待到账'
+    : isAlipay
+      ? '请使用支付宝扫码完成支付'
+      : '请使用微信扫码完成支付'
 
   return (
     <Modal
@@ -198,7 +236,14 @@ export default function PaymentModal({ open, checkout, onClose, onPaid }: Props)
         </div>
 
         <div className="pf-pay-qr-wrap">
-          {qrDataUrl ? (
+          {isRedirect ? (
+            <div className="pf-pay-qr is-empty pf-pay-redirect-box">
+              <p>支付页已在新窗口打开</p>
+              <button type="button" className="pf-pay-btn primary" onClick={openCashier}>
+                重新打开支付页
+              </button>
+            </div>
+          ) : qrDataUrl ? (
             <div className="pf-pay-qr">
               <img src={qrDataUrl} alt="支付二维码" width={220} height={220} />
               <span className={`pf-pay-qr-badge ${isAlipay ? 'alipay' : 'wxpay'}`} aria-hidden />
@@ -210,8 +255,12 @@ export default function PaymentModal({ open, checkout, onClose, onPaid }: Props)
           <p className={`pf-pay-expire${status === 'expired' ? ' is-expired' : ''}`}>
             <span className="pf-pay-clock" aria-hidden />
             {status === 'expired'
-              ? '二维码已失效，请关闭后重新下单'
-              : `二维码将在 ${formatRemain(remain)} 后失效`}
+              ? isRedirect
+                ? '订单已失效，请关闭后重新下单'
+                : '二维码已失效，请关闭后重新下单'
+              : isRedirect
+                ? `请在 ${formatRemain(remain)} 内完成支付`
+                : `二维码将在 ${formatRemain(remain)} 后失效`}
           </p>
           <p className={`pf-pay-wait${status === 'paid' ? ' is-paid' : ''}`}>
             <span className="pf-pay-dot" aria-hidden />

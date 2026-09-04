@@ -174,6 +174,7 @@ async def create_order(
         "payurl": mapi.get("payurl") or "",
         "img": mapi.get("img") or "",
         "qr_payload": mapi.get("qr_payload") or "",
+        "pay_mode": mapi.get("pay_mode") or ("qr" if mapi.get("qr_payload") else "redirect"),
         "expire_seconds": billing.ORDER_EXPIRE_SECONDS,
         "submit_url": epay.submit_url(fields),
     }

@@ -534,6 +534,8 @@ export const api = {
       payurl?: string
       img?: string
       qr_payload?: string
+      /** qr=原生扫码；redirect=新开易支付收银台 */
+      pay_mode?: 'qr' | 'redirect' | string
       expire_seconds?: number
     }>('/api/billing/orders', {
       method: 'POST',

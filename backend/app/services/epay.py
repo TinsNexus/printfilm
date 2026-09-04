@@ -122,10 +122,7 @@ async def create_mapi_payment(
 ) -> dict[str, Any]:
     """
     Call epay /mapi.php for QR / native pay payload.
-    Returns dict with keys: trade_no, qrcode, payurl, img (any may be empty).
-
-    仅把原生 qrcode / urlscheme / 二维码图片编进弹窗；收银台 payurl 不能当扫码内容，
-    否则扫出会打开易支付站点页（见 pay.gitcc.com 文档：payurl|qrcode|urlscheme 三选一）。
+    Returns pay_mode=qr（原生扫码）或 redirect（仅收银台 payurl，前端新开易支付站点）。
     """
     fields = build_submit_fields(
         out_trade_no=out_trade_no,
@@ -167,19 +164,25 @@ async def create_mapi_payment(
     elif _is_image_url(img):
         qr_payload = img
 
-    if not qr_payload:
-        logger.warning(
-            "epay mapi no native qr pay_type=%s trade_no=%s payurl=%s raw_keys=%s",
+    # 有原生扫码内容 → 弹窗二维码；否则若有收银台 payurl → 前端新开易支付站点
+    if qr_payload:
+        pay_mode = "qr"
+    elif payurl:
+        pay_mode = "redirect"
+        logger.info(
+            "epay mapi redirect mode pay_type=%s trade_no=%s payurl=%s",
             pay_type,
             data.get("trade_no"),
-            (payurl or "")[:120],
+            payurl[:120],
+        )
+    else:
+        logger.warning(
+            "epay mapi empty pay_type=%s trade_no=%s raw_keys=%s",
+            pay_type,
+            data.get("trade_no"),
             sorted(data.keys()) if isinstance(data, dict) else [],
         )
-        raise ValueError(
-            f"易支付未返回扫码二维码（{pay_type}）。"
-            "请在 pay.gitcc.com 商户后台为该支付方式开通「API/扫码/当面付」通道；"
-            "当前通道只返回收银台跳转页，扫码会打开易支付站点。"
-        )
+        raise ValueError(f"易支付未返回可用支付链接（{pay_type}）")
 
     return {
         "trade_no": str(data.get("trade_no") or ""),
@@ -188,5 +191,6 @@ async def create_mapi_payment(
         "img": img,
         "urlscheme": urlscheme,
         "qr_payload": qr_payload,
+        "pay_mode": pay_mode,
         "raw": data,
     }
