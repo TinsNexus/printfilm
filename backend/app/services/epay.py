@@ -49,6 +49,7 @@ def build_submit_fields(
     notify_url: str | None = None,
     return_url: str | None = None,
     clientip: str | None = None,
+    device: str | None = None,
 ) -> dict[str, str]:
     s = get_settings()
     if pay_type not in {"alipay", "wxpay"}:
@@ -73,9 +74,30 @@ def build_submit_fields(
     }
     if clientip:
         fields["clientip"] = clientip
+    # device=jump 只会返回收银台跳转 URL；扫码场景必须用 pc（勿传 jump）
+    if device:
+        fields["device"] = device
     fields["sign"] = sign(fields)
     fields["sign_type"] = "MD5"
     return fields
+
+
+def _is_image_url(value: str) -> bool:
+    return bool(value) and value.lower().startswith(("http://", "https://")) and any(
+        ext in value.lower().split("?", 1)[0] for ext in (".png", ".jpg", ".jpeg", ".gif", ".webp")
+    )
+
+
+def _is_epay_cashier_url(value: str, api_base: str) -> bool:
+    """易支付收银台 /submit 页，扫码会打开站点而非原生支付码。"""
+    v = (value or "").strip().lower()
+    if not v.startswith(("http://", "https://")):
+        return False
+    base = (api_base or "").rstrip("/").lower()
+    host = base.replace("https://", "").replace("http://", "").split("/", 1)[0]
+    if host and host in v:
+        return True
+    return "pay.gitcc.com" in v or "/pay/submit/" in v
 
 
 def submit_url(fields: dict[str, str]) -> str:
@@ -101,6 +123,9 @@ async def create_mapi_payment(
     """
     Call epay /mapi.php for QR / native pay payload.
     Returns dict with keys: trade_no, qrcode, payurl, img (any may be empty).
+
+    仅把原生 qrcode / urlscheme / 二维码图片编进弹窗；收银台 payurl 不能当扫码内容，
+    否则扫出会打开易支付站点页（见 pay.gitcc.com 文档：payurl|qrcode|urlscheme 三选一）。
     """
     fields = build_submit_fields(
         out_trade_no=out_trade_no,
@@ -110,6 +135,7 @@ async def create_mapi_payment(
         notify_url=notify_url,
         return_url=return_url,
         clientip=clientip or "127.0.0.1",
+        device="pc",
     )
     s = get_settings()
     url = s.epay_api_url.rstrip("/") + "/mapi.php"
@@ -130,14 +156,37 @@ async def create_mapi_payment(
         raise ValueError(msg)
     qrcode = str(data.get("qrcode") or "").strip()
     payurl = str(data.get("payurl") or "").strip()
+    urlscheme = str(data.get("urlscheme") or "").strip()
     img = str(data.get("img") or data.get("code_url") or "").strip()
-    # Prefer content that can be rendered as a QR image payload
-    qr_payload = qrcode or payurl or img
+
+    qr_payload = ""
+    if qrcode and not _is_epay_cashier_url(qrcode, s.epay_api_url):
+        qr_payload = qrcode
+    elif urlscheme:
+        qr_payload = urlscheme
+    elif _is_image_url(img):
+        qr_payload = img
+
+    if not qr_payload:
+        logger.warning(
+            "epay mapi no native qr pay_type=%s trade_no=%s payurl=%s raw_keys=%s",
+            pay_type,
+            data.get("trade_no"),
+            (payurl or "")[:120],
+            sorted(data.keys()) if isinstance(data, dict) else [],
+        )
+        raise ValueError(
+            f"易支付未返回扫码二维码（{pay_type}）。"
+            "请在 pay.gitcc.com 商户后台为该支付方式开通「API/扫码/当面付」通道；"
+            "当前通道只返回收银台跳转页，扫码会打开易支付站点。"
+        )
+
     return {
         "trade_no": str(data.get("trade_no") or ""),
         "qrcode": qrcode,
         "payurl": payurl,
         "img": img,
+        "urlscheme": urlscheme,
         "qr_payload": qr_payload,
         "raw": data,
     }
