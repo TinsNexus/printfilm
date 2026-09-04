@@ -21,6 +21,11 @@ def _smtp_configured(settings: Settings | None = None) -> bool:
     )
 
 
+def _use_implicit_ssl(port: int) -> bool:
+    """465 等端口为隐式 SSL（QQ 邮箱）；587 走 STARTTLS。"""
+    return port in {465, 8465, 2465}
+
+
 def _send_email_sync(
     *,
     to_addrs: list[str],
@@ -41,30 +46,35 @@ def _send_email_sync(
     msg["To"] = ", ".join(recipients)
     msg.set_content(body)
 
+    host = str(s.smtp_host).strip()
     port = int(s.smtp_port or 587)
     use_tls = bool(s.smtp_use_tls)
     user = str(s.smtp_user or "").strip()
     password = str(s.smtp_password or "").strip()
+    timeout = 30
 
-    if use_tls:
-        server = smtplib.SMTP(str(s.smtp_host).strip(), port, timeout=30)
+    if _use_implicit_ssl(port):
+        # QQ/企业邮常用 465：全程 SSL，不能先明文 SMTP 再 STARTTLS
+        server: smtplib.SMTP = smtplib.SMTP_SSL(host, port, timeout=timeout)
         try:
-            server.ehlo()
+            if user and password:
+                server.login(user, password)
+            server.send_message(msg)
+        finally:
+            server.quit()
+        return
+
+    server = smtplib.SMTP(host, port, timeout=timeout)
+    try:
+        server.ehlo()
+        if use_tls:
             server.starttls()
             server.ehlo()
-            if user and password:
-                server.login(user, password)
-            server.send_message(msg)
-        finally:
-            server.quit()
-    else:
-        server = smtplib.SMTP(str(s.smtp_host).strip(), port, timeout=30)
-        try:
-            if user and password:
-                server.login(user, password)
-            server.send_message(msg)
-        finally:
-            server.quit()
+        if user and password:
+            server.login(user, password)
+        server.send_message(msg)
+    finally:
+        server.quit()
 
 
 async def send_email(
