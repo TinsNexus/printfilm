@@ -311,11 +311,13 @@ async def health() -> dict:
     s = reload_settings()
     from app.database import pool_status
 
+    runtime = runtime_summary()
+    runtime_ok = bool(runtime.get("healthy"))
     return {
-        "ok": True,
+        "ok": runtime_ok,
         "ark_mock": s.ark_mock,
         "db_pool": pool_status(),
-        "task_runtime": runtime_summary(),
+        "task_runtime": runtime,
         "models": {
             "llm": s.model_llm,
             "image": s.model_image,

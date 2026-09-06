@@ -81,8 +81,16 @@ class Settings(BaseSettings):
     task_user_max_concurrency: int = 4
     # Selector 每轮并发非阻塞查询上游的上限（类似 NIO select 就绪 channel 批处理）。
     task_poll_max_concurrency: int = 20
-    # 启动恢复时，running 任务超过该秒数无心跳才视为孤儿任务。
+    # 孤儿恢复：leased/running 超过该秒数无更新、且本进程无执行协程时重排队。
     task_runtime_recover_grace_sec: int = 30
+    # 运行中每隔多少秒扫描一次孤儿任务（调度 tick 内执行）。
+    task_runtime_orphan_check_sec: int = 30
+    # 调度 tick 心跳超过该秒数未刷新 → 看门狗软重启调度循环。
+    task_runtime_tick_stale_sec: int = 60
+    # Selector 心跳超过该秒数未刷新 → 看门狗软重启 poller。
+    task_poll_stale_sec: int = 90
+    # 看门狗检查间隔（秒）。
+    task_runtime_watchdog_interval_sec: float = 5.0
 
     max_shot_duration: int = 30
     default_preview_resolution: str = "480p"

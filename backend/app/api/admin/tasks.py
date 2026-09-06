@@ -69,6 +69,10 @@ async def admin_task_stats(
         **stats,
         scheduler_running_jobs=int(runtime.get("scheduler_running_jobs") or 0),
         max_concurrency=int(settings.task_runtime_max_concurrency),
+        scheduler=str(runtime.get("scheduler") or "stopped"),
+        poller=str(runtime.get("poller") or "stopped"),
+        watchdog=str(runtime.get("watchdog") or "stopped"),
+        runtime_healthy=bool(runtime.get("healthy")),
         fetched_at=datetime.now(UTC),
     )
 

@@ -71,6 +71,15 @@ def _extract_json(text: str) -> Any:
     raise json.JSONDecodeError("empty JSON payload", text or "", 0)
 
 
+def _ensure_json_word_in_prompt(system: str, user: str) -> tuple[str, str]:
+    """DeepSeek 等要求 response_format=json_object 时 prompt 须含 json 字样。"""
+    blob = f"{system or ''}\n{user or ''}".lower()
+    if "json" in blob:
+        return system, user
+    suffix = "\n\n请只输出合法 JSON 对象，不要 markdown 代码围栏。"
+    return (system or "").rstrip() + suffix, user
+
+
 async def drama_chat_json(
     system: str,
     user: str,
@@ -79,6 +88,7 @@ async def drama_chat_json(
     max_tokens: int = DEFAULT_MAX_TOKENS,
 ) -> Any:
     """Call text LLM and parse JSON from the reply."""
+    system, user = _ensure_json_word_in_prompt(system, user)
     json_format = {"type": "json_object"}
     try:
         content = await chat_completions(
@@ -91,7 +101,7 @@ async def drama_chat_json(
         )
     except RuntimeError as exc:
         # 部分兼容网关不支持 response_format，降级为普通调用
-        if "response_format" not in str(exc).lower():
+        if "response_format" not in str(exc).lower() and "json_object" not in str(exc).lower():
             raise
         logger.warning("LLM 不支持 response_format，降级普通调用: %s", exc)
         content = await chat_completions(

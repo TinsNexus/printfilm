@@ -129,12 +129,15 @@ cd /opt/ai_movie/admin && npm ci && npm run build
 systemctl status ai-movie-api ai-movie-worker
 journalctl -u ai-movie-api -n 80 --no-pager
 curl -fsS http://127.0.0.1:8000/api/health
+# 期望 task_runtime.healthy=true，且 scheduler/poller/watchdog 均为 running
 curl -fsSI https://www.printfilm.com/ | head
 curl -fsSI https://admin.printfilm.com/ | head
 # 旧站保留（可选）
 curl -fsSI https://kepu.printfilm.com/ | head
 curl -fsSI https://admin.kepu.printfilm.com/ | head
 ```
+
+**任务卡住排障**：health 里 `scheduler`/`watchdog` 非 `running`，或库中有到期 `pending` 但 `scheduler_running_jobs=0` 且持续数分钟 → 先看 journal 是否有 `restarting task scheduler` / `recovered orphaned`；看门狗应自动拉起，仍异常再 `systemctl restart ai-movie-api`。
 
 API 起不来时优先看：启动 seed 是否卡在 OSS、双 worker `create_all` 竞态、`.env` 是否被覆盖。
 

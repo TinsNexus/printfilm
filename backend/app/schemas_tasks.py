@@ -316,5 +316,9 @@ class AdminTaskStatsOut(BaseModel):
     cancelled_count: int = 0
     scheduler_running_jobs: int = 0
     max_concurrency: int = 0
+    scheduler: str = "stopped"
+    poller: str = "stopped"
+    watchdog: str = "stopped"
+    runtime_healthy: bool = False
     domains: list[AdminTaskDomainStatsOut] = Field(default_factory=list)
     fetched_at: datetime | None = None

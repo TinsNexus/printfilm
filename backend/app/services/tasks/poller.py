@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
@@ -19,25 +20,32 @@ _FRAGMENT_FINALIZE_STEP = "finalizing"
 
 logger = logging.getLogger("app.tasks.poller")
 
+# Selector 循环句柄、停机信号、并发闸与心跳
 _poller_task: asyncio.Task | None = None
 _stop_event = asyncio.Event()
 _poll_inflight: set[int] = set()
 _selector_sem: asyncio.Semaphore | None = None
+_last_poll_mono: float = 0.0
+_intentionally_stopped: bool = True
 
 
 # 启动 Selector 轮询循环。
 async def start_poller() -> None:
-    global _poller_task, _selector_sem
+    global _poller_task, _selector_sem, _intentionally_stopped, _last_poll_mono
     if _poller_task and not _poller_task.done():
         return
+    _intentionally_stopped = False
     limit = max(1, int(get_settings().task_poll_max_concurrency or 20))
     _selector_sem = asyncio.Semaphore(limit)
     _stop_event.clear()
-    _poller_task = asyncio.create_task(_poller_loop())
+    _last_poll_mono = time.monotonic()
+    _poller_task = asyncio.create_task(_poller_loop(), name="task-poller")
 
 
 # 停止 Selector 轮询循环。
 async def stop_poller() -> None:
+    global _intentionally_stopped
+    _intentionally_stopped = True
     _stop_event.set()
     if _poller_task and not _poller_task.done():
         _poller_task.cancel()
@@ -47,24 +55,70 @@ async def stop_poller() -> None:
             pass
 
 
+# 看门狗拉起卡死或已退出的 Selector 循环。
+async def restart_poller_loop(*, reason: str = "watchdog") -> None:
+    global _poller_task, _intentionally_stopped, _last_poll_mono, _selector_sem
+    if _intentionally_stopped:
+        return
+    logger.warning("restarting task poller loop reason=%s", reason)
+    _stop_event.set()
+    if _poller_task and not _poller_task.done():
+        _poller_task.cancel()
+        try:
+            await _poller_task
+        except asyncio.CancelledError:
+            pass
+    limit = max(1, int(get_settings().task_poll_max_concurrency or 20))
+    _selector_sem = asyncio.Semaphore(limit)
+    _stop_event.clear()
+    _last_poll_mono = time.monotonic()
+    _poller_task = asyncio.create_task(_poller_loop(), name="task-poller")
+
+
 # 返回 Selector 当前状态。
 def poller_status() -> str:
+    if _intentionally_stopped:
+        return "stopped"
     if _poller_task and not _poller_task.done():
         return "running"
     return "stopped"
 
 
+# 距上次 Selector 轮询完成的秒数。
+def poller_tick_age_sec() -> float:
+    if _last_poll_mono <= 0:
+        return 1e9
+    return max(0.0, time.monotonic() - _last_poll_mono)
+
+
+# Selector 心跳是否过期。
+def poller_tick_stale() -> bool:
+    if _intentionally_stopped:
+        return False
+    poll_interval = max(1.0, float(get_settings().ark_video_poll_interval or 8.0))
+    stale_sec = max(30.0, float(get_settings().task_poll_stale_sec), poll_interval * 4)
+    return poller_tick_age_sec() > stale_sec
+
+
 # Selector 主循环：周期性 select 到期 channel。
 async def _poller_loop() -> None:
+    global _last_poll_mono
     interval = max(1.0, float(get_settings().ark_video_poll_interval or 8.0))
     while not _stop_event.is_set():
+        _last_poll_mono = time.monotonic()
+        poll_stale = max(30.0, float(get_settings().task_poll_stale_sec), interval * 4)
+        timeout = max(20.0, poll_stale - 10.0)
         try:
-            await _select_and_poll_due()
-            await _poll_ephemeral_deferred_tasks()
+            await asyncio.wait_for(_select_and_poll_due(), timeout=timeout)
+            await asyncio.wait_for(_poll_ephemeral_deferred_tasks(), timeout=timeout)
+        except asyncio.TimeoutError:
+            logger.error("task selector tick timed out after %.0fs", timeout)
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001
             logger.exception("task selector failed")
+        finally:
+            _last_poll_mono = time.monotonic()
         await asyncio.sleep(interval)
 
 

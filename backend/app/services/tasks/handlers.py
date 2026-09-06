@@ -41,6 +41,7 @@ async def _run_drama_episode_script(task: TaskRun) -> dict[str, Any] | None:
     return await run_episode_scripts_job(
         _require_int(task.drama_project_id, "drama_project_id"),
         force=bool(payload.get("force")),
+        task_id=int(task.id),
     )
 
 

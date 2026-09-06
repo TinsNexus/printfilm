@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -13,27 +14,40 @@ from app.config import get_settings
 from app.database import AsyncSessionLocal
 from app.models_tasks import TaskRun
 from app.services.tasks.executor import execute_task_run
-from app.services.tasks.service import append_task_event, count_user_active_runtime_tasks, reconcile_sequential_batches, reconcile_stale_pending_tasks
+from app.services.tasks.service import (
+    append_task_event,
+    count_user_active_runtime_tasks,
+    reconcile_sequential_batches,
+    reconcile_stale_pending_tasks,
+)
 
 logger = logging.getLogger("app.tasks.scheduler")
 
+# 调度循环句柄、进程内执行槽、停机信号、心跳与孤儿扫描时间戳
 _scheduler_task: asyncio.Task | None = None
 _running_jobs: dict[int, asyncio.Task] = {}
 _stop_event = asyncio.Event()
+_last_tick_mono: float = 0.0
+_last_orphan_check_mono: float = 0.0
+_intentionally_stopped: bool = True
 
 
 # 启动任务调度循环。
 async def start_scheduler() -> None:
-    global _scheduler_task
+    global _scheduler_task, _intentionally_stopped, _last_tick_mono
     if _scheduler_task and not _scheduler_task.done():
         return
-    await _recover_orphaned_tasks()
+    _intentionally_stopped = False
+    await recover_orphaned_tasks()
     _stop_event.clear()
-    _scheduler_task = asyncio.create_task(_scheduler_loop())
+    _last_tick_mono = time.monotonic()
+    _scheduler_task = asyncio.create_task(_scheduler_loop(), name="task-scheduler")
 
 
 # 停止任务调度循环并取消执行中的任务。
 async def stop_scheduler() -> None:
+    global _intentionally_stopped
+    _intentionally_stopped = True
     _stop_event.set()
     if _scheduler_task and not _scheduler_task.done():
         _scheduler_task.cancel()
@@ -50,26 +64,88 @@ async def stop_scheduler() -> None:
     _running_jobs.clear()
 
 
+# 仅重启调度循环（保留进程内仍在跑的 job），用于看门狗拉起卡死 tick。
+async def restart_scheduler_loop(*, reason: str = "watchdog") -> None:
+    global _scheduler_task, _intentionally_stopped, _last_tick_mono
+    if _intentionally_stopped:
+        return
+    logger.warning("restarting task scheduler loop reason=%s", reason)
+    _stop_event.set()
+    if _scheduler_task and not _scheduler_task.done():
+        _scheduler_task.cancel()
+        try:
+            await _scheduler_task
+        except asyncio.CancelledError:
+            pass
+    await recover_orphaned_tasks()
+    _stop_event.clear()
+    _last_tick_mono = time.monotonic()
+    _scheduler_task = asyncio.create_task(_scheduler_loop(), name="task-scheduler")
+
+
 # 返回当前运行中的平台任务数量。
 def running_count() -> int:
     return sum(1 for task in _running_jobs.values() if not task.done())
 
 
+# 调度循环是否存活。
+def scheduler_status() -> str:
+    if _intentionally_stopped:
+        return "stopped"
+    if _scheduler_task and not _scheduler_task.done():
+        return "running"
+    return "stopped"
+
+
+# 距上次成功完成 tick 的秒数；从未 tick 时返回很大值。
+def scheduler_tick_age_sec() -> float:
+    if _last_tick_mono <= 0:
+        return 1e9
+    return max(0.0, time.monotonic() - _last_tick_mono)
+
+
+# 是否因心跳过期应视为卡死（供看门狗判断）。
+def scheduler_tick_stale() -> bool:
+    if _intentionally_stopped:
+        return False
+    stale_sec = max(15, int(get_settings().task_runtime_tick_stale_sec))
+    return scheduler_tick_age_sec() > stale_sec
+
+
+# 本地是否仍持有该任务的执行协程。
+def _job_alive(task_id: int) -> bool:
+    job = _running_jobs.get(task_id)
+    return bool(job and not job.done())
+
+
 # 周期扫描到期任务并交给执行器。
 async def _scheduler_loop() -> None:
+    global _last_tick_mono
     while not _stop_event.is_set():
+        _last_tick_mono = time.monotonic()
+        timeout = max(20.0, float(get_settings().task_runtime_tick_stale_sec) - 10.0)
         try:
-            await _tick()
+            await asyncio.wait_for(_tick(), timeout=timeout)
+        except asyncio.TimeoutError:
+            logger.error("task scheduler tick timed out after %.0fs", timeout)
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001
             logger.exception("task scheduler tick failed")
+        finally:
+            _last_tick_mono = time.monotonic()
         await asyncio.sleep(1.0)
 
 
 # 扫描并租约抢占可执行任务。
 async def _tick() -> None:
+    global _last_orphan_check_mono
     now = datetime.now(UTC)
+    orphan_every = max(5, int(get_settings().task_runtime_orphan_check_sec))
+    if time.monotonic() - _last_orphan_check_mono >= orphan_every:
+        await recover_orphaned_tasks()
+        _last_orphan_check_mono = time.monotonic()
+
     async with AsyncSessionLocal() as db:
         await reconcile_sequential_batches(db)
         await reconcile_stale_pending_tasks(db)
@@ -165,8 +241,8 @@ async def cancel_running_task(task_id: int) -> bool:
     return True
 
 
-# 启动时把上次进程中断留下的 leased/running 任务放回待执行队列。
-async def _recover_orphaned_tasks() -> None:
+# 把僵死的 leased/running 放回队列；跳过本进程仍持有协程的任务。
+async def recover_orphaned_tasks() -> int:
     now = datetime.now(UTC)
     grace_sec = max(5, int(get_settings().task_runtime_recover_grace_sec))
     stale_before = now - timedelta(seconds=grace_sec)
@@ -175,13 +251,25 @@ async def _recover_orphaned_tasks() -> None:
         await reconcile_stale_pending_tasks(db)
         stmt = select(TaskRun).where(
             or_(
-                and_(TaskRun.status == "leased", TaskRun.updated_at.is_not(None), TaskRun.updated_at < stale_before),
-                and_(TaskRun.status == "running", TaskRun.updated_at.is_not(None), TaskRun.updated_at < stale_before),
+                and_(
+                    TaskRun.status == "leased",
+                    or_(
+                        and_(TaskRun.updated_at.is_not(None), TaskRun.updated_at < stale_before),
+                        and_(TaskRun.lease_until.is_not(None), TaskRun.lease_until < now),
+                    ),
+                ),
+                and_(
+                    TaskRun.status == "running",
+                    TaskRun.updated_at.is_not(None),
+                    TaskRun.updated_at < stale_before,
+                ),
             )
         )
         rows = list((await db.execute(stmt)).scalars().all())
         changed = 0
         for task in rows:
+            if _job_alive(int(task.id)):
+                continue
             task.status = "cancel_requested" if task.cancel_requested else "pending"
             task.next_action_at = now
             task.lease_token = None
@@ -192,9 +280,10 @@ async def _recover_orphaned_tasks() -> None:
                 event_type="task.recovered",
                 status=task.status,
                 phase=task.current_step_key,
-                message="检测到任务在上次进程退出时中断，已重新排队",
+                message="检测到任务执行中断或租约过期，已重新排队",
             )
             changed += 1
         if changed:
             await db.commit()
             logger.warning("recovered orphaned task runs count=%s", changed)
+        return changed

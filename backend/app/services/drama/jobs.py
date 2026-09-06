@@ -286,9 +286,43 @@ async def dispatch_episode_scripts_job(
     return task_id
 
 
-async def run_episode_scripts_job(project_id: int, force: bool = False) -> dict[str, Any]:
-    # Worker：大纲 + 循环逐集直到完成
-    logger.info("开始生成分集剧本 project_id=%s force=%s", project_id, force)
+async def run_episode_scripts_job(
+    project_id: int,
+    force: bool = False,
+    task_id: int | None = None,
+) -> dict[str, Any]:
+    # Worker：大纲 + 循环逐集直到完成；task_id 用于回写平台进度百分比
+    logger.info("开始生成分集剧本 project_id=%s force=%s task_id=%s", project_id, force, task_id)
+
+    async def _sync_task_progress(done: int, total: int, *, phase: str, message: str) -> None:
+        if not task_id:
+            return
+        from app.services.tasks.service import append_task_event
+
+        async with AsyncSessionLocal() as tdb:
+            task_row = await tdb.get(TaskRun, int(task_id))
+            if not task_row or task_row.status not in {"leased", "running", "pending"}:
+                return
+            if total <= 0:
+                pct = 0
+            elif done >= total:
+                pct = 100
+            else:
+                pct = min(99, max(1, int(round(100 * done / total))))
+            task_row.progress_percent = pct
+            task_row.current_step_key = "episode_script"
+            task_row.current_step_status = phase
+            await append_task_event(
+                tdb,
+                int(task_id),
+                event_type="task.progress",
+                status=task_row.status,
+                phase=phase,
+                message=message,
+                payload={"done": done, "total": total, "progress_percent": pct},
+            )
+            await tdb.commit()
+
     async with AsyncSessionLocal() as db:
         project = await db.get(
             DramaProject,
@@ -316,21 +350,38 @@ async def run_episode_scripts_job(project_id: int, force: bool = False) -> dict[
         creative = (script.source or "").strip()
         try:
             if force and existing:
-                existing = [
-                    {
-                        "episodeNumber": int(item.get("episodeNumber") or 0),
-                        "title": str(item.get("title") or f"第 {item.get('episodeNumber')} 集"),
-                        "body": "",
-                    }
-                    for item in existing
-                    if isinstance(item, dict) and int(item.get("episodeNumber") or 0) >= 1
-                ]
-                script.episode_content = {"episodes": existing}
-                await db.flush()
-                logger.info("已清空分集正文准备重写 project_id=%s total=%s", project_id, total)
+                params0 = dict(script.params or {})
+                status0 = str(params0.get("episode_content_status") or "")
+                # generating=本轮已开跑（含进程重启续跑），勿再因 force 清空已生成正文
+                if status0 != "generating":
+                    existing = [
+                        {
+                            "episodeNumber": int(item.get("episodeNumber") or 0),
+                            "title": str(item.get("title") or f"第 {item.get('episodeNumber')} 集"),
+                            "body": "",
+                        }
+                        for item in existing
+                        if isinstance(item, dict) and int(item.get("episodeNumber") or 0) >= 1
+                    ]
+                    script.episode_content = {"episodes": existing}
+                    params0["episode_content_status"] = "generating"
+                    params0["episode_content_error"] = None
+                    script.params = params0
+                    await db.flush()
+                    logger.info("已清空分集正文准备重写 project_id=%s total=%s", project_id, total)
+                else:
+                    logger.info(
+                        "force 续跑跳过清空 project_id=%s done=%s/%s",
+                        project_id,
+                        count_completed_episodes(existing, total),
+                        total,
+                    )
 
             existing, outline_used_llm = await ensure_episode_outline(creative, summary, existing, total)
             script.episode_content = {"episodes": existing}
+            params_outline = dict(script.params or {})
+            params_outline["episode_content_status"] = "generating"
+            script.params = params_outline
             await db.flush()
             if outline_used_llm:
                 user = await db.get(User, project.user_id)
@@ -342,6 +393,12 @@ async def run_episode_scripts_job(project_id: int, force: bool = False) -> dict[
                         drama_project_id=project.id,
                     )
             logger.info("分集大纲就绪 project_id=%s titles=%s", project_id, len(existing))
+            await _sync_task_progress(
+                count_completed_episodes(existing, total),
+                total,
+                phase="generating",
+                message=f"分集大纲就绪，开始生成 {count_completed_episodes(existing, total)}/{total}",
+            )
 
             guard = 0
             while True:
@@ -396,6 +453,12 @@ async def run_episode_scripts_job(project_id: int, force: bool = False) -> dict[
                     done_now,
                     total,
                 )
+                await _sync_task_progress(
+                    done_now,
+                    total,
+                    phase="generating",
+                    message=f"分集剧本进度 {done_now}/{total}",
+                )
                 guard += 1
                 if guard > max(total * 2, 24):
                     raise RuntimeError(
@@ -411,6 +474,7 @@ async def run_episode_scripts_job(project_id: int, force: bool = False) -> dict[
             params["episode_content_progress"] = {"done": total, "total": total}
             script.params = params
             await db.commit()
+            await _sync_task_progress(total, total, phase="succeeded", message=f"分集剧本全部完成 {total}/{total}")
             logger.info("分集剧本全部完成 project_id=%s total=%s", project_id, total)
             return {"ok": True, "project_id": project_id, "total": total}
         except Exception as exc:  # noqa: BLE001
