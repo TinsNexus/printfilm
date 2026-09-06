@@ -44,6 +44,7 @@ from app.services.drama.generation import (
     project_link_last_frame_enabled,
     reconcile_orphaned_fragment_generations,
 )
+from app.services.drama.fragment_content_duration import resolve_seedance_duration_from_content
 from app.services.drama.jobs import (
     cancel_all_episode_video_jobs,
     cancel_episode_video_jobs,
@@ -498,6 +499,10 @@ async def generate_episode(
         if defer_activation:
             deferred_count += 1
         has_video = bool((f.video or "").strip())
+        duration_sec = resolve_seedance_duration_from_content(
+            f.content or "",
+            fallback=int(f.duration_sec or 8),
+        )
         try:
             task = await create_task(
                 db,
@@ -516,6 +521,7 @@ async def generate_episode(
                         "batch_key": batch_key,
                         "batch_index": index,
                         "replace_existing_video": has_video,
+                        "duration_sec": duration_sec,
                     },
                     drama_project_id=ep.project_id,
                     episode_id=episode_id,

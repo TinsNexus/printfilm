@@ -90,9 +90,37 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
             _, c = charge_fen_for_tokens(s.billing_est_seedream_tokens, "seedream", settings=s)
             return max(1, math.ceil(c * buf))
         if task_type in {"asset_video", "fragment_video"}:
-            dur = float(payload.get("duration_sec") or payload.get("duration") or 8)
+            dur = float(payload.get("duration_sec") or payload.get("duration") or 0)
+            if dur <= 0 and isinstance(payload.get("prepared"), dict):
+                dur = float(payload["prepared"].get("duration") or 0)
+            if dur <= 0:
+                frag_id = task.fragment_id or (
+                    (payload.get("fragment_ids") or [None])[0]
+                    if isinstance(payload.get("fragment_ids"), list)
+                    else None
+                )
+                if frag_id:
+                    from app.models_drama import DramaEpisodeFragment
+                    from app.services.drama.fragment_content_duration import (
+                        resolve_seedance_duration_from_content,
+                    )
+
+                    frag = await db.get(DramaEpisodeFragment, int(frag_id))
+                    if frag is not None:
+                        dur = float(
+                            resolve_seedance_duration_from_content(
+                                frag.content or "",
+                                fallback=int(frag.duration_sec or 8),
+                            )
+                        )
+            if dur <= 0:
+                dur = 8.0
             tok = int(max(dur, 2.0) * s.billing_est_seedance_tokens_per_sec)
             _, c = charge_fen_for_tokens(tok, "seedance2:video0", settings=s)
+            # fragment_video 准备阶段可能有 seedream/LLM，预留半张图额度压小额 overage
+            if task_type == "fragment_video":
+                _, c_img = charge_fen_for_tokens(s.billing_est_seedream_tokens, "seedream", settings=s)
+                c += max(1, c_img // 2)
             return max(1, math.ceil(c * buf))
         if task_type == "voice_synthesis":
             _, c = charge_fen_for_tokens(s.billing_est_tts_tokens, "tts", settings=s)

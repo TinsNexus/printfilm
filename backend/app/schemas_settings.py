@@ -107,7 +107,7 @@ class AdminModelSettingsOut(BaseModel):
     billing_est_llm_tokens: int = 80_000
     billing_est_seedream_tokens: int = 45_000
     billing_est_tts_tokens: int = 5_000
-    billing_est_seedance_tokens_per_sec: int = 20_000
+    billing_est_seedance_tokens_per_sec: int = 32_000
     billing_signup_grant_fen: int = 500
     quota_enabled: bool = False
     new_user_quota: int = 5

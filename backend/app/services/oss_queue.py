@@ -230,7 +230,8 @@ def upload_local_url_sync(local_url: str) -> str | None:
         logger.warning("oss backfill skip missing file %s", url)
         return None
     oss_url = storage.upload_local_sync(path)
-    if storage.is_local_static_url(oss_url):
+    # 成功须为公网 http(s)；勿用 is_local_static_url（本地副本仍在会误判 OSS URL）
+    if not oss_url or not (oss_url.startswith("http://") or oss_url.startswith("https://")):
         raise RuntimeError(f"upload returned local URL for {url}")
     return oss_url
 

@@ -125,7 +125,10 @@ def rel_static_url(path: Path) -> str:
 
 
 def is_local_static_url(url: str | None) -> bool:
-    """True when url points at media under backend/static (relative or site /static/)."""
+    """True when url points at media under backend/static (relative or site /static/).
+
+    HTTPS OSS/CDN 地址即使本地仍保留 FFmpeg 副本，也不算本地 URL。
+    """
     if not url:
         return False
     if url.startswith("/static/"):
@@ -146,13 +149,9 @@ def is_local_static_url(url: str | None) -> bool:
         for scheme in ("https://", "http://"):
             if url.startswith(f"{scheme}{host}/static/"):
                 return True
-    local = local_path_from_url(url)
-    if local and local.is_file():
-        try:
-            local.resolve().relative_to(STATIC_ROOT.resolve())
-            return True
-        except ValueError:
-            return False
+    # 远程 http(s)（含 OSS public_base）一律非本地；勿因磁盘副本误判
+    if url.startswith("http://") or url.startswith("https://"):
+        return False
     return False
 
 
