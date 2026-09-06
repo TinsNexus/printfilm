@@ -230,6 +230,16 @@ async def fail_remaining_sequential_batch(
             phase=task.current_step_key,
             message=reason[:500],
         )
+        if str(task.billing_status or "") == "frozen":
+            from app.services.billing.settlement import settle_task
+
+            try:
+                await settle_task(db, int(task.id))
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "settle_task after sequential cancel failed task_id=%s",
+                    task.id,
+                )
         changed += 1
     if changed:
         await db.commit()
@@ -304,6 +314,14 @@ async def _mark_task_cancelled_stale(db: AsyncSession, task: TaskRun, reason: st
         phase=task.current_step_key,
         message=reason[:500],
     )
+    # 作废终态必须结算预扣，否则 frozen 余额悬挂（如 #3328）
+    if str(task.billing_status or "") == "frozen":
+        from app.services.billing.settlement import settle_task
+
+        try:
+            await settle_task(db, int(task.id))
+        except Exception:  # noqa: BLE001
+            logger.exception("settle_task after stale cancel failed task_id=%s", task.id)
 
 
 # 分镜删除/重切时作废仍引用旧 id 的在途 fragment_video（含轮询中），勿重试旧任务。
