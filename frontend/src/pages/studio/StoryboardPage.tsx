@@ -972,7 +972,7 @@ title="用当前镜头重新拼接"
               </p>
             ) : needsScriptConfirm ? (
               <p className="pf-muted" style={{ margin: '0 0 1rem' }}>
-                分镜已就绪，请先检查旁白与画面描述，确认无误后点击「确认分镜，开始生成」。
+                分镜已就绪，请先检查旁白与画面描述。确认后先生成画面与配音，再按需生成镜头视频并合成成片（分阶段扣费）。
               </p>
             ) : null}
             {project.shots.length === 0 ? null : (

@@ -347,8 +347,9 @@ def join_shot_narrations(narrations: list[str]) -> str:
 
 
 def _continuous_audio_ok(project_id: int) -> bool:
-    path = _full_narration_path(project_id)
-    return path.exists() and path.stat().st_size > 2000 and not is_near_silent_audio(path)
+    from app.services.kepu_stages import continuous_narration_ok
+
+    return continuous_narration_ok(project_id)
 
 
 async def _synthesize_continuous_audio(
@@ -414,6 +415,8 @@ async def _resume_plan(project_id: int) -> tuple[bool, bool, bool, bool]:
     When shots already have images (+ audio / videos as needed), resume from
     the next unfinished stage instead of wiping the storyboard.
     """
+    from app.services.kepu_stages import project_audio_ready, shot_image_ready, shot_video_ready
+
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(Project)
@@ -426,24 +429,10 @@ async def _resume_plan(project_id: int) -> tuple[bool, bool, bool, bool]:
         image_text = _is_image_text(project)
         native_audio = _use_native_video_audio(project)
         shots = list(project.shots)
-        has_images = all(bool(s.image_url or s.image_ark_url) for s in shots)
-
-        def _audio_ok(shot: Shot) -> bool:
-            if not shot.audio_url:
-                return False
-            path = storage.local_path_from_url(shot.audio_url)
-            if not path or not path.exists():
-                return False
-            return not is_near_silent_audio(path)
-
-        # 科普改回外部 TTS，成片前必须有旁白音轨
-        has_audio = (
-            True
-            if native_audio
-            else (_continuous_audio_ok(project_id) or all(_audio_ok(s) for s in shots))
-        )
-        has_videos = all(bool(s.video_url) for s in shots)
-        # Keep existing storyboard whenever shots already exist (user may edit before continue)
+        has_images = all(shot_image_ready(s) for s in shots)
+        # 与计费 resolve_kepu_billing_phase 共用旁白就绪规则
+        has_audio = True if native_audio else project_audio_ready(project)
+        has_videos = all(shot_video_ready(s) for s in shots)
         skip_script = len(shots) > 0
         skip_assets = has_images and has_audio
         skip_videos = image_text or has_videos
@@ -451,15 +440,33 @@ async def _resume_plan(project_id: int) -> tuple[bool, bool, bool, bool]:
 
 
 @storage.without_intermediate_oss
-async def run_pipeline(project_id: int) -> None:
+async def run_pipeline(project_id: int, *, phase: str | None = None) -> None:
+    """跑科普流水线；phase 指定时只执行该计费阶段，避免冻 A 跑 B。"""
+    from app.services.kepu_stages import normalize_kepu_pipeline_phase
+
     try:
         await _ensure_not_cancelled(project_id)
         image_text, skip_script, skip_assets, skip_videos = await _resume_plan(project_id)
 
+        requested: str | None = None
+        if phase is not None:
+            async with AsyncSessionLocal() as db:
+                project = (
+                    await db.execute(
+                        select(Project)
+                        .where(Project.id == project_id)
+                        .options(selectinload(Project.shots))
+                    )
+                ).scalar_one_or_none()
+            requested = normalize_kepu_pipeline_phase(phase, project)
+
         if not skip_script:
+            if requested and requested not in {"script", "produce"}:
+                raise RuntimeError(
+                    f"分镜尚未就绪，无法执行阶段 {requested}；请先生成分镜脚本"
+                )
             await _script_stage(project_id)
             await _ensure_not_cancelled(project_id)
-            # Checkpoint: stop after storyboard so user can review/edit before assets
             await publish_progress(
                 project_id,
                 {
@@ -472,8 +479,9 @@ async def run_pipeline(project_id: int) -> None:
             return
 
         logger.info(
-            "pipeline resume project=%s skip_script=%s skip_assets=%s skip_videos=%s",
+            "pipeline resume project=%s phase=%s skip_script=%s skip_assets=%s skip_videos=%s",
             project_id,
+            requested or "(auto)",
             skip_script,
             skip_assets,
             skip_videos,
@@ -488,42 +496,116 @@ async def run_pipeline(project_id: int) -> None:
             },
         )
 
-        # 分镜图 + 配音并行；完整模式再并行图生视频
-        if not skip_assets:
-            await _parallel_image_and_audio(project_id)
-            await _ensure_not_cancelled(project_id)
-        else:
-            async with AsyncSessionLocal() as db:
-                result = await db.execute(
-                    select(Project)
-                    .where(Project.id == project_id)
-                    .options(selectinload(Project.shots))
-                )
-                project = result.scalar_one()
-                if project.shots:
-                    project.cover_url = sorted(project.shots, key=lambda s: s.shot_no)[0].image_url
-                project.status = ProjectStatus.IMAGE_READY
-                project.progress = 70 if image_text else 50
-                await db.commit()
+        # 显式 phase：只跑对应阶段并暂停，保证与预扣一致
+        if requested == "assets":
+            if not skip_assets:
+                await _parallel_image_and_audio(project_id)
+                await _ensure_not_cancelled(project_id)
             await publish_progress(
                 project_id,
                 {
-                    "event": "progress",
+                    "event": "paused",
                     "stage": "ASSETS_READY",
                     "percent": 70 if image_text else 50,
                     "message": (
-                        "沿用已有分镜图与配音，开始合成"
+                        "分镜图与配音已完成，请确认后继续合成"
                         if image_text
-                        else (
-                            "沿用已有分镜图与配音，继续生成 AI 视频"
-                        )
+                        else "分镜图与配音已完成，请确认后继续生成镜头视频"
                     ),
                 },
             )
+            return
+
+        if requested == "videos":
+            if not skip_assets:
+                # 预扣按视频，但旁白/出图未齐：先补 assets 并停下，避免冻视频款去跑视频
+                await _parallel_image_and_audio(project_id)
+                await _ensure_not_cancelled(project_id)
+                await publish_progress(
+                    project_id,
+                    {
+                        "event": "paused",
+                        "stage": "ASSETS_READY",
+                        "percent": 50,
+                        "message": "分镜图与配音已补齐，请再次点击继续生成镜头视频",
+                    },
+                )
+                return
+            if image_text or skip_videos:
+                await publish_progress(
+                    project_id,
+                    {
+                        "event": "paused",
+                        "stage": "VIDEO_READY",
+                        "percent": 88,
+                        "message": "镜头视频已就绪，请确认后合成成片",
+                    },
+                )
+                return
+            await _parallel_videos(project_id)
+            await _ensure_not_cancelled(project_id)
+            await publish_progress(
+                project_id,
+                {
+                    "event": "paused",
+                    "stage": "VIDEO_READY",
+                    "percent": 88,
+                    "message": "镜头视频已完成，请确认后合成成片",
+                },
+            )
+            return
+
+        if requested == "compose":
+            await _compose_stage(project_id)
+            if is_cancelled(project_id):
+                raise PipelineCancelled(f"project {project_id} cancelled")
+            async with AsyncSessionLocal() as db:
+                project = await db.get(Project, project_id)
+                if project:
+                    if project.status == ProjectStatus.CANCELLED:
+                        raise PipelineCancelled(f"project {project_id} cancelled")
+                    project.status = ProjectStatus.DONE
+                    project.progress = 100
+                    project.error_msg = None
+                    await db.commit()
+            await publish_progress(
+                project_id,
+                {"event": "done", "percent": 100, "video_url": await _final_url(project_id)},
+            )
+            return
+
+        # 无 phase（旧任务/兼容）：每段只跑一步后暂停
+        if not skip_assets:
+            await _parallel_image_and_audio(project_id)
+            await _ensure_not_cancelled(project_id)
+            await publish_progress(
+                project_id,
+                {
+                    "event": "paused",
+                    "stage": "ASSETS_READY",
+                    "percent": 70 if image_text else 50,
+                    "message": (
+                        "分镜图与配音已完成，请确认后继续合成"
+                        if image_text
+                        else "分镜图与配音已完成，请确认后继续生成镜头视频"
+                    ),
+                },
+            )
+            return
 
         if not image_text and not skip_videos:
             await _parallel_videos(project_id)
             await _ensure_not_cancelled(project_id)
+            await publish_progress(
+                project_id,
+                {
+                    "event": "paused",
+                    "stage": "VIDEO_READY",
+                    "percent": 88,
+                    "message": "镜头视频已完成，请确认后合成成片",
+                },
+            )
+            return
 
         await _compose_stage(project_id)
 

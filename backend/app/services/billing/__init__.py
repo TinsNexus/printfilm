@@ -11,6 +11,7 @@ from app.services.billing.ephemeral import (
     settle_deferred_video_poll,
 )
 from app.services.billing.estimates import estimate_phase_fen, estimate_task_fen
+from app.services.kepu_stages import resolve_kepu_billing_phase
 from app.services.billing.pricing import (
     ORDER_EXPIRE_SECONDS,
     SKUS,
@@ -50,6 +51,7 @@ __all__ = [
     "credit_topup",
     "estimate_phase_fen",
     "estimate_task_fen",
+    "resolve_kepu_billing_phase",
     "ensure_balance_for_task",
     "ensure_balance_for_task_batch",
     "freeze_for_task",

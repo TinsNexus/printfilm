@@ -122,12 +122,17 @@ async def _run_drama_seed_assets(task: TaskRun) -> dict[str, Any] | None:
     )
 
 
-# 执行科普全流程任务。
+# 执行科普分阶段流水线（严格按 payload.phase 预扣对应阶段）。
 async def _run_kepu_project_pipeline(task: TaskRun) -> dict[str, Any] | None:
     from app.services.pipeline import run_pipeline
 
-    await run_pipeline(_require_int(task.project_id, "project_id"))
-    return {"ok": True, "project_id": task.project_id}
+    payload = task.payload if isinstance(task.payload, dict) else {}
+    phase = payload.get("phase")
+    await run_pipeline(
+        _require_int(task.project_id, "project_id"),
+        phase=str(phase) if phase is not None else None,
+    )
+    return {"ok": True, "project_id": task.project_id, "phase": phase}
 
 
 # 执行科普单镜生图任务。

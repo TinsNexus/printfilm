@@ -100,7 +100,7 @@ sequenceDiagram
 
 **不计 LLM 的场景**：分镜规则回退（`rules_fallback`）、分集大纲已就绪跳过大纲 LLM、Skill 优化未勾选任何 Skill。
 
-科普两阶段：`project_pipeline` 的 `script` 与 `produce` 各对应一次 TaskRun，各自独立预扣与结算。
+科普分阶段：`project_pipeline` 的 `script` / `assets` / `videos` 各对应一次 TaskRun，各自独立预扣与结算（旧 payload `produce` 兼容映射为当前下一段）。成片走 `project_compose_only`（几乎不预扣）。阶段判定与 pipeline 共用 `kepu_stages`（含整片旁白文件就绪）。
 
 `awaiting_poll` 分镜视频：executor 提前返回时不结算；轮询完成标 `succeeded` 时 `settle_task`。
 
@@ -150,7 +150,7 @@ EPAY_RETURN_URL=https://your-site.example.com/pricing?paid=1
 
 ## 验收清单
 
-1. 科普一次 generate：任务开始前余额减少（冻结），任务结束后按实际用量结算，多余冻结退回。
+1. 科普：确认分镜只冻出图+配音；继续生成视频另冻视频段；合成走 compose。各阶段任务结束按实际用量结算。
 2. 漫剧分镜视频/资产生成：有 `task_run_id` 的用量行，任务结束扣费。
 3. 漫剧聊天 / 选题扩写 / Skill 优化 / 音色描述 / 开放 API / 工作室工具：响应含 `task_id`（轻量 TaskRun），余额变化正确。
 4. 管理端可按 `task_run_id` 或 `billing_key=llm_chat` 查到每条 LLM/图/视频/TTS 费用。

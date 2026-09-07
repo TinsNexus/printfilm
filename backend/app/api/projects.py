@@ -612,9 +612,11 @@ async def generate_project(
     """Start or resume the pipeline.
 
     - First run / restart: script stage only, then pauses at SCRIPT_READY for review.
-    - Continue from SCRIPT_READY+: skip script, run assets → videos → compose.
+    - Continue: one billing stage per click — assets → videos → compose（各自预扣）。
     - restart=true: wipe shots/media and regenerate storyboard from scratch.
     """
+    from app.services.kepu_stages import resolve_kepu_billing_phase
+
     project = await _get_owned_project(db, project_id, user)
     if project.status in {
         ProjectStatus.SCRIPTING,
@@ -637,26 +639,20 @@ async def generate_project(
     project.error_msg = None
     project.final_video_url = None
     shots = list(project.shots or [])
-    phase = "script" if (restart or not shots) else "produce"
+    phase = "script" if (restart or not shots) else resolve_kepu_billing_phase(project)
+    if phase == "compose":
+        # 成片走专用 compose 任务，避免 project_pipeline 重复预扣整片视频
+        raise HTTPException(status_code=409, detail="素材已齐，请点击合成成片")
     if restart or not shots:
         # First run / restart — actually splitting storyboard
         project.status = ProjectStatus.SCRIPTING
         project.progress = 1
-    else:
-        # Continue: label the real next stage so UI never shows「拆分镜中」
-        image_text = (project.pipeline_mode or "full") == "image_text"
-        has_images = all(bool(s.image_url or s.image_ark_url) for s in shots)
-        has_audio = all(bool(s.audio_url) for s in shots)
-        has_videos = all(bool(s.video_url) for s in shots)
-        if not has_images or not has_audio:
-            project.status = ProjectStatus.IMAGING
-            project.progress = max(project.progress or 0, 18)
-        elif not image_text and not has_videos:
-            project.status = ProjectStatus.VIDEOING
-            project.progress = max(project.progress or 0, 55)
-        else:
-            project.status = ProjectStatus.COMPOSING
-            project.progress = max(project.progress or 0, 88)
+    elif phase == "assets":
+        project.status = ProjectStatus.IMAGING
+        project.progress = max(project.progress or 0, 18)
+    elif phase == "videos":
+        project.status = ProjectStatus.VIDEOING
+        project.progress = max(project.progress or 0, 55)
     try:
         await create_task(
             db,

@@ -12,29 +12,80 @@ from app.config import Settings, get_settings
 from app.models import Project
 from app.models_tasks import TaskRun
 from app.services.billing.pricing import charge_fen_for_tokens
+from app.services.kepu_stages import (
+    normalize_kepu_pipeline_phase,
+    project_audio_ready,
+    resolve_kepu_billing_phase,
+    shot_image_ready,
+    shot_video_ready,
+)
+
+__all__ = [
+    "estimate_phase_fen",
+    "estimate_task_fen",
+    "resolve_kepu_billing_phase",
+]
+
+
+def _estimate_assets_fen(project: Project, settings: Settings) -> int:
+    """只估尚未完成的出图 + 整片配音（不含镜头视频）。"""
+    buf = float(settings.billing_estimate_buffer or 1.2)
+    shots = list(project.shots or [])
+    need_img = sum(1 for s in shots if not shot_image_ready(s))
+    # 整片 TTS 一次估算；旁白已就绪（整片文件或全部镜头文件）则不再预扣
+    need_tts = 0 if project_audio_ready(project) else 1
+    if need_img <= 0 and need_tts <= 0:
+        return 1
+    total = 0
+    for _ in range(max(need_img, 0)):
+        _, c_img = charge_fen_for_tokens(settings.billing_est_seedream_tokens, "seedream", settings=settings)
+        total += c_img
+    if need_tts > 0:
+        n = max(len(shots), 1)
+        _, c_tts = charge_fen_for_tokens(
+            settings.billing_est_tts_tokens * n,
+            "tts",
+            settings=settings,
+        )
+        total += c_tts
+    return max(math.ceil(total * buf), 1)
+
+
+def _estimate_videos_fen(project: Project, settings: Settings) -> int:
+    """只估尚未出片的镜头视频。"""
+    buf = float(settings.billing_estimate_buffer or 1.2)
+    shots = [s for s in list(project.shots or []) if not shot_video_ready(s)]
+    if not shots:
+        return 1
+    total = 0
+    for sh in shots:
+        secs = max(float(sh.duration or 4), 2.0)
+        tok = int(secs * settings.billing_est_seedance_tokens_per_sec)
+        _, c_vid = charge_fen_for_tokens(tok, "seedance2:video0", settings=settings)
+        total += c_vid
+    return max(math.ceil(total * buf), 1)
 
 
 def estimate_phase_fen(project: Project, phase: str, settings: Settings | None = None) -> int:
-    """科普 pipeline 阶段估算：script | produce。"""
+    """科普 pipeline 阶段估算：script | assets | videos | compose | produce(兼容→下一段)。"""
     s = settings or get_settings()
     buf = float(s.billing_estimate_buffer or 1.2)
-    if phase == "script":
+    raw = normalize_kepu_pipeline_phase(phase, project)
+
+    if raw == "script":
         _, charge = charge_fen_for_tokens(s.billing_est_llm_tokens, "llm_chat", settings=s)
         return max(1, math.ceil(charge * buf))
 
-    shots = list(project.shots or [])
-    n = max(len(shots), 1)
-    total = 0
-    for _ in range(n):
-        _, c_img = charge_fen_for_tokens(s.billing_est_seedream_tokens, "seedream", settings=s)
-        _, c_tts = charge_fen_for_tokens(s.billing_est_tts_tokens, "tts", settings=s)
-        total += c_img + c_tts
-    if (project.pipeline_mode or "full") != "image_text":
-        secs = sum(max(float(sh.duration or 4), 2.0) for sh in shots) or (n * 5.0)
-        tok = int(secs * s.billing_est_seedance_tokens_per_sec)
-        _, c_vid = charge_fen_for_tokens(tok, "seedance2:video0", settings=s)
-        total += c_vid
-    return max(math.ceil(total * buf), 1)
+    if raw == "assets":
+        return _estimate_assets_fen(project, s)
+
+    if raw == "videos":
+        return _estimate_videos_fen(project, s)
+
+    if raw == "compose":
+        return 1
+
+    return _estimate_assets_fen(project, s)
 
 
 async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings | None = None) -> int:
@@ -117,7 +168,6 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
                 dur = 8.0
             tok = int(max(dur, 2.0) * s.billing_est_seedance_tokens_per_sec)
             _, c = charge_fen_for_tokens(tok, "seedance2:video0", settings=s)
-            # fragment_video 准备阶段可能有 seedream/LLM，预留半张图额度压小额 overage
             if task_type == "fragment_video":
                 _, c_img = charge_fen_for_tokens(s.billing_est_seedream_tokens, "seedream", settings=s)
                 c += max(1, c_img // 2)
