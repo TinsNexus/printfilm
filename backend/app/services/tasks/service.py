@@ -920,9 +920,29 @@ async def retry_task_for_user(db: AsyncSession, user: User, task_id: int) -> Tas
         if not frag_ids:
             raise ValueError(_STALE_FRAGMENT_REASON)
         for frag_id in frag_ids:
-            if await db.get(DramaEpisodeFragment, frag_id) is None:
+            frag = await db.get(DramaEpisodeFragment, frag_id)
+            if frag is None:
                 raise ValueError(_STALE_FRAGMENT_REASON)
-    payload = dict(task.payload or {}) if isinstance(task.payload, dict) else None
+            # 用户/后台点重试：清零内部重试计数，并从 prepare 阶段重跑
+            params = dict(frag.params or {})
+            params.pop("generation_attempts", None)
+            params["generation"] = {
+                "status": "queued",
+                "queued_at": datetime.now(UTC).isoformat(),
+                "message": "任务重试已入队",
+            }
+            frag.params = params
+    payload = dict(task.payload or {}) if isinstance(task.payload, dict) else {}
+    # 分镜视频重试不沿用旧 nio 阶段与内部 attempt，避免被「超过上限」直接拦住
+    if task.domain == "drama" and task.task_type == "fragment_video":
+        for key in (
+            "nio_phase",
+            "generation_attempts",
+            "attempt_limit",
+            "prepared",
+            "provider_task_id",
+        ):
+            payload.pop(key, None)
     body = TaskCreateRequest(
         domain=task.domain,
         task_type=task.task_type,
@@ -933,7 +953,7 @@ async def retry_task_for_user(db: AsyncSession, user: User, task_id: int) -> Tas
         provider_task_id=None,
         cancelable=task.cancelable,
         scheduled_at=datetime.now(UTC),
-        payload=payload,
+        payload=payload or None,
         result_payload=None,
         project_id=task.project_id,
         drama_project_id=task.drama_project_id,

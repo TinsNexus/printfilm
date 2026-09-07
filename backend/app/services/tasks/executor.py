@@ -171,14 +171,17 @@ async def _fail_task(db, task, exc: Exception) -> None:
     )
     if task.fragment_id:
         from app.models_drama import DramaEpisodeFragment
+        from app.services.drama.generation import build_failed_generation_params
 
         frag = await db.get(DramaEpisodeFragment, int(task.fragment_id))
         if frag:
             params = dict(frag.params or {})
-            params["generation"] = {
-                "status": "failed",
-                "error": task.error_message,
-            }
+            prev_gen = params.get("generation") if isinstance(params.get("generation"), dict) else None
+            # 保留 root_error（避免「内部重试超限」盖掉真人审核等真实原因）
+            params["generation"] = build_failed_generation_params(
+                prev_gen if isinstance(prev_gen, dict) else None,
+                task.error_message or str(exc),
+            )
             frag.params = params
     if task.domain == "kepu" and task.project_id:
         from app.models import Project, ProjectStatus

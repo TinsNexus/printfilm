@@ -132,6 +132,12 @@ _SEEDREAM_STRIP_PROPER: re.Pattern[str] = re.compile(
     r"猎鹰一号|猎鹰\s*9|猎鹰重型|猎鹰|马斯克|埃隆|特斯拉)"
 )
 
+# 真人 / 写实人脸审核命中后追加的画风引导，压低照片级真人触发概率
+_SEEDREAM_CG_STYLE = (
+    "用CG厚涂、游戏CG的风格打造的画面，色彩层次丰富，质感细腻逼真，"
+    "真实的光影效果赋予画面生动感"
+)
+
 
 @dataclass
 class ShotPlan:
@@ -609,28 +615,45 @@ class ArkGateway:
 
         last_err: Exception | None = None
         for idx, base in enumerate(prompts):
-            full_prompt = f"{base}。避免：{negative}" if negative else base
-            try:
-                return await self._seedream_once(
-                    full_prompt,
-                    ref_urls,
-                    project_id=project_id,
-                    shot_no=shot_no,
-                    size=size,
-                    model=model,
-                    prompt_hash_src=prompt,
-                )
-            except Exception as exc:  # noqa: BLE001
-                last_err = exc
-                msg = str(exc)
-                if "PolicyViolation" in msg or "SensitiveContent" in msg:
-                    logger.warning(
-                        "Seedream policy hit shot=%s attempt=%s; retrying softened prompt",
-                        shot_no,
-                        idx + 1,
+            # queue 同档提示词；文案/输出策略命中后再追加 CG 厚涂变体重试
+            queue = [base]
+            qi = 0
+            while qi < len(queue):
+                current = queue[qi]
+                qi += 1
+                full_prompt = f"{current}。避免：{negative}" if negative else current
+                try:
+                    return await self._seedream_once(
+                        full_prompt,
+                        ref_urls,
+                        project_id=project_id,
+                        shot_no=shot_no,
+                        size=size,
+                        model=model,
+                        prompt_hash_src=prompt,
                     )
-                    continue
-                raise
+                except Exception as exc:  # noqa: BLE001
+                    last_err = exc
+                    msg = str(exc)
+                    # 参考图真人等输入侧拦截：改文案无效，直接失败
+                    if self._is_seedream_input_privacy_error(msg):
+                        raise
+                    if not self._is_seedream_policy_error(msg):
+                        raise
+                    cg = self._with_seedream_cg_style(current)
+                    if cg != current and cg not in queue:
+                        logger.warning(
+                            "Seedream policy hit shot=%s attempt=%s; retrying with CG style",
+                            shot_no,
+                            idx + 1,
+                        )
+                        queue.append(cg)
+                    else:
+                        logger.warning(
+                            "Seedream policy hit shot=%s attempt=%s; advancing softened candidate",
+                            shot_no,
+                            idx + 1,
+                        )
         raise RuntimeError(str(last_err) if last_err else "Seedream failed")
 
     async def _seedream_once(
@@ -699,6 +722,37 @@ class ArkGateway:
         )
 
     @staticmethod
+    def _is_seedream_input_privacy_error(msg: str) -> bool:
+        """参考图 / 输入侧真人隐私拦截（改文案无效）。"""
+        text = msg or ""
+        return any(
+            k in text
+            for k in ("PrivacyInformation", "InputImageSensitive")
+        )
+
+    @staticmethod
+    def _is_seedream_policy_error(msg: str) -> bool:
+        """文案或输出内容策略拦截（可走脱敏 / CG 重试）。"""
+        text = msg or ""
+        if ArkGateway._is_seedream_input_privacy_error(text):
+            return False
+        return (
+            "PolicyViolation" in text
+            or "SensitiveContent" in text
+            or "OutputImageSensitive" in text
+        )
+
+    @staticmethod
+    def _with_seedream_cg_style(prompt: str) -> str:
+        """在提示词末尾追加 CG 厚涂风格（已含则原样返回）。"""
+        base = (prompt or "").strip()
+        if not base:
+            return _SEEDREAM_CG_STYLE
+        if _SEEDREAM_CG_STYLE in base:
+            return base
+        return f"{base}。{_SEEDREAM_CG_STYLE}"
+
+    @staticmethod
     def _sanitize_seedream_prompt(prompt: str) -> str:
         out = prompt or ""
         for pat, repl in _SEEDREAM_SANITIZE:
@@ -730,12 +784,14 @@ class ArkGateway:
             "绘本",
             "写意",
             "概念插画",
+            "CG厚涂",
+            "游戏CG",
         ):
             if key in (prompt or ""):
                 style_bits.append(key)
         style = "，".join(style_bits) + "，" if style_bits else "统一插画风格，"
         return (
-            f"{style}高质量画面，竖屏构图，主体偏中下，顶部留白，"
+            f"{style}{_SEEDREAM_CG_STYLE}，竖屏构图，主体偏中下，顶部留白，"
             "同一画风贯穿，禁止写实摄影与真人脸，无文字水印"
         )
 

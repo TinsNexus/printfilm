@@ -196,7 +196,11 @@ def fragment_generation_status(fragment: DramaEpisodeFragment) -> dict[str, Any]
 # 是否为「重试超限」包装句（不含真实根因）
 def _is_retry_limit_error(text: str) -> bool:
     t = (text or "").strip()
-    return bool(t) and ("重试超过" in t or "超过重试" in t)
+    return bool(t) and (
+        "重试超过" in t
+        or "超过重试" in t
+        or "内部自动重试超过" in t
+    )
 
 
 # 组装失败态 generation：保留 root_error，避免被重试超限覆盖
@@ -225,17 +229,33 @@ def build_failed_generation_params(
 
     display = msg
     if _is_retry_limit_error(msg) and root and not _is_retry_limit_error(root):
-        display = f"{msg}：{root[:400]}"
+        # 已拼过「上限：root」则不再二次拼接（_fail_task 会再走一遍）
+        root_snip = root[:400]
+        if msg.rstrip().endswith(root_snip) or f"：{root[:80]}" in msg:
+            display = msg
+        else:
+            display = f"{msg}：{root_snip}"
 
     out: dict[str, Any] = {
         "status": "failed",
         "error": display[:500],
         "root_error": root[:500],
     }
+    # attempts / attempt_limit：显式入参优先，否则保留 prev
     if attempts is not None:
         out["attempts"] = attempts
+    elif prev.get("attempts") is not None:
+        try:
+            out["attempts"] = int(prev.get("attempts"))
+        except (TypeError, ValueError):
+            pass
     if attempt_limit is not None:
         out["attempt_limit"] = attempt_limit
+    elif prev.get("attempt_limit") is not None:
+        try:
+            out["attempt_limit"] = int(prev.get("attempt_limit"))
+        except (TypeError, ValueError):
+            pass
     return out
 
 

@@ -485,6 +485,8 @@ async def generate_episode(
     queued_at = datetime.now(UTC).isoformat()
     for f in idle_frags:
         params = dict(f.params or {})
+        # 用户主动点生成：清零内部重试计数（上限只约束同一次任务内的自动重试）
+        params.pop("generation_attempts", None)
         params["generation"] = {"status": "queued", "queued_at": queued_at, "message": "已入队"}
         f.params = params
 

@@ -758,23 +758,31 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
             return {"ok": False, "cancelled": True}
 
         gen = frag.params.get("generation") if isinstance(frag.params, dict) else None
+        # 仅统计「同一次任务」内 prepare 被重新拉起的次数（中断重入等），
+        # 用户再次点生成 / 任务重试会清零 generation_attempts。
         persisted_attempts = int((frag.params or {}).get("generation_attempts") or 0)
         prev_attempts = persisted_attempts
         if isinstance(gen, dict):
-            prev_attempts = max(prev_attempts, int(gen.get("attempts") or 0))
+            # queued 态不应继承上次失败的 attempts 展示值
+            if str(gen.get("status") or "") in {"queued", "idle", "cancelled", "done"}:
+                prev_attempts = persisted_attempts
+            else:
+                prev_attempts = max(prev_attempts, int(gen.get("attempts") or 0))
         max_attempts = max(1, int(get_settings().drama_fragment_max_attempts or 3))
         attempts = prev_attempts + 1 if nio_phase == "prepare" else int(payload.get("generation_attempts") or prev_attempts + 1)
         if nio_phase == "prepare" and attempts > max_attempts:
             params = dict(frag.params or {})
+            # raise 用纯超限文案；展示拼接交给 build_failed_generation_params / _fail_task
+            limit_msg = f"分镜内部自动重试超过上限（{max_attempts} 次）"
             params["generation"] = build_failed_generation_params(
                 gen if isinstance(gen, dict) else None,
-                f"分镜重试超过上限（{max_attempts} 次）",
+                limit_msg,
                 attempts=prev_attempts,
                 attempt_limit=max_attempts,
             )
             frag.params = params
             await db.commit()
-            raise RuntimeError(params["generation"]["error"])
+            raise RuntimeError(limit_msg)
 
         if nio_phase == "prepare":
             params = dict(frag.params or {})

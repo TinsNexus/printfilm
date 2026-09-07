@@ -115,12 +115,12 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
     }
   }
 
-  if (/重试超过上限|超过重试上限/.test(text)) {
+  if (/重试超过上限|超过重试上限|内部自动重试超过上限/.test(text)) {
     return {
       title: '多次生成仍失败',
       message: text,
       suggestion:
-        '常见原因是参考图触发真人肖像审核。请打开左侧资产，为相关角色/场景更换或重新生成形象后再点生成。',
+        '这是同一次任务内的自动重试耗尽，不是禁止你再点生成。请根据真实原因（常见是参考图真人审核）改素材或文案后，再重新点生成。',
     }
   }
 
