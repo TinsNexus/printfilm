@@ -743,6 +743,41 @@ class ArkGateway:
         )
 
     @staticmethod
+    def _is_seedance_input_privacy_error(msg: str) -> bool:
+        """Seedance 参考图真人隐私拦截（改视频文案无效）。"""
+        text = msg or ""
+        return any(
+            k in text
+            for k in (
+                "PrivacyInformation",
+                "InputImageSensitive",
+                "参考图疑似真人",
+                "may contain real person",
+            )
+        )
+
+    @staticmethod
+    def _is_seedance_text_policy_error(msg: str) -> bool:
+        """Seedance 文案/策略拦截（可追加 CG 风格重试一次）。"""
+        text = msg or ""
+        if ArkGateway._is_seedance_input_privacy_error(text):
+            return False
+        lowered = text.lower()
+        if "分镜文案未通过内容审核" in text:
+            return True
+        return any(
+            k in lowered
+            for k in (
+                "inputtextsensitive",
+                "text sensitive",
+                "policyviolation",
+                "outputimagesensitive",
+                "sensitivecontentdetected",
+                "sensitivecontent",
+            )
+        )
+
+    @staticmethod
     def _with_seedream_cg_style(prompt: str) -> str:
         """在提示词末尾追加 CG 厚涂风格（已含则原样返回）。"""
         base = (prompt or "").strip()
@@ -751,6 +786,36 @@ class ArkGateway:
         if _SEEDREAM_CG_STYLE in base:
             return base
         return f"{base}。{_SEEDREAM_CG_STYLE}"
+
+    @staticmethod
+    def _with_seedance_cg_style(prompt: str) -> str:
+        """视频提示词追加 CG 厚涂（与 Seedream 同款文案）。"""
+        return ArkGateway._with_seedream_cg_style(prompt)
+
+    @staticmethod
+    def _seedance_content_with_cg_style(
+        content: list[Any] | None,
+    ) -> list[dict[str, Any]] | None:
+        """给 content[] 内全部 text 项追加 CG；无变化则返回 None。"""
+        if not isinstance(content, list):
+            return None
+        changed = False
+        out: list[dict[str, Any]] = []
+        for item in content:
+            if not isinstance(item, dict):
+                out.append(item)
+                continue
+            if item.get("type") != "text":
+                out.append(dict(item))
+                continue
+            text = str(item.get("text") or "")
+            cg = ArkGateway._with_seedance_cg_style(text)
+            if cg != text:
+                changed = True
+                out.append({**item, "text": cg})
+            else:
+                out.append(dict(item))
+        return out if changed else None
 
     @staticmethod
     def _sanitize_seedream_prompt(prompt: str) -> str:
@@ -903,6 +968,25 @@ class ArkGateway:
                     headers=self._route_headers(route),
                     json=body,
                 )
+            # 文案策略：在 ratio/adaptive 结构回退前，对当前意图 body 追加 CG 重试
+            if resp.status_code >= 400:
+                raw_err = resp.text or ""
+                if self._is_seedance_input_privacy_error(raw_err):
+                    raise RuntimeError(_format_seedance_create_error(resp.status_code, raw_err))
+                if self._is_seedance_text_policy_error(raw_err):
+                    cg_content = self._seedance_content_with_cg_style(body.get("content"))
+                    if cg_content is not None:
+                        logger.warning("Seedance i2v text policy hit; retrying with CG style")
+                        body = {**body, "content": cg_content}
+                        resp = await client.post(
+                            self._route_url("/contents/generations/tasks", route),
+                            headers=self._route_headers(route),
+                            json=body,
+                        )
+                    if resp.status_code >= 400:
+                        raise RuntimeError(
+                            _format_seedance_create_error(resp.status_code, resp.text)
+                        )
             if resp.status_code >= 400:
                 err_text = resp.text or ""
                 # 仅「误用 first_frame + ratio」时去掉 ratio；有目标画幅时不得回落到 adaptive 横屏
@@ -968,7 +1052,10 @@ class ArkGateway:
         project_id: int = 0,
         content_labels: list[str] | None = None,
     ) -> str:
-        """提交 Seedance 多模态请求体（参考图 + reference_audio）。"""
+        """提交 Seedance 多模态请求体（参考图 + reference_audio）。
+
+        文案/策略拦截时追加 CG 厚涂提示词重试一次；参考图真人隐私拦截不重试。
+        """
         if self.mock:
             digest = hashlib.md5(json.dumps(body, sort_keys=True, default=str).encode()).hexdigest()[
                 :10
@@ -999,13 +1086,38 @@ class ArkGateway:
                 json=payload,
             )
             if resp.status_code >= 400:
-                raise RuntimeError(
-                    _format_seedance_create_error(
-                        resp.status_code,
-                        resp.text,
-                        content_labels=content_labels,
+                raw_err = resp.text or ""
+                # 参考图真人：改文案无效
+                if self._is_seedance_input_privacy_error(raw_err):
+                    raise RuntimeError(
+                        _format_seedance_create_error(
+                            resp.status_code,
+                            raw_err,
+                            content_labels=content_labels,
+                        )
                     )
-                )
+                cg_content = None
+                if self._is_seedance_text_policy_error(raw_err):
+                    cg_content = self._seedance_content_with_cg_style(payload.get("content"))
+                if cg_content is not None:
+                    logger.warning(
+                        "Seedance text policy hit project=%s; retrying with CG style",
+                        project_id,
+                    )
+                    payload = {**payload, "content": cg_content}
+                    resp = await client.post(
+                        self._route_url("/contents/generations/tasks", route),
+                        headers=self._route_headers(route),
+                        json=payload,
+                    )
+                if resp.status_code >= 400:
+                    raise RuntimeError(
+                        _format_seedance_create_error(
+                            resp.status_code,
+                            resp.text,
+                            content_labels=content_labels,
+                        )
+                    )
             data = resp.json()
 
         task_id = data.get("id") or data.get("task_id")
