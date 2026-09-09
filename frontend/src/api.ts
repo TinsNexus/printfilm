@@ -139,6 +139,8 @@ export type Project = {
   style_prompt?: string
   character_prompt?: string
   extra_prompt?: string
+  image_model?: string
+  video_model?: string
   ref_image_url: string | null
   created_at: string
   updated_at: string
@@ -159,6 +161,23 @@ export type Project = {
     created_at?: string
     updated_at?: string
   }>
+}
+
+export type MediaModelOption = {
+  id: string
+  label: string
+  description: string
+  provider: string
+  recommended?: boolean
+}
+
+export type MediaModelsCatalog = {
+  image_models: MediaModelOption[]
+  video_models: MediaModelOption[]
+  defaults: {
+    image_model: string
+    video_model: string
+  }
 }
 
 export type User = {
@@ -365,6 +384,8 @@ export const api = {
       style_prompt?: string
       character_prompt?: string
       extra_prompt?: string
+      image_model?: string
+      video_model?: string
       cover_url?: string | null
     },
   ) {
@@ -372,6 +393,9 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(body),
     })
+  },
+  mediaModels() {
+    return request<MediaModelsCatalog>('/api/media-models')
   },
   async uploadCover(id: number, file: File) {
     const token = localStorage.getItem('token')

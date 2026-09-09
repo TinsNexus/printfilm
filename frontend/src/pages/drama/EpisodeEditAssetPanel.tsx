@@ -1,5 +1,5 @@
 /** 分集编辑：左侧资产栏（本集/全集 + 分类卡片） */
-import { resolveDramaMediaUrl, type DramaAsset } from '../../api/drama'
+import { resolveDramaAssetPreviewUrl, type DramaAsset } from '../../api/drama'
 import { CharacterVoicePreviewButton } from '../../components/drama/CharacterVoicePreviewButton'
 import { readAssetVoiceBinding } from './CharacterVoiceBindModal'
 import {
@@ -134,7 +134,7 @@ export function EpisodeEditAssetPanel({
           </p>
         ) : (
           assets.map((asset) => {
-            const cover = resolveDramaMediaUrl(asset.cover || asset.url)
+            const cover = resolveDramaAssetPreviewUrl(asset)
             const isScene = normalizeAssetTab(asset.type) === 'scene'
             const isCharacter = normalizeAssetTab(asset.type) === 'character'
             const voice = isCharacter ? readAssetVoiceBinding(asset) : null
@@ -153,7 +153,7 @@ export function EpisodeEditAssetPanel({
                 >
                   <div className="drama-ep-asset-thumb">
                     {cover ? (
-                      <img src={cover} alt="" loading="lazy" decoding="async" />
+                      <img key={cover} src={cover} alt="" loading="lazy" decoding="async" />
                     ) : (
                       <span>{(asset.name || '?')[0]}</span>
                     )}

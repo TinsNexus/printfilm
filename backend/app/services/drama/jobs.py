@@ -24,13 +24,21 @@ from app.models_drama import (
 )
 from app.services.billing import record_line, record_llm_chat_line
 from app.services.drama.billing_util import record_seed_assets_llm_usage
+from app.services.drama.seed import seed_assets_from_episode_body
 from app.services.drama.agents import (
+    auto_missing_episode_numbers,
     count_completed_episodes,
     ensure_episode_outline,
     format_summary_text,
     merge_episode_bodies,
+    pick_auto_project_title,
     resolve_episode_target,
+    run_episode_body_from_brief,
+    run_episode_brief_from_body,
+    run_episode_full_from_creative,
     run_episode_script_batch,
+    run_episode_script_from_draft,
+    run_episode_summary_from_creative,
     run_script_summary,
 )
 from app.services.drama.asset_video import generate_asset_video
@@ -235,9 +243,12 @@ async def run_script_summary_job(project_id: int) -> dict[str, Any]:
         one_line = str(summary.get("oneLineStory") or "").strip()
         if one_line:
             project.description = one_line[:500]
-            if len(project.title) > 36 or project.title.startswith(creative[:20]):
-                project.title = one_line[:40] + ("…" if len(one_line) > 40 else "")
-                script.name = project.title
+        auto_title = pick_auto_project_title(
+            summary, creative=creative, current_title=project.title or ""
+        )
+        if auto_title:
+            project.title = auto_title
+            script.name = auto_title
         user = await db.get(User, project.user_id)
         if user:
             await record_line(
@@ -252,9 +263,10 @@ async def run_script_summary_job(project_id: int) -> dict[str, Any]:
             )
         await db.commit()
         logger.info(
-            "剧本摘要完成 project_id=%s episode_count=%s one_line=%s",
+            "剧本摘要完成 project_id=%s episode_count=%s series_title=%s one_line=%s",
             project_id,
             summary.get("episodeCount"),
+            auto_title or project.title,
             (one_line[:40] + "…") if len(one_line) > 40 else one_line,
         )
         return {"ok": True, "project_id": project_id}
@@ -268,21 +280,41 @@ async def dispatch_episode_scripts_job(
     user: User,
     project_id: int,
     force: bool = False,
+    episode_number: int | None = None,
+    draft: str | None = None,
+    generate_mode: str | None = None,
 ) -> int:
-    """入队分集剧本任务。"""
+    """入队分集剧本任务；可指定单集优化或创意→摘要/正文。"""
     project = await db.get(DramaProject, project_id, options=[selectinload(DramaProject.script)])
     total = 1
-    if project and project.script and isinstance(project.script.summary, dict):
+    if episode_number:
+        total = 1
+    elif project and project.script and isinstance(project.script.summary, dict):
         total = int(project.script.summary.get("episodeCount") or 1)
+    ep_key = str(int(episode_number)) if episode_number else "all"
+    mode_key = (generate_mode or "optimize").strip() or "optimize"
     task_id = await _enqueue_drama_task(
         db,
         user,
         task_type="episode_script",
         project_id=project_id,
-        dedupe_suffix=f"{project_id}:force:{int(force)}",
-        payload={"project_id": project_id, "force": force, "total": total},
+        dedupe_suffix=f"{project_id}:force:{int(force)}:ep:{ep_key}:mode:{mode_key}",
+        payload={
+            "project_id": project_id,
+            "force": force,
+            "total": total,
+            "episode_number": int(episode_number) if episode_number else None,
+            "draft": (draft or "").strip() or None,
+            "generate_mode": mode_key if episode_number else None,
+        },
     )
-    logger.info("dispatch 分集剧本 → task_id=%s project_id=%s", task_id, project_id)
+    logger.info(
+        "dispatch 分集剧本 → task_id=%s project_id=%s episode_number=%s mode=%s",
+        task_id,
+        project_id,
+        episode_number,
+        mode_key,
+    )
     return task_id
 
 
@@ -290,9 +322,27 @@ async def run_episode_scripts_job(
     project_id: int,
     force: bool = False,
     task_id: int | None = None,
+    episode_number: int | None = None,
+    draft: str | None = None,
+    generate_mode: str | None = None,
 ) -> dict[str, Any]:
-    # Worker：大纲 + 循环逐集直到完成；task_id 用于回写平台进度百分比
-    logger.info("开始生成分集剧本 project_id=%s force=%s task_id=%s", project_id, force, task_id)
+    # Worker：大纲 + 循环逐集直到完成；也可只优化指定集
+    logger.info(
+        "开始生成分集剧本 project_id=%s force=%s task_id=%s episode_number=%s mode=%s",
+        project_id,
+        force,
+        task_id,
+        episode_number,
+        generate_mode,
+    )
+    if episode_number:
+        return await _run_single_episode_script_job(
+            project_id,
+            int(episode_number),
+            draft=(draft or "").strip(),
+            task_id=task_id,
+            generate_mode=(generate_mode or "optimize").strip() or "optimize",
+        )
 
     async def _sync_task_progress(done: int, total: int, *, phase: str, message: str) -> None:
         if not task_id:
@@ -402,14 +452,16 @@ async def run_episode_scripts_job(
 
             guard = 0
             while True:
-                generated = count_completed_episodes(existing, total)
-                if generated >= total:
+                missing = auto_missing_episode_numbers(existing, total)
+                if not missing:
                     break
+                generated = count_completed_episodes(existing, total)
                 logger.info(
-                    "生成下一集 project_id=%s progress=%s/%s",
+                    "生成下一集 project_id=%s progress=%s/%s missing=%s",
                     project_id,
                     generated,
                     total,
+                    missing[:5],
                 )
                 batch = await run_episode_script_batch(
                     summary,
@@ -487,6 +539,251 @@ async def run_episode_scripts_job(
             return {"ok": False, "error": str(exc)[:500]}
 
 
+async def _run_single_episode_script_job(
+    project_id: int,
+    episode_number: int,
+    draft: str,
+    task_id: int | None = None,
+    generate_mode: str = "optimize",
+) -> dict[str, Any]:
+    """单集：草稿优化 / 创意→摘要 / 创意+摘要→正文 / 一键整集。"""
+    mode = (generate_mode or "optimize").strip() or "optimize"
+    logger.info(
+        "开始单集剧本 project_id=%s episode_number=%s mode=%s draft_len=%s",
+        project_id,
+        episode_number,
+        mode,
+        len(draft or ""),
+    )
+
+    async with AsyncSessionLocal() as db:
+        project = await db.get(
+            DramaProject,
+            project_id,
+            options=[selectinload(DramaProject.script)],
+        )
+        if not project or not project.script or not project.script.summary:
+            logger.warning("单集剧本失败：缺少摘要 project_id=%s", project_id)
+            return {"ok": False, "error": "missing_summary"}
+
+        script = project.script
+        summary = script.summary if isinstance(script.summary, dict) else {}
+        existing: list = []
+        content = script.episode_content
+        if isinstance(content, dict) and isinstance(content.get("episodes"), list):
+            existing = list(content["episodes"])
+        elif isinstance(content, list):
+            existing = list(content)
+
+        params = dict(script.params or {})
+        params["episode_optimize_status"] = "generating"
+        params["episode_optimize_number"] = int(episode_number)
+        params["episode_optimize_mode"] = mode
+        params.pop("episode_optimize_error", None)
+        script.params = params
+        await db.commit()
+
+        project_source = (script.source or "").strip()
+        current = next(
+            (
+                item
+                for item in existing
+                if isinstance(item, dict) and int(item.get("episodeNumber") or 0) == int(episode_number)
+            ),
+            None,
+        )
+        ep_creative = str((current or {}).get("creative") or "").strip()
+        ep_summary = str((current or {}).get("summary") or "").strip()
+        ep_title = str((current or {}).get("title") or "").strip() or f"第 {episode_number} 集"
+        origin = str((current or {}).get("origin") or "")
+
+        # 已有定妆角色名，约束单集 LLM 称呼
+        char_name_rows = (
+            await db.execute(
+                select(DramaAsset.name).where(
+                    DramaAsset.project_id == project.id,
+                    DramaAsset.type == "character",
+                )
+            )
+        ).scalars().all()
+        character_asset_names = [str(n).strip() for n in char_name_rows if str(n or "").strip()]
+
+        try:
+            if mode == "summary":
+                if len(ep_creative) < 20:
+                    raise ValueError("请先填写本集原始创意（至少 20 字）")
+                batch = await run_episode_summary_from_creative(
+                    summary,
+                    existing,
+                    int(episode_number),
+                    ep_creative,
+                    project_source=project_source,
+                    title=ep_title,
+                    character_asset_names=character_asset_names,
+                )
+            elif mode == "body":
+                batch = await run_episode_body_from_brief(
+                    summary,
+                    existing,
+                    int(episode_number),
+                    creative=ep_creative,
+                    summary=ep_summary,
+                    project_source=project_source,
+                    title=ep_title,
+                    character_asset_names=character_asset_names,
+                )
+            elif mode == "full":
+                if len(ep_creative) < 20:
+                    raise ValueError("请先填写本集原始创意（至少 20 字）")
+                batch = await run_episode_full_from_creative(
+                    summary,
+                    existing,
+                    int(episode_number),
+                    ep_creative,
+                    project_source=project_source,
+                    title=ep_title,
+                    character_asset_names=character_asset_names,
+                )
+            elif mode == "brief":
+                ep_body = str((current or {}).get("body") or (current or {}).get("content") or "").strip()
+                if len(ep_body) < 80:
+                    raise ValueError("请先有本集剧本内容，再补齐创意与摘要")
+                batch = await run_episode_brief_from_body(
+                    summary,
+                    existing,
+                    int(episode_number),
+                    ep_body,
+                    project_source=project_source,
+                    title=ep_title,
+                    character_asset_names=character_asset_names,
+                )
+            else:
+                if not draft or len(draft) < 20:
+                    raise ValueError("请先输入本集剧本草稿，再让 AI 优化")
+                batch = await run_episode_script_from_draft(
+                    summary,
+                    existing,
+                    int(episode_number),
+                    draft,
+                    creative=project_source,
+                    character_asset_names=character_asset_names,
+                )
+            if origin == "manual":
+                for item in batch:
+                    item["origin"] = "manual"
+            # summary 模式不要用空 body 覆盖已有正文
+            if mode == "summary" and current:
+                for item in batch:
+                    item["body"] = str(current.get("body") or "")
+            # 写回前刷新，避免覆盖用户在其他集的编辑
+            await db.refresh(script)
+            fresh_content = script.episode_content
+            if isinstance(fresh_content, dict) and isinstance(fresh_content.get("episodes"), list):
+                existing = list(fresh_content["episodes"])
+            elif isinstance(fresh_content, list):
+                existing = list(fresh_content)
+            existing = merge_episode_bodies(existing, batch, prefer_incoming=True)
+            script.episode_content = {"episodes": existing}
+
+            assets_created = 0
+            assets_reused = 0
+            if mode in {"body", "full", "optimize"}:
+                try:
+                    seed_result = await seed_assets_from_episode_body(
+                        db, project, int(episode_number)
+                    )
+                    assets_created = int(seed_result.created_count)
+                    assets_reused = int(seed_result.reused_count)
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "单集正文后增量 seed 失败 project_id=%s episode=%s",
+                        project_id,
+                        episode_number,
+                    )
+
+            params = dict(script.params or {})
+            params["episode_optimize_status"] = "completed"
+            params["episode_optimize_number"] = int(episode_number)
+            params["episode_optimize_mode"] = mode
+            params["episode_optimize_assets_created"] = assets_created
+            params["episode_optimize_assets_reused"] = assets_reused
+            params.pop("episode_optimize_error", None)
+            if str(params.get("episode_content_status") or "") != "generating":
+                params["episode_content_status"] = "completed"
+            script.params = params
+            await db.commit()
+            user = await db.get(User, project.user_id)
+            if user:
+                await record_line(
+                    db,
+                    user_id=user.id,
+                    project_id=None,
+                    drama_project_id=project.id,
+                    billing_key="llm_chat",
+                    model=get_settings().model_llm,
+                    estimated=True,
+                    domain="drama",
+                )
+                await db.commit()
+            if task_id:
+                from app.services.tasks.service import append_task_event
+
+                task_row = await db.get(TaskRun, int(task_id))
+                if task_row and task_row.status in {"leased", "running", "pending"}:
+                    task_row.progress_percent = 100
+                    task_row.current_step_key = "episode_script"
+                    task_row.current_step_status = "succeeded"
+                    await append_task_event(
+                        db,
+                        int(task_id),
+                        event_type="task.progress",
+                        status=task_row.status,
+                        phase="succeeded",
+                        message=f"第 {episode_number} 集已生成（{mode}）",
+                        payload={
+                            "episode_number": episode_number,
+                            "generate_mode": mode,
+                            "progress_percent": 100,
+                            "assets_created_count": assets_created,
+                            "assets_reused_count": assets_reused,
+                        },
+                    )
+                    await db.commit()
+            logger.info(
+                "单集剧本完成 project_id=%s episode_number=%s mode=%s assets_created=%s",
+                project_id,
+                episode_number,
+                mode,
+                assets_created,
+            )
+            return {
+                "ok": True,
+                "project_id": project_id,
+                "episode_number": episode_number,
+                "generate_mode": mode,
+                "assets_created_count": assets_created,
+                "assets_reused_count": assets_reused,
+            }
+        except Exception as exc:  # noqa: BLE001
+            params = dict(script.params or {})
+            params["episode_optimize_status"] = "failed"
+            params["episode_optimize_number"] = int(episode_number)
+            params["episode_optimize_mode"] = mode
+            params["episode_optimize_error"] = str(exc)[:500]
+            params["episode_optimize_assets_created"] = 0
+            params["episode_optimize_assets_reused"] = 0
+            script.params = params
+            await db.commit()
+            logger.exception(
+                "单集剧本失败 project_id=%s episode_number=%s mode=%s err=%s",
+                project_id,
+                episode_number,
+                mode,
+                exc,
+            )
+            return {"ok": False, "error": str(exc)[:500]}
+
+
 # ---------- episode fragment plan (LLM) ----------
 
 
@@ -556,7 +853,7 @@ async def run_episode_fragment_plan_job(
             else (
                 False
                 if ep_params.get("subtitleMode") == "post"
-                else True if ep_params.get("subtitleMode") == "model" else ep_params.get("subtitleEnabled", True)
+                else True if ep_params.get("subtitleMode") == "model" else ep_params.get("subtitleEnabled", False)
             )
         )
         if isinstance(raw_subtitles, str):
@@ -566,6 +863,11 @@ async def run_episode_fragment_plan_job(
             include_subtitles = raw_subtitles != 0
         else:
             include_subtitles = raw_subtitles is not False
+        from app.services.drama.build_seedance_generate_body import (
+            resolve_episode_character_intro,
+        )
+
+        include_character_intro = resolve_episode_character_intro(ep_params)
         ep_no = int(ep_params.get("episodeNumber") or 0) or None
         from app.services.agent.compose import parse_skill_ids
 
@@ -612,11 +914,15 @@ async def run_episode_fragment_plan_job(
         if body and body not in all_bodies:
             all_bodies.append(body)
         character_assets = [a for a in assets if getattr(a, "type", "") == "character"]
-        intro_overrides = await prepare_character_intro_overrides(
-            character_assets,
-            summary=summary,
-            episode_bodies=all_bodies,
-            story_type=str(summary.get("storyType") or "") or None,
+        intro_overrides = (
+            await prepare_character_intro_overrides(
+                character_assets,
+                summary=summary,
+                episode_bodies=all_bodies,
+                story_type=str(summary.get("storyType") or "") or None,
+            )
+            if include_character_intro
+            else {}
         )
         continuation = bool(locked_summaries) and not force
         try:
@@ -639,6 +945,7 @@ async def run_episode_fragment_plan_job(
                 user_id=project.user_id,
                 skill_ids=skill_ids,
                 include_subtitles=include_subtitles,
+                include_character_intro=include_character_intro,
             )
         except (DramaLlmUnavailableError, RuntimeError, Exception) as exc:  # noqa: BLE001
             logger.exception("LLM 分镜失败 episode_id=%s err=%s", episode_id, exc)
@@ -657,6 +964,7 @@ async def run_episode_fragment_plan_job(
                 episode_bodies=all_bodies,
                 intro_overrides=intro_overrides,
                 include_subtitles=include_subtitles,
+                include_character_intro=include_character_intro,
             )
             mode_used = "rules_fallback"
             continuation = False
@@ -798,13 +1106,22 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
             task_row.current_step_status = "preparing"
             await db.commit()
 
-            prepared = await prepare_fragment_video_for_submit(db, user, project, frag)
+            prepared = await prepare_fragment_video_for_submit(
+                db,
+                user,
+                project,
+                frag,
+                model_id=(payload.get("model_id") or None),
+            )
             now = datetime.now(UTC)
             next_payload = dict(payload)
             next_payload["nio_phase"] = "submit"
             next_payload["generation_attempts"] = attempts
             next_payload["attempt_limit"] = max_attempts
             next_payload["prepared"] = serialize_fragment_video_prepared(prepared)
+            if prepared.submit_mode == "kie":
+                next_payload["video_provider"] = "kie"
+                next_payload["kie_api_kind"] = prepared.kie_api_kind or "jobs"
             task_row.status = "pending"
             task_row.progress_percent = 25
             task_row.current_step_status = "prepared"
@@ -828,7 +1145,13 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
         # nio_phase == submit：仅 HTTP 注册上游，立即释放 Worker
         prepared_raw = payload.get("prepared")
         if not isinstance(prepared_raw, dict):
-            prepared = await prepare_fragment_video_for_submit(db, user, project, frag)
+            prepared = await prepare_fragment_video_for_submit(
+                db,
+                user,
+                project,
+                frag,
+                model_id=(payload.get("model_id") or None),
+            )
         else:
             prepared = deserialize_fragment_video_prepared(prepared_raw)
 
@@ -847,6 +1170,17 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
         provider_task_id = await submit_prepared_fragment_video(prepared, project_id=project.id)
         poll_interval = max(1.0, float(get_settings().ark_video_poll_interval or 8.0))
         now = datetime.now(UTC)
+        # 提交成功后立刻写成 running/polling，避免前端长期停在「排队」
+        params = dict(frag.params or {})
+        params["generation"] = {
+            "status": "running",
+            "phase": "polling",
+            "attempts": attempts,
+            "attempt_limit": max_attempts,
+            "message": "上游生成中",
+            "provider_task_id": provider_task_id,
+        }
+        frag.params = params
         task_row.status = "awaiting_poll"
         task_row.provider_task_id = provider_task_id
         task_row.progress_percent = 40
@@ -859,6 +1193,9 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
         next_payload["nio_phase"] = "poll"
         next_payload["generation_attempts"] = attempts
         next_payload["attempt_limit"] = max_attempts
+        if prepared.submit_mode == "kie":
+            next_payload["video_provider"] = "kie"
+            next_payload["kie_api_kind"] = prepared.kie_api_kind or "jobs"
         task_row.payload = next_payload
         step = task_row.steps[0] if task_row.steps else None
         set_task_step_state(task_row, step, status="polling", now=now)
@@ -875,8 +1212,8 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
         return {"awaiting_poll": True, "provider_task_id": provider_task_id}
 
 
-# 分镜视频收尾认领窗口：期内其它 poller 不得再入下载；超时仅作崩溃恢复。
-_FRAGMENT_FINALIZE_CLAIM_TTL = timedelta(hours=6)
+# 分镜视频收尾认领窗口：期内其它 poller 不得再入下载；需覆盖整段下载+OSS（常达数分钟）。
+_FRAGMENT_FINALIZE_CLAIM_TTL = timedelta(minutes=10)
 
 
 # 统一解析 TaskRun.next_action_at 的时区，便于与 now 比较。
@@ -897,6 +1234,38 @@ def _fragment_video_already_applied(frag: DramaEpisodeFragment | None) -> bool:
     return str(gen.get("status") or "").strip().lower() == "done"
 
 
+# 成片已 done 但任务仍 awaiting_poll：立刻补 complete（避免 UI 长期「生成中」）
+async def reconcile_applied_fragment_video_tasks(
+    db: AsyncSession,
+    tasks: list[TaskRun],
+) -> int:
+    fixed = 0
+    for task in tasks:
+        if getattr(task, "task_type", None) != "fragment_video":
+            continue
+        if str(getattr(task, "status", "") or "") != "awaiting_poll":
+            continue
+        fid = getattr(task, "fragment_id", None)
+        if fid is None:
+            continue
+        frag = await db.get(DramaEpisodeFragment, int(fid))
+        if not _fragment_video_already_applied(frag):
+            continue
+        payload = task.payload if isinstance(task.payload, dict) else {}
+        ok = await _recover_complete_fragment_video(
+            db,
+            int(task.id),
+            fragment_id=int(fid),
+            batch_key=task.batch_key,
+            batch_index=int(payload.get("batch_index", 0)),
+        )
+        if ok:
+            fixed += 1
+    if fixed:
+        logger.info("已补完成成片已落盘的分镜任务 count=%s", fixed)
+    return fixed
+
+
 # 行锁后补完成分镜视频任务；已非 awaiting_poll 则跳过，避免并发双 complete。
 async def _recover_complete_fragment_video(
     db: AsyncSession,
@@ -914,6 +1283,8 @@ async def _recover_complete_fragment_video(
     locked = await _lock_task(db, int(task_id))
     if not locked or locked.status != "awaiting_poll":
         return False
+    # 异步会话下 steps 懒加载会 MissingGreenlet，补完成前显式加载
+    await db.refresh(locked, attribute_names=["steps"])
     # 先 complete（commit 后锁释放），再激活后续；避免 activate 提前 commit 导致并发双 complete
     locked.progress_percent = 100
     result_payload: dict[str, Any] = {"ok": True, "fragment_id": int(fragment_id)}
@@ -947,22 +1318,12 @@ async def poll_fragment_video_task(task_id: int) -> None:
             poll_interval = max(1.0, float(get_settings().ark_video_poll_interval or 8.0))
             now = datetime.now(UTC)
 
-            # 收尾认领窗口未到期：跳过，避免并发下载双记费
-            if (task.current_step_status or "") == "finalizing":
-                na = _aware_utc(task.next_action_at)
-                if na is not None and na > now:
-                    return
-
-            if task.cancel_requested or _is_episode_video_cancelled(episode_id):
-                await _fail_task(db, task, RuntimeError("任务已取消"))
-                return
-
             frag_probe = await db.get(DramaEpisodeFragment, fragment_id) if fragment_id > 0 else None
             if fragment_id <= 0 or frag_probe is None:
                 await _fail_task(db, task, RuntimeError("分镜已变更，请重新生成"))
                 return
 
-            # 成片已落盘（含 apply 成功后 complete 失败）：行锁后只补完成
+            # 成片已落盘：优先补完成，不被 finalizing 认领窗口挡住
             if _fragment_video_already_applied(frag_probe):
                 await _recover_complete_fragment_video(
                     db,
@@ -973,7 +1334,25 @@ async def poll_fragment_video_task(task_id: int) -> None:
                 )
                 return
 
-            result = await get_ark().fetch_task_once(task.provider_task_id)
+            # 收尾认领窗口未到期：跳过，避免并发下载双记费
+            if (task.current_step_status or "") == "finalizing":
+                na = _aware_utc(task.next_action_at)
+                if na is not None and na > now:
+                    return
+
+            if task.cancel_requested or _is_episode_video_cancelled(episode_id):
+                await _fail_task(db, task, RuntimeError("任务已取消"))
+                return
+
+            if str(payload.get("video_provider") or "") == "kie":
+                from app.services.kie_client import get_kie
+
+                result = await get_kie().fetch_video_once(
+                    task.provider_task_id,
+                    api_kind=str(payload.get("kie_api_kind") or "jobs"),
+                )
+            else:
+                result = await get_ark().fetch_task_once(task.provider_task_id)
             if result.status == "running":
                 task.next_action_at = now + timedelta(seconds=poll_interval)
                 task.progress_percent = min(95, int(task.progress_percent or 40) + 3)
@@ -1043,6 +1422,12 @@ async def poll_fragment_video_task(task_id: int) -> None:
                     task_result=result,
                     provider_task_id=task.provider_task_id,
                 )
+                # apply 已 commit：立刻把 next_action 拉回现在，complete 失败时也能马上被 Selector 捞到
+                async with AsyncSessionLocal() as nudge_db:
+                    nudged = await nudge_db.get(TaskRun, int(task_id))
+                    if nudged and nudged.status == "awaiting_poll":
+                        nudged.next_action_at = datetime.now(UTC)
+                        await nudge_db.commit()
                 # 与恢复路径同一套行锁 complete，避免 apply 后并发双 complete
                 await _recover_complete_fragment_video(
                     db,
@@ -1052,8 +1437,8 @@ async def poll_fragment_video_task(task_id: int) -> None:
                     batch_index=int(payload.get("batch_index", 0)),
                     recovered=False,
                 )
-            except Exception:
-                # 下载/落盘失败：释放认领，短间隔重试；勿把 next_action 缩到 8s 却仍标 finalizing
+            except BaseException:
+                # 含 CancelledError：poller wait_for 超时会取消协程，必须释放认领，否则 next_action 卡数小时
                 async with AsyncSessionLocal() as release_db:
                     stalled = await _lock_task(release_db, int(task_id))
                     if (
@@ -1061,9 +1446,15 @@ async def poll_fragment_video_task(task_id: int) -> None:
                         and stalled.status == "awaiting_poll"
                         and (stalled.current_step_status or "") == "finalizing"
                     ):
-                        stalled.current_step_status = "polling"
-                        stalled.next_action_at = datetime.now(UTC) + timedelta(seconds=poll_interval)
-                        await release_db.commit()
+                        frag_done = await release_db.get(DramaEpisodeFragment, fragment_id)
+                        if _fragment_video_already_applied(frag_done):
+                            # 成片已落盘：只补 complete，勿退回 polling 以免误伤
+                            stalled.next_action_at = datetime.now(UTC)
+                            await release_db.commit()
+                        else:
+                            stalled.current_step_status = "polling"
+                            stalled.next_action_at = datetime.now(UTC) + timedelta(seconds=poll_interval)
+                            await release_db.commit()
                 raise
 
 
@@ -1200,20 +1591,23 @@ async def run_asset_image_job(
             )
             return {"ok": True, "asset_id": asset.id}
         except Exception as exc:  # noqa: BLE001
+            from app.services.exc_format import format_exception_message
+
+            err_text = format_exception_message(exc, fallback="生图失败", limit=500)
             if asset_id:
                 asset = await db.get(DramaAsset, asset_id)
                 if asset:
                     params = dict(asset.params or {})
-                    params["generation"] = {"status": "failed", "error": str(exc)[:400]}
+                    params["generation"] = {"status": "failed", "error": err_text[:400]}
                     asset.params = params
                     await db.commit()
             logger.exception(
                 "资产生图失败 project_id=%s asset_id=%s err=%s",
                 project_id,
                 asset_id,
-                exc,
+                err_text,
             )
-            return {"ok": False, "error": str(exc)[:500]}
+            return {"ok": False, "error": err_text}
 
 
 # ---------- asset video ----------
@@ -1321,10 +1715,13 @@ async def run_asset_video_job(
             )
             return {"ok": True, "asset_id": asset.id}
         except Exception as exc:  # noqa: BLE001
+            from app.services.exc_format import format_exception_message
+
+            err_text = format_exception_message(exc, fallback="生视频失败", limit=500)
             asset = await db.get(DramaAsset, asset_id)
             if asset:
                 params = dict(asset.params or {})
-                params["generation"] = {"status": "failed", "error": str(exc)[:400]}
+                params["generation"] = {"status": "failed", "error": err_text[:400]}
                 if (prompt or "").strip():
                     params["visualPrompt"] = prompt.strip()
                 asset.params = params
@@ -1333,9 +1730,9 @@ async def run_asset_video_job(
                 "资产生视频失败 project_id=%s asset_id=%s err=%s",
                 project_id,
                 asset_id,
-                exc,
+                err_text,
             )
-            return {"ok": False, "error": str(exc)[:500]}
+            return {"ok": False, "error": err_text}
 
 
 # ---------- seed assets from script ----------

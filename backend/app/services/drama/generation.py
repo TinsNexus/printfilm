@@ -27,11 +27,13 @@ from app.services.billing import record_line
 from app.services.drama.build_seedance_generate_body import (
     ASSET_MENTION_TOKEN_PATTERN,
     build_seedance_generate_body,
+    build_seedance_prompt_text,
     build_seedance_reference_catalog,
     describe_seedance_content_slots,
     drama_asset_to_payload,
     read_asset_voice_audio_url,
     resolve_episode_burn_subtitles,
+    resolve_episode_character_intro,
 )
 from app.services.drama.generation_prompt import build_generation_prompt
 from app.services.drama.seedream_options import resolve_seedream_model_endpoint, resolve_seedream_size
@@ -77,6 +79,20 @@ def read_fragment_last_frame_url(fragment: DramaEpisodeFragment | None) -> str |
         value = params.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()
+    gen = params.get("generation") if isinstance(params.get("generation"), dict) else {}
+    for key in ("lastFrameUrl", "last_frame_url"):
+        value = gen.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    versions = params.get("video_versions")
+    if isinstance(versions, list):
+        for row in versions:
+            if not isinstance(row, dict):
+                continue
+            for key in ("lastFrameUrl", "last_frame_url"):
+                value = row.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
     return None
 
 
@@ -84,12 +100,77 @@ def read_fragment_last_frame_url(fragment: DramaEpisodeFragment | None) -> str |
 def write_fragment_last_frame_url(fragment: DramaEpisodeFragment, url: str | None) -> None:
     params = dict(fragment.params or {}) if isinstance(fragment.params, dict) else {}
     cleaned = (url or "").strip()
+    gen = dict(params.get("generation") or {}) if isinstance(params.get("generation"), dict) else {}
     if cleaned:
         params["lastFrameUrl"] = cleaned
+        gen["lastFrameUrl"] = cleaned
+        params["generation"] = gen
     else:
         params.pop("lastFrameUrl", None)
         params.pop("last_frame_url", None)
+        gen.pop("lastFrameUrl", None)
+        gen.pop("last_frame_url", None)
+        if gen:
+            params["generation"] = gen
+        elif "generation" in params:
+            params["generation"] = gen
     fragment.params = params
+
+
+# 成片已在、尾帧缺失时从视频补抽并写回（兼容旧 Kie 成片）
+async def ensure_fragment_last_frame_url(
+    project: DramaProject,
+    fragment: DramaEpisodeFragment | None,
+) -> str | None:
+    """返回可用尾帧 URL；必要时从本地/远端成片抽取。"""
+    if not fragment:
+        return None
+    existing = read_fragment_last_frame_url(fragment)
+    if existing:
+        return existing
+    video = (fragment.video or "").strip()
+    if not video:
+        return None
+
+    from app.services import storage as storage_svc
+    from app.services.ffmpeg_compose import extract_video_last_frame
+
+    video_path = storage_svc.local_path_from_url(video)
+    if video_path is None and not video.startswith("http"):
+        candidate = Path(video)
+        if candidate.exists():
+            video_path = candidate
+    if video_path is None or not video_path.exists():
+        if video.startswith("http"):
+            try:
+                stamp = int(time.time())
+                dest = (
+                    storage_svc.project_dir(project.id)
+                    / f"shot_{fragment.id}_{stamp}_ensure.mp4"
+                )
+                await storage_svc.download_to(video, dest)
+                video_path = dest
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "ensure last frame: download failed fragment=%s",
+                    getattr(fragment, "id", None),
+                )
+                return None
+        else:
+            return None
+    if not video_path or not video_path.exists():
+        return None
+
+    frame_dest = (
+        storage_svc.project_dir(project.id)
+        / f"shot_{fragment.id}_{int(time.time())}_last.jpg"
+    )
+    if not extract_video_last_frame(video_path, frame_dest):
+        return None
+    rel = storage_svc.rel_static_url(frame_dest)
+    url = storage_svc.republish_url(rel, sync=True) or rel
+    write_fragment_last_frame_url(fragment, url)
+    return url
 
 
 # 写入分镜成片输出规格（配置 + 实际像素），供前端展示与拼接校验
@@ -137,13 +218,13 @@ def write_fragment_video_output_meta(
     fragment.params = params
 
 
-# 项目是否开启「上一镜尾帧 → 本镜首帧」衔接（默认关闭）
+# 项目是否开启「上一镜尾帧 → 本镜首帧」衔接（默认开启）
 def project_link_last_frame_enabled(project: DramaProject) -> bool:
     params = project.params if isinstance(project.params, dict) else {}
     raw = params.get("linkLastFrame")
     if raw is None:
         raw = params.get("link_last_frame")
-    return _coerce_project_bool(raw, False)
+    return _coerce_project_bool(raw, True)
 
 
 # 查找同集中 sort_order 更小的上一镜
@@ -264,27 +345,60 @@ FRAGMENT_VIDEO_VERSION_LIMIT = 8
 
 
 def _snapshot_version_media_url(url: str, *, label: str) -> str:
-    """把当前成片复制为独立历史文件，避免下次生成覆盖同路径导致版本失效。"""
+    """把当前媒体复制为独立历史文件，避免下次覆盖同路径导致版本失效。
+
+    优先本地拷贝；本地缺失但为 http(s) 时尝试同步下载到 `_hist_` 文件再发布。
+    """
     from shutil import copy2
+    from urllib.parse import urlparse
 
     from app.services import storage as storage_svc
+    from app.services.storage import STATIC_ROOT
 
     raw = (url or "").strip()
     if not raw:
         return ""
     path = storage_svc.local_path_from_url(raw)
-    if path is None or not path.exists() or not path.is_file():
-        return raw
-    stem = path.stem
-    # 已是带时间戳/历史后缀的独立文件，无需再拷
-    if "_hist_" in stem or re.search(r"_\d{10,}$", stem):
-        published = storage_svc.republish_url(storage_svc.rel_static_url(path), sync=True)
-        return published or storage_svc.rel_static_url(path)
-    dest = path.with_name(f"{stem}_hist_{label}{path.suffix}")
-    if not dest.exists():
-        copy2(path, dest)
-    rel = storage_svc.rel_static_url(dest)
-    return storage_svc.republish_url(rel, sync=True) or rel
+    stem = ""
+    suffix = ".png"
+    if path is not None:
+        stem = path.stem
+        suffix = path.suffix or ".png"
+        # 已是带时间戳/历史后缀的独立文件，无需再拷
+        if path.exists() and path.is_file() and ("_hist_" in stem or re.search(r"_\d{10,}$", stem)):
+            published = storage_svc.republish_url(storage_svc.rel_static_url(path), sync=True)
+            return published or storage_svc.rel_static_url(path)
+        if path.exists() and path.is_file():
+            dest = path.with_name(f"{stem}_hist_{label}{suffix}")
+            if not dest.exists():
+                copy2(path, dest)
+            rel = storage_svc.rel_static_url(dest)
+            return storage_svc.republish_url(rel, sync=True) or rel
+        # 映射到本地路径但文件不在：落到同目录 hist 名，下面尝试下载
+        dest = path.with_name(f"{(stem or 'asset')}_hist_{label}{suffix}")
+    else:
+        parsed = urlparse(raw)
+        name = Path(parsed.path or "").name or "asset.bin"
+        stem = Path(name).stem or "asset"
+        suffix = Path(name).suffix or ".png"
+        dest = STATIC_ROOT / "generated" / "_hist" / f"{stem}_hist_{label}{suffix}"
+
+    if raw.startswith("http://") or raw.startswith("https://"):
+        try:
+            import httpx
+
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if not dest.exists():
+                with httpx.Client(timeout=60.0, follow_redirects=True) as client:
+                    resp = client.get(raw)
+                    resp.raise_for_status()
+                    dest.write_bytes(resp.content)
+            if dest.exists() and dest.is_file():
+                rel = storage_svc.rel_static_url(dest)
+                return storage_svc.republish_url(rel, sync=True) or rel
+        except Exception:  # noqa: BLE001
+            logger.warning("历史版本拉取远端失败，回退原 URL url=%s", raw[:120], exc_info=True)
+    return raw
 
 
 # 归档当前成片到 params.video_versions（覆盖前调用）
@@ -422,6 +536,128 @@ def activate_fragment_video_version(
     }
 
 
+# 资产生图版本上限（归档历史，不含当前）
+ASSET_IMAGE_VERSION_LIMIT = 8
+
+
+def read_asset_image_versions(asset: DramaAsset) -> list[dict[str, Any]]:
+    params = dict(asset.params or {}) if isinstance(asset.params, dict) else {}
+    raw = params.get("image_versions")
+    if not isinstance(raw, list):
+        return []
+    return [dict(v) for v in raw if isinstance(v, dict) and str(v.get("url") or v.get("cover") or "").strip()]
+
+
+# 归档当前形象图到 params.image_versions（覆盖前调用）
+def archive_asset_image_version(
+    asset: DramaAsset,
+    *,
+    source: str = "generate",
+) -> dict[str, Any] | None:
+    current = (asset.cover or asset.url or "").strip()
+    if not current:
+        return None
+    import uuid
+    from datetime import datetime, timezone
+
+    params = dict(asset.params or {}) if isinstance(asset.params, dict) else {}
+    stamp = f"{int(datetime.now(timezone.utc).timestamp())}_{uuid.uuid4().hex[:8]}"
+    archived_url = _snapshot_version_media_url(current, label=stamp)
+    prompt = ""
+    for key in ("visualPrompt", "visualImage", "prompt"):
+        raw = params.get(key)
+        if isinstance(raw, str) and raw.strip():
+            prompt = raw.strip()
+            break
+    entry = {
+        "id": f"img_{stamp}_{asset.id}",
+        "url": archived_url or current,
+        "cover": archived_url or current,
+        "prompt": prompt[:2000] if prompt else None,
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+        "source": source,
+    }
+    versions = params.get("image_versions")
+    if not isinstance(versions, list):
+        versions = []
+    cleaned: list[dict[str, Any]] = [v for v in versions if isinstance(v, dict)]
+    cleaned.insert(0, entry)
+    params["image_versions"] = cleaned[:ASSET_IMAGE_VERSION_LIMIT]
+    asset.params = params
+    return entry
+
+
+# 将历史形象切换为当前，并把原当前图压入版本列表
+def activate_asset_image_version(
+    asset: DramaAsset,
+    version_id: str,
+) -> dict[str, Any]:
+    params = dict(asset.params or {}) if isinstance(asset.params, dict) else {}
+    versions_raw = params.get("image_versions")
+    if not isinstance(versions_raw, list):
+        raise ValueError("没有可切换的历史版本")
+    target: dict[str, Any] | None = None
+    remaining: list[dict[str, Any]] = []
+    for item in versions_raw:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("id") or "") == version_id and target is None:
+            target = dict(item)
+            continue
+        remaining.append(dict(item))
+    target_url = str((target or {}).get("url") or (target or {}).get("cover") or "").strip()
+    if not target or not target_url:
+        raise ValueError("指定版本不存在")
+
+    from datetime import datetime, timezone
+
+    current = (asset.cover or asset.url or "").strip()
+    if current and current != target_url:
+        stamp = f"{int(datetime.now(timezone.utc).timestamp())}_{asset.id}"
+        prompt = ""
+        for key in ("visualPrompt", "visualImage", "prompt"):
+            raw = params.get(key)
+            if isinstance(raw, str) and raw.strip():
+                prompt = raw.strip()
+                break
+        snap = _snapshot_version_media_url(current, label=f"{stamp}_cur") or current
+        remaining.insert(
+            0,
+            {
+                "id": f"img_{stamp}_replaced",
+                "url": snap,
+                "cover": snap,
+                "prompt": prompt[:2000] if prompt else None,
+                "createdAt": datetime.now(timezone.utc).isoformat(),
+                "source": "replaced",
+            },
+        )
+
+    asset.cover = target_url[:1024]
+    asset.url = target_url[:1024]
+    params = dict(asset.params or {}) if isinstance(asset.params, dict) else {}
+    gen = dict(params.get("generation") or {}) if isinstance(params.get("generation"), dict) else {}
+    gen.update({
+        "status": "done",
+        "source": "restored",
+        "restoredFrom": version_id,
+        "finished_at": datetime.now(timezone.utc).isoformat(),
+    })
+    params["generation"] = gen
+    params["image_versions"] = remaining[:ASSET_IMAGE_VERSION_LIMIT]
+    # 还原时不强制改写提示词；若历史条目带 prompt 且当前为空则回填
+    hist_prompt = str(target.get("prompt") or "").strip()
+    if hist_prompt and not str(params.get("visualPrompt") or "").strip():
+        params["visualPrompt"] = hist_prompt
+    asset.params = params
+    return {
+        "asset_id": asset.id,
+        "url": asset.url,
+        "cover": asset.cover,
+        "image_versions": params["image_versions"],
+    }
+
+
 # 入队后、任务列表尚未可见时，保留 queued，避免被当成孤儿清掉
 _ORPHAN_QUEUE_GRACE_SEC = 60
 
@@ -491,6 +727,40 @@ def collect_active_fragment_ids_from_tasks(tasks) -> set[int]:
     return active_ids
 
 
+# 进行中的平台任务态（用于覆盖分镜 params 滞后的 queued）
+_ACTIVE_FRAGMENT_VIDEO_TASK_STATUSES = frozenset(
+    {"pending", "leased", "running", "awaiting_poll", "awaiting_review"}
+)
+
+
+def overlay_fragment_status_with_active_task(
+    status: dict[str, Any],
+    task_status: str | None,
+) -> dict[str, Any]:
+    """分镜 params 仍标 queued，但任务已提交上游时，对外展示为生成中。"""
+    raw_task = (task_status or "").strip().lower()
+    if raw_task not in _ACTIVE_FRAGMENT_VIDEO_TASK_STATUSES:
+        return status
+    frag_st = str(status.get("status") or "").strip().lower()
+    if frag_st in {"done", "failed", "cancelled"}:
+        return status
+    out = dict(status)
+    if raw_task in {"pending", "leased"}:
+        out["status"] = "queued"
+        out.setdefault("message", "排队中")
+        return out
+    out["status"] = "running"
+    if raw_task == "awaiting_poll":
+        out["phase"] = out.get("phase") or "polling"
+        out["message"] = out.get("message") or "上游生成中"
+    elif raw_task == "awaiting_review":
+        out["phase"] = out.get("phase") or "review"
+        out["message"] = out.get("message") or "待确认"
+    else:
+        out.setdefault("message", "生成中")
+    return out
+
+
 # 从分镜正文提取 @asset:id
 def extract_asset_ids_from_content(content: str) -> list[int]:
     ids: list[int] = []
@@ -504,14 +774,28 @@ def extract_asset_ids_from_content(content: str) -> list[int]:
     return ids
 
 
-# 判断资产是否缺参考图
+# Kie / Seedance 参考图仅接受常见位图；SVG 占位图会触发 File type not supported
+_KIE_IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")
+
+
+def _is_kie_supported_image_url(url: str | None) -> bool:
+    path = (url or "").strip().split("?", 1)[0].lower()
+    if not path:
+        return False
+    return any(path.endswith(suffix) for suffix in _KIE_IMAGE_SUFFIXES)
+
+
+# 判断资产是否缺参考图（SVG/非位图占位视为仍缺，避免视频提交才被 Kie 拒）
 def asset_needs_reference_image(asset: DramaAsset) -> bool:
     kind = (asset.type or "").strip().lower()
     if kind not in IMAGE_REF_ASSET_TYPES:
         return False
     cover = (asset.cover or "").strip()
     url = (asset.url or "").strip()
-    return not cover and not url
+    candidate = cover or url
+    if not candidate:
+        return True
+    return not _is_kie_supported_image_url(candidate)
 
 
 # 读取资产生图提示词（缺省时用名称兜底）
@@ -996,9 +1280,9 @@ async def generate_asset_image(
     ratio = (aspect_ratio or "").strip() or (
         "3:4" if (kind or "").lower() == "character" else "16:9"
     )
-    res = (resolution or "").strip() or "3K"
-    size = resolve_seedream_size(aspect_ratio=ratio, resolution=res)
+    res = (resolution or "").strip() or "2K"
     model = resolve_seedream_model_endpoint(model_id)
+    size = resolve_seedream_size(aspect_ratio=ratio, resolution=res, model_id=model)
     full_prompt = build_generation_prompt(prompt, asset_type=kind, style_id=style_id)
 
     logger.info(
@@ -1016,8 +1300,11 @@ async def generate_asset_image(
         project_id=project.id,
         size=size,
         model=model,
+        aspect_ratio=ratio,
     )
-    # Seedance 需公网图：优先同步 OSS；失败再用 Seedream 临时 CDN
+    # 生图结果实时同步 OSS（禁止异步排队），Seedance 参考图需要公网 https
+    from datetime import datetime, timezone
+
     from app.services import storage as storage_svc
 
     url = result.local_url or ""
@@ -1028,10 +1315,12 @@ async def generate_asset_image(
         elif result.remote_url and str(result.remote_url).startswith("https://"):
             url = str(result.remote_url)
             logger.warning(
-                "OSS 未拿到 https，回退 Seedream CDN project_id=%s",
+                "OSS 未拿到 https，回退上游 CDN project_id=%s",
                 project.id,
             )
-    logger.info("Seedream 返回 project_id=%s url=%s", project.id, (url or "")[:100])
+    if not (url or "").strip():
+        raise RuntimeError("生图成功但未拿到可用图片 URL")
+    logger.info("Seedream 返回 project_id=%s url=%s", project.id, url[:100])
 
     await record_seedream_image_usage(
         db,
@@ -1042,13 +1331,22 @@ async def generate_asset_image(
         drama_project_id=project.id,
     )
 
-    # gen_meta 写入资产 params，便于前端回显上次选项
+    finished_at = datetime.now(timezone.utc).isoformat()
+    # gen_meta 写入资产 params，便于前端回显上次选项；同事务标记 done 以便轮询立刻换图
     gen_meta = {
         "prompt": prompt,
         "image_style_id": style_id,
         "model_id": model_id or "seedream-5.0",
         "aspect_ratio": ratio,
         "resolution": res,
+        "generation": {
+            "status": "done",
+            "finished_at": finished_at,
+            "model_id": model_id or "seedream-5.0",
+            "aspect_ratio": ratio,
+            "resolution": res,
+            "image_style_id": style_id,
+        },
     }
 
     if asset is None:
@@ -1063,10 +1361,16 @@ async def generate_asset_image(
         )
         db.add(asset)
     else:
+        # 提交前刷新，避免与上传/保存并发时用陈旧 params 覆盖 image_versions
+        await db.refresh(asset)
+        archive_asset_image_version(asset, source="generate")
         asset.cover = url
         asset.url = url
         params = dict(asset.params or {})
         params.update(gen_meta)
+        archived_versions = (asset.params or {}).get("image_versions") if isinstance(asset.params, dict) else None
+        if isinstance(archived_versions, list):
+            params["image_versions"] = archived_versions
         if prompt.strip():
             params["visualPrompt"] = prompt.strip()
             if not str(params.get("visualImage") or "").strip():
@@ -1143,12 +1447,42 @@ class FragmentVideoPrepared:
     submit_mode: str
     seedance_body: dict[str, Any] | None = None
     image_url: str | None = None
+    # Kie 多参考模式（与 first_frame 互斥）
+    reference_image_urls: list[str] | None = None
+    reference_audio_urls: list[str] | None = None
     prompt: str = ""
     duration: int = 8
     ratio: str = "9:16"
     resolution: str = "480p"
     generate_audio: bool = True
     content_labels: list[str] | None = None
+    model_id: str | None = None
+    kie_api_kind: str | None = None
+
+
+# 将本地/CDN 参考地址尽量变成公网 https，供 Kie 拉取
+def _publish_https_media_url(url: str | None) -> str:
+    from app.services import storage as storage_svc
+
+    raw = (url or "").strip()
+    if not raw:
+        return ""
+    published = storage_svc.republish_url(raw, sync=True) or raw
+    text = str(published).strip()
+    return text if text.startswith("https://") else raw
+
+
+def _asset_label_by_id(ref_payloads: list[dict[str, Any]], asset_id: int) -> str:
+    for item in ref_payloads:
+        try:
+            if int(item.get("id") or 0) != asset_id:
+                continue
+        except (TypeError, ValueError):
+            continue
+        name = str(item.get("name") or "").strip()
+        kind = str(item.get("type") or "").strip() or "资产"
+        return f"{kind}「{name or asset_id}」#{asset_id}"
+    return f"资产#{asset_id}"
 
 
 # Worker 准备阶段：参考图 / 衔接帧 / 请求体（可耗时，但不等待上游成片）。
@@ -1157,7 +1491,11 @@ async def prepare_fragment_video_for_submit(
     user: User,
     project: DramaProject,
     fragment: DramaEpisodeFragment,
+    *,
+    model_id: str | None = None,
 ) -> FragmentVideoPrepared:
+    from app.services.kie_catalog import get_media_model
+
     settings = get_settings()
     prompt = (fragment.content or "").strip() or "短剧分镜"
     duration = int(fragment.duration_sec or 8)
@@ -1179,6 +1517,10 @@ async def prepare_fragment_video_for_submit(
             changed = True
         if changed:
             episode.params = ep_params
+
+    mid = (model_id or "").strip() or None
+    kie_spec = get_media_model(mid)
+    use_kie = bool(kie_spec and kie_spec.provider == "kie" and kie_spec.capability == "video")
 
     refs = (
         await db.execute(
@@ -1205,6 +1547,7 @@ async def prepare_fragment_video_for_submit(
         ref_assets=ref_assets,
     )
     ref_assets = await ensure_reference_assets_public_urls(db, ref_assets)
+    # 方舟多参考 / Kie 多参考都需要音色音频；纯 Kie 首帧模式可跳过
     ref_assets = await ensure_fragment_reference_audios(
         db,
         user,
@@ -1219,7 +1562,7 @@ async def prepare_fragment_video_for_submit(
     continuity_url: str | None = None
     if project_link_last_frame_enabled(project):
         prev = await find_previous_episode_fragment(db, fragment)
-        continuity_url = read_fragment_last_frame_url(prev)
+        continuity_url = await ensure_fragment_last_frame_url(project, prev)
         if continuity_url:
             continuity_url = storage_svc_early_republish(continuity_url)
 
@@ -1228,17 +1571,99 @@ async def prepare_fragment_video_for_submit(
         image_url = item.url
         break
 
+    # Kie：有角色/场景参考图时走 reference_* 多模态；否则才用单首帧
+    if use_kie:
+        ark = get_ark()
+        ref_image_urls: list[str] = []
+        unsupported_images: list[str] = []
+        for item in catalog.images[:30]:
+            https_url = _publish_https_media_url(item.url)
+            if not https_url.startswith("https://"):
+                continue
+            if not _is_kie_supported_image_url(https_url):
+                unsupported_images.append(_asset_label_by_id(ref_payloads, item.asset_id))
+                continue
+            ref_image_urls.append(https_url)
+        if unsupported_images:
+            raise RuntimeError(
+                "Kie 参考图格式不支持（仅 PNG/JPG/WEBP 等位图，不支持 SVG/占位图）："
+                + "、".join(unsupported_images)
+                + "。请重新生成或上传对应资产图片后再试。"
+            )
+        ref_audio_urls: list[str] = []
+        for item in catalog.audios[:10]:
+            https_url = _publish_https_media_url(item.url)
+            if https_url.startswith("https://"):
+                ref_audio_urls.append(https_url)
+
+        if not ref_image_urls:
+            still = await ark.gen_image(
+                prompt[:500],
+                project_id=project.id,
+                shot_no=fragment.id,
+                size=seedream_still_size_for_video_ratio(ratio),
+            )
+            image_url = _publish_https_media_url(still.local_url or still.remote_url or "")
+            return FragmentVideoPrepared(
+                submit_mode="kie",
+                image_url=image_url,
+                prompt=prompt,
+                duration=duration,
+                ratio="adaptive",
+                resolution=resolution,
+                generate_audio=True,
+                model_id=mid,
+                kie_api_kind=kie_spec.api_kind if kie_spec else "jobs",
+            )
+
+        # 多参考：把 @asset:id 改写成「参考图N」，与 reference_image_urls 顺序对齐
+        kie_prompt = build_seedance_prompt_text(
+            prompt,
+            ref_payloads,
+            catalog,
+            style_id,
+            burn_subtitles=resolve_episode_burn_subtitles(
+                episode.params if episode else None
+            ),
+            character_intro=resolve_episode_character_intro(
+                episode.params if episode else None
+            ),
+        )
+        return FragmentVideoPrepared(
+            submit_mode="kie",
+            image_url=None,
+            reference_image_urls=ref_image_urls,
+            reference_audio_urls=ref_audio_urls or None,
+            prompt=kie_prompt,
+            duration=duration,
+            # 多参考模式可用固定画幅；首帧模式才必须 adaptive
+            ratio=ratio if ratio in {"9:16", "16:9", "1:1", "4:3", "3:4", "21:9"} else "16:9",
+            resolution=resolution,
+            generate_audio=True,
+            content_labels=describe_seedance_content_slots(
+                ref_payloads,
+                None,
+                has_text=bool((prompt or "").strip()),
+            ),
+            model_id=mid,
+            kie_api_kind=kie_spec.api_kind if kie_spec else "jobs",
+        )
+
     if ref_payloads and (catalog.images or catalog.audios):
         body = build_seedance_generate_body(
             {
                 "content": prompt,
                 "reference": ref_payloads,
+                "model_id": mid,
                 "video_style_id": style_id,
                 "aspect_ratio": ratio,
                 "resolution": resolution,
                 "duration_fallback": duration,
                 "continuity_first_frame_url": continuity_url,
                 "burn_subtitles": resolve_episode_burn_subtitles(
+                    episode.params if episode else None
+                ),
+                "character_intro": resolve_episode_character_intro(
                     episode.params if episode else None
                 ),
             }
@@ -1255,6 +1680,7 @@ async def prepare_fragment_video_for_submit(
                 continuity_url,
                 has_text=bool((prompt or "").strip()),
             ),
+            model_id=mid,
         )
 
     ark = get_ark()
@@ -1276,6 +1702,7 @@ async def prepare_fragment_video_for_submit(
         ratio=ratio,
         resolution=resolution,
         generate_audio=True,
+        model_id=mid,
     )
 
 
@@ -1286,6 +1713,24 @@ async def submit_prepared_fragment_video(
     project_id: int,
 ) -> str:
     ark = get_ark()
+    if prepared.submit_mode == "kie":
+        from app.services.kie_catalog import get_media_model
+        from app.services.kie_client import get_kie
+
+        spec = get_media_model(prepared.model_id)
+        if not spec or spec.provider != "kie":
+            raise RuntimeError(f"无效 Kie 视频模型: {prepared.model_id}")
+        return await get_kie().create_video_task(
+            prepared.image_url or "",
+            prepared.prompt,
+            prepared.duration,
+            spec=spec,
+            resolution=prepared.resolution,
+            ratio=prepared.ratio,
+            generate_audio=prepared.generate_audio,
+            reference_image_urls=prepared.reference_image_urls,
+            reference_audio_urls=prepared.reference_audio_urls,
+        )
     if prepared.submit_mode == "seedance_body" and prepared.seedance_body:
         return await ark.gen_video_seedance_body(
             prepared.seedance_body,
@@ -1309,12 +1754,16 @@ def serialize_fragment_video_prepared(prepared: FragmentVideoPrepared) -> dict[s
         "submit_mode": prepared.submit_mode,
         "seedance_body": prepared.seedance_body,
         "image_url": prepared.image_url,
+        "reference_image_urls": prepared.reference_image_urls,
+        "reference_audio_urls": prepared.reference_audio_urls,
         "prompt": prepared.prompt,
         "duration": prepared.duration,
         "ratio": prepared.ratio,
         "resolution": prepared.resolution,
         "generate_audio": prepared.generate_audio,
         "content_labels": prepared.content_labels,
+        "model_id": prepared.model_id,
+        "kie_api_kind": prepared.kie_api_kind,
     }
 
 
@@ -1325,16 +1774,28 @@ def deserialize_fragment_video_prepared(raw: dict[str, Any]) -> FragmentVideoPre
         if isinstance(labels_raw, list)
         else None
     )
+
+    def _str_list(key: str) -> list[str] | None:
+        val = raw.get(key)
+        if not isinstance(val, list):
+            return None
+        out = [str(x).strip() for x in val if str(x).strip()]
+        return out or None
+
     return FragmentVideoPrepared(
         submit_mode=str(raw.get("submit_mode") or ""),
         seedance_body=raw.get("seedance_body") if isinstance(raw.get("seedance_body"), dict) else None,
         image_url=str(raw.get("image_url") or "") or None,
+        reference_image_urls=_str_list("reference_image_urls"),
+        reference_audio_urls=_str_list("reference_audio_urls"),
         prompt=str(raw.get("prompt") or ""),
         duration=int(raw.get("duration") or 8),
         ratio=str(raw.get("ratio") or "9:16"),
         resolution=str(raw.get("resolution") or "480p"),
         generate_audio=bool(raw.get("generate_audio", True)),
         content_labels=labels,
+        model_id=str(raw.get("model_id") or "") or None,
+        kie_api_kind=str(raw.get("kie_api_kind") or "") or None,
     )
 
 
@@ -1353,7 +1814,7 @@ async def apply_fragment_video_assets(
     provider_task_id: str | None = None,
 ) -> DramaEpisodeFragment:
     from app.services import storage as storage_svc
-    from app.services.ffmpeg_compose import extract_video_poster_frame
+    from app.services.ffmpeg_compose import extract_video_last_frame, extract_video_poster_frame
 
     settings = get_settings()
     # 覆盖前归档旧成片，供版本切换
@@ -1378,6 +1839,15 @@ async def apply_fragment_video_assets(
         last_frame_url = storage_svc.republish_url(local_last_frame, sync=True) or local_last_frame
         if not cover_url:
             cover_url = last_frame_url
+    # Kie 等渠道常不回传尾帧：从成片本地抽一帧，保证下一镜衔接门禁可用
+    if not last_frame_url and video_path and video_path.exists():
+        frame_dest = (
+            storage_svc.project_dir(project.id)
+            / f"shot_{fragment.id}_{int(time.time())}_last.jpg"
+        )
+        if extract_video_last_frame(video_path, frame_dest):
+            frame_src = storage_svc.rel_static_url(frame_dest)
+            last_frame_url = storage_svc.republish_url(frame_src, sync=True) or frame_src
     fragment.video = video_url
     fragment.cover = cover_url or ""
     write_fragment_last_frame_url(fragment, last_frame_url)

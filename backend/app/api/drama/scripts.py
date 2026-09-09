@@ -49,7 +49,25 @@ async def update_script(
     if body.source is not None:
         script.source = body.source
     if body.summary is not None:
+        prev_summary = script.summary if isinstance(script.summary, dict) else {}
         script.summary = body.summary
+        from app.services.drama.agents import normalize_series_title, pick_auto_project_title
+
+        new_series = normalize_series_title(body.summary.get("seriesTitle"))
+        old_series = normalize_series_title(prev_summary.get("seriesTitle"))
+        # 用户在摘要里主动改了剧名 → 同步项目名；否则仅覆盖「默认/截断」标题
+        if new_series and new_series != old_series:
+            project.title = new_series
+            script.name = new_series
+        else:
+            auto_title = pick_auto_project_title(
+                body.summary,
+                creative=(script.source or "").strip(),
+                current_title=project.title or "",
+            )
+            if auto_title:
+                project.title = auto_title
+                script.name = auto_title
     if body.episode_content is not None:
         script.episode_content = body.episode_content
     if body.name is not None:

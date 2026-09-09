@@ -16,6 +16,9 @@ SKUS: list[dict[str, Any]] = [
 
 ORDER_EXPIRE_SECONDS = 300
 
+# Kie 1 credit ≈ $0.005；按约 7 CNY/USD 折合 ¥0.035 ≈ 3.5 分（可配置）
+DEFAULT_KIE_FEN_PER_CREDIT = 3.5
+
 
 def provider_yuan_per_m(billing_key: str, settings: Settings | None = None) -> float:
     s = settings or get_settings()
@@ -27,6 +30,30 @@ def provider_yuan_per_m(billing_key: str, settings: Settings | None = None) -> f
         "tts": s.billing_tts_per_m,
     }
     return float(table.get(billing_key, s.billing_llm_per_m))
+
+
+def kie_fen_per_credit(settings: Settings | None = None) -> float:
+    s = settings or get_settings()
+    raw = getattr(s, "billing_kie_fen_per_credit", None)
+    try:
+        value = float(raw if raw is not None else DEFAULT_KIE_FEN_PER_CREDIT)
+    except (TypeError, ValueError):
+        value = DEFAULT_KIE_FEN_PER_CREDIT
+    return max(0.01, value)
+
+
+def kie_credits_to_cost_fen(
+    credits: Any,
+    settings: Settings | None = None,
+) -> int | None:
+    """Kie creditsConsumed → 上游成本（分）。"""
+    try:
+        amount = float(credits)
+    except (TypeError, ValueError):
+        return None
+    if amount <= 0:
+        return None
+    return max(1, int(math.ceil(amount * kie_fen_per_credit(settings))))
 
 
 def charge_fen_for_tokens(
@@ -47,8 +74,11 @@ def charge_fen_for_tokens(
     return cost, charge
 
 
-def parse_upstream_cost_fen(data: dict[str, Any] | None) -> int | None:
-    """从火山 usage / 响应块解析上游成本（分）；无则 None。"""
+def parse_upstream_cost_fen(
+    data: dict[str, Any] | None,
+    settings: Settings | None = None,
+) -> int | None:
+    """从火山 usage / Kie credits / 响应块解析上游成本（分）；无则 None。"""
     if not data:
         return None
     usage = data.get("usage") if isinstance(data.get("usage"), dict) else data
@@ -66,6 +96,13 @@ def parse_upstream_cost_fen(data: dict[str, Any] | None) -> int | None:
                 return max(0, int(math.ceil(float(usage[key]) * 100)))
             except (TypeError, ValueError):
                 pass
+    # Kie：任务级 creditsConsumed（usage 内或顶层）
+    credits = usage.get("creditsConsumed")
+    if credits is None:
+        credits = data.get("creditsConsumed")
+    converted = kie_credits_to_cost_fen(credits, settings)
+    if converted is not None:
+        return converted
     return None
 
 
@@ -76,9 +113,12 @@ def charge_fen_for_usage(
     raw_usage: dict[str, Any] | None = None,
     settings: Settings | None = None,
 ) -> tuple[int, int, bool]:
-    """按火山返回的实际成本或 token 用量计算 (cost_fen, charge_fen, used_upstream_cost)。"""
+    """按上游实际成本或 token 用量计算 (cost_fen, charge_fen, used_upstream_cost)。
+
+    有上游成本时：charge = ceil(cost × markup)（按比例加价）。
+    """
     s = settings or get_settings()
-    upstream_cost = parse_upstream_cost_fen(raw_usage)
+    upstream_cost = parse_upstream_cost_fen(raw_usage, settings=s)
     if upstream_cost is not None and upstream_cost > 0:
         cost = upstream_cost
         charge = math.ceil(cost * float(s.billing_markup))
@@ -123,6 +163,76 @@ def billing_key_label(billing_key: str) -> str:
     cap = billing_key_to_capability(billing_key)
     labels = {"llm": "LLM 对话", "image": "图片生成", "video": "视频生成", "tts": "语音合成"}
     return labels.get(cap, billing_key or "其他")
+
+
+def billing_model_rate_rows(settings: Settings | None = None) -> list[dict[str, Any]]:
+    """管理端展示：各模型计费口径（Ark token 单价 / Kie credit）。"""
+    from app.services.kie_catalog import IMAGE_MODELS, VIDEO_MODELS
+
+    s = settings or get_settings()
+    markup = float(s.billing_markup)
+    fen_per = kie_fen_per_credit(s)
+    rows: list[dict[str, Any]] = [
+        {
+            "id": "llm_chat",
+            "label": "LLM 对话",
+            "provider": "ark",
+            "capability": "llm",
+            "basis": "token",
+            "rate_label": f"{s.billing_llm_per_m} 元/百万 tokens",
+            "markup": markup,
+        },
+        {
+            "id": "tts",
+            "label": "TTS 语音",
+            "provider": "ark",
+            "capability": "tts",
+            "basis": "token",
+            "rate_label": f"{s.billing_tts_per_m} 元/百万 tokens",
+            "markup": markup,
+        },
+    ]
+    for m in (*IMAGE_MODELS, *VIDEO_MODELS):
+        if m.provider == "kie":
+            rows.append(
+                {
+                    "id": m.id,
+                    "label": m.label,
+                    "provider": "kie",
+                    "capability": m.capability,
+                    "basis": "credit",
+                    "rate_label": f"{fen_per:g} 分/credit × markup",
+                    "markup": markup,
+                }
+            )
+        elif m.capability == "image":
+            rows.append(
+                {
+                    "id": m.id,
+                    "label": m.label,
+                    "provider": "ark",
+                    "capability": "image",
+                    "basis": "token",
+                    "rate_label": f"{s.billing_seedream_per_m} 元/百万 tokens（有上游费用则优先）",
+                    "markup": markup,
+                }
+            )
+        else:
+            rows.append(
+                {
+                    "id": m.id,
+                    "label": m.label,
+                    "provider": "ark",
+                    "capability": "video",
+                    "basis": "token",
+                    "rate_label": (
+                        f"video0 {s.billing_seedance_video0} / "
+                        f"video1 {s.billing_seedance_video1} 元/百万 tokens"
+                    ),
+                    "markup": markup,
+                }
+            )
+    return rows
 
 
 def sku_by_id(sku_id: str) -> dict[str, Any] | None:

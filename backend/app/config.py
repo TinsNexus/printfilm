@@ -32,6 +32,9 @@ class Settings(BaseSettings):
 
     ark_api_key: str = ""
     ark_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
+    # Kie.ai（主流图/视频聚合：Seedream / Nano Banana / Seedance / Veo）
+    kie_api_key: str = ""
+    kie_base_url: str = "https://api.kie.ai"
     # 文字模型（任意 OpenAI 兼容 API：DeepSeek / Kimi / OpenAI 等）
     openai_api_key: str = ""
     openai_base_url: str = ""
@@ -88,7 +91,7 @@ class Settings(BaseSettings):
     # 调度 tick 心跳超过该秒数未刷新 → 看门狗软重启调度循环。
     task_runtime_tick_stale_sec: int = 60
     # Selector 心跳超过该秒数未刷新 → 看门狗软重启 poller。
-    task_poll_stale_sec: int = 90
+    task_poll_stale_sec: int = 600
     # 看门狗检查间隔（秒）。
     task_runtime_watchdog_interval_sec: float = 5.0
 
@@ -108,6 +111,8 @@ class Settings(BaseSettings):
     billing_llm_per_m: float = 5.0
     billing_seedream_per_m: float = 8.0
     billing_tts_per_m: float = 2.0
+    # Kie：1 credit 折合人民币分（约 $0.005 ≈ ¥0.035 → 3.5）；用户扣费再 × markup
+    billing_kie_fen_per_credit: float = 3.5
     # Fallback tokens when API omits usage
     billing_est_llm_tokens: int = 80_000
     # Seedream 单张实测约 3–3.5 万 tokens；预估略留余量，避免预扣远高于实扣
@@ -117,9 +122,9 @@ class Settings(BaseSettings):
     # Signup grant (fen)
     billing_signup_grant_fen: int = 500
 
-    # 用户消费里程碑弹窗（累计扣费每达 interval 分提醒一次；1000 = ¥10）
+    # 用户消费里程碑弹窗（累计扣费每达 interval 分提醒一次；默认 10000 = ¥100）
     billing_user_alert_enabled: bool = True
-    billing_user_alert_interval_fen: int = 1000
+    billing_user_alert_interval_fen: int = 10000
 
     # 平台总费用邮件告警（按上游 cost_fen 聚合）
     billing_admin_cost_alert_enabled: bool = False

@@ -31,7 +31,7 @@ function extractContentIndex(raw: string): number | null {
 
 /** 判断文案是否像「具体根因」（优先于「重试上限」等包装句） */
 function looksLikeRootCause(text: string): boolean {
-  return /PrivacyInformation|InputImageSensitive|SensitiveContentDetected|参考图疑似|参考音频过短|may contain real person|Seedance create error|上一镜失败|无法衔接|分镜已变更|分镜上下文|InputTextSensitive|resource download failed|audio_url|audio duration/i.test(
+  return /PrivacyInformation|InputImageSensitive|SensitiveContentDetected|参考图疑似|参考音频过短|may contain real person|Seedance create error|上一镜失败|无法衔接|分镜已变更|分镜上下文|InputTextSensitive|resource download failed|audio_url|audio duration|Credits insufficient|File type not supported|参考图格式不支持/i.test(
     text,
   )
 }
@@ -65,8 +65,26 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
   if (!text) {
     return {
       title: '生成失败',
-      message: '任务未能完成。',
-      suggestion: '请稍后重试；若反复失败，检查分镜参考图与脚本后重新生成。',
+      message: '任务未能完成，且未记录具体错误信息。',
+      suggestion: '请稍后重试；若反复失败，检查网络/代理是否能访问 Kie（api.kie.ai）或方舟，以及模型渠道密钥。',
+    }
+  }
+
+  if (/网络错误|ConnectError|ConnectTimeout|ReadTimeout|无法连接上游|api\.kie\.ai/i.test(text)) {
+    return {
+      title: '无法连接图片/视频服务',
+      message: text.length > 200 ? `${text.slice(0, 200)}…` : text,
+      suggestion:
+        '本机当前连不上上游（常见于代理未放行或网络中断）。请检查网络/代理后重试；若用 Kie，确认能访问 api.kie.ai 且后台渠道密钥有效。',
+    }
+  }
+
+  if (/^生图失败$/.test(text)) {
+    return {
+      title: '生图失败',
+      message: '生图未成功，但旧任务未保存具体原因（多为上游连接失败且错误文案为空）。',
+      suggestion:
+        '请重新生成一次；新版本会写出明确错误。仍失败时检查 Kie/方舟网络与密钥。',
     }
   }
 
@@ -171,7 +189,36 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
     }
   }
 
-  if (/Seedance create error\s*400/i.test(text)) {
+  if (/only support adaptive aspect ratio|adaptive aspect ratio/i.test(text)) {
+    return {
+      title: '画幅参数不兼容',
+      message: 'Kie Seedance 2.5 图生视频（首帧/首尾帧）只支持自适应画幅（adaptive），固定比例会被拒绝。',
+      suggestion: '请重新生成该分镜；服务端已改为自动使用 adaptive，画幅会跟参考图一致。',
+    }
+  }
+
+  if (/Credits insufficient|积分不足|余额不足.*[Kk]ie|Kie.*积分/i.test(text)) {
+    return {
+      title: '视频渠道积分不足',
+      message: 'Kie 上游账户积分不足，无法创建视频生成任务（不是参考图或音频时长问题）。',
+      suggestion: '请联系管理员在 Kie 控制台充值后再重试；充值后重新生成该分镜即可。',
+      upstreamAccountBlocked: true,
+    }
+  }
+
+  if (/File type not supported|参考图格式不支持|不支持 SVG/i.test(text)) {
+    return {
+      title: '参考图格式不支持',
+      message:
+        text.includes('参考图格式不支持')
+          ? text
+          : '上游拒绝了参考图：File type not supported（常见原因是 SVG 占位图或非位图）。',
+      suggestion:
+        '检查本镜引用的角色/场景/道具封面是否为 PNG/JPG/WEBP。若仍是 SVG 占位图，请对该资产重新生图或上传位图后再生成视频。',
+    }
+  }
+
+  if (/Seedance create error\s*400|Kie createTask error/i.test(text)) {
     const idx = extractContentIndex(text)
     const named = extractNamedSlot(text)
     const where =

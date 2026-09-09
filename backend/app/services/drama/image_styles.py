@@ -19,6 +19,7 @@ IMAGE_STYLE_IDS = (
     "american-retro-hollywood",
     "neon-cyberpunk-film",
     "90s-rural-china-film",
+    "cgi-3d-animation",
     "tezuka-era-cartoon",
     "shanghai-animation",
     "pixel-art",
@@ -73,6 +74,11 @@ IMAGE_STYLE_PROMPTS: dict[str, str] = {
     "90s-rural-china-film": (
         "1990年代中国农村题材电影风格，自然光，土黄与绿色调，粗糙真实质感，乡土生活氛围"
     ),
+    "cgi-3d-animation": (
+        "电影级三维 CGI 动画风格，皮克斯/梦工厂气质，圆润造型与清晰轮廓，"
+        "柔和体积光与次表面散射，干净材质与饱和配色，浅景深，"
+        "非写实摄影、非日系赛璐璐平面、非剪纸扁平"
+    ),
     "tezuka-era-cartoon": "手冢治虫时代经典日式卡通画风，简洁线条，复古动画平涂着色，怀旧动画质感",
     "shanghai-animation": (
         "上海美术电影制片厂经典动画画风，中国民族绘画韵味，水彩与工笔结合，诗意唯美，传统色彩"
@@ -100,6 +106,7 @@ IMAGE_STYLE_LABELS: dict[str, str] = {
     "american-retro-hollywood": "美式复古好莱坞",
     "neon-cyberpunk-film": "霓虹赛博电影",
     "90s-rural-china-film": "90年代中国农村电影",
+    "cgi-3d-animation": "3D 动画",
     "tezuka-era-cartoon": "手冢治虫时代卡通画风",
     "shanghai-animation": "上美画风",
     "pixel-art": "像素风",

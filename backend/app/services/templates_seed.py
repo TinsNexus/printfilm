@@ -1,7 +1,7 @@
 """内置风格模板 — 提示词与风格描述统一中文。
 
 分类约定（category[0] 为主分类，用于首页筛选）：
-电影感 / 真人感 / 写实感 / 科普 / 儿童 / 国风 / 科幻 / 动漫 / 商业 / 复古 / 纪录片 / 奇幻 / 图文 / 悬疑 / 开源
+电影感 / 真人感 / 写实感 / 科普 / 儿童 / 国风 / 科幻 / 动漫 / 3D / 商业 / 复古 / 纪录片 / 奇幻 / 图文 / 悬疑 / 开源
 真人感、写实感模板须在 seedream_config 设 photoreal: true。
 
 一致性（seedream_config.consistency_mode）：
@@ -244,6 +244,60 @@ TEMPLATES: list[dict] = [
             "title_scale": 1.4,
             "sub_scale": 1.35,
             "caption_scale": 1.3,
+        },
+        "sort_order": 5,
+        "is_active": True,
+        "is_premium": False,
+    },
+    {
+        "id": "anim_3d",
+        "name": "3D 动画",
+        "description": "电影级三维动画质感，圆润造型与柔和体积光，适合科普讲解与故事短片。",
+        "category": ["3D", "动漫", "科普"],
+        "preview_cover": "/static/templates/covers/anim_3d.png",
+        "style_prefix": (
+            "电影级三维动画渲染，皮克斯/梦工厂气质，圆润造型与清晰轮廓，"
+            "柔和体积光与次表面散射，干净材质与饱和配色，浅景深，"
+            "非写实摄影、非日系赛璐璐平面、非剪纸扁平"
+        ),
+        "negative_prompt": (
+            "写实照片，真人皮肤毛孔，摄影棚实拍，日系赛璐璐，二次元平涂，"
+            "剪纸扁平，像素风，手绘潦草，血腥恐怖，水印，画面文字，字幕乱码"
+        ),
+        "default_ratio": "16:9",
+        "shot_duration_min": 4,
+        "shot_duration_max": 12,
+        "llm_system_addon": (
+            "三维动画叙事节奏：建立场景→角色动作→关键演示/知识点。"
+            "【画风】全片必须统一 3D CGI 动画风与同一角色造型，禁止某镜变成真人照片或二维赛璐璐。"
+            "涉及软件/系统/科普时，优先 3D 角色在工位或场景中操作界面、演示流程。"
+            "每镜 title 短、subtitle 卖点句；img_prompt 写清三维材质、光影与角色姿态。"
+        ),
+        "seedream_config": {
+            "ref_images": [],
+            "strength": 0.72,
+            "consistency_mode": "character",
+            "character_prompt": (
+                "固定 3D 动画角色：圆润比例、简洁五官、识别度高的发型发色与服装配色，"
+                "塑料感柔和皮肤与布料材质，全片同一人物设定"
+            ),
+            "extra_prompt": (
+                "三维渲染体积光，干净材质，饱和但不刺眼，主体清晰，"
+                "画面内不要出现文字；可留白便于叠字"
+            ),
+        },
+        "seedance_config": {
+            "motion_bias": "轻微布料与发丝飘动，缓慢推近，动画感运镜平滑",
+            "character_consistency": True,
+            "generate_audio": True,
+        },
+        "audio_config": {"voice_preset": "warm_storyteller", "bgm_mood": "轻快专业"},
+        "subtitle_config": {
+            "font": "SourceHanSans",
+            "position": "bottom",
+            "title_scale": 1.5,
+            "sub_scale": 1.4,
+            "caption_scale": 1.25,
         },
         "sort_order": 5,
         "is_active": True,

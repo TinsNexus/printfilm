@@ -18,6 +18,7 @@ import { ChevronLeft } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   dramaApi,
+  resolveDramaAssetPreviewUrl,
   resolveDramaMediaUrl,
   type DramaAsset,
   type DramaEpisode,
@@ -384,7 +385,7 @@ function EpisodeStoryboardInner() {
         ) : (
           <div className="ep-storyboard-picker-grid">
             {pickerAssets.map((asset) => {
-              const cover = resolveDramaMediaUrl(asset.cover || asset.url)
+              const cover = resolveDramaAssetPreviewUrl(asset)
               return (
                 <button
                   key={asset.id}

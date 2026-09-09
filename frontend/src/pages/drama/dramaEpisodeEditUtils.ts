@@ -19,8 +19,11 @@ export const ASSET_TABS: Array<{ key: AssetTab; label: string }> = [
 ]
 
 export const MODEL_OPTIONS = [
-  { id: 'seedance-2.5', label: 'Seedance 2.5' },
-  { id: 'seedance-1.5', label: 'Seedance 1.5' },
+  { id: 'kie-seedance-2.5', label: 'Seedance 2.5（Kie）' },
+  { id: 'kie-veo3-fast', label: 'Veo 3.1 Fast（Kie）' },
+  { id: 'kie-veo3', label: 'Veo 3.1 Quality（Kie）' },
+  { id: 'seedance-2.5', label: 'Seedance 2.5（方舟）' },
+  { id: 'seedance-1.5', label: 'Seedance 1.5（方舟）' },
 ]
 
 export const RATIO_OPTIONS = DRAMA_RATIO_OPTIONS

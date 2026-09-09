@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Boxes, Sparkles } from 'lucide-react'
-import { dramaApi, resolveDramaMediaUrl, type DramaAsset, type DramaProject } from '../../api/drama'
+import { dramaApi, resolveDramaAssetPreviewUrl, resolveDramaMediaUrl, type DramaAsset, type DramaProject } from '../../api/drama'
 import { api, type BillingPreflight } from '../../api'
 import { useDramaImageGenQueue } from '../../hooks/useDramaImageGenQueue'
 import { enqueueDramaImageGen, resumeDramaImageGensFromAssets } from '../../lib/dramaImageGenQueue'
@@ -132,13 +132,17 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
           }
         }
         setAssets(list)
-        resumeDramaImageGensFromAssets(projectId, list)
+        resumeDramaImageGensFromAssets(projectId, list, (next) => {
+          setAssets((prev) => (prev ?? []).map((a) => (a.id === next.id ? next : a)))
+        })
       } catch (err) {
         onError(err instanceof Error ? err.message : '资产加载失败')
         try {
           const list = normalizeAssetList(await dramaApi.listAssets(projectId, { libraryOnly: true }))
           setAssets(list)
-          resumeDramaImageGensFromAssets(projectId, list)
+          resumeDramaImageGensFromAssets(projectId, list, (next) => {
+          setAssets((prev) => (prev ?? []).map((a) => (a.id === next.id ? next : a)))
+        })
         } catch {
           /* ignore */
         }
@@ -282,6 +286,9 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
           assetType: asset.type,
           prompt: readVisualPrompt(asset),
           options,
+          onAssetUpdate: (next) => {
+            setAssets((prev) => (prev ?? []).map((a) => (a.id === next.id ? next : a)))
+          },
         })
         setAssets((prev) => (prev ?? []).map((a) => (a.id === updated.id ? updated : a)))
       } catch (err) {
@@ -307,7 +314,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
     const ok = await dialog.confirm({
       title: '批量生成形象',
       message:
-        `将为当前「${ASSET_TABS.find((t) => t.key === tab)?.label || '分类'}」下 ${targets.length} 个未出图资产排队生图（最多 3 路并行）。\n\n` +
+        `将为当前「${ASSET_TABS.find((t) => t.key === tab)?.label || '分类'}」下 ${targets.length} 个未出图资产开始生图（并行提交，不排队）。\n\n` +
         `每张预扣约 ¥${unitYuan.toFixed(2)}，本次合计约 ¥${totalYuan.toFixed(2)}（当前余额 ¥${balanceYuan.toFixed(2)}；结束后按实际上游用量多退少补）。\n\n是否继续？`,
       confirmText: '开始生成',
     })
@@ -326,6 +333,9 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
           image_style_id: genOptions.image_style_id,
           model_id: genOptions.model_id,
           resolution: genOptions.resolution,
+        },
+        onAssetUpdate: (next) => {
+          setAssets((prev) => (prev ?? []).map((a) => (a.id === next.id ? next : a)))
         },
       }).then((updated) => {
         setAssets((prev) => (prev ?? []).map((a) => (a.id === updated.id ? updated : a)))
@@ -674,7 +684,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
 
       <div className="drama-assets-tips" role="note">
         <Sparkles size={15} strokeWidth={1.75} aria-hidden />
-        <span>先完成角色/场景出图，再进入分集视频步骤生成镜头。</span>
+        <span>随时管理角色、场景、道具与音色。确认分集剧本时会自动抽取本集相关资产，出图可在此补做。</span>
       </div>
 
       <div className="drama-assets-toolbar">
@@ -819,7 +829,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
             )
           }
 
-          const mediaSrc = resolveDramaMediaUrl(asset.cover || asset.url)
+          const mediaSrc = resolveDramaAssetPreviewUrl(asset)
           const voice = readAssetVoiceBinding(asset)
           const isCharacter = (asset.type || '').toLowerCase() === 'character'
           const busy = busyAssetIds.has(asset.id)
@@ -847,7 +857,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
                     setLightbox({ src: mediaSrc, alt: asset.name || '预览' })
                   }}
                 >
-                  <img src={mediaSrc} alt={asset.name || ''} />
+                  <img key={mediaSrc} src={mediaSrc} alt={asset.name || ''} />
                 </button>
               ) : (
                 <div className="drama-asset-placeholder">{asset.type || 'asset'}</div>

@@ -167,6 +167,24 @@ def _bootstrap_channels_from_env(settings: Settings | None = None) -> list[Syste
                 sort_order=2,
             )
         )
+    from app.services.kie_catalog import default_kie_channel_models
+    from app.services.kie_client import KIE_CHANNEL_ID, KIE_DEFAULT_BASE
+
+    kie_key = (getattr(src, "kie_api_key", "") or "").strip()
+    channels.append(
+        SystemModelChannel(
+            id=KIE_CHANNEL_ID,
+            name="Kie.ai（主流图/视频）",
+            base_url=(getattr(src, "kie_base_url", "") or KIE_DEFAULT_BASE).rstrip("/") or KIE_DEFAULT_BASE,
+            api_key=kie_key,
+            has_api_key=bool(kie_key),
+            api_format="kie",
+            protocol="kie",
+            models=default_kie_channel_models(),
+            enabled=True,
+            sort_order=3,
+        )
+    )
     return channels
 
 
@@ -284,7 +302,8 @@ async def _load_channels(db: AsyncSession, *, runtime: bool) -> list[SystemModel
 async def _ensure_bootstrapped_channels(db: AsyncSession) -> list[SystemModelChannelRow]:
     existing = list((await db.execute(select(SystemModelChannelRow))).scalars().all())
     if existing:
-        return existing
+        await _ensure_kie_channel(db, existing)
+        return list((await db.execute(select(SystemModelChannelRow))).scalars().all())
     channels = _bootstrap_channels_from_env()
     rows: list[SystemModelChannelRow] = []
     for channel in channels:
@@ -311,6 +330,31 @@ async def _ensure_bootstrapped_channels(db: AsyncSession) -> list[SystemModelCha
     }
     await db.commit()
     return rows
+
+
+async def _ensure_kie_channel(db: AsyncSession, existing: list[SystemModelChannelRow]) -> None:
+    """已有库缺少 Kie 渠道时补一条（Key 可从 env 灌入）。"""
+    from app.services.kie_catalog import default_kie_channel_models
+    from app.services.kie_client import KIE_CHANNEL_ID, KIE_DEFAULT_BASE
+
+    if any((row.protocol or "").lower() == "kie" or row.id == KIE_CHANNEL_ID for row in existing):
+        return
+    src = get_settings()
+    kie_key = (getattr(src, "kie_api_key", "") or "").strip()
+    row = SystemModelChannelRow(
+        id=KIE_CHANNEL_ID,
+        name="Kie.ai（主流图/视频）",
+        base_url=(getattr(src, "kie_base_url", "") or KIE_DEFAULT_BASE).rstrip("/") or KIE_DEFAULT_BASE,
+        api_key_ciphertext=_encrypt_secret(kie_key) if kie_key else None,
+        api_format="kie",
+        protocol="kie",
+        models=default_kie_channel_models(),
+        enabled=True,
+        sort_order=max((int(r.sort_order or 0) for r in existing), default=0) + 1,
+        advanced_config=None,
+    )
+    db.add(row)
+    await db.commit()
 
 
 def _settings_to_dict(settings: Settings | None = None) -> dict[str, Any]:

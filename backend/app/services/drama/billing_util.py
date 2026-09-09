@@ -107,9 +107,21 @@ async def record_seedance_video_usage(
     total_tokens = int(getattr(task_result, "total_tokens", 0) or 0)
     completion_tokens = int(getattr(task_result, "completion_tokens", 0) or 0)
     raw_usage = getattr(task_result, "raw_usage", None)
+    upstream_from_result = getattr(task_result, "upstream_cost_fen", None)
     raw: dict[str, Any] | None = None
     if raw_usage:
-        raw = {"usage": dict(raw_usage)}
+        raw = dict(raw_usage) if isinstance(raw_usage, dict) else {"usage": dict(raw_usage)}
+        # 统一把计费字段放进 usage，便于 charge_fen_for_usage / display
+        usage_block = raw.get("usage") if isinstance(raw.get("usage"), dict) else {}
+        merged_usage = {**usage_block}
+        if "creditsConsumed" in raw and "creditsConsumed" not in merged_usage:
+            merged_usage["creditsConsumed"] = raw.get("creditsConsumed")
+        if upstream_from_result is not None:
+            merged_usage["cost_fen"] = int(upstream_from_result)
+        elif raw.get("cost_fen") is not None:
+            merged_usage["cost_fen"] = int(raw["cost_fen"])
+        if merged_usage:
+            raw["usage"] = merged_usage
     elif provider_id:
         raw = {"usage": {}}
     if provider_id:
@@ -117,9 +129,21 @@ async def record_seedance_video_usage(
 
     from app.services.billing.pricing import parse_upstream_cost_fen
 
-    upstream_cost = parse_upstream_cost_fen(raw) if raw else None
+    upstream_cost = None
+    if upstream_from_result is not None:
+        try:
+            upstream_cost = max(0, int(upstream_from_result))
+        except (TypeError, ValueError):
+            upstream_cost = None
+    if upstream_cost is None:
+        upstream_cost = parse_upstream_cost_fen(raw) if raw else None
     if upstream_cost is not None and raw is not None:
         raw["usage"] = {**(raw.get("usage") or {}), "cost_fen": upstream_cost}
+
+    provider = "kie" if (
+        (isinstance(raw, dict) and (raw.get("provider") == "kie" or raw.get("kie_task_id")))
+        or (isinstance(raw_usage, dict) and (raw_usage.get("provider") == "kie" or raw_usage.get("kie_task_id")))
+    ) else "ark"
 
     if total_tokens > 0 or upstream_cost:
         return await record_line(
@@ -135,6 +159,7 @@ async def record_seedance_video_usage(
             drama_project_id=drama_project_id,
             shot_id=shot_id,
             domain=domain,
+            provider=provider,
         )
 
     fallback_tokens = 0
@@ -153,6 +178,7 @@ async def record_seedance_video_usage(
         drama_project_id=drama_project_id,
         shot_id=shot_id,
         domain=domain,
+        provider=provider,
     )
 
 
@@ -176,10 +202,23 @@ async def record_seedream_image_usage(
     upstream_cost = getattr(image_result, "upstream_cost_fen", None)
 
     raw: dict[str, Any] = dict(extra_raw or {})
-    if raw_usage:
-        raw["usage"] = dict(raw_usage)
+    if raw_usage and isinstance(raw_usage, dict):
+        nested = raw_usage.get("usage") if isinstance(raw_usage.get("usage"), dict) else None
+        if nested is not None:
+            for key, value in raw_usage.items():
+                if key != "usage":
+                    raw[key] = value
+            raw["usage"] = {**(raw.get("usage") or {}), **nested}
+        else:
+            raw["usage"] = {**(raw.get("usage") or {}), **raw_usage}
     if upstream_cost is not None:
         raw["usage"] = {**(raw.get("usage") or {}), "cost_fen": int(upstream_cost)}
+
+    provider = "kie" if (
+        (isinstance(raw_usage, dict) and (raw_usage.get("provider") == "kie" or raw_usage.get("kie_task_id")))
+        or (isinstance(extra_raw, dict) and (extra_raw.get("provider") == "kie" or extra_raw.get("kie_task_id")))
+        or ("kie" in (model or "").lower())
+    ) else "ark"
 
     if total_tokens > 0 or upstream_cost:
         return await record_line(
@@ -196,6 +235,7 @@ async def record_seedream_image_usage(
             drama_project_id=drama_project_id,
             shot_id=shot_id,
             domain=domain,
+            provider=provider,
         )
 
     return await record_line(
@@ -209,6 +249,7 @@ async def record_seedream_image_usage(
         drama_project_id=drama_project_id,
         shot_id=shot_id,
         domain=domain,
+        provider=provider,
     )
 
 

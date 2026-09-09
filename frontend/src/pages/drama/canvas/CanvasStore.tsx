@@ -171,7 +171,32 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
         if (project) {
           setProjectImageStyleId(getImageStyleId(project.script, project))
         }
-        resumeDramaImageGensFromAssets(projectId, assets)
+        resumeDramaImageGensFromAssets(projectId, assets, (next) => {
+          const mediaUrl = next.url || next.cover || ''
+          if (!mediaUrl) return
+          setNodes((current) =>
+            current.map((n) =>
+              n.data.assetId === next.id
+                ? {
+                    ...n,
+                    data: {
+                      ...n.data,
+                      mediaUrl,
+                      generating:
+                        String(
+                          ((next.params || {}).generation as { status?: string } | undefined)
+                            ?.status || '',
+                        ) === 'generating' ||
+                        String(
+                          ((next.params || {}).generation as { status?: string } | undefined)
+                            ?.status || '',
+                        ) === 'queued',
+                    },
+                  }
+                : n,
+            ),
+          )
+        })
         resumeDramaVideoGensFromAssets(projectId, assets)
         readyRef.current = true
       })
@@ -551,6 +576,30 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
             model_id: options?.model_id,
             aspect_ratio: options?.aspect_ratio,
             resolution: options?.resolution,
+          },
+          onAssetUpdate: (next) => {
+            const mediaUrl = next.url || next.cover || ''
+            if (!mediaUrl) return
+            const genStatus = String(
+              ((next.params || {}).generation as { status?: string } | undefined)?.status || '',
+            )
+            const stillBusy = genStatus === 'queued' || genStatus === 'generating'
+            setNodes((current) =>
+              current.map((n) =>
+                n.id === nodeId
+                  ? {
+                      ...n,
+                      data: {
+                        ...n.data,
+                        assetId,
+                        mediaUrl,
+                        generating: stillBusy,
+                        promptHint: trimmed,
+                      },
+                    }
+                  : n,
+              ),
+            )
           },
         })
         const mediaUrl = latest.url || latest.cover || ''

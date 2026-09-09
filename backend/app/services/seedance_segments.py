@@ -289,16 +289,29 @@ def strip_model_burn_subtitle_cues(content: str) -> str:
     return "\n".join(out).replace("\n\n\n", "\n\n").strip()
 
 
+# 关闭人物介绍模式：去掉角色身旁叠字 cue，避免模型仍按字卡烧屏
+def strip_character_intro_cues(content: str) -> str:
+    out: list[str] = []
+    for raw in (content or "").replace("\r\n", "\n").split("\n"):
+        stripped = raw.strip()
+        if stripped.startswith("【人物介绍"):
+            continue
+        out.append(raw)
+    return "\n".join(out).replace("\n\n\n", "\n\n").strip()
+
+
 def build_seedance_production_section(
     segment_script: str,
     *,
     ambient_only: bool = False,
     burn_subtitles: bool = True,
+    character_intro: bool = True,
 ) -> str:
     """组装 Seedance 音频/字幕/BGM 强制约束（科普旁白 / 漫剧画面+对白混排）。
 
     ambient_only：科普后期 TTS 模式——模型只出操作环境音，禁止口播与 BGM。
     burn_subtitles=False：对齐后期叠字（如 VOZEB 成片后再烧 SRT）——保留口播，禁止画面内字幕。
+    character_intro=False：禁止人物介绍叠字/字卡（与字幕开关独立）。
     """
     if ambient_only:
         lines = [
@@ -375,18 +388,17 @@ def build_seedance_production_section(
         lines.append(
             "6. 音效：环境音与动作音效与画面同步，层次低于人声。"
         )
-        if "【人物介绍" in (segment_script or ""):
-            if burn_subtitles:
-                lines.append(
-                    "7. 人物介绍叠字：【人物介绍·画面叠字·角色身旁】须贴在对应角色身旁"
-                    "（肩侧/身旁小字），随该角色首次入画短暂出现；"
-                    "禁止居中大标题、禁止底部与口播字幕抢位；"
-                    "禁止口播念出介绍全文。"
-                )
-            else:
-                lines.append(
-                    "7. 人物介绍：本镜禁止任何人物介绍叠字/字卡；身份信息不写入画面。"
-                )
+        if character_intro and "【人物介绍" in (segment_script or ""):
+            lines.append(
+                "7. 人物介绍叠字：【人物介绍·画面叠字·角色身旁】须贴在对应角色身旁"
+                "（肩侧/身旁小字），随该角色首次入画短暂出现；"
+                "禁止居中大标题、禁止底部与口播字幕抢位；"
+                "禁止口播念出介绍全文。"
+            )
+        elif not character_intro:
+            lines.append(
+                "7. 人物介绍：本镜禁止任何人物介绍叠字/字卡；身份信息不写入画面。"
+            )
         return f"{SEEDANCE_PRODUCTION_SECTION_HEADER}\n" + "\n".join(lines)
 
     # 科普旁白模式：整镜以旁白段为主（语速自然偏快，避免拖沓）
@@ -685,6 +697,7 @@ def build_seedance_prompt(
     camera: str = "",
     ambient_only: bool = False,
     burn_subtitles: bool = True,
+    character_intro: bool = True,
 ) -> str:
     """Assemble final Seedance text: style lock + production constraints + timed body."""
     parts: list[str] = []
@@ -694,16 +707,17 @@ def build_seedance_prompt(
             "【强制约束：视频画面风格】全片画面必须严格遵循以下风格描述，"
             f"严禁偏离或混用其他画风：{style}"
         )
-    script_for_rules = (
-        strip_model_burn_subtitle_cues(segment_script)
-        if not burn_subtitles and not ambient_only
-        else (segment_script or "")
-    )
+    script_for_rules = segment_script or ""
+    if not burn_subtitles and not ambient_only:
+        script_for_rules = strip_model_burn_subtitle_cues(script_for_rules)
+    if not character_intro and not ambient_only:
+        script_for_rules = strip_character_intro_cues(script_for_rules)
     parts.append(
         build_seedance_production_section(
             script_for_rules,
             ambient_only=ambient_only,
             burn_subtitles=burn_subtitles and not ambient_only,
+            character_intro=character_intro and not ambient_only,
         )
     )
     parts.append(

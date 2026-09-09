@@ -3709,6 +3709,68 @@
   line-height: 1.35;
 }
 
+.pf-model-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+@media (min-width: 900px) {
+  .pf-model-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.pf-model-opt {
+  text-align: left;
+  border: 1px solid var(--pf-line);
+  border-radius: 12px;
+  background: #fff;
+  padding: 0.7rem 0.75rem;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  min-height: 96px;
+}
+
+.pf-model-opt.selected {
+  border-color: var(--pf-ink, #111);
+  box-shadow: inset 0 0 0 1px var(--pf-ink, #111);
+}
+
+.pf-model-opt-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  font-size: 0.86rem;
+  font-weight: 650;
+}
+
+.pf-model-badge {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.12rem 0.4rem;
+  border-radius: 999px;
+  background: #eef6c8;
+  color: #3d4a12;
+}
+
+.pf-model-opt-desc {
+  font-size: 0.72rem;
+  color: var(--pf-muted);
+  line-height: 1.4;
+}
+
+.pf-model-opt-provider {
+  margin-top: auto;
+  font-size: 0.68rem;
+  color: var(--pf-muted);
+  opacity: 0.85;
+}
+
 .pf-voice-row {
   display: flex;
   gap: 0.55rem;

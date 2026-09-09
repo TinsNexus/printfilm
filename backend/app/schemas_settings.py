@@ -104,6 +104,7 @@ class AdminModelSettingsOut(BaseModel):
     billing_llm_per_m: float = 5.0
     billing_seedream_per_m: float = 8.0
     billing_tts_per_m: float = 2.0
+    billing_kie_fen_per_credit: float = 3.5
     billing_est_llm_tokens: int = 80_000
     billing_est_seedream_tokens: int = 45_000
     billing_est_tts_tokens: int = 5_000
@@ -114,7 +115,7 @@ class AdminModelSettingsOut(BaseModel):
 
     # 额度告警
     billing_user_alert_enabled: bool = True
-    billing_user_alert_interval_fen: int = 1000
+    billing_user_alert_interval_fen: int = 10000
     billing_admin_cost_alert_enabled: bool = False
     billing_admin_cost_alert_threshold_fen: int = 0
     billing_admin_cost_alert_emails: str = ""
@@ -231,6 +232,7 @@ class AdminModelSettingsPatch(BaseModel):
     billing_llm_per_m: float | None = None
     billing_seedream_per_m: float | None = None
     billing_tts_per_m: float | None = None
+    billing_kie_fen_per_credit: float | None = None
     billing_est_llm_tokens: int | None = None
     billing_est_seedream_tokens: int | None = None
     billing_est_tts_tokens: int | None = None
@@ -348,6 +350,7 @@ def model_config_field_names() -> tuple[str, ...]:
         "billing_llm_per_m",
         "billing_seedream_per_m",
         "billing_tts_per_m",
+        "billing_kie_fen_per_credit",
         "billing_est_llm_tokens",
         "billing_est_seedream_tokens",
         "billing_est_tts_tokens",

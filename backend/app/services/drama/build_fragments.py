@@ -718,6 +718,7 @@ def plan_fragments_from_scene(
     introduced: set[str] | None = None,
     *,
     include_subtitles: bool = True,
+    include_character_intro: bool = True,
 ) -> list[tuple[str, int]]:
     """
     规划单场视频向分镜正文；超软上限时拆成多条，避免截断后半场。
@@ -729,11 +730,15 @@ def plan_fragments_from_scene(
     introduced_names = introduced if introduced is not None else set()
     location_line, narrative_lines = _strip_screenplay_meta(body)
     # intro_candidates 本场可介绍的重要角色（须有简短描述）
-    intro_candidates = [
-        b
-        for b in character_bindings
-        if b.get("important") and b.get("introText") and str(b.get("name") or "").strip()
-    ]
+    intro_candidates = (
+        [
+            b
+            for b in character_bindings
+            if b.get("important") and b.get("introText") and str(b.get("name") or "").strip()
+        ]
+        if include_character_intro
+        else []
+    )
     base_cues = _build_production_cues(
         location_line,
         narrative_lines,
@@ -924,6 +929,7 @@ def plan_fragment_content_from_scene(
     character_bindings: list[dict[str, Any]],
     *,
     include_subtitles: bool = True,
+    include_character_intro: bool = True,
 ) -> tuple[str, int]:
     # 兼容旧调用：返回本场第一条分镜
     chunks = plan_fragments_from_scene(
@@ -932,6 +938,7 @@ def plan_fragment_content_from_scene(
         scene_asset_id,
         character_bindings,
         include_subtitles=include_subtitles,
+        include_character_intro=include_character_intro,
     )
     return chunks[0] if chunks else ("", FRAGMENT_DURATION_MIN)
 
@@ -959,6 +966,7 @@ def build_fragments_from_episode_body(
     intro_overrides: dict[str, str] | None = None,
     *,
     include_subtitles: bool = True,
+    include_character_intro: bool = True,
 ) -> list[dict[str, Any]]:
     """
     将一集正文拆成多场分镜草稿。
@@ -1030,6 +1038,7 @@ def build_fragments_from_episode_body(
             character_bindings,
             introduced,
             include_subtitles=include_subtitles,
+            include_character_intro=include_character_intro,
         ):
             # 规则切分：正文里出现的道具/素材名注入 @asset 并写入 asset_ids
             prop_bindings: list[dict[str, Any]] = []

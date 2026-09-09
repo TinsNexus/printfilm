@@ -405,7 +405,11 @@ export function syncEpisodeVideoJobs(input: {
     let status: DramaGenJobStatus = 'running'
     if (raw === 'done') status = 'done'
     else if (raw === 'failed' || raw === 'cancelled') status = 'failed'
-    else if (raw === 'queued') status = 'queued'
+    else if (activeTask) {
+      // 任务已提交上游时，不以分镜 params 滞后的 queued 为准
+      status =
+        activeTask.status === 'pending' || activeTask.status === 'leased' ? 'queued' : 'running'
+    } else if (raw === 'queued') status = 'queued'
     else status = 'running'
 
     const errText =
@@ -414,6 +418,13 @@ export function syncEpisodeVideoJobs(input: {
         ? latestTask?.error_message || undefined
         : undefined) ||
       (raw === 'cancelled' ? '已取消' : undefined)
+
+    const messageFromTask =
+      activeTask && status === 'running'
+        ? activeTask.current_step_key === 'assets'
+          ? '生成参考图…'
+          : item.message || (item.phase === 'assets' ? '生成参考图…' : '生成中')
+        : item.message || (item.phase === 'assets' ? '生成参考图…' : undefined)
 
     upsertDramaGenJob(
       {
@@ -426,7 +437,7 @@ export function syncEpisodeVideoJobs(input: {
         title: resolveVideoJobTitle(existing, input.episodeName, fragLabel(item.fragment_id)),
         subtype: '分镜视频',
         status,
-        message: item.message || (item.phase === 'assets' ? '生成参考图…' : undefined),
+        message: status === 'queued' ? item.message || '排队中' : messageFromTask,
         error: errText,
       },
       { silent: true },

@@ -17,14 +17,32 @@ export function getDramaApiBase() {
   return API_BASE
 }
 
-/** 将 /static 相对路径补全为可访问的绝对 URL */
-export function resolveDramaMediaUrl(url?: string | null): string {
+/** 将 /static 相对路径补全为可访问的绝对 URL；可选 cacheBust 强制刷新缩略图 */
+export function resolveDramaMediaUrl(
+  url?: string | null,
+  cacheBust?: string | number | null,
+): string {
   if (!url) return ''
-  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
-    return url
+  let resolved = url
+  if (!(url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:'))) {
+    resolved = url.startsWith('/') ? `${API_BASE}${url}` : url
   }
-  if (url.startsWith('/')) return `${API_BASE}${url}`
-  return url
+  if (cacheBust == null || cacheBust === '') return resolved
+  const sep = resolved.includes('?') ? '&' : '?'
+  return `${resolved}${sep}v=${encodeURIComponent(String(cacheBust))}`
+}
+
+/** 资产生图/上传后的预览 URL（用 updated_at 或 generation 时间戳破缓存） */
+export function resolveDramaAssetPreviewUrl(asset: {
+  cover?: string | null
+  url?: string | null
+  updated_at?: string | null
+  params?: Record<string, unknown> | null
+}): string {
+  const raw = asset.cover || asset.url || ''
+  const gen = (asset.params || {}).generation as { finished_at?: string; queued_at?: string } | undefined
+  const bust = asset.updated_at || gen?.finished_at || gen?.queued_at || ''
+  return resolveDramaMediaUrl(raw, bust || null)
 }
 
 function authHeaders(): HeadersInit {
@@ -59,7 +77,12 @@ export type DramaScript = {
 export type DramaEpisodeBody = {
   episodeNumber?: number
   title?: string
+  /** 本集原始创意 */
+  creative?: string
+  /** 本集剧情摘要（集级，非全剧 summary） */
+  summary?: string
   body?: string
+  origin?: 'auto' | 'manual'
 }
 
 export type DramaProjectUsageStats = {
@@ -135,6 +158,7 @@ export type DramaAsset = {
   url?: string | null
   params?: Record<string, unknown> | null
   project_id: number
+  updated_at?: string | null
 }
 
 export type SeedAssetsResult = {
@@ -166,6 +190,12 @@ export type DramaEpisode = {
   project_id: number
   fragments: DramaFragment[]
   active_tasks?: DramaTaskBrief[]
+}
+
+export type DramaConfirmEpisodeResult = {
+  episode: DramaEpisode
+  assets_status: string
+  created_count: number
 }
 
 export type DramaScriptSummaryResult = {
@@ -258,11 +288,28 @@ export const dramaApi = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
-  episodeScript: (body: { project_id: number; batch_size?: number; force?: boolean }) =>
+  episodeScript: (body: {
+    project_id: number
+    batch_size?: number
+    force?: boolean
+    episode_number?: number
+    draft?: string
+    generate_mode?: 'optimize' | 'summary' | 'body' | 'full' | 'brief'
+    creative?: string
+    title?: string
+  }) =>
     request<DramaEpisodeScriptResult>('/api/drama/agents/episode_script', {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  addEpisode: (body: { project_id: number; title?: string }) =>
+    request<{ ok: boolean; episode_number: number; script: DramaScript }>(
+      '/api/drama/agents/add_episode',
+      {
+        method: 'POST',
+        body: JSON.stringify(body),
+      },
+    ),
   route: (message: string) =>
     request<{ agent: string; action: string }>('/api/drama/agents/route', {
       method: 'POST',
@@ -310,6 +357,11 @@ export const dramaApi = {
     }
     return res.json() as Promise<DramaAsset>
   },
+  activateAssetImageVersion: (assetId: number, versionId: string) =>
+    request<DramaAsset>(`/api/drama/assets/${assetId}/activate_image_version`, {
+      method: 'POST',
+      body: JSON.stringify({ version_id: versionId }),
+    }),
   deleteAsset: (id: number) =>
     request<{ ok: boolean }>(`/api/drama/assets/${id}`, { method: 'DELETE' }),
   seedAssets: async (
@@ -347,6 +399,12 @@ export const dramaApi = {
       `/api/drama/episodes/seed_from_script?project_id=${projectId}${force ? '&force=true' : ''}`,
       { method: 'POST' },
     ),
+  /** 确认一集：增量抽取资产并只切该集分镜 */
+  confirmEpisodeFromScript: (body: { project_id: number; episode_number: number }) =>
+    request<DramaConfirmEpisodeResult>('/api/drama/episodes/confirm_from_script', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   /** 单集 AI（LLM）重新分镜；轮询 episode.params.fragment_plan_status */
   planEpisodeFragments: (
     episodeId: number,
@@ -378,7 +436,7 @@ export const dramaApi = {
       method: 'POST',
       body: JSON.stringify({ fragments }),
     }),
-  generateEpisode: (episodeId: number, fragment_ids?: number[]) =>
+  generateEpisode: (episodeId: number, fragment_ids?: number[], model_id?: string) =>
     request<{
       ok: boolean
       fragment_ids: number[]
@@ -388,7 +446,7 @@ export const dramaApi = {
       remaining_not_queued?: number
     }>(`/api/drama/episodes/${episodeId}/generate`, {
       method: 'POST',
-      body: JSON.stringify({ fragment_ids }),
+      body: JSON.stringify({ fragment_ids, model_id }),
     }),
   generateStatus: (episodeId: number) =>
     request<{

@@ -223,6 +223,7 @@ async def billing_alerts_pending(
     from app.services.billing.alerts import list_pending_user_alerts
 
     rows = await list_pending_user_alerts(db, user.id)
+    await db.commit()
     return {
         "items": [
             {

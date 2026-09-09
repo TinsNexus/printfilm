@@ -13,6 +13,7 @@ from app.database import get_db
 from app.deps import get_current_user
 from app.models import User
 from app.schemas_drama import (
+    DramaAddEpisodeRequest,
     DramaChatRequest,
     DramaEpisodeScriptRequest,
     DramaRouteRequest,
@@ -22,6 +23,8 @@ from app.schemas_drama import (
 from app.services.billing import run_billed_ephemeral
 from app.services.drama.access import get_owned_drama_project
 from app.services.drama.agents import (
+    MAX_DRAMA_EPISODES,
+    append_manual_episode,
     count_completed_episodes,
     resolve_episode_target,
 )
@@ -130,7 +133,7 @@ async def episode_script(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
-    # 入队完整分集生成；前端轮询 episode_content_status / progress
+    # 入队完整分集生成或单集优化；前端轮询 episode_content_status / episode_optimize_status
     project = await get_owned_drama_project(db, body.project_id, user, with_script=True)
     if not project.script or not project.script.summary:
         raise HTTPException(status_code=400, detail="请先生成剧本摘要")
@@ -142,13 +145,143 @@ async def episode_script(
         project.script.summary = summary
 
     params = dict(project.script.params or {})
+    episode_number = int(body.episode_number) if body.episode_number else None
+    draft = (body.draft or "").strip() or None
+    generate_mode = (body.generate_mode or "").strip().lower() or None
+    if generate_mode in {"", "optimize", "draft"}:
+        generate_mode = "optimize" if episode_number else None
+    if generate_mode and generate_mode not in {"optimize", "summary", "body", "full", "brief"}:
+        raise HTTPException(status_code=400, detail="generate_mode 须为 optimize/summary/body/full/brief")
+
+    if episode_number:
+        if str(params.get("episode_content_status") or "") == "generating":
+            raise HTTPException(status_code=409, detail="全集剧本正在生成，请稍后再优化单集")
+        if str(params.get("episode_optimize_status") or "") == "generating":
+            logger.info(
+                "单集剧本已在优化，跳过重复入队 project_id=%s episode_number=%s",
+                project.id,
+                episode_number,
+            )
+            await db.commit()
+            return {
+                "ok": True,
+                "queued": True,
+                "status": "generating",
+                "task_id": None,
+                "episodes": [],
+                "total_generated": count_completed_episodes(
+                    _existing_episodes(project.script.episode_content), total
+                ),
+                "total_target": total,
+                "done": False,
+                "script": DramaScriptOut.model_validate(project.script).model_dump(),
+            }
+
+        existing = _existing_episodes(project.script.episode_content)
+        # 生成前可写入本集创意/标题
+        creative_in = (body.creative or "").strip()
+        title_in = (body.title or "").strip()
+        if creative_in or title_in:
+            from app.services.drama.agents import merge_episode_bodies
+
+            patch: dict = {"episodeNumber": episode_number, "body": ""}
+            cur = next(
+                (
+                    x
+                    for x in existing
+                    if isinstance(x, dict) and int(x.get("episodeNumber") or 0) == episode_number
+                ),
+                None,
+            )
+            if cur:
+                patch["body"] = str(cur.get("body") or "")
+                patch["summary"] = str(cur.get("summary") or "")
+                patch["creative"] = creative_in or str(cur.get("creative") or "")
+                patch["title"] = title_in or str(cur.get("title") or f"第 {episode_number} 集")
+                if str(cur.get("origin") or "") == "manual":
+                    patch["origin"] = "manual"
+            else:
+                patch["creative"] = creative_in
+                patch["title"] = title_in or f"第 {episode_number} 集"
+                patch["origin"] = "manual"
+            existing = merge_episode_bodies(existing, [patch], prefer_incoming=True)
+            project.script.episode_content = {"episodes": existing}
+
+        mode = generate_mode or "optimize"
+        if mode == "optimize":
+            if not draft:
+                raise HTTPException(status_code=400, detail="请先输入本集剧本草稿，再让 AI 优化")
+            if len(draft) < 20:
+                raise HTTPException(status_code=400, detail="剧本草稿至少 20 字")
+        elif mode in {"summary", "full"}:
+            cur_creative = creative_in
+            if not cur_creative:
+                cur = next(
+                    (
+                        x
+                        for x in existing
+                        if isinstance(x, dict) and int(x.get("episodeNumber") or 0) == episode_number
+                    ),
+                    None,
+                )
+                cur_creative = str((cur or {}).get("creative") or "").strip()
+            if len(cur_creative) < 20:
+                raise HTTPException(status_code=400, detail="请先填写本集原始创意（至少 20 字）")
+        elif mode == "brief":
+            cur = next(
+                (
+                    x
+                    for x in existing
+                    if isinstance(x, dict) and int(x.get("episodeNumber") or 0) == episode_number
+                ),
+                None,
+            )
+            cur_body = str((cur or {}).get("body") or (cur or {}).get("content") or "").strip()
+            if len(cur_body) < 80:
+                raise HTTPException(status_code=400, detail="请先有本集剧本内容，再补齐创意与摘要")
+
+        params["episode_optimize_status"] = "generating"
+        params["episode_optimize_number"] = episode_number
+        params["episode_optimize_mode"] = mode
+        params.pop("episode_optimize_error", None)
+        project.script.params = params
+        try:
+            task_id = await dispatch_episode_scripts_job(
+                db,
+                user,
+                project.id,
+                force=False,
+                episode_number=episode_number,
+                draft=draft,
+                generate_mode=mode,
+            )
+        except ValueError as exc:
+            await db.rollback()
+            raise http_exception_for_value_error(exc) from exc
+        logger.info(
+            "已入队单集剧本 project_id=%s episode_number=%s mode=%s task_id=%s",
+            project.id,
+            episode_number,
+            mode,
+            task_id,
+        )
+        return {
+            "ok": True,
+            "queued": True,
+            "status": "generating",
+            "task_id": task_id,
+            "episodes": [],
+            "total_generated": count_completed_episodes(
+                _existing_episodes(project.script.episode_content), total
+            ),
+            "total_target": total,
+            "done": False,
+            "assets_created_count": 0,
+            "script": DramaScriptOut.model_validate(project.script).model_dump(),
+        }
+
     if str(params.get("episode_content_status") or "") == "generating" and not body.force:
-        content = project.script.episode_content
-        existing: list = []
-        if isinstance(content, dict) and isinstance(content.get("episodes"), list):
-            existing = list(content["episodes"])
-        elif isinstance(content, list):
-            existing = list(content)
+        existing = _existing_episodes(project.script.episode_content)
         generated = count_completed_episodes(existing, total)
         logger.info(
             "分集剧本已在生成中，跳过重复入队 project_id=%s progress=%s/%s",
@@ -173,12 +306,7 @@ async def episode_script(
     params["episode_count"] = total
     params.pop("episode_content_error", None)
     if body.force:
-        content = project.script.episode_content
-        existing: list = []
-        if isinstance(content, dict) and isinstance(content.get("episodes"), list):
-            existing = list(content["episodes"])
-        elif isinstance(content, list):
-            existing = list(content)
+        existing = _existing_episodes(project.script.episode_content)
         if existing:
             project.script.episode_content = {
                 "episodes": [
@@ -199,12 +327,7 @@ async def episode_script(
     except ValueError as exc:
         await db.rollback()
         raise http_exception_for_value_error(exc) from exc
-    content = project.script.episode_content
-    existing = []
-    if isinstance(content, dict) and isinstance(content.get("episodes"), list):
-        existing = list(content["episodes"])
-    elif isinstance(content, list):
-        existing = list(content)
+    existing = _existing_episodes(project.script.episode_content)
     generated = count_completed_episodes(existing, total)
     logger.info(
         "已入队分集剧本 project_id=%s user_id=%s task_id=%s force=%s target=%s done=%s",
@@ -224,6 +347,74 @@ async def episode_script(
         "total_generated": generated,
         "total_target": total,
         "done": False,
+        "script": DramaScriptOut.model_validate(project.script).model_dump(),
+    }
+
+
+def _existing_episodes(content: object) -> list:
+    # 从 episode_content 取出分集数组
+    if isinstance(content, dict) and isinstance(content.get("episodes"), list):
+        return list(content["episodes"])
+    if isinstance(content, list):
+        return list(content)
+    return []
+
+
+def _apply_episode_count(project, script, total: int) -> None:
+    # 同步项目 / 剧本 / 摘要上的目标集数
+    summary = dict(script.summary) if isinstance(script.summary, dict) else {}
+    summary["episodeCount"] = int(total)
+    script.summary = summary
+    sparams = dict(script.params or {})
+    sparams["episode_count"] = int(total)
+    script.params = sparams
+    pparams = dict(project.params or {})
+    pparams["episode_count"] = int(total)
+    project.params = pparams
+
+
+@router.post("/agents/add_episode")
+async def add_episode(
+    body: DramaAddEpisodeRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """手动追加一集空分集，供用户粘贴剧本后再 AI 优化。"""
+    project = await get_owned_drama_project(db, body.project_id, user, with_script=True)
+    if not project.script or not project.script.summary:
+        raise HTTPException(status_code=400, detail="请先生成剧本摘要")
+    params = dict(project.script.params or {})
+    if str(params.get("episode_content_status") or "") == "generating":
+        raise HTTPException(status_code=409, detail="全集剧本正在生成，请完成后再加集")
+    existing = _existing_episodes(project.script.episode_content)
+    if len(existing) >= MAX_DRAMA_EPISODES:
+        raise HTTPException(status_code=400, detail=f"最多 {MAX_DRAMA_EPISODES} 集")
+    try:
+        episodes, episode_number = append_manual_episode(existing, body.title)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    project.script.episode_content = {"episodes": episodes}
+    current_total = resolve_episode_target(
+        project.script.summary if isinstance(project.script.summary, dict) else {},
+        project.params,
+        project.script.params,
+    )
+    _apply_episode_count(
+        project,
+        project.script,
+        max(current_total, episode_number, len(episodes)),
+    )
+    await db.commit()
+    await db.refresh(project.script)
+    logger.info(
+        "手动加集 project_id=%s episode_number=%s total=%s",
+        project.id,
+        episode_number,
+        episode_number,
+    )
+    return {
+        "ok": True,
+        "episode_number": episode_number,
         "script": DramaScriptOut.model_validate(project.script).model_dump(),
     }
 

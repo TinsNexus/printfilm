@@ -10,6 +10,14 @@
 
 ## 公式
 
+**有上游成本时（优先）**：
+
+```
+charge_fen = ceil(cost_fen × markup)
+```
+
+**按 token 估价时**：
+
 ```
 charge_fen = ceil(tokens / 1e6 * provider_yuan_per_m * markup * 100)
 ```
@@ -21,13 +29,23 @@ charge_fen = ceil(tokens / 1e6 * provider_yuan_per_m * markup * 100)
 | seedance2:video0 | 46 |
 | seedance2:video1 | 28 |
 | llm_chat | 5 |
-| seedream | 8（按次折合约；有 usage 则用 usage） |
+| seedream | 8（按次折合约；有上游费用则优先） |
 | tts | 2（按次估价） |
 
-Seedance 视频任务成功后，优先读取官方「查询视频生成任务」响应中的 `usage.total_tokens` 写入 `usage_events`（`estimated=false`）；仅在上游未返回 usage 时回退到时长估算。
+### Kie（credit 计费）
 
-管理端「官方用量对照」需配置 `VOLC_ACCESS_KEY_ID` / `VOLC_SECRET_ACCESS_KEY`，通过方舟管控面 `GetInferenceUsage` 拉取账号日用量并与本地 seedance 成本对照。
+Kie 图/视频任务返回 `creditsConsumed`。换算：
 
+```
+cost_fen = ceil(creditsConsumed × BILLING_KIE_FEN_PER_CREDIT)   # 默认 3.5 分/credit
+charge_fen = ceil(cost_fen × markup)
+```
+
+说明：1 credit ≈ $0.005，按约 7 CNY/USD 折合 ¥0.035 ≈ 3.5 分。管理端「支付与计费」可改 `billing_kie_fen_per_credit`，并可「查询 Kie 余额」（`GET /api/v1/chat/credit`）。
+
+Seedance（方舟）视频任务成功后，优先读取官方任务响应中的 `usage` / 费用写入 `usage_events`（`estimated=false`）；仅在上游未返回时回退到时长估算。
+
+管理端「官方用量对照」需配置 `VOLC_ACCESS_KEY_ID` / `VOLC_SECRET_ACCESS_KEY`，通过方舟管控面 `GetInferenceUsage` 拉取账号日用量并与本地 seedance 成本对照。Kie 侧用「查询 Kie 余额」对照账户 credit。
 ## TaskRun 计费流程
 
 每个 `TaskRun` 独立走「预扣 → 记录用量 → 结算」：
@@ -119,6 +137,7 @@ api/studio 轻量视频：`awaiting_poll` 由 Selector 后台轮询；超过 `ar
 ```
 BILLING_ENABLED=true
 BILLING_MARKUP=1.5
+BILLING_KIE_FEN_PER_CREDIT=3.5
 EPAY_API_URL=https://pay.gitcc.com
 EPAY_PID=your-epay-pid
 EPAY_KEY=***
@@ -140,9 +159,12 @@ EPAY_RETURN_URL=https://your-site.example.com/pricing?paid=1
 | GET | `/api/admin/tasks/{id}` | 任务详情含 `usage_lines` 与计费字段 |
 | GET | `/api/admin/stats/upstream-usage` | 近 N 日官方/本地 seedance 成本对照 |
 | POST | `/api/admin/stats/upstream-usage/sync` | 手动刷新官方用量快照 |
+| GET | `/api/admin/settings/billing/model-rates` | 各模型计费口径（Ark token / Kie credit） |
+| GET | `/api/admin/settings/kie/credits` | 查询 Kie 账户剩余 credit |
 
 ## 管理端
 
+- **设置 → 支付与计费**：各模型单价、markup、`Kie 分/credit`；可查看模型费率表与查询 Kie 余额。
 - **订单与流水** → 「用量明细」Tab：按用户/任务/领域筛选 `usage_events`。
 - **任务队列** → 列表「费用」列显示 `billing_charged_fen`（冻结中显示预扣）。
 - **任务详情** → 「计费」Tab：预扣/实扣/退回 + 用量行列表。
@@ -156,3 +178,4 @@ EPAY_RETURN_URL=https://your-site.example.com/pricing?paid=1
 4. 管理端可按 `task_run_id` 或 `billing_key=llm_chat` 查到每条 LLM/图/视频/TTS 费用。
 5. Seedance 视频成功后 `usage_events.estimated=false` 且 `total_tokens` 与官方任务查询一致。
 6. 配置火山 AK/SK 后，管理端可刷新并查看近 30 日官方/本地成本对照。
+7. Kie 图/视频成功后按 `creditsConsumed × fen_per_credit × markup` 扣费；管理端可查询 Kie 余额。

@@ -67,12 +67,9 @@ def infer_aspect_ratio_from_pixels(width: int, height: int) -> str:
     return f"{width}×{height}"
 
 
-# i2v 兜底静帧：按目标画幅生成，避免 Seedance「跟首帧比例」变成横屏
+# i2v 兜底静帧：按目标画幅生成（Seedream 5.0 Pro 2K 像素，避免超 4624220 面积上限）
 def seedream_still_size_for_video_ratio(aspect_ratio: str | None) -> str:
+    from app.services.drama.seedream_options import SEEDREAM_SIZE_2K
+
     ratio = _pick_ratio(aspect_ratio) or "9:16"
-    mapping = {
-        "9:16": "2304x4096",
-        "16:9": "4096x2304",
-        "1:1": "3072x3072",
-    }
-    return mapping.get(ratio, "2304x4096")
+    return SEEDREAM_SIZE_2K.get(ratio, SEEDREAM_SIZE_2K["9:16"])

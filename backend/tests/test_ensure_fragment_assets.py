@@ -18,9 +18,11 @@ def test_asset_needs_reference_image():
     empty = SimpleNamespace(type="character", cover="", url=None)
     ready = SimpleNamespace(type="character", cover="/x.png", url="")
     voice = SimpleNamespace(type="voice", cover="", url="")
+    svg_placeholder = SimpleNamespace(type="prop", cover="/mock/image_2e3651d6.svg", url="")
     assert asset_needs_reference_image(empty) is True
     assert asset_needs_reference_image(ready) is False
     assert asset_needs_reference_image(voice) is False
+    assert asset_needs_reference_image(svg_placeholder) is True
 
 
 def test_read_asset_visual_prompt_fallback():

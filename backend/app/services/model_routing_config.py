@@ -32,9 +32,23 @@ def infer_model_capability(model: str) -> LogicalModelCapability:
         return "text"
     if "tts" in mid or mid.startswith("zh_") or "speaker" in mid or mid.startswith("s_"):
         return "audio"
-    if "seedance" in mid or "video" in mid or "i2v" in mid:
+    if (
+        "seedance" in mid
+        or "veo" in mid
+        or "video" in mid
+        or "i2v" in mid
+        or mid.startswith("kie-veo")
+        or mid.startswith("kie-seedance")
+    ):
         return "video"
-    if "seedream" in mid or "dream" in mid or "image" in mid:
+    if (
+        "seedream" in mid
+        or "nano-banana" in mid
+        or "banana" in mid
+        or "dream" in mid
+        or "image" in mid
+        or mid.startswith("kie-")
+    ):
         return "image"
     return "text"
 
@@ -45,6 +59,9 @@ def channel_connection_ready(channel: SystemModelChannel) -> bool:
         return False
     if channel.protocol == "volc_tts":
         return bool(channel.has_api_key or channel.base_url)
+    if channel.protocol == "kie":
+        # Base URL 可缺省为官方默认
+        return bool(channel.has_api_key or (channel.api_key or "").strip())
     return bool(channel.base_url and channel.has_api_key)
 
 
@@ -62,6 +79,8 @@ def resolve_channel_model_capability(channel: SystemModelChannel, upstream_model
     if protocol == "openai":
         return "text"
     if protocol == "ark":
+        return infer_model_capability(upstream_model)
+    if protocol == "kie":
         return infer_model_capability(upstream_model)
     if protocol == "volc_tts":
         return "audio"

@@ -197,7 +197,13 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
               </span>
             </div>
           ) : mediaSrc ? (
-            <img className="fc-asset-media" src={mediaSrc} alt={displayName} draggable={false} />
+            <img
+              key={mediaSrc}
+              className="fc-asset-media"
+              src={mediaSrc}
+              alt={displayName}
+              draggable={false}
+            />
           ) : (
             <PlaceholderIcon kind={data.kind} />
           )}

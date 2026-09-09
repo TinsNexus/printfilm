@@ -38,10 +38,20 @@ async def _run_drama_episode_script(task: TaskRun) -> dict[str, Any] | None:
     from app.services.drama.jobs import run_episode_scripts_job
 
     payload = task.payload or {}
+    episode_raw = payload.get("episode_number")
+    try:
+        episode_number = int(episode_raw) if episode_raw not in (None, "") else None
+    except (TypeError, ValueError):
+        episode_number = None
+    draft = str(payload.get("draft") or "").strip() or None
+    generate_mode = str(payload.get("generate_mode") or "").strip() or None
     return await run_episode_scripts_job(
         _require_int(task.drama_project_id, "drama_project_id"),
         force=bool(payload.get("force")),
         task_id=int(task.id),
+        episode_number=episode_number,
+        draft=draft,
+        generate_mode=generate_mode,
     )
 
 

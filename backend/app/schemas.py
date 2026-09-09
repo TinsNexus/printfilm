@@ -140,6 +140,8 @@ class ProjectCreate(BaseModel):
     style_prompt: str | None = Field(default=None, max_length=2000)
     character_prompt: str | None = Field(default=None, max_length=2000)
     extra_prompt: str | None = Field(default=None, max_length=2000)
+    image_model: str | None = Field(default=None, max_length=64)
+    video_model: str | None = Field(default=None, max_length=64)
     ref_image_url: str | None = None
 
 
@@ -159,6 +161,8 @@ class ProjectUpdate(BaseModel):
     style_prompt: str | None = Field(default=None, max_length=2000)
     character_prompt: str | None = Field(default=None, max_length=2000)
     extra_prompt: str | None = Field(default=None, max_length=2000)
+    image_model: str | None = Field(default=None, max_length=64)
+    video_model: str | None = Field(default=None, max_length=64)
     ref_image_url: str | None = None
     cover_url: str | None = Field(default=None, max_length=1024)
 
@@ -183,6 +187,8 @@ class ProjectOut(BaseModel):
     style_prompt: str = ""
     character_prompt: str = ""
     extra_prompt: str = ""
+    image_model: str = ""
+    video_model: str = ""
     ref_image_url: str | None
     created_at: datetime
     updated_at: datetime

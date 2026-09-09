@@ -53,19 +53,49 @@ async def test_user_milestone_creates_popup_notification(db_session: AsyncSessio
     created = await process_user_milestone_alert(db_session, user, settings=settings)
     await db_session.commit()
 
-    assert len(created) == 2
-    assert created[0].milestone_fen == 1000
-    assert created[1].milestone_fen == 2000
+    assert len(created) == 1
+    assert created[0].milestone_fen == 2000
     assert int(user.billing_alert_last_milestone_fen) == 2000
 
     pending = await list_pending_user_alerts(db_session, user.id)
-    assert len(pending) == 2
+    assert len(pending) == 1
 
     ok = await acknowledge_user_alert(db_session, user.id, pending[0].id)
     assert ok is True
     await db_session.commit()
     pending_after = await list_pending_user_alerts(db_session, user.id)
-    assert len(pending_after) == 1
+    assert len(pending_after) == 0
+
+
+@pytest.mark.asyncio
+async def test_pending_alerts_collapse_to_latest(db_session: AsyncSession, monkeypatch) -> None:
+    """积压多条未确认时，拉取 pending 只保留最新一条。"""
+    from app.models import BillingAlertNotification
+
+    settings = __import__("app.config", fromlist=["get_settings"]).get_settings()
+    monkeypatch.setattr(settings, "billing_user_alert_enabled", True)
+
+    user = await make_user(db_session)
+    for fen in (1000, 2000, 3000):
+        db_session.add(
+            BillingAlertNotification(
+                user_id=user.id,
+                kind="user_milestone",
+                title="消费提醒",
+                message=f"m{fen}",
+                milestone_fen=fen,
+            )
+        )
+    await db_session.commit()
+
+    pending = await list_pending_user_alerts(db_session, user.id)
+    assert len(pending) == 1
+    assert pending[0].milestone_fen == 3000
+    await db_session.commit()
+
+    leftover = await list_pending_user_alerts(db_session, user.id)
+    assert len(leftover) == 1
+    assert leftover[0].milestone_fen == 3000
 
 
 @pytest.mark.asyncio

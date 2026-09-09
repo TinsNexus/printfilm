@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api, defaultsFromTemplate } from '../../api'
-import type { PipelineMode, Project, Template, VoicePreset } from '../../api'
+import type { MediaModelOption, MediaModelsCatalog, PipelineMode, Project, Template, VoicePreset } from '../../api'
 import AppShell from '../../components/layout/AppShell'
 import Stepper from '../../components/ui/Stepper'
 import ComingSoon from '../../components/ui/ComingSoon'
@@ -81,6 +81,9 @@ export default function StyleConfigPage() {
   const [pipelineMode, setPipelineMode] = useState<PipelineMode>('full')
   const [ratio, setRatio] = useState('16:9')
   const [charPreset, setCharPreset] = useState('real')
+  const [imageModel, setImageModel] = useState('')
+  const [videoModel, setVideoModel] = useState('')
+  const [mediaCatalog, setMediaCatalog] = useState<MediaModelsCatalog | null>(null)
   const [busy, setBusy] = useState(false)
   const [previewBusy, setPreviewBusy] = useState<string | null>(null)
   const [playingId, setPlayingId] = useState<string | null>(null)
@@ -98,6 +101,14 @@ export default function StyleConfigPage() {
     api.templates().then(setTemplates)
     api.voices().then(setVoices)
     api
+      .mediaModels()
+      .then((cat) => {
+        setMediaCatalog(cat)
+        setImageModel((prev) => prev || cat.defaults.image_model)
+        setVideoModel((prev) => prev || cat.defaults.video_model)
+      })
+      .catch(() => setMediaCatalog(null))
+    api
       .getProject(projectId)
       .then((p) => {
         setProject(p)
@@ -107,6 +118,8 @@ export default function StyleConfigPage() {
         setVoiceId(p.voice_id || '')
         setPipelineMode(p.pipeline_mode || 'full')
         setRatio(p.output_ratio || (p.pipeline_mode === 'image_text' ? '9:16' : '16:9'))
+        if (p.image_model) setImageModel(p.image_model)
+        if (p.video_model) setVideoModel(p.video_model)
       })
       .catch((err) => setError(err instanceof Error ? err.message : '加载失败'))
   }, [nav, projectId])
@@ -123,7 +136,7 @@ export default function StyleConfigPage() {
     [templates, project?.template_id],
   )
 
-  const styleOptions = useMemo(() => templates.slice(0, 6), [templates])
+  const styleOptions = useMemo(() => templates.slice(0, 8), [templates])
   const selectedVoice = voices.find((v) => v.speaker === voiceId || v.id === voiceId)
 
   useEffect(() => {
@@ -152,7 +165,7 @@ export default function StyleConfigPage() {
     if (d.output_ratio) setRatio(d.output_ratio)
     if (/无人物|无角色/.test(d.character_prompt)) setCharPreset('none')
     else if (/剪影/.test(d.character_prompt)) setCharPreset('sil')
-    else if (/动漫|二次元/.test(d.character_prompt)) setCharPreset('anime')
+    else if (/动漫|二次元|3D|三维|CGI/.test(d.character_prompt + d.style_prompt)) setCharPreset('anime')
     else setCharPreset('real')
     if (project) {
       api
@@ -242,6 +255,8 @@ export default function StyleConfigPage() {
         voice_id: voiceId,
         pipeline_mode: pipelineMode,
         output_ratio: ratio,
+        image_model: imageModel,
+        video_model: videoModel,
       })
       const started = await api.generate(project.id)
       nav(`/studio/${started.id}`)
@@ -507,6 +522,58 @@ export default function StyleConfigPage() {
               ))}
             </div>
           </div>
+
+          {mediaCatalog ? (
+            <div className="pf-style-block">
+              <h3>图片模型</h3>
+              <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0 0 0.65rem' }}>
+                分镜首帧所用模型，可切换 Kie 主流或方舟直连。
+              </p>
+              <div className="pf-model-grid">
+                {mediaCatalog.image_models.map((m: MediaModelOption) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    className={imageModel === m.id ? 'pf-model-opt selected' : 'pf-model-opt'}
+                    onClick={() => setImageModel(m.id)}
+                  >
+                    <div className="pf-model-opt-title">
+                      <span>{m.label}</span>
+                      {m.recommended ? <span className="pf-model-badge">推荐</span> : null}
+                    </div>
+                    <div className="pf-model-opt-desc">{m.description}</div>
+                    <div className="pf-model-opt-provider">{m.provider === 'kie' ? 'Kie.ai' : '火山方舟'}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {mediaCatalog && pipelineMode === 'full' ? (
+            <div className="pf-style-block">
+              <h3>视频模型</h3>
+              <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0 0 0.65rem' }}>
+                图生视频所用模型；静图成片模式不调用。
+              </p>
+              <div className="pf-model-grid">
+                {mediaCatalog.video_models.map((m: MediaModelOption) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    className={videoModel === m.id ? 'pf-model-opt selected' : 'pf-model-opt'}
+                    onClick={() => setVideoModel(m.id)}
+                  >
+                    <div className="pf-model-opt-title">
+                      <span>{m.label}</span>
+                      {m.recommended ? <span className="pf-model-badge">推荐</span> : null}
+                    </div>
+                    <div className="pf-model-opt-desc">{m.description}</div>
+                    <div className="pf-model-opt-provider">{m.provider === 'kie' ? 'Kie.ai' : '火山方舟'}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           <div className="pf-style-block">
             <h3>输出比例</h3>

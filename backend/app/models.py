@@ -124,6 +124,9 @@ class Project(Base):
     style_prompt: Mapped[str] = mapped_column(Text, default="")
     character_prompt: Mapped[str] = mapped_column(Text, default="")
     extra_prompt: Mapped[str] = mapped_column(Text, default="")
+    # 科普图/视频模型（kie-* / ark-*）；空则后端回退方舟直连
+    image_model: Mapped[str] = mapped_column(String(64), default="")
+    video_model: Mapped[str] = mapped_column(String(64), default="")
     ref_image_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

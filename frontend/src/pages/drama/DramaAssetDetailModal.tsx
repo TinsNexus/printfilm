@@ -1,9 +1,14 @@
-/** 资产详情操作框：预览图、上传/生图提示词编辑、生成/音色等操作 */
+/** 资产详情操作框：预览图、上传/生图提示词编辑、生成/音色、形象历史版本 */
 import { useEffect, useRef, useState } from 'react'
-import { dramaApi, resolveDramaMediaUrl, type DramaAsset } from '../../api/drama'
+import { dramaApi, resolveDramaAssetPreviewUrl, type DramaAsset } from '../../api/drama'
 import Modal from '../../components/ui/Modal'
 import { readVisualPrompt } from '../../lib/dramaVisualPrompt'
 import { dramaAssetHasImage } from '../../lib/dramaAssetImage'
+import {
+  formatAssetImageVersionLabel,
+  readAssetImageVersions,
+  resolveAssetImageVersionUrl,
+} from '../../lib/dramaAssetImageVersions'
 import { readAssetVoiceBinding } from './CharacterVoiceBindModal'
 import { DramaImageLightbox } from './DramaImageLightbox'
 
@@ -51,15 +56,17 @@ export function DramaAssetDetailModal({
    * promptDraft 提示词草稿
    * saving 保存中
    * uploading 上传图片中
+   * restoringVersionId 正在还原的版本
    * lightboxSrc 放大预览图 URL
    */
   const [promptDraft, setPromptDraft] = useState('')
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null)
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
   const uploadInputRef = useRef<HTMLInputElement>(null)
 
-  const mediaSrc = resolveDramaMediaUrl(asset.cover || asset.url)
+  const mediaSrc = resolveDramaAssetPreviewUrl(asset)
   const hasImage = dramaAssetHasImage(asset)
   const voice = readAssetVoiceBinding(asset)
   const isCharacter = (asset.type || '').toLowerCase() === 'character'
@@ -70,11 +77,14 @@ export function DramaAssetDetailModal({
   const deleteLabel = isScene ? '删除场景' : isProp ? '删除道具' : '删除角色'
   const canDelete = Boolean(onDelete) && (isCharacter || isScene || isProp)
   const dirty = promptDraft.trim() !== readVisualPrompt(asset).trim()
+  const imageVersions = readAssetImageVersions(asset)
+  const actionBusy = busy || saving || uploading || Boolean(restoringVersionId)
 
   useEffect(() => {
     if (!open) return
     setPromptDraft(readVisualPrompt(asset))
     setLightboxSrc(null)
+    setRestoringVersionId(null)
   }, [open, asset])
 
   // 保存提示词到资产 params
@@ -136,6 +146,19 @@ export function DramaAssetDetailModal({
     }
   }
 
+  // 将历史形象还原为当前
+  async function handleRestoreVersion(versionId: string) {
+    setRestoringVersionId(versionId)
+    try {
+      const updated = await dramaApi.activateAssetImageVersion(asset.id, versionId)
+      onUpdated(updated)
+    } catch (err) {
+      onError(err instanceof Error ? err.message : '还原失败')
+    } finally {
+      setRestoringVersionId(null)
+    }
+  }
+
   return (
     <>
       <Modal
@@ -153,7 +176,7 @@ export function DramaAssetDetailModal({
             <button
               type="button"
               className="pf-btn"
-              disabled={saving || !dirty}
+              disabled={saving || !dirty || actionBusy}
               onClick={() => void savePrompt()}
             >
               {saving ? '保存中…' : '保存提示词'}
@@ -161,7 +184,7 @@ export function DramaAssetDetailModal({
             <button
               type="button"
               className="pf-btn drama-btn-primary"
-              disabled={busy || saving || uploading || !promptDraft.trim()}
+              disabled={actionBusy || !promptDraft.trim()}
               onClick={() => void handleGenerate()}
             >
               {busy ? '生成中…' : genLabel}
@@ -178,7 +201,7 @@ export function DramaAssetDetailModal({
             onClick={() => mediaSrc && setLightboxSrc(mediaSrc)}
           >
             {mediaSrc ? (
-              <img src={mediaSrc} alt={asset.name || ''} />
+              <img key={mediaSrc} src={mediaSrc} alt={asset.name || ''} />
             ) : (
               <div className="drama-asset-placeholder">{asset.type || 'asset'}</div>
             )}
@@ -197,7 +220,7 @@ export function DramaAssetDetailModal({
               type="file"
               accept="image/jpeg,image/png,image/webp,image/gif"
               className="sr-only"
-              disabled={uploading || busy}
+              disabled={actionBusy}
               onChange={(e) => {
                 const file = e.target.files?.[0]
                 if (file) void handleUpload(file)
@@ -206,7 +229,7 @@ export function DramaAssetDetailModal({
             <button
               type="button"
               className="pf-btn pf-btn-sm"
-              disabled={uploading || busy || saving}
+              disabled={actionBusy}
               onClick={() => uploadInputRef.current?.click()}
             >
               {uploading ? '上传中…' : hasImage ? '更换图片' : '上传图片'}
@@ -224,13 +247,56 @@ export function DramaAssetDetailModal({
               <button
                 type="button"
                 className="pf-btn pf-btn-sm drama-btn-danger-text"
-                disabled={busy || saving || uploading}
+                disabled={actionBusy}
                 onClick={() => onDelete?.(asset)}
               >
                 {deleteLabel}
               </button>
             ) : null}
           </div>
+
+          {imageVersions.length > 0 ? (
+            <section className="drama-asset-image-versions" aria-label="形象历史版本">
+              <header className="drama-asset-image-versions-head">
+                <strong>历史版本</strong>
+                <span className="drama-muted">{imageVersions.length} 个</span>
+              </header>
+              <ul className="drama-asset-image-versions-list">
+                {imageVersions.map((version) => {
+                  const thumb = resolveAssetImageVersionUrl(version)
+                  const restoring = restoringVersionId === version.id
+                  return (
+                    <li key={version.id} className="drama-asset-image-version">
+                      <button
+                        type="button"
+                        className="drama-asset-image-version-thumb"
+                        title="点击放大"
+                        onClick={() => setLightboxSrc(thumb)}
+                      >
+                        <img src={thumb} alt="" />
+                      </button>
+                      <div className="drama-asset-image-version-meta">
+                        <span>{formatAssetImageVersionLabel(version)}</span>
+                        {version.createdAt ? (
+                          <small className="drama-muted">
+                            {version.createdAt.replace('T', ' ').slice(0, 16)}
+                          </small>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        className="pf-btn pf-btn-sm"
+                        disabled={actionBusy}
+                        onClick={() => void handleRestoreVersion(version.id)}
+                      >
+                        {restoring ? '还原中…' : '还原'}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </section>
+          ) : null}
 
           <label className="drama-field">
             <span>生图提示词</span>

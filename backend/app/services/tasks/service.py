@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Select, func, or_, select
@@ -359,7 +359,11 @@ async def cancel_fragment_video_tasks_for_fragments(
 
 
 # 取消 payload 中分镜已删除或已有成片（且非重新生成）的在途任务，避免假排队与上下文丢失。
+# 同时释放「finalizing 认领窗口异常过长」的卡死任务（历史 6h TTL / poller 取消后未释放）。
 async def reconcile_stale_pending_tasks(db: AsyncSession) -> int:
+    # 认领剩余 >12 分钟视为异常（正常收尾 TTL 为 10 分钟）
+    finalize_stale_remaining = timedelta(minutes=12)
+
     stmt = select(TaskRun).where(
         TaskRun.status.in_(tuple(_STALE_FRAGMENT_VIDEO_STATUSES)),
         TaskRun.domain == "drama",
@@ -369,6 +373,29 @@ async def reconcile_stale_pending_tasks(db: AsyncSession) -> int:
     changed = 0
     now = datetime.now(UTC)
     for task in rows:
+        # finalizing 认领剩余过长：释放回 polling，让 Selector 立刻再查上游/重试落盘
+        if (
+            task.status == "awaiting_poll"
+            and (task.current_step_status or "") == "finalizing"
+            and task.next_action_at is not None
+        ):
+            na = task.next_action_at
+            if na.tzinfo is None:
+                na = na.replace(tzinfo=UTC)
+            if na - now > finalize_stale_remaining:
+                task.current_step_status = "polling"
+                task.next_action_at = now
+                await append_task_event(
+                    db,
+                    task.id,
+                    event_type="task.poll_resumed",
+                    status=task.status,
+                    phase=task.current_step_key,
+                    message="释放异常过长的收尾认领，恢复上游轮询",
+                )
+                changed += 1
+                continue
+
         frag_ids = task_fragment_ids(task)
         if not frag_ids:
             # fragment_id 已被 detach、payload 也无 id → 无法回写，直接作废

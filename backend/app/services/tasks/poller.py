@@ -106,13 +106,10 @@ async def _poller_loop() -> None:
     interval = max(1.0, float(get_settings().ark_video_poll_interval or 8.0))
     while not _stop_event.is_set():
         _last_poll_mono = time.monotonic()
-        poll_stale = max(30.0, float(get_settings().task_poll_stale_sec), interval * 4)
-        timeout = max(20.0, poll_stale - 10.0)
         try:
-            await asyncio.wait_for(_select_and_poll_due(), timeout=timeout)
-            await asyncio.wait_for(_poll_ephemeral_deferred_tasks(), timeout=timeout)
-        except asyncio.TimeoutError:
-            logger.error("task selector tick timed out after %.0fs", timeout)
+            # 不可对整轮 select 使用短 wait_for：分镜收尾下载常 >80s，取消后会卡在 finalizing。
+            await _select_and_poll_due()
+            await _poll_ephemeral_deferred_tasks()
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001
@@ -143,13 +140,16 @@ async def _select_and_poll_due() -> None:
         return
 
     async def _guarded_poll(task_id: int) -> None:
+        global _last_poll_mono
         if task_id in _poll_inflight:
             return
         _poll_inflight.add(task_id)
         sem = _selector_sem or asyncio.Semaphore(1)
         try:
             async with sem:
+                _last_poll_mono = time.monotonic()
                 await _poll_one_task(task_id)
+                _last_poll_mono = time.monotonic()
         finally:
             _poll_inflight.discard(task_id)
 

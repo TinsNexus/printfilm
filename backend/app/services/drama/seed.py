@@ -30,6 +30,7 @@ from app.services.drama.build_fragments import (
     split_episode_content_into_scenes,
 )
 from app.services.drama.access import detach_task_fragment_refs
+from app.services.drama.agents import MIN_EPISODE_CONTENT_CHARS
 from app.services.drama.extract_props_materials import extract_props_materials
 from app.services.drama.seed_asset_params import (
     build_character_params,
@@ -309,6 +310,22 @@ class SeedAssetsResult:
     props_updated: int = 0
     llm_calls_props: int = 0
     llm_errors: list[str] = field(default_factory=list)
+
+
+@dataclass
+class EpisodeBodySeedResult:
+    """单集正文增量 seed：同名复用、新名建 stub（不抽道具）。"""
+
+    created: list[dict[str, str]] = field(default_factory=list)
+    reused: list[dict[str, str]] = field(default_factory=list)
+
+    @property
+    def created_count(self) -> int:
+        return len(self.created)
+
+    @property
+    def reused_count(self) -> int:
+        return len(self.reused)
 
 
 # 刷新 params 时保留生成状态与音色绑定
@@ -616,6 +633,194 @@ async def seed_assets_from_script(
     )
 
 
+def _extract_scene_names_from_bodies(bodies: list[str]) -> list[str]:
+    """从场头时间内外景行抽取场景名（去重保序）。"""
+    scene_names: list[str] = []
+    for body in bodies:
+        for m in re.finditer(
+            r"^(?:日|夜|晨|黄昏|傍晚|凌晨|清晨|午|晚)?[ \t]*(?:内|外|内外)[ \t]+(.+)$",
+            body,
+            re.M,
+        ):
+            scene = m.group(1).strip().split("／")[0].split("/")[0].strip()
+            if scene and scene not in scene_names:
+                scene_names.append(scene)
+    return scene_names
+
+
+def collect_episode_seed_names(
+    summary: dict[str, Any],
+    body: str,
+) -> tuple[list[str], list[str], dict[str, dict[str, Any]]]:
+    """收集本集 seed 用角色名/场景名，及摘要人物小传索引。"""
+    summary_by_name: dict[str, dict[str, Any]] = {}
+    for ch in summary.get("characters") or []:
+        if not isinstance(ch, dict):
+            continue
+        name = str(ch.get("name") or "").strip()
+        if name:
+            summary_by_name[name] = ch
+
+    cast_names = _extract_cast_names_from_bodies([body or ""])
+    character_names: list[str] = []
+    for name in list(summary_by_name.keys()) + cast_names:
+        seed_name = _character_name_for_seed(name)
+        if seed_name and seed_name not in character_names:
+            character_names.append(seed_name)
+
+    scene_names = _extract_scene_names_from_bodies([body or ""])[:40]
+    return character_names, scene_names, summary_by_name
+
+
+def classify_episode_seed_ops(
+    existing_keys: set[tuple[str, str]],
+    character_names: list[str],
+    scene_names: list[str],
+) -> EpisodeBodySeedResult:
+    """纯函数：按规范化同名划分新建 / 复用（单测用）。"""
+    result = EpisodeBodySeedResult()
+    seen: set[tuple[str, str]] = set(existing_keys)
+    for name in character_names:
+        norm = _character_name_for_seed(name)
+        if not norm:
+            continue
+        key = _asset_dedupe_key("character", norm)
+        entry = {"type": "character", "name": norm}
+        if key in seen:
+            result.reused.append(entry)
+        else:
+            result.created.append(entry)
+            seen.add(key)
+    for scene in scene_names:
+        norm = _normalize_asset_name(scene)
+        if not norm:
+            continue
+        key = _asset_dedupe_key("scene", norm)
+        entry = {"type": "scene", "name": norm}
+        if key in seen:
+            result.reused.append(entry)
+        else:
+            result.created.append(entry)
+            seen.add(key)
+    return result
+
+
+async def seed_assets_from_episode_body(
+    db: AsyncSession,
+    project: DramaProject,
+    episode_number: int,
+) -> EpisodeBodySeedResult:
+    """正文生成后增量 seed：只扫该集出场人物/场景 + 全剧 summary 人物；不抽道具。"""
+    script = project.script
+    if not script or not script.summary:
+        raise ValueError("请先生成剧本摘要")
+
+    summary = script.summary if isinstance(script.summary, dict) else {}
+    story_type = str(summary.get("storyType") or "").strip()
+    bodies_list = _normalize_episode_list(script.episode_content)
+    target = next(
+        (
+            item
+            for item in bodies_list
+            if isinstance(item, dict) and int(item.get("episodeNumber") or 0) == int(episode_number)
+        ),
+        None,
+    )
+    body = str((target or {}).get("body") or (target or {}).get("content") or "").strip()
+    if len(body) < 40:
+        return EpisodeBodySeedResult()
+
+    character_names, scene_names, summary_by_name = collect_episode_seed_names(summary, body)
+    existing = list(
+        (await db.execute(select(DramaAsset).where(DramaAsset.project_id == project.id)))
+        .scalars()
+        .all()
+    )
+    existing_by_key: dict[tuple[str, str], DramaAsset] = {}
+    for asset in existing:
+        name = _normalize_asset_name(asset.name or "")
+        if not name:
+            continue
+        key = _asset_dedupe_key(asset.type or "", name)
+        prev = existing_by_key.get(key)
+        if prev is None or _duplicate_asset_keep_score(asset) > _duplicate_asset_keep_score(prev):
+            existing_by_key[key] = asset
+
+    from app.services.drama.build_fragments import _find_asset_by_name
+
+    result = EpisodeBodySeedResult()
+    bodies_for_stub = [body]
+
+    for name in character_names:
+        norm = _character_name_for_seed(name)
+        if not norm:
+            continue
+        char_key = _asset_dedupe_key("character", norm)
+        hit = existing_by_key.get(char_key)
+        if hit is None:
+            # 软包含匹配：避免「小明」与「小明同学」重复建库
+            soft = _find_asset_by_name(
+                [a for a in existing_by_key.values() if (a.type or "") == "character"],
+                norm,
+            )
+            if soft is not None:
+                hit = soft
+        if hit is not None:
+            result.reused.append({"type": "character", "name": norm})
+            continue
+        ch = summary_by_name.get(name) or summary_by_name.get(norm) or _character_stub_from_cast(
+            norm, story_type, summary=summary, bodies=bodies_for_stub,
+        )
+        asset = DramaAsset(
+            project_id=project.id,
+            type="character",
+            asset_type="image",
+            name=norm,
+            params=build_character_params(ch),
+        )
+        db.add(asset)
+        existing_by_key[char_key] = asset
+        result.created.append({"type": "character", "name": norm})
+
+    for scene in scene_names:
+        norm = _normalize_asset_name(scene)
+        if not norm:
+            continue
+        scene_key = _asset_dedupe_key("scene", norm)
+        hit = existing_by_key.get(scene_key)
+        if hit is None:
+            soft = _find_asset_by_name(
+                [a for a in existing_by_key.values() if (a.type or "") == "scene"],
+                norm,
+            )
+            if soft is not None:
+                hit = soft
+        if hit is not None:
+            result.reused.append({"type": "scene", "name": norm})
+            continue
+        asset = DramaAsset(
+            project_id=project.id,
+            type="scene",
+            asset_type="image",
+            name=norm,
+            params=build_scene_params(norm, story_type),
+        )
+        db.add(asset)
+        existing_by_key[scene_key] = asset
+        result.created.append({"type": "scene", "name": norm})
+
+    if result.created:
+        await db.flush()
+    logger.info(
+        "episode body seed project_id=%s ep=%s created=%s reused=%s",
+        project.id,
+        episode_number,
+        result.created_count,
+        result.reused_count,
+    )
+    return result
+
+
 async def seed_episodes_from_script(
     db: AsyncSession,
     project: DramaProject,
@@ -652,10 +857,17 @@ async def seed_episodes_from_script(
         ).scalars().all()
     )
 
+    # 无论是否重切，先合并同集号重复行，避免侧栏出现两个「第1集」
+    merged = await merge_duplicate_episodes_by_number(db, int(project.id))
+    if merged:
+        await db.commit()
+        existing = await _reload_episodes(db, project.id)
+
     should_rebuild = force or _should_auto_replan(existing, bodies)
     if existing and not should_rebuild:
         return existing
 
+    bodies = _dedupe_episode_body_items(bodies)
     body_by_number = {
         int(item.get("episodeNumber") or 0): item
         for item in bodies
@@ -763,6 +975,227 @@ async def seed_episodes_from_script(
             )
     await db.commit()
     return await _reload_episodes(db, project.id)
+
+
+def require_confirmable_episode_body(
+    episode_content: Any,
+    episode_number: int,
+) -> dict[str, Any]:
+    """取出指定集正文；缺失或过短则报错。"""
+    number = int(episode_number)
+    if number < 1:
+        raise ValueError("集号无效")
+    item = None
+    for row in _normalize_episode_list(episode_content):
+        try:
+            row_number = int(row.get("episodeNumber") or 0)
+        except (TypeError, ValueError):
+            continue
+        if row_number == number:
+            item = row
+            break
+    if item is None:
+        raise ValueError(f"找不到第 {number} 集剧本")
+    body = str(item.get("body") or item.get("content") or "")
+    if _body_char_len(body) < MIN_EPISODE_CONTENT_CHARS:
+        raise ValueError(
+            f"第 {number} 集正文过短，请先写完或让 AI 优化后再确认进入分镜"
+        )
+    return item
+
+
+def _body_char_len(text: str) -> int:
+    return len("".join((text or "").split()))
+
+
+def _episode_number_of(episode: DramaEpisode) -> int:
+    params = episode.params if isinstance(episode.params, dict) else {}
+    try:
+        return int(params.get("episodeNumber") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _episode_keep_score(episode: DramaEpisode) -> tuple[int, int, int]:
+    """优先保留成片多、分镜多、更早创建的分集行。"""
+    frags = list(episode.fragments or [])
+    videos = sum(1 for f in frags if (getattr(f, "video", None) or "").strip())
+    return (videos, len(frags), -int(episode.id or 0))
+
+
+def _dedupe_episode_body_items(bodies: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """剧本分集列表按集号去重（同号保留后者）；缺号在已占用号之外顺延分配。"""
+    by_number: dict[int, dict[str, Any]] = {}
+    missing: list[dict[str, Any]] = []
+    for item in bodies:
+        if not isinstance(item, dict):
+            continue
+        try:
+            raw = int(item.get("episodeNumber") or 0)
+        except (TypeError, ValueError):
+            raw = 0
+        if raw >= 1:
+            row = dict(item)
+            row["episodeNumber"] = raw
+            by_number[raw] = row
+        else:
+            missing.append(dict(item))
+    used = set(by_number)
+    next_no = 1
+    for item in missing:
+        while next_no in used:
+            next_no += 1
+        row = dict(item)
+        row["episodeNumber"] = next_no
+        by_number[next_no] = row
+        used.add(next_no)
+        next_no += 1
+    return [by_number[n] for n in sorted(by_number)]
+
+
+async def merge_duplicate_episodes_by_number(db: AsyncSession, project_id: int) -> int:
+    """合并同项目同集号的重复 DramaEpisode：保留成片/分镜更优者，删除其余。"""
+    episodes = list(
+        (
+            await db.execute(
+                select(DramaEpisode)
+                .where(DramaEpisode.project_id == int(project_id))
+                .options(
+                    selectinload(DramaEpisode.fragments).selectinload(
+                        DramaEpisodeFragment.asset_references
+                    )
+                )
+                .order_by(DramaEpisode.id.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    groups: dict[int, list[DramaEpisode]] = {}
+    for ep in episodes:
+        n = _episode_number_of(ep)
+        if n < 1:
+            continue
+        groups.setdefault(n, []).append(ep)
+
+    removed = 0
+    for group in groups.values():
+        if len(group) < 2:
+            continue
+        ranked = sorted(group, key=_episode_keep_score, reverse=True)
+        keep = ranked[0]
+        for dup in ranked[1:]:
+            stale_ids = [int(f.id) for f in (dup.fragments or []) if f.id]
+            if stale_ids:
+                await detach_task_fragment_refs(db, stale_ids)
+            await db.delete(dup)
+            removed += 1
+        logger.info(
+            "合并重复分集 project_id=%s episodeNumber=%s keep_id=%s removed=%s",
+            project_id,
+            _episode_number_of(keep),
+            keep.id,
+            len(ranked) - 1,
+        )
+    if removed:
+        await db.flush()
+    return removed
+
+
+async def seed_single_episode_from_script(
+    db: AsyncSession,
+    project: DramaProject,
+    episode_number: int,
+    *,
+    force: bool = False,
+) -> DramaEpisode:
+    """只为指定集建行/按规则切分镜，不 force 时保留已有视频与手改。"""
+    script = project.script
+    if not script:
+        raise ValueError("缺少剧本")
+    item = require_confirmable_episode_body(script.episode_content, episode_number)
+    title = str(item.get("title") or f"第{episode_number}集")
+    body = str(item.get("body") or item.get("content") or "")
+
+    assets = list(
+        (await db.execute(select(DramaAsset).where(DramaAsset.project_id == project.id)))
+        .scalars()
+        .all()
+    )
+    summary = script.summary if isinstance(script.summary, dict) else None
+    # 进入分镜前先清同号重复，避免再建一条第 N 集
+    await merge_duplicate_episodes_by_number(db, int(project.id))
+    existing = list(
+        (
+            await db.execute(
+                select(DramaEpisode)
+                .where(DramaEpisode.project_id == project.id)
+                .options(
+                    selectinload(DramaEpisode.fragments).selectinload(
+                        DramaEpisodeFragment.asset_references
+                    )
+                )
+                .order_by(DramaEpisode.id.asc())
+            )
+        ).scalars().all()
+    )
+    ordered = sorted(
+        existing,
+        key=lambda ep: (_episode_number_of(ep), int(ep.id or 0)),
+    )
+    series_introduced: set[str] = set()
+    target: DramaEpisode | None = None
+    for episode in ordered:
+        ep_no = _episode_number_of(episode)
+        if ep_no < int(episode_number):
+            for frag in episode.fragments or []:
+                series_introduced.update(
+                    extract_introduced_names_from_content(frag.content or "")
+                )
+            continue
+        if ep_no == int(episode_number):
+            target = episode
+            break
+
+    if target is None:
+        target = DramaEpisode(
+            project_id=project.id,
+            name=title,
+            params={"episodeNumber": int(episode_number)},
+        )
+        db.add(target)
+        await db.flush()
+        await _replace_episode_fragments(
+            db,
+            target,
+            body,
+            assets,
+            already_introduced=series_introduced,
+            summary=summary,
+        )
+    else:
+        target.name = title
+        if force or _episode_should_replace_fragments(target, body):
+            await _replace_episode_fragments(
+                db,
+                target,
+                body,
+                assets,
+                already_introduced=series_introduced,
+                summary=summary,
+            )
+    await db.commit()
+    reloaded = await _reload_episode(db, int(target.id))
+    if reloaded is None:
+        raise ValueError("分集写入后未能重新加载")
+    logger.info(
+        "单集切分镜完成 project_id=%s episode_number=%s episode_id=%s fragments=%s",
+        project.id,
+        episode_number,
+        reloaded.id,
+        len(reloaded.fragments or []),
+    )
+    return reloaded
 
 
 async def _list_episode_fragments(
@@ -967,6 +1400,19 @@ async def _reload_episodes(db: AsyncSession, project_id: int) -> list[DramaEpiso
         .order_by(DramaEpisode.id.asc())
     )
     return list(result.scalars().all())
+
+
+async def _reload_episode(db: AsyncSession, episode_id: int) -> DramaEpisode | None:
+    result = await db.execute(
+        select(DramaEpisode)
+        .where(DramaEpisode.id == episode_id)
+        .options(
+            selectinload(DramaEpisode.fragments).selectinload(
+                DramaEpisodeFragment.asset_references
+            )
+        )
+    )
+    return result.scalar_one_or_none()
 
 
 def _episode_bodies(episode_content: Any) -> list[str]:

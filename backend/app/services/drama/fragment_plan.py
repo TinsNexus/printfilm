@@ -267,6 +267,7 @@ def normalize_llm_fragment_items(
     intro_overrides: dict[str, str] | None = None,
     allow_opening: bool = True,
     include_subtitles: bool = True,
+    include_character_intro: bool = True,
 ) -> list[dict[str, Any]]:
     """
     将 LLM fragments 转为落库草稿。
@@ -424,13 +425,17 @@ def normalize_llm_fragment_items(
                 and not drafts
                 and chunk_index == 0
             )
-            pending = [
-                b
-                for b in bindings
-                if b.get("important")
-                and b.get("introText")
-                and str(b.get("name") or "") not in introduced
-            ]
+            pending = (
+                [
+                    b
+                    for b in bindings
+                    if b.get("important")
+                    and b.get("introText")
+                    and str(b.get("name") or "") not in introduced
+                ]
+                if include_character_intro
+                else []
+            )
             to_intro: list[dict[str, Any]] = []
             for b in pending:
                 name = str(b["name"])
@@ -518,6 +523,7 @@ async def plan_fragments_with_llm(
     user_id: int | None = None,
     skill_ids: list[int] | None = None,
     include_subtitles: bool = True,
+    include_character_intro: bool = True,
 ) -> list[dict[str, Any]]:
     """
     调用 LLM 规划分镜并规范化。
@@ -575,6 +581,7 @@ async def plan_fragments_with_llm(
         intro_overrides=intro_overrides,
         allow_opening=not bool(locked),
         include_subtitles=include_subtitles,
+        include_character_intro=include_character_intro,
     )
     if not drafts:
         raise RuntimeError("LLM 分镜规范化后为空")

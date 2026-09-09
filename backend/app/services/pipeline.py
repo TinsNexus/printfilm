@@ -963,6 +963,9 @@ async def _parallel_image_and_audio(project_id: int) -> None:
         image_size = _image_size_for(project)
         negative = _project_image_negative(project)
         voice = _project_voice(project)
+        image_model = (getattr(project, "image_model", None) or "").strip()
+        video_model = (getattr(project, "video_model", None) or "").strip()
+        output_ratio = _project_output_ratio(project) or ""
 
     if not shot_meta:
         return
@@ -1046,6 +1049,8 @@ async def _parallel_image_and_audio(project_id: int) -> None:
                 project_id=project_id,
                 shot_no=meta["shot_no"],
                 size=image_size,
+                model=image_model,
+                aspect_ratio=output_ratio or None,
             )
         s = get_settings()
         await _record_seedream_usage(
@@ -1211,6 +1216,7 @@ async def _parallel_videos(project_id: int) -> None:
         ]
         style_prefix = _effective_style(project)
         total = len(shot_meta)
+        video_model = (getattr(project, "video_model", None) or "").strip()
 
     if not shot_meta:
         return
@@ -1264,6 +1270,7 @@ async def _parallel_videos(project_id: int) -> None:
                     resolution=resolution,
                     ratio=ratio,
                     generate_audio=generate_audio,
+                    model=video_model,
                 )
             except Exception as exc:  # noqa: BLE001
                 msg = str(exc)
@@ -1388,6 +1395,8 @@ async def _image_stage(project_id: int) -> None:
         consist = template_consistency_mode(tpl)
         lock_character = consist == "character"
         anchor: str | None = None
+        image_model = (getattr(project, "image_model", None) or "").strip()
+        output_ratio = _project_output_ratio(project) or ""
 
         for idx, shot in enumerate(sorted(project.shots, key=lambda s: s.shot_no)):
             await _ensure_not_cancelled(project_id)
@@ -1414,6 +1423,8 @@ async def _image_stage(project_id: int) -> None:
                 project_id=project_id,
                 shot_no=shot.shot_no,
                 size=image_size,
+                model=image_model,
+                aspect_ratio=output_ratio or None,
             )
             shot.image_url = img.local_url
             shot.image_ark_url = img.remote_url
@@ -1465,6 +1476,7 @@ async def _video_stage(project_id: int) -> None:
             resolution = "720p"
         ratio = _project_output_ratio(project) or cfg.ark_video_ratio
         style_prefix = _effective_style(project)
+        video_model = (getattr(project, "video_model", None) or "").strip()
         for idx, shot in enumerate(sorted(project.shots, key=lambda s: s.shot_no)):
             await _ensure_not_cancelled(project_id)
             script = (getattr(shot, "segment_script", "") or shot.video_prompt or "").strip()
@@ -1492,6 +1504,7 @@ async def _video_stage(project_id: int) -> None:
                 resolution=resolution,
                 ratio=ratio,
                 generate_audio=generate_audio,
+                model=video_model,
             )
             shot.video_url = local_video
             shot.status = ShotStatus.VIDEO_READY
@@ -1768,6 +1781,8 @@ async def regen_shot_image(project_id: int, shot_id: int) -> None:
             project_id=project_id,
             shot_no=shot.shot_no,
             size=_image_size_for(project),
+            model=(getattr(project, "image_model", None) or "").strip(),
+            aspect_ratio=_project_output_ratio(project) or None,
         )
         shot.image_url = img.local_url
         shot.image_ark_url = img.remote_url
@@ -1835,6 +1850,7 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
             resolution=resolution,
             ratio=_project_output_ratio(project) or cfg.ark_video_ratio,
             generate_audio=generate_audio,
+            model=(getattr(project, "video_model", None) or "").strip(),
         )
         shot.video_url = local_video
         shot.status = ShotStatus.VIDEO_READY

@@ -108,6 +108,11 @@ async def execute_task_run(task_id: int) -> None:
                 if isinstance(result, dict) and result.get("cancelled"):
                     await _mark_cancelled(db, task)
                     return
+                # handler 以 {ok:false} 返回时须记失败，否则前端只能看到空的「生图失败」
+                if isinstance(result, dict) and result.get("ok") is False:
+                    err_text = str(result.get("error") or "").strip() or "任务执行失败"
+                    await _fail_task(db, task, RuntimeError(err_text))
+                    return
                 await _complete_task(db, task, result or {"ok": True})
     except asyncio.CancelledError:
         async with AsyncSessionLocal() as db:
@@ -154,12 +159,14 @@ async def _complete_task(db, task, result: dict) -> None:
 
 # 把任务收敛到失败态。
 async def _fail_task(db, task, exc: Exception) -> None:
+    from app.services.exc_format import format_exception_message
+
     now = datetime.now(UTC)
     step = task.steps[0] if task.steps else None
     set_task_step_state(task, step, status="failed", now=now)
     task.status = "failed"
     task.error_code = type(exc).__name__
-    task.error_message = str(exc)[:500]
+    task.error_message = format_exception_message(exc, fallback="任务执行失败", limit=500)
     task.finished_at = now
     await append_task_event(
         db,
@@ -169,6 +176,8 @@ async def _fail_task(db, task, exc: Exception) -> None:
         phase=task.current_step_key,
         message=task.error_message,
     )
+    # 资产生图/视频：同步写回 asset.params.generation，避免前端只看到空的「生图失败」
+    await _fail_drama_asset_generation_if_needed(db, task, task.error_message or str(exc))
     if task.fragment_id:
         from app.models_drama import DramaEpisodeFragment
         from app.services.drama.generation import build_failed_generation_params
@@ -251,8 +260,9 @@ async def _fail_drama_asset_generation_if_needed(db, task, error: str) -> None:
     asset = await db.get(DramaAsset, int(task.asset_id))
     if not asset:
         return
+    msg = (error or "").strip() or "生成失败"
     params = dict(asset.params or {})
-    params["generation"] = {"status": "failed", "error": error[:400]}
+    params["generation"] = {"status": "failed", "error": msg[:400]}
     asset.params = params
 
 

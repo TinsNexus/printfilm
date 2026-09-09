@@ -14,22 +14,27 @@ type BillingAlertItem = {
 
 /** 轮询待展示的用户额度告警并弹窗提示。 */
 export default function BillingAlertHost() {
+  // 在发起 pending 请求前就上锁，避免 focus/interval/StrictMode 并发重入
   const showingRef = useRef(false)
 
   const checkAlerts = useCallback(async () => {
     if (!localStorage.getItem('token') || showingRef.current) return
+    showingRef.current = true
     try {
       const res = await api.billingAlertsPending()
       const items = (res.items ?? []) as BillingAlertItem[]
       if (!items.length) return
-      showingRef.current = true
       for (const item of items) {
         await dialog.alert({
           title: item.title || '消费提醒',
           message: item.message,
           confirmText: '知道了',
         })
-        await api.billingAlertAck(item.id)
+        try {
+          await api.billingAlertAck(item.id)
+        } catch {
+          // 已确认或并发 ack 导致 404 时忽略，避免反复重试刷屏
+        }
       }
     } catch {
       // 未登录或网络异常时静默跳过

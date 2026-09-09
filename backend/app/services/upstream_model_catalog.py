@@ -9,9 +9,12 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.ark_model_catalog import ARK_DEFAULT_BASE, list_ark_models
+from app.services.kie_catalog import kie_upstream_catalog
 from app.services.model_routing_config import infer_model_capability, normalize_model_name
 
 logger = logging.getLogger(__name__)
+
+KIE_DEFAULT_BASE = "https://api.kie.ai"
 
 
 def _model_id(item: dict[str, Any]) -> str:
@@ -50,6 +53,8 @@ async def _resolve_channel_credentials(
 
     if proto == "ark" and not base:
         base = ARK_DEFAULT_BASE.rstrip("/")
+    if proto == "kie" and not base:
+        base = KIE_DEFAULT_BASE.rstrip("/")
     return proto, base, key
 
 
@@ -119,6 +124,12 @@ async def list_upstream_models(
 
     if proto == "volc_tts":
         raise RuntimeError("豆包 TTS 暂不支持从上游拉取模型目录，请手动填写 speaker / 音色 ID")
+
+    if proto == "kie":
+        if not key:
+            raise RuntimeError("请先填写 Kie API Key，或使用已保存密钥的渠道")
+        rows = kie_upstream_catalog(capability=capability if capability not in {"", "all"} else "all")
+        return [{"id": r["id"], "label": r["label"], "capability": r["capability"]} for r in rows]
 
     if proto == "ark" or "volces.com" in base.lower():
         return await list_ark_models(

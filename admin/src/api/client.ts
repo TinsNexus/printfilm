@@ -627,6 +627,7 @@ export type AdminModelSettings = {
   billing_llm_per_m: number;
   billing_seedream_per_m: number;
   billing_tts_per_m: number;
+  billing_kie_fen_per_credit: number;
   billing_est_llm_tokens: number;
   billing_est_seedream_tokens: number;
   billing_est_tts_tokens: number;
@@ -670,8 +671,8 @@ export type AdminRoutingChannel = {
   base_url: string;
   api_key: string;
   has_api_key: boolean;
-  api_format: "openai" | "ark";
-  protocol: "auto" | "openai" | "ark" | "volc_tts";
+  api_format: "openai" | "ark" | "kie";
+  protocol: "auto" | "openai" | "ark" | "volc_tts" | "kie";
   models: string[];
   enabled: boolean;
   sort_order: number;

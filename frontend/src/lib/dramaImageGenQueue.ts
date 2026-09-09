@@ -1,4 +1,4 @@
-/** 漫剧资产生图队列：入队即提交后端 Worker，刷新后可从资产状态恢复 */
+/** 漫剧资产生图：提交后立刻轮询，成功后用新 URL 实时回显（不排队提交） */
 import { dramaApi, type DramaAsset } from '../api/drama'
 import type { ImageGenerationOptions } from './dramaGenerationOptions'
 import { syncImageJobToUnified } from './dramaGenQueue'
@@ -28,20 +28,23 @@ type EnqueueInput = {
   options?: Partial<ImageGenerationOptions>
   /** 仅恢复轮询（后端已在 generating，不再重复 POST） */
   resumeOnly?: boolean
+  /** 入队/状态变化时回写资产（用于 UI 即时显示 generating / 新图） */
+  onAssetUpdate?: (asset: DramaAsset) => void
 }
 
 type InternalJob = DramaImageGenJob & {
   resumeOnly: boolean
   taskId?: number
+  baselineUrl: string
+  onAssetUpdate?: (asset: DramaAsset) => void
   resolve: (asset: DramaAsset) => void
   reject: (err: Error) => void
 }
 
-/* 前端同时提交/轮询几路；真正执行在任务平台 Worker */
-const MAX_SUBMIT_CONCURRENT = 3
-const MAX_POLL_CONCURRENT = 6
+/* 轮询可多路并行；提交不再限流排队，点了就 POST */
+const MAX_POLL_CONCURRENT = 12
 const DONE_RETENTION_MS = 45_000
-const POLL_INTERVAL_MS = 2000
+const POLL_INTERVAL_MS = 1500
 const POLL_TIMEOUT_MS = 10 * 60 * 1000
 
 /** 对外暴露（文案用） */
@@ -173,55 +176,90 @@ function readGenerationStatus(asset: DramaAsset): string {
   return String(gen?.status || '')
 }
 
-// 轮询直到资产生图结束；generating 时回调以便 UI 切到「生成中」
+// 资产当前预览 URL
+function assetMediaUrl(asset: DramaAsset): string {
+  return String(asset.url || asset.cover || '').trim()
+}
+
+/**
+ * 轮询直到本次生图真正结束。
+ * 有旧图时必须见到 queued/generating，或 URL 相对基线变化，避免秒回旧图当成功。
+ */
 async function waitForAssetImage(
   projectId: number,
   assetId: number,
+  baselineUrl: string,
   onRemoteStatus?: (status: string) => void,
+  onAssetUpdate?: (asset: DramaAsset) => void,
 ): Promise<DramaAsset> {
   const started = Date.now()
+  let sawInFlight = false
+  let lastNotifiedUrl = baselineUrl
+
   while (Date.now() - started < POLL_TIMEOUT_MS) {
     const list = await dramaApi.listAssets(projectId)
     const latest = list.find((a) => a.id === assetId)
     if (!latest) throw new Error('资产不存在')
+
     const status = readGenerationStatus(latest)
+    const currentUrl = assetMediaUrl(latest)
     onRemoteStatus?.(status)
-    if ((latest.url || latest.cover) && status !== 'generating' && status !== 'queued') {
-      return latest
+
+    if (status === 'queued' || status === 'generating') {
+      sawInFlight = true
+      if (currentUrl !== lastNotifiedUrl) {
+        lastNotifiedUrl = currentUrl
+        onAssetUpdate?.(latest)
+      }
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
+      continue
     }
+
     if (status === 'failed') {
       const gen = (latest.params || {}).generation as { error?: string } | undefined
-      throw new Error(String(gen?.error || '生图失败'))
+      const raw = String(gen?.error || '').trim()
+      throw new Error(raw || '生图失败')
     }
-    if (status === 'done' && (latest.url || latest.cover)) {
+
+    const urlChanged = Boolean(currentUrl) && currentUrl !== baselineUrl
+    const finishedFresh =
+      status === 'done' &&
+      Boolean(currentUrl) &&
+      (sawInFlight || urlChanged || !baselineUrl)
+
+    if (finishedFresh) {
+      onAssetUpdate?.(latest)
       return latest
     }
-    if (!['queued', 'generating', ''].includes(status) && (latest.url || latest.cover)) {
-      return latest
-    }
+
+    // 仍是旧图且未进入过 in-flight：继续等（POST 后状态可能尚未可见）
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
   }
   throw new Error('生图超时，请刷新后重试')
 }
 
-/*
- * waitingSubmit 等待 POST 入队的任务
- * waitingPoll 已提交、等待轮询槽位的任务
- */
-const waitingSubmit: InternalJob[] = []
-let submittingCount = 0
 const waitingPoll: InternalJob[] = []
 
 // 有限并发轮询后端结果
 async function pollJob(job: InternalJob) {
   pollingCount += 1
   try {
-    const asset = await waitForAssetImage(job.projectId, job.assetId, (remoteStatus) => {
-      if (remoteStatus === 'generating' && job.status !== 'running') {
-        job.status = 'running'
-        emit()
-      }
-    })
+    const asset = await waitForAssetImage(
+      job.projectId,
+      job.assetId,
+      job.baselineUrl,
+      (remoteStatus) => {
+        if (remoteStatus === 'generating' && job.status !== 'running') {
+          job.status = 'running'
+          emit()
+        }
+        if (remoteStatus === 'queued' && job.status === 'running') {
+          job.status = 'queued'
+          emit()
+        }
+      },
+      job.onAssetUpdate,
+    )
     job.status = 'done'
     job.finishedAt = Date.now()
     emit()
@@ -256,9 +294,8 @@ function pumpPoll() {
   })
 }
 
-// 有限并发 POST 入队
+// 立即 POST 入队（不限流），再进入轮询
 async function submitJob(job: InternalJob) {
-  submittingCount += 1
   try {
     if (!job.resumeOnly) {
       const resp = await dramaApi.generateImage({
@@ -273,6 +310,13 @@ async function submitJob(job: InternalJob) {
         resolution: job.options.resolution,
       })
       job.taskId = resp.task_id != null ? Number(resp.task_id) : undefined
+      const queuedAsset = (resp as { asset?: DramaAsset }).asset
+      if (queuedAsset) {
+        job.onAssetUpdate?.(queuedAsset)
+      }
+    }
+    if (job.status === 'queued') {
+      job.status = 'running'
     }
     waitingPoll.push(job)
     pumpPoll()
@@ -284,39 +328,13 @@ async function submitJob(job: InternalJob) {
     emit()
     job.reject(err instanceof Error ? err : new Error(message))
   } finally {
-    submittingCount -= 1
-    pumpSubmit()
     emit()
   }
-}
-
-// 调度入队提交槽位
-function pumpSubmit() {
-  queueMicrotask(() => {
-    while (submittingCount < MAX_SUBMIT_CONCURRENT && waitingSubmit.length > 0) {
-      const next = waitingSubmit.shift()
-      if (!next) break
-      if (next.status === 'failed' || next.status === 'done') continue
-      void submitJob(next)
-    }
-    emit()
-  })
-}
-
-// 加入本地队列后等待提交/轮询
-function startJob(job: InternalJob) {
-  if (job.resumeOnly) {
-    waitingPoll.push(job)
-    pumpPoll()
-    return
-  }
-  waitingSubmit.push(job)
-  pumpSubmit()
 }
 
 /**
- * 将资产生图加入队列：立刻 POST 到后端 Worker，再本地轮询结果。
- * 同资产已在排队/生成中时复用同一 Promise。
+ * 将资产生图加入队列：立刻 POST 到后端，再本地轮询结果。
+ * 同资产已在排队/生成中时复用同一 Promise（避免重复打上游）。
  */
 export function enqueueDramaImageGen(input: EnqueueInput): Promise<DramaAsset> {
   const existing = jobs.find(
@@ -325,6 +343,13 @@ export function enqueueDramaImageGen(input: EnqueueInput): Promise<DramaAsset> {
       (job.status === 'queued' || job.status === 'running'),
   )
   if (existing) {
+    if (input.onAssetUpdate) {
+      const prev = existing.onAssetUpdate
+      existing.onAssetUpdate = (asset) => {
+        prev?.(asset)
+        input.onAssetUpdate?.(asset)
+      }
+    }
     return new Promise((resolve, reject) => {
       const prevResolve = existing.resolve
       const prevReject = existing.reject
@@ -351,12 +376,29 @@ export function enqueueDramaImageGen(input: EnqueueInput): Promise<DramaAsset> {
       status: 'queued',
       createdAt: Date.now(),
       resumeOnly: Boolean(input.resumeOnly),
+      baselineUrl: '',
+      onAssetUpdate: input.onAssetUpdate,
       resolve,
       reject,
     }
     jobs = [...jobs, job]
     emit()
-    startJob(job)
+    // 先拉一次当前图作基线，再提交/轮询，避免旧图被当成成功
+    void (async () => {
+      try {
+        const list = await dramaApi.listAssets(input.projectId)
+        const current = list.find((a) => a.id === input.assetId)
+        job.baselineUrl = current ? assetMediaUrl(current) : ''
+      } catch {
+        job.baselineUrl = ''
+      }
+      if (job.resumeOnly) {
+        waitingPoll.push(job)
+        pumpPoll()
+        return
+      }
+      void submitJob(job)
+    })()
   })
 }
 
@@ -367,6 +409,7 @@ export function enqueueDramaImageGen(input: EnqueueInput): Promise<DramaAsset> {
 export function resumeDramaImageGensFromAssets(
   projectId: number,
   assets: DramaAsset[],
+  onAssetUpdate?: (asset: DramaAsset) => void,
 ): void {
   for (const asset of assets) {
     if (asset.project_id !== projectId) continue
@@ -382,6 +425,7 @@ export function resumeDramaImageGensFromAssets(
       assetType: asset.type,
       prompt: '',
       resumeOnly: true,
+      onAssetUpdate,
     }).catch(() => {
       /* 面板会显示失败；页面层可再 toast */
     })

@@ -41,8 +41,12 @@ const PROTOCOL_LABELS: Record<string, string> = {
   auto: "自动",
   openai: "OpenAI 兼容",
   ark: "ARK（生图/视频）",
+  kie: "Kie.ai（主流图/视频）",
   volc_tts: "豆包 TTS",
 };
+
+export const KIE_CHANNEL_ID = "kie-default";
+export const KIE_BASE = "https://api.kie.ai";
 
 // 与后端 infer_model_capability 对齐，用于渠道能力徽标
 function inferCapability(model: string, protocol: string): Capability {
@@ -50,13 +54,34 @@ function inferCapability(model: string, protocol: string): Capability {
   const proto = (protocol || "auto").toLowerCase();
   if (proto === "openai") return "text";
   if (proto === "volc_tts") return "audio";
-  if (!mid) return "text";
+  if (!mid) {
+    if (proto === "kie") return "image";
+    return "text";
+  }
   if (mid.includes("tts") || mid.startsWith("zh_") || mid.includes("speaker") || mid.startsWith("s_")) {
     return "audio";
   }
-  if (mid.includes("seedance") || mid.includes("video") || mid.includes("i2v")) return "video";
-  if (mid.includes("seedream") || mid.includes("dream") || mid.includes("image")) return "image";
-  if (proto === "ark") return "image";
+  if (
+    mid.includes("seedance") ||
+    mid.includes("veo") ||
+    mid.includes("video") ||
+    mid.includes("i2v") ||
+    mid.startsWith("kie-veo") ||
+    mid.startsWith("kie-seedance")
+  ) {
+    return "video";
+  }
+  if (
+    mid.includes("seedream") ||
+    mid.includes("nano-banana") ||
+    mid.includes("banana") ||
+    mid.includes("dream") ||
+    mid.includes("image") ||
+    mid.startsWith("kie-")
+  ) {
+    return "image";
+  }
+  if (proto === "ark" || proto === "kie") return "image";
   return "text";
 }
 
@@ -66,6 +91,10 @@ function channelCapabilities(channel: AdminRoutingSettings["system_channels"][nu
     caps.add(inferCapability(model, channel.protocol));
   }
   if (caps.size === 0 && channel.protocol === "ark") caps.add("image");
+  if (caps.size === 0 && channel.protocol === "kie") {
+    caps.add("image");
+    caps.add("video");
+  }
   if (caps.size === 0 && channel.protocol === "volc_tts") caps.add("audio");
   if (caps.size === 0) caps.add("text");
   return Array.from(caps);
@@ -206,6 +235,10 @@ export function RoutingSettingsPanel() {
   function removeChannel(channelId: string) {
     if (channelId === ARK_VOLC_CHANNEL_ID) {
       toast.error("火山方舟媒体渠道请通过下方专区管理，不可直接删除");
+      return;
+    }
+    if (channelId === KIE_CHANNEL_ID) {
+      toast.error("Kie.ai 渠道为系统引导渠道，可关闭开关，不可删除");
       return;
     }
     setData((prev) =>
@@ -460,7 +493,9 @@ export function RoutingSettingsPanel() {
           title={`渠道配置${selectedChannel ? `（当前: ${selectedChannel.name}）` : ""}`}
           description="密钥留空保存不修改；可用模型从上游拉取"
           actions={
-            selectedChannel && selectedChannel.id !== ARK_VOLC_CHANNEL_ID ? (
+            selectedChannel &&
+            selectedChannel.id !== ARK_VOLC_CHANNEL_ID &&
+            selectedChannel.id !== KIE_CHANNEL_ID ? (
               <button
                 type="button"
                 className="admin-btn admin-btn-danger settings-mini-btn"
@@ -485,17 +520,35 @@ export function RoutingSettingsPanel() {
                 <select
                   className="settings-select"
                   value={selectedChannel.protocol}
-                  onChange={(e) =>
-                    updateChannel(selectedChannel.id, {
-                      protocol: e.target.value as AdminRoutingSettings["system_channels"][number]["protocol"],
+                  disabled={selectedChannel.id === KIE_CHANNEL_ID || selectedChannel.id === ARK_VOLC_CHANNEL_ID}
+                  onChange={(e) => {
+                    const next = e.target.value as AdminRoutingSettings["system_channels"][number]["protocol"];
+                    const patch: Partial<AdminRoutingSettings["system_channels"][number]> = {
+                      protocol: next,
                       api_format:
-                        e.target.value === "ark"
+                        next === "ark"
                           ? "ark"
-                          : selectedChannel.api_format === "ark"
-                            ? "openai"
-                            : selectedChannel.api_format,
-                    })
-                  }
+                          : next === "kie"
+                            ? "kie"
+                            : selectedChannel.api_format === "ark" || selectedChannel.api_format === "kie"
+                              ? "openai"
+                              : selectedChannel.api_format,
+                    };
+                    if (next === "kie" && !selectedChannel.base_url.trim()) {
+                      patch.base_url = KIE_BASE;
+                    }
+                    if (next === "kie" && selectedChannel.models.length === 0) {
+                      patch.models = [
+                        "kie-seedream-5",
+                        "kie-nano-banana-2",
+                        "kie-nano-banana",
+                        "kie-seedance-2.5",
+                        "kie-veo3-fast",
+                        "kie-veo3",
+                      ];
+                    }
+                    updateChannel(selectedChannel.id, patch);
+                  }}
                 >
                   {Object.entries(PROTOCOL_LABELS).map(([value, label]) => (
                     <option key={value} value={value}>
@@ -509,7 +562,13 @@ export function RoutingSettingsPanel() {
                   className="settings-input"
                   value={selectedChannel.base_url}
                   onChange={(e) => updateChannel(selectedChannel.id, { base_url: e.target.value })}
-                  placeholder={selectedChannel.protocol === "ark" ? ARK_BASE : "https://api.example.com/v1"}
+                  placeholder={
+                    selectedChannel.protocol === "ark"
+                      ? ARK_BASE
+                      : selectedChannel.protocol === "kie"
+                        ? KIE_BASE
+                        : "https://api.example.com/v1"
+                  }
                 />
               </LabeledControl>
               <LabeledControl
@@ -545,7 +604,9 @@ export function RoutingSettingsPanel() {
                 hint={
                   selectedChannel.protocol === "volc_tts"
                     ? "TTS 请手动填写音色 ID"
-                    : "点击「从上游拉取」后勾选；也可手动追加"
+                    : selectedChannel.protocol === "kie"
+                      ? "拉取内置主流图/视频目录后勾选；也可手动追加 kie-* id"
+                      : "点击「从上游拉取」后勾选；也可手动追加"
                 }
               >
                 <div className="settings-model-toolbar">

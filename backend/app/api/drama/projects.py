@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.deps import get_current_user
-from app.models import User
-from app.models_drama import DramaEpisode, DramaProject, DramaScript
+from app.models import UsageEvent, User
+from app.models_drama import DramaAsset, DramaEpisode, DramaProject, DramaScript
+from app.models_tasks import TaskRun
 from app.schemas_drama import (
     DramaProjectCreate,
     DramaProjectListItem,
@@ -28,7 +29,7 @@ from app.services.drama.usage_stats import (
     get_drama_project_usage,
 )
 from app.services.drama.workflow import build_project_params, resolve_drama_workflow
-from app.services.tasks.service import rebalance_project_fragment_video_queue
+from app.services.tasks.service import cancel_tasks_for_scope, rebalance_project_fragment_video_queue
 
 router = APIRouter()
 
@@ -202,7 +203,37 @@ async def delete_project(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
+    """删除漫剧项目；先解绑任务/账单外键，避免 FK 阻塞 CASCADE。"""
     project = await get_owned_drama_project(db, project_id, user)
+    await cancel_tasks_for_scope(db, user.id, drama_project_id=project_id)
+
+    # 保留任务与用量历史，仅清空指向本项目及子表的外键
+    await db.execute(
+        update(UsageEvent)
+        .where(UsageEvent.drama_project_id == project_id)
+        .values(drama_project_id=None)
+    )
+    await db.execute(
+        update(TaskRun)
+        .where(TaskRun.drama_project_id == project_id)
+        .values(
+            drama_project_id=None,
+            script_id=None,
+            episode_id=None,
+            fragment_id=None,
+            asset_id=None,
+        )
+    )
+    # 兜底：drama_project_id 为空但仍挂在子表上的任务
+    ep_ids = select(DramaEpisode.id).where(DramaEpisode.project_id == project_id)
+    asset_ids = select(DramaAsset.id).where(DramaAsset.project_id == project_id)
+    script_ids = select(DramaScript.id).where(DramaScript.project_id == project_id)
+    await db.execute(
+        update(TaskRun).where(TaskRun.episode_id.in_(ep_ids)).values(episode_id=None, fragment_id=None)
+    )
+    await db.execute(update(TaskRun).where(TaskRun.asset_id.in_(asset_ids)).values(asset_id=None))
+    await db.execute(update(TaskRun).where(TaskRun.script_id.in_(script_ids)).values(script_id=None))
+
     await db.delete(project)
     await db.commit()
     return {"ok": True}

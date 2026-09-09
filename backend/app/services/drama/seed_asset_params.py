@@ -9,7 +9,7 @@ DEFAULT_APPEARANCE_NAME = "基础形象"
 
 # DEFAULT_IMAGE_GENERATION 默认生图参数（与前端 Seedream 默认对齐）
 DEFAULT_IMAGE_GENERATION = {
-    "modelId": "seedream-5.0",
+    "modelId": "kie-seedream-5",
     "aspectRatio": "3:4",
     "resolution": "3K",
 }

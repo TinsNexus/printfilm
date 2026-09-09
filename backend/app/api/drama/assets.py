@@ -15,7 +15,13 @@ from app.database import get_db
 from app.deps import get_current_user
 from app.models import User
 from app.models_drama import DramaAsset, DramaProject
-from app.schemas_drama import DramaAssetCreate, DramaAssetOut, DramaAssetUpdate, SeedAssetsFromScriptOut
+from app.schemas_drama import (
+    DramaActivateImageVersionRequest,
+    DramaAssetCreate,
+    DramaAssetOut,
+    DramaAssetUpdate,
+    SeedAssetsFromScriptOut,
+)
 from app.services.drama.access import get_owned_drama_project
 from app.services.billing import run_billed_ephemeral
 from app.services.billing.http import http_exception_for_value_error
@@ -106,6 +112,39 @@ async def create_asset(
     return DramaAssetOut.model_validate(asset)
 
 
+def _merge_asset_params(prev: dict | None, incoming: dict | None) -> dict:
+    """合并资产 params：客户端全量写回时保留 image_versions / 进行中的 generation。"""
+    base = dict(prev or {}) if isinstance(prev, dict) else {}
+    patch = dict(incoming or {}) if isinstance(incoming, dict) else {}
+    out = {**base, **patch}
+
+    prev_gen = base.get("generation") if isinstance(base.get("generation"), dict) else None
+    prev_status = str((prev_gen or {}).get("status") or "").lower()
+    if prev_status in {"queued", "running", "generating"}:
+        # 生图进行中禁止被陈旧客户端状态覆盖
+        out["generation"] = prev_gen
+
+    prev_vers = base.get("image_versions")
+    inc_vers = patch.get("image_versions") if "image_versions" in patch else None
+    if isinstance(prev_vers, list) and prev_vers:
+        if not isinstance(inc_vers, list):
+            out["image_versions"] = prev_vers
+        else:
+            by_id: dict[str, dict] = {}
+            order: list[str] = []
+            for row in [*prev_vers, *inc_vers]:
+                if not isinstance(row, dict):
+                    continue
+                vid = str(row.get("id") or "").strip()
+                if not vid:
+                    continue
+                if vid not in by_id:
+                    order.append(vid)
+                by_id[vid] = row
+            out["image_versions"] = [by_id[vid] for vid in order][:8]
+    return out
+
+
 @router.patch("/assets/{asset_id}", response_model=DramaAssetOut)
 async def update_asset(
     asset_id: int,
@@ -125,7 +164,14 @@ async def update_asset(
         raise HTTPException(status_code=404, detail="资产不存在")
     for field in ("type", "asset_type", "name", "cover", "url", "params"):
         val = getattr(body, field)
-        if val is not None:
+        if val is None:
+            continue
+        if field == "params" and isinstance(val, dict):
+            asset.params = _merge_asset_params(
+                asset.params if isinstance(asset.params, dict) else {},
+                val,
+            )
+        else:
             setattr(asset, field, val)
     await db.commit()
     await db.refresh(asset)
@@ -154,6 +200,11 @@ async def upload_asset_media(
     asset = result.scalar_one_or_none()
     if not asset:
         raise HTTPException(status_code=404, detail="资产不存在")
+
+    gen = (asset.params or {}).get("generation") if isinstance(asset.params, dict) else None
+    status = str((gen or {}).get("status") or "").lower() if isinstance(gen, dict) else ""
+    if status in {"queued", "running", "generating"}:
+        raise HTTPException(status_code=409, detail="形象生成中，请稍后再更换图片")
 
     content_type = (file.content_type or "").lower()
     allowed = {
@@ -205,6 +256,9 @@ async def upload_asset_media(
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"OSS 上传失败：{exc}") from exc
 
+    from app.services.drama.generation import archive_asset_image_version
+
+    archive_asset_image_version(asset, source="upload")
     asset.url = url
     asset.cover = url
     if not asset.asset_type or asset.asset_type == "none":
@@ -216,6 +270,40 @@ async def upload_asset_media(
     else:
         params["generation"] = {"status": "done", "source": "upload"}
     asset.params = params
+    await db.commit()
+    await db.refresh(asset)
+    return DramaAssetOut.model_validate(asset)
+
+
+@router.post("/assets/{asset_id}/activate_image_version", response_model=DramaAssetOut)
+async def activate_image_version(
+    asset_id: int,
+    body: DramaActivateImageVersionRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DramaAssetOut:
+    """将资产形象历史版本设为当前。"""
+    from app.services.drama.generation import activate_asset_image_version
+
+    result = await db.execute(
+        select(DramaAsset)
+        .join(DramaProject, DramaAsset.project_id == DramaProject.id)
+        .where(DramaAsset.id == asset_id, DramaProject.user_id == user.id)
+    )
+    asset = result.scalar_one_or_none()
+    if not asset:
+        raise HTTPException(status_code=404, detail="资产不存在")
+
+    gen = (asset.params or {}).get("generation") if isinstance(asset.params, dict) else None
+    status = str((gen or {}).get("status") or "").lower() if isinstance(gen, dict) else ""
+    if status in {"queued", "running", "generating"}:
+        raise HTTPException(status_code=409, detail="形象生成中，无法切换历史版本")
+
+    try:
+        activate_asset_image_version(asset, body.version_id.strip())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     await db.commit()
     await db.refresh(asset)
     return DramaAssetOut.model_validate(asset)

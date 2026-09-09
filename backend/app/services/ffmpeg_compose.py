@@ -305,6 +305,47 @@ def extract_video_poster_frame(
     return True
 
 
+def extract_video_last_frame(video: str | Path, dest: Path) -> bool:
+    """从视频抽取接近尾帧的静帧，供镜间衔接；成功返回 True。"""
+    src = Path(video)
+    if not src.exists():
+        logger.warning("抽尾帧失败：视频不存在 path=%s", src)
+        return False
+    duration = probe_duration(src)
+    if duration is not None and duration > 0.1:
+        # 距片尾约 0.08s，避免精确 seek 到 EOF 抽空帧
+        return extract_video_poster_frame(src, dest, at_sec=max(0.0, float(duration) - 0.08))
+    try:
+        ffmpeg = _which("ffmpeg")
+    except RuntimeError:
+        logger.warning("抽尾帧失败：未找到 ffmpeg")
+        return False
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    # 时长未知时用 sseof 从末尾回退
+    cmd = [
+        ffmpeg,
+        "-y",
+        "-sseof",
+        "-0.1",
+        "-i",
+        str(src),
+        "-frames:v",
+        "1",
+        "-q:v",
+        "2",
+        str(dest),
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0 or not dest.exists() or dest.stat().st_size <= 0:
+        logger.warning(
+            "抽尾帧失败 path=%s stderr=%s",
+            src,
+            (proc.stderr or "")[-500:],
+        )
+        return False
+    return True
+
+
 def _canvas(opts: ComposeOptions) -> tuple[int, int]:
     w, h = _RATIO_SIZE.get(opts.ratio, _RATIO_SIZE["16:9"])
     if opts.resolution_mode == "hd":

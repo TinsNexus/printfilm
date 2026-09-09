@@ -14,10 +14,17 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import User
-from app.models_drama import DramaEpisode, DramaEpisodeFragment, DramaFragmentAssetRef
+from app.models_drama import (
+    DramaEpisode,
+    DramaEpisodeFragment,
+    DramaFragmentAssetRef,
+    DramaProject,
+)
 from app.schemas_drama import (
     DramaActivateVideoVersionRequest,
     DramaComposeEpisodeRequest,
+    DramaConfirmEpisodeOut,
+    DramaConfirmEpisodeRequest,
     DramaEpisodeOut,
     DramaEpisodeUpdate,
     DramaFragmentOut,
@@ -27,6 +34,7 @@ from app.schemas_drama import (
 )
 from app.schemas_tasks import TaskCreateRequest, TaskTargetBind
 from app.services.agent.compose import parse_skill_ids
+from app.services.billing import run_billed_ephemeral
 from app.services.billing.http import http_exception_for_value_error
 from app.services.drama.access import (
     count_user_inflight_fragment_video_tasks,
@@ -41,17 +49,27 @@ from app.services.drama.generation import (
     activate_fragment_video_version,
     collect_active_fragment_ids_from_tasks,
     fragment_generation_status,
+    overlay_fragment_status_with_active_task,
+    ensure_fragment_last_frame_url,
     project_link_last_frame_enabled,
+    read_fragment_last_frame_url,
     reconcile_orphaned_fragment_generations,
 )
 from app.services.drama.fragment_content_duration import resolve_seedance_duration_from_content
+from app.services.drama.billing_util import record_seed_assets_llm_usage
 from app.services.drama.jobs import (
     cancel_all_episode_video_jobs,
     cancel_episode_video_jobs,
     clear_episode_video_cancelled,
+    reconcile_applied_fragment_video_tasks,
 )
 from app.config import get_settings
-from app.services.drama.seed import seed_episodes_from_script
+from app.services.drama.seed import (
+    require_confirmable_episode_body,
+    seed_assets_from_script,
+    seed_episodes_from_script,
+    seed_single_episode_from_script,
+)
 from app.services.tasks.service import (
     cancel_fragment_video_tasks_for_fragments,
     cancel_tasks_for_scope,
@@ -171,6 +189,12 @@ async def list_episodes(
     user: User = Depends(get_current_user),
 ) -> list[DramaEpisodeOut]:
     await get_owned_drama_project(db, project_id, user)
+    from app.services.drama.seed import merge_duplicate_episodes_by_number
+
+    # 打开分镜页时顺手合并同号重复行
+    merged = await merge_duplicate_episodes_by_number(db, project_id)
+    if merged:
+        await db.commit()
     result = await db.execute(
         select(DramaEpisode)
         .where(DramaEpisode.project_id == project_id)
@@ -180,6 +204,12 @@ async def list_episodes(
         .order_by(DramaEpisode.id.asc())
     )
     episodes = list(result.scalars().all())
+    episodes.sort(
+        key=lambda ep: (
+            int((ep.params or {}).get("episodeNumber") or 0) if isinstance(ep.params, dict) else 0,
+            int(ep.id or 0),
+        )
+    )
     active_tasks = await list_active_tasks_for_owner(db, user.id, drama_project_id=project_id)
     by_episode_id: dict[int, list] = {}
     for task in active_tasks:
@@ -189,6 +219,166 @@ async def list_episodes(
     for ep in episodes:
         ep.active_tasks = _expand_episode_task_items(by_episode_id.get(int(ep.id), []))
     return [_episode_out(ep) for ep in episodes]
+
+
+@router.post("/episodes/seed_from_script", response_model=list[DramaEpisodeOut])
+async def seed_episodes(
+    project_id: int,
+    force: bool = False,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[DramaEpisodeOut]:
+    project = await get_owned_drama_project(db, project_id, user, with_script=True)
+    logger.info(
+        "按剧本切分镜 project_id=%s force=%s user_id=%s",
+        project_id,
+        force,
+        user.id,
+    )
+    try:
+        await seed_episodes_from_script(db, project, force=force)
+    except ValueError as exc:
+        logger.warning("切分镜失败 project_id=%s err=%s", project_id, exc)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    result = await db.execute(
+        select(DramaEpisode)
+        .where(DramaEpisode.project_id == project_id)
+        .options(
+            selectinload(DramaEpisode.fragments).selectinload(DramaEpisodeFragment.asset_references)
+        )
+        .order_by(DramaEpisode.id.asc())
+    )
+    episodes = result.scalars().all()
+    frag_total = sum(len(ep.fragments or []) for ep in episodes)
+    logger.info(
+        "切分镜完成 project_id=%s episodes=%s fragments=%s",
+        project_id,
+        len(episodes),
+        frag_total,
+    )
+    active_tasks = await list_active_tasks_for_owner(db, user.id, drama_project_id=project_id)
+    by_episode_id: dict[int, list] = {}
+    for task in active_tasks:
+        if task.episode_id is None:
+            continue
+        by_episode_id.setdefault(int(task.episode_id), []).append(task)
+    for episode in episodes:
+        episode.active_tasks = _expand_episode_task_items(by_episode_id.get(int(episode.id), []))
+    return [_episode_out(episode) for episode in episodes]
+
+
+@router.post("/episodes/confirm_from_script", response_model=DramaConfirmEpisodeOut)
+async def confirm_episode_from_script(
+    body: DramaConfirmEpisodeRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DramaConfirmEpisodeOut:
+    """确认一集剧本：增量抽取资产并只切该集分镜。"""
+    project = await get_owned_drama_project(db, body.project_id, user, with_script=True)
+    if not project.script:
+        raise HTTPException(status_code=400, detail="缺少剧本")
+    try:
+        require_confirmable_episode_body(project.script.episode_content, body.episode_number)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    locked = (
+        await db.execute(
+            select(DramaProject).where(DramaProject.id == project.id).with_for_update()
+        )
+    ).scalar_one()
+    params = dict(locked.params or {}) if isinstance(locked.params, dict) else {}
+    if str(params.get("assets_seed_status") or "") == "generating":
+        raise HTTPException(status_code=409, detail="资产抽取进行中，请稍后再确认")
+
+    params["assets_seed_status"] = "generating"
+    params["assets_seed_generating_at"] = datetime.now(UTC).isoformat()
+    params.pop("assets_seed_error", None)
+    locked.params = params
+    await db.commit()
+
+    created_count = 0
+    try:
+
+        async def _do_confirm():
+            project_inner = await get_owned_drama_project(
+                db, body.project_id, user, with_script=True
+            )
+            seed_result = await seed_assets_from_script(db, project_inner)
+            await record_seed_assets_llm_usage(db, user, body.project_id, seed_result)
+            project_after = await get_owned_drama_project(
+                db, body.project_id, user, with_script=True
+            )
+            episode = await seed_single_episode_from_script(
+                db, project_after, body.episode_number
+            )
+            return seed_result, episode
+
+        _task, pair = await run_billed_ephemeral(
+            db,
+            user,
+            domain="drama",
+            task_type="seed_assets",
+            executor=_do_confirm,
+            drama_project_id=body.project_id,
+            payload={
+                "sync": True,
+                "confirm_episode": True,
+                "episode_number": body.episode_number,
+            },
+            commit=False,
+        )
+        seed_result, episode = pair
+        created_count = int(seed_result.created_count or 0)
+        project = await get_owned_drama_project(db, body.project_id, user, with_script=True)
+        params = dict(project.params or {}) if isinstance(project.params, dict) else {}
+        params["assets_seed_status"] = "done"
+        params.pop("assets_seed_error", None)
+        params.pop("assets_seed_generating_at", None)
+        project.params = params
+        await db.commit()
+    except ValueError as exc:
+        project = await get_owned_drama_project(db, body.project_id, user, with_script=True)
+        params = dict(project.params or {}) if isinstance(project.params, dict) else {}
+        params["assets_seed_status"] = "failed"
+        params["assets_seed_error"] = str(exc)[:500]
+        params.pop("assets_seed_generating_at", None)
+        project.params = params
+        await db.commit()
+        raise http_exception_for_value_error(exc) from exc
+    except HTTPException:
+        project = await get_owned_drama_project(db, body.project_id, user, with_script=True)
+        params = dict(project.params or {}) if isinstance(project.params, dict) else {}
+        params["assets_seed_status"] = "failed"
+        params["assets_seed_error"] = "确认分集未完成"
+        params.pop("assets_seed_generating_at", None)
+        project.params = params
+        await db.commit()
+        raise
+    except Exception:
+        project = await get_owned_drama_project(db, body.project_id, user, with_script=True)
+        params = dict(project.params or {}) if isinstance(project.params, dict) else {}
+        params["assets_seed_status"] = "failed"
+        params["assets_seed_error"] = "确认分集失败"
+        params.pop("assets_seed_generating_at", None)
+        project.params = params
+        await db.commit()
+        raise
+
+    ep = await get_owned_episode(db, int(episode.id), user)
+    out = await _episode_out_with_tasks(db, user, ep)
+    logger.info(
+        "确认分集完成 project_id=%s episode_number=%s episode_id=%s assets_created=%s",
+        body.project_id,
+        body.episode_number,
+        ep.id,
+        created_count,
+    )
+    return DramaConfirmEpisodeOut(
+        episode=out,
+        assets_status="done",
+        created_count=created_count,
+    )
 
 
 @router.get("/episodes/{episode_id}", response_model=DramaEpisodeOut)
@@ -299,52 +489,6 @@ async def plan_episode_fragments(
     # 再取一次带 fragments 的 episode
     ep = await get_owned_episode(db, episode_id, user)
     return await _episode_out_with_tasks(db, user, ep)
-
-
-@router.post("/episodes/seed_from_script", response_model=list[DramaEpisodeOut])
-async def seed_episodes(
-    project_id: int,
-    force: bool = False,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
-) -> list[DramaEpisodeOut]:
-    project = await get_owned_drama_project(db, project_id, user, with_script=True)
-    logger.info(
-        "按剧本切分镜 project_id=%s force=%s user_id=%s",
-        project_id,
-        force,
-        user.id,
-    )
-    try:
-        await seed_episodes_from_script(db, project, force=force)
-    except ValueError as exc:
-        logger.warning("切分镜失败 project_id=%s err=%s", project_id, exc)
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    result = await db.execute(
-        select(DramaEpisode)
-        .where(DramaEpisode.project_id == project_id)
-        .options(
-            selectinload(DramaEpisode.fragments).selectinload(DramaEpisodeFragment.asset_references)
-        )
-        .order_by(DramaEpisode.id.asc())
-    )
-    episodes = result.scalars().all()
-    frag_total = sum(len(ep.fragments or []) for ep in episodes)
-    logger.info(
-        "切分镜完成 project_id=%s episodes=%s fragments=%s",
-        project_id,
-        len(episodes),
-        frag_total,
-    )
-    active_tasks = await list_active_tasks_for_owner(db, user.id, drama_project_id=project_id)
-    by_episode_id: dict[int, list] = {}
-    for task in active_tasks:
-        if task.episode_id is None:
-            continue
-        by_episode_id.setdefault(int(task.episode_id), []).append(task)
-    for episode in episodes:
-        episode.active_tasks = _expand_episode_task_items(by_episode_id.get(int(episode.id), []))
-    return [_episode_out(episode) for episode in episodes]
 
 
 @router.post("/episodes/{episode_id}/fragments", response_model=DramaEpisodeOut)
@@ -471,6 +615,35 @@ async def generate_episode(
             detail="所选分镜正在生成，请等待完成后再试",
         )
 
+    # 尾帧衔接：分次点生成时，上一镜必须已有尾帧（同批入队的连续镜可依赖串行等待）
+    if project_link_last_frame_enabled(project):
+        all_sorted = sorted(all_frags, key=lambda f: (int(f.sort_order or 0), int(f.id or 0)))
+        index_by_id = {int(f.id): i for i, f in enumerate(all_sorted) if f.id is not None}
+        idle_ids = {int(f.id) for f in idle_frags if f.id is not None}
+        for frag in idle_frags:
+            if frag.id is None:
+                continue
+            idx = index_by_id.get(int(frag.id))
+            if idx is None or idx <= 0:
+                continue
+            prev = all_sorted[idx - 1]
+            if prev.id is not None and int(prev.id) in idle_ids:
+                continue
+            prev_st = str(fragment_generation_status(prev).get("status") or "")
+            if prev_st in {"queued", "running", "generating"}:
+                raise HTTPException(
+                    status_code=409,
+                    detail="已开启尾帧衔接：上一镜仍在生成，请完成后再生成本镜",
+                )
+            prev_last = read_fragment_last_frame_url(prev)
+            if not prev_last:
+                prev_last = await ensure_fragment_last_frame_url(project, prev)
+            if not prev_last and not (prev.video or "").strip():
+                raise HTTPException(
+                    status_code=400,
+                    detail="已开启尾帧衔接：请先生成上一镜并等待尾帧就绪后，再点本镜生成",
+                )
+
     # 清除进程内「本集已取消」标记，避免旧取消态把新入队任务立刻作废
     clear_episode_video_cancelled(episode_id)
 
@@ -524,6 +697,7 @@ async def generate_episode(
                         "batch_index": index,
                         "replace_existing_video": has_video,
                         "duration_sec": duration_sec,
+                        "model_id": (body.model_id or "").strip() or None,
                     },
                     drama_project_id=ep.project_id,
                     episode_id=episode_id,
@@ -578,6 +752,14 @@ async def generate_status(
         drama_project_id=ep.project_id,
     )
     episode_tasks = [task for task in active_tasks if task.episode_id == episode_id]
+    await reconcile_applied_fragment_video_tasks(db, episode_tasks)
+    # 补完成后刷新本集仍活跃任务，避免前端继续看到僵尸 awaiting_poll
+    active_tasks = await list_active_tasks_for_owner(
+        db,
+        user.id,
+        drama_project_id=ep.project_id,
+    )
+    episode_tasks = [task for task in active_tasks if task.episode_id == episode_id]
     await reconcile_orphaned_fragment_generations(
         db,
         list(ep.fragments or []),
@@ -607,12 +789,27 @@ async def generate_status(
         .unique()
         .all()
     )
+    # 分镜 params 可能仍停在 queued，而任务已 awaiting_poll：用任务态校正对外状态
+    task_status_by_frag: dict[int, str] = {}
+    for task in episode_tasks:
+        if getattr(task, "task_type", None) != "fragment_video":
+            continue
+        if getattr(task, "cancel_requested", False):
+            continue
+        fid = getattr(task, "fragment_id", None)
+        if fid is None:
+            continue
+        task_status_by_frag[int(fid)] = str(getattr(task, "status", "") or "")
+
     items = []
     done = 0
     failed = 0
     running = 0
     for f in sorted(ep.fragments or [], key=lambda x: x.sort_order):
-        st = fragment_generation_status(f)
+        st = overlay_fragment_status_with_active_task(
+            fragment_generation_status(f),
+            task_status_by_frag.get(int(f.id)),
+        )
         items.append({"fragment_id": f.id, **st})
         s = st.get("status")
         if s == "done":

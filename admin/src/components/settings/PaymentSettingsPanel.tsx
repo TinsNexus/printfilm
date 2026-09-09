@@ -8,7 +8,9 @@ import {
 } from "@/components/settings/SettingsPanel";
 import { SecretField } from "@/components/settings/SecretField";
 import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/button";
 import { useAdminModelSettings } from "@/hooks/useAdminModelSettings";
+import { api } from "@/api/client";
 
 // 易支付与 Token 计费配置
 export function PaymentSettingsPanel() {
@@ -21,6 +23,20 @@ export function PaymentSettingsPanel() {
   const [clearVolcSk, setClearVolcSk] = useState(false);
   const [smtpPasswordInput, setSmtpPasswordInput] = useState("");
   const [clearSmtpPassword, setClearSmtpPassword] = useState(false);
+  const [kieCreditsBusy, setKieCreditsBusy] = useState(false);
+  const [kieCreditsInfo, setKieCreditsInfo] = useState<string>("");
+  const [modelRates, setModelRates] = useState<
+    Array<{
+      id: string;
+      label: string;
+      provider: string;
+      capability: string;
+      basis: string;
+      rate_label: string;
+      markup: number;
+    }>
+  >([]);
+  const [modelRatesBusy, setModelRatesBusy] = useState(false);
 
   const epayReady = useMemo(() => {
     if (!form) return false;
@@ -59,6 +75,7 @@ export function PaymentSettingsPanel() {
         billing_llm_per_m: form.billing_llm_per_m,
         billing_seedream_per_m: form.billing_seedream_per_m,
         billing_tts_per_m: form.billing_tts_per_m,
+        billing_kie_fen_per_credit: form.billing_kie_fen_per_credit,
         billing_est_llm_tokens: form.billing_est_llm_tokens,
         billing_est_seedream_tokens: form.billing_est_seedream_tokens,
         billing_est_tts_tokens: form.billing_est_tts_tokens,
@@ -97,6 +114,41 @@ export function PaymentSettingsPanel() {
     setClearVolcSk(false);
     setSmtpPasswordInput("");
     setClearSmtpPassword(false);
+  }
+
+  // 拉取各模型计费口径表
+  async function loadModelRates() {
+    setModelRatesBusy(true);
+    try {
+      const res = await api<{ items: typeof modelRates }>("/api/admin/settings/billing/model-rates");
+      setModelRates(res.items || []);
+    } catch (err) {
+      setModelRates([]);
+      setKieCreditsInfo(err instanceof Error ? err.message : "加载模型费率失败");
+    } finally {
+      setModelRatesBusy(false);
+    }
+  }
+
+  // 查询 Kie 上游剩余 credit
+  async function queryKieCredits() {
+    setKieCreditsBusy(true);
+    setKieCreditsInfo("");
+    try {
+      const res = await api<{
+        credits: number;
+        fen_per_credit: number;
+        approx_cost_yuan: number;
+        base_url: string;
+      }>("/api/admin/settings/kie/credits");
+      setKieCreditsInfo(
+        `剩余 ${res.credits} credit ≈ ¥${res.approx_cost_yuan}（${res.fen_per_credit} 分/credit · ${res.base_url}）`,
+      );
+    } catch (err) {
+      setKieCreditsInfo(err instanceof Error ? err.message : "查询 Kie 余额失败");
+    } finally {
+      setKieCreditsBusy(false);
+    }
   }
 
   if (loading || !form) {
@@ -279,7 +331,72 @@ export function PaymentSettingsPanel() {
                 onChange={(e) => patchField("billing_seedance_video1", Number(e.target.value))}
               />
             </LabeledControl>
+            <LabeledControl
+              label="Kie 分/credit"
+              hint="1 credit≈$0.005；默认 3.5 分。用户扣费=ceil(credits×此值×markup)"
+            >
+              <input
+                className="settings-input"
+                type="number"
+                step="0.1"
+                min={0.01}
+                value={form.billing_kie_fen_per_credit ?? 3.5}
+                onChange={(e) => patchField("billing_kie_fen_per_credit", Number(e.target.value))}
+              />
+            </LabeledControl>
           </div>
+
+          <div className="settings-subsection-title mt-3">Kie 上游与模型费率</div>
+          <div className="flex flex-wrap items-center gap-2 mt-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={kieCreditsBusy}
+              onClick={() => void queryKieCredits()}
+            >
+              {kieCreditsBusy ? "查询中…" : "查询 Kie 余额"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={modelRatesBusy}
+              onClick={() => void loadModelRates()}
+            >
+              {modelRatesBusy ? "加载中…" : "查看各模型计费口径"}
+            </Button>
+          </div>
+          {kieCreditsInfo ? <p className="text-sm text-muted-foreground mt-2">{kieCreditsInfo}</p> : null}
+          {modelRates.length > 0 ? (
+            <div className="mt-3 overflow-x-auto rounded border">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/40 text-left">
+                    <th className="p-2">模型</th>
+                    <th className="p-2">渠道</th>
+                    <th className="p-2">依据</th>
+                    <th className="p-2">费率</th>
+                    <th className="p-2">markup</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {modelRates.map((row) => (
+                    <tr key={row.id} className="border-b last:border-0">
+                      <td className="p-2">
+                        <div className="font-medium">{row.label}</div>
+                        <div className="text-xs text-muted-foreground font-mono">{row.id}</div>
+                      </td>
+                      <td className="p-2">{row.provider}</td>
+                      <td className="p-2">{row.basis}</td>
+                      <td className="p-2">{row.rate_label}</td>
+                      <td className="p-2">{row.markup}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
 
           <div className="settings-subsection-title">估算 token（缺 usage 时）</div>
           <div className="settings-field-grid">
@@ -347,7 +464,7 @@ export function PaymentSettingsPanel() {
           <div className="settings-toggle-row">
             <div>
               <strong>用户弹窗提醒</strong>
-              <span>累计扣费每达间隔档位弹出一次</span>
+              <span>累计扣费达间隔档位时弹一次（跨多档也不连弹）</span>
             </div>
             <Switch
               checked={form.billing_user_alert_enabled}
@@ -355,7 +472,7 @@ export function PaymentSettingsPanel() {
             />
           </div>
           <div className="settings-field-grid mt-2">
-            <LabeledControl label="提醒间隔（分）" hint="1000 = ¥10">
+            <LabeledControl label="提醒间隔（分）" hint="10000 = ¥100；每笔结算最多弹一次">
               <input
                 className="settings-input"
                 type="number"

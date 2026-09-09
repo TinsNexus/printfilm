@@ -96,22 +96,89 @@ async def generate_asset_video(
     ref_payloads = [drama_asset_to_payload(item) for item in ref_assets]
 
     t0 = time.time()
-    body = build_seedance_generate_body(
-        {
-            "content": content,
-            "reference": ref_payloads,
-            "model_id": model_id,
-            "video_style_id": style_id,
-            "aspect_ratio": ratio,
-            "resolution": res,
-            "duration_fallback": duration,
-        }
-    )
-    local_video, local_last_frame, task_result = await ark.gen_and_wait_seedance_body(
-        body,
-        project_id=project.id,
-        shot_no=asset.id,
-    )
+    from app.services.kie_catalog import get_media_model
+    from app.services.kie_client import get_kie
+
+    kie_spec = get_media_model(model_id)
+    if kie_spec and kie_spec.provider == "kie" and kie_spec.capability == "video":
+        from app.services import storage as storage_svc
+        from app.services.drama.build_seedance_generate_body import (
+            build_seedance_prompt_text,
+            build_seedance_reference_catalog,
+            resolve_reference_image_url,
+        )
+
+        def _https(url: str | None) -> str:
+            raw = (url or "").strip()
+            if not raw:
+                return ""
+            published = storage_svc.republish_url(raw, sync=True) or raw
+            text = str(published).strip()
+            return text if text.startswith("https://") else raw
+
+        catalog = build_seedance_reference_catalog(ref_payloads)
+        ref_image_urls: list[str] = []
+        for item in catalog.images[:30]:
+            https_url = _https(item.url)
+            if https_url.startswith("https://"):
+                ref_image_urls.append(https_url)
+        ref_audio_urls: list[str] = []
+        for item in catalog.audios[:10]:
+            https_url = _https(item.url)
+            if https_url.startswith("https://"):
+                ref_audio_urls.append(https_url)
+
+        image_url = ""
+        if not ref_image_urls:
+            for item in ref_payloads:
+                image_url = resolve_reference_image_url(item) or ""
+                if image_url:
+                    break
+            if not image_url:
+                image_url = resolve_reference_image_url(drama_asset_to_payload(asset)) or ""
+            if not image_url:
+                raise RuntimeError("Kie 图生视频需要参考图或资产封面")
+
+        kie_prompt = (
+            build_seedance_prompt_text(content, ref_payloads, catalog, style_id)
+            if ref_image_urls
+            else content
+        )
+        local_video, task_result = await get_kie().gen_and_wait_video(
+            image_url,
+            kie_prompt,
+            duration,
+            spec=kie_spec,
+            project_id=project.id,
+            shot_no=asset.id,
+            resolution=res,
+            ratio=(
+                "adaptive"
+                if not ref_image_urls
+                else (ratio if ratio in {"9:16", "16:9", "1:1", "4:3", "3:4", "21:9"} else "16:9")
+            ),
+            generate_audio=True,
+            reference_image_urls=ref_image_urls or None,
+            reference_audio_urls=ref_audio_urls or None,
+        )
+        local_last_frame = None
+    else:
+        body = build_seedance_generate_body(
+            {
+                "content": content,
+                "reference": ref_payloads,
+                "model_id": model_id,
+                "video_style_id": style_id,
+                "aspect_ratio": ratio,
+                "resolution": res,
+                "duration_fallback": duration,
+            }
+        )
+        local_video, local_last_frame, task_result = await ark.gen_and_wait_seedance_body(
+            body,
+            project_id=project.id,
+            shot_no=asset.id,
+        )
 
     from app.services import storage as storage_svc
 

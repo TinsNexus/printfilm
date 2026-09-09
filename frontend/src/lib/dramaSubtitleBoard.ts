@@ -18,7 +18,7 @@ export function subtitleModeUsesModelOutput(mode: DramaSubtitleMode): boolean {
   return mode === 'model'
 }
 
-// 兼容历史布尔值，读取分集字幕方式；默认模型自出字幕。
+// 兼容历史布尔值，读取分集字幕方式；默认后期拼接字幕。
 export function readEpisodeSubtitleMode(
   params: Record<string, unknown> | null | undefined,
 ): DramaSubtitleMode {
@@ -27,10 +27,10 @@ export function readEpisodeSubtitleMode(
   return readEpisodeSubtitleEnabled(params) ? 'model' : 'post'
 }
 
-// 兼容历史字符串/数字布尔值，默认开启字幕。
+// 兼容历史字符串/数字布尔值，默认关闭模型烧录字幕（后期拼接）。
 export function readEpisodeSubtitleEnabled(params: Record<string, unknown> | null | undefined): boolean {
   const value = params?.subtitleEnabled
-  if (value == null) return true
+  if (value == null) return false
   if (typeof value === 'boolean') return value
   if (typeof value === 'number') return value !== 0
   if (typeof value === 'string') {

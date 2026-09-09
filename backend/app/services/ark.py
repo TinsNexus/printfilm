@@ -170,6 +170,8 @@ class TaskResult:
     completion_tokens: int = 0
     raw_usage: dict[str, Any] | None = None
     provider_task_id: str | None = None
+    # Kie credits 等换算后的上游成本（分）；有值时优先于 token 估算
+    upstream_cost_fen: int | None = None
 
 
 # 从 Seedance 任务查询响应解析状态、媒体 URL 与官方 usage
@@ -591,13 +593,34 @@ class ArkGateway:
         shot_no: int | None = None,
         size: str | None = None,
         model: str | None = None,
+        aspect_ratio: str | None = None,
     ) -> ImageResult:
+        # Kie 主流图模型（前台 image_model=kie-*）；不走 ARK_MOCK
+        from app.services.kie_catalog import get_media_model, resolve_image_model_id
+        from app.services.kie_client import get_kie
+
+        resolved = resolve_image_model_id(model)
+        kie_spec = get_media_model(resolved)
+        if kie_spec and kie_spec.provider == "kie" and kie_spec.capability == "image":
+            full_prompt = f"{prompt}。避免：{negative}" if negative else prompt
+            return await get_kie().gen_image(
+                full_prompt,
+                spec=kie_spec,
+                project_id=project_id,
+                shot_no=shot_no,
+                aspect_ratio=aspect_ratio,
+                size=size,
+                ref_urls=ref_urls,
+            )
+
         if self.mock:
             local = await asyncio.to_thread(self._write_mock_image, prompt, size)
             # _write_mock_image returns /static/...; publish to OSS when enabled
             path = storage.local_path_from_url(local)
             url = storage.publish_local(path) if path and path.exists() else local
             return ImageResult(local_url=url, remote_url=None)
+
+        ark_model = None if resolved in {"", "ark-seedream"} else (model or resolved)
 
         candidates = [
             self._sanitize_seedream_prompt(prompt),
@@ -629,7 +652,7 @@ class ArkGateway:
                         project_id=project_id,
                         shot_no=shot_no,
                         size=size,
-                        model=model,
+                        model=ark_model,
                         prompt_hash_src=prompt,
                     )
                 except Exception as exc:  # noqa: BLE001
@@ -669,10 +692,23 @@ class ArkGateway:
     ) -> ImageResult:
         route = self._resolve_ark_route("image", model)
         upstream_model = route.upstream_model if route else ((model or "").strip() or self.settings.model_image)
+        from app.services.drama.seedream_options import (
+            clamp_seedream_pixel_size,
+            is_seedream_pro_model,
+        )
+
+        resolved_size = size or self.settings.ark_image_size
+        if is_seedream_pro_model(upstream_model):
+            # Pro：3K/4K 档位非法；超大 WxH 等比钳到 4624220
+            tier = str(resolved_size or "").strip().upper()
+            if tier in {"3K", "4K"}:
+                resolved_size = "2K"
+            else:
+                resolved_size = clamp_seedream_pixel_size(str(resolved_size))
         body: dict[str, Any] = {
             "model": upstream_model,
             "prompt": full_prompt,
-            "size": size or self.settings.ark_image_size,
+            "size": resolved_size,
             "response_format": "url",
             "watermark": False,
         }
@@ -708,11 +744,16 @@ class ArkGateway:
             raise RuntimeError(f"Seedream missing url: {json.dumps(data)[:500]}")
 
         dest_dir = storage.project_dir(project_id or 0)
-        name = f"shot_{(shot_no or 0):03d}_{hashlib.md5(prompt_hash_src.encode()).hexdigest()[:8]}.png"
+        # 每次生成唯一文件名，避免覆盖同路径导致前端/CDN 缓存不刷新
+        name = (
+            f"shot_{(shot_no or 0):03d}_"
+            f"{hashlib.md5(prompt_hash_src.encode()).hexdigest()[:8]}_"
+            f"{int(time.time() * 1000) % 10_000_000:07d}.png"
+        )
         dest = dest_dir / name
         await storage.download_to(remote, dest)
         return ImageResult(
-            local_url=storage.publish_local(dest),
+            local_url=storage.publish_local(dest, sync=True),
             remote_url=remote,
             total_tokens=int(usage_parsed.get("total_tokens") or 0),
             prompt_tokens=int(usage_parsed.get("prompt_tokens") or 0),
@@ -1319,8 +1360,27 @@ class ArkGateway:
         ratio: str | None = None,
         max_attempts: int = 3,
         generate_audio: bool = False,
+        model: str | None = None,
     ) -> tuple[str, TaskResult]:
-        """Create Seedance i2v task and wait; retry on summary_caption / transient BodyFormat."""
+        """Create i2v task and wait; Kie 或 Seedance；后者在 summary_caption / transient BodyFormat 时重试。"""
+        from app.services.kie_catalog import get_media_model, resolve_video_model_id
+        from app.services.kie_client import get_kie
+
+        resolved = resolve_video_model_id(model)
+        kie_spec = get_media_model(resolved)
+        if kie_spec and kie_spec.provider == "kie" and kie_spec.capability == "video":
+            return await get_kie().gen_and_wait_video(
+                image_url,
+                prompt,
+                duration,
+                spec=kie_spec,
+                project_id=project_id,
+                shot_no=shot_no,
+                resolution=resolution,
+                ratio=ratio,
+                generate_audio=generate_audio,
+            )
+
         last_err: Exception | None = None
         for attempt in range(max_attempts):
             use_json = attempt != 1  # attempt0 json, attempt1 plain, attempt2 json again

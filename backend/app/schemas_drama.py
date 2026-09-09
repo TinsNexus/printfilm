@@ -50,6 +50,7 @@ class DramaAssetOut(BaseModel):
     params: dict | None = None
     derive_id: str | None = None
     project_id: int
+    updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -161,6 +162,30 @@ class DramaEpisodeScriptRequest(BaseModel):
     batch_size: int = Field(default=1, ge=1, le=12)
     # 强制重写：清空已有正文（保留集名），再按新提示词生成
     force: bool = False
+    # 只优化/生成这一集；与 draft 一起用于「粘贴剧本 → AI 优化」
+    episode_number: int | None = Field(default=None, ge=1, le=120)
+    draft: str | None = Field(default=None, max_length=50000)
+    # optimize=草稿优化；summary=创意→摘要；body=创意+摘要→正文；full=一键摘要+正文；brief=正文→创意+摘要
+    generate_mode: str | None = Field(default=None, max_length=32)
+    # 可选：生成前写入本集创意（并保存）
+    creative: str | None = Field(default=None, max_length=20000)
+    title: str | None = Field(default=None, max_length=40)
+
+
+class DramaAddEpisodeRequest(BaseModel):
+    project_id: int
+    title: str | None = Field(default=None, max_length=40)
+
+
+class DramaConfirmEpisodeRequest(BaseModel):
+    project_id: int
+    episode_number: int = Field(ge=1, le=120)
+
+
+class DramaConfirmEpisodeOut(BaseModel):
+    episode: DramaEpisodeOut
+    assets_status: str = "done"
+    created_count: int = 0
 
 
 class DramaAssetCreate(BaseModel):
@@ -247,6 +272,8 @@ class DramaSaveFragmentsRequest(BaseModel):
 
 class DramaGenerateRequest(BaseModel):
     fragment_ids: list[int] | None = None
+    # 视频模型：seedance-*（方舟）或 kie-*（Kie）
+    model_id: str | None = Field(default=None, max_length=64)
 
 
 class DramaComposeEpisodeRequest(BaseModel):
@@ -267,6 +294,11 @@ class DramaPlanFragmentsRequest(BaseModel):
 
 class DramaActivateVideoVersionRequest(BaseModel):
     # version_id 历史成片版本 id（params.video_versions[].id）
+    version_id: str = Field(..., min_length=1, max_length=128)
+
+
+class DramaActivateImageVersionRequest(BaseModel):
+    # version_id 资产形象历史版本 id（params.image_versions[].id）
     version_id: str = Field(..., min_length=1, max_length=128)
 
 

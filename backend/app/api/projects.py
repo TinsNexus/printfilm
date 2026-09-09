@@ -56,6 +56,14 @@ async def get_voices() -> list[dict]:
     return list_voices()
 
 
+@router.get("/media-models")
+async def get_media_models() -> dict:
+    """科普前台可选图/视频模型目录。"""
+    from app.services.kie_catalog import catalog_payload
+
+    return catalog_payload()
+
+
 @router.post("/voices/preview", response_model=VoicePreviewOut)
 async def preview_voice(
     body: VoicePreviewRequest,
@@ -264,6 +272,8 @@ async def create_project(
         style_prompt=(body.style_prompt or "").strip(),
         character_prompt=(body.character_prompt or "").strip(),
         extra_prompt=(body.extra_prompt or "").strip(),
+        image_model=(body.image_model or "").strip(),
+        video_model=(body.video_model or "").strip(),
         ref_image_url=body.ref_image_url,
         status=ProjectStatus.DRAFT,
     )
@@ -544,9 +554,21 @@ async def update_project(
         url = str(data["cover_url"]).strip()
         if not (url.startswith("/static/") or url.startswith("http://") or url.startswith("https://")):
             raise HTTPException(status_code=400, detail="无效封面地址")
-    for key in ("style_prompt", "character_prompt", "extra_prompt"):
+    for key in ("style_prompt", "character_prompt", "extra_prompt", "image_model", "video_model"):
         if key in data:
             data[key] = str(data[key] or "").strip()
+    if "image_model" in data and data["image_model"]:
+        from app.services.kie_catalog import get_media_model
+
+        spec = get_media_model(data["image_model"])
+        if not spec or spec.capability != "image":
+            raise HTTPException(status_code=400, detail="无效图片模型")
+    if "video_model" in data and data["video_model"]:
+        from app.services.kie_catalog import get_media_model
+
+        spec = get_media_model(data["video_model"])
+        if not spec or spec.capability != "video":
+            raise HTTPException(status_code=400, detail="无效视频模型")
     for k, v in data.items():
         setattr(project, k, v)
     await db.commit()

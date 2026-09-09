@@ -158,6 +158,10 @@ async def _apply_schema_patches() -> None:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN character_prompt TEXT DEFAULT ''"))
         if "extra_prompt" not in pcols:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN extra_prompt TEXT DEFAULT ''"))
+        if "image_model" not in pcols:
+            await conn.execute(text("ALTER TABLE projects ADD COLUMN image_model VARCHAR(64) DEFAULT ''"))
+        if "video_model" not in pcols:
+            await conn.execute(text("ALTER TABLE projects ADD COLUMN video_model VARCHAR(64) DEFAULT ''"))
 
         # User billing columns
         ucols = await _pg_columns(conn, "users")
