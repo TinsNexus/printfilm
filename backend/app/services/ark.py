@@ -39,6 +39,12 @@ def _raise_seedream_http_error(status_code: int, body: str) -> None:
         raise RuntimeError(
             "上游 Seedream 账户欠费（AccountOverdueError），生图暂不可用，请联系管理员充值火山方舟账户"
         )
+    if "InputTextSensitive" in snippet or "InputTextSensitiveContentDetected" in snippet:
+        raise RuntimeError(
+            "生图文案未通过内容审核（含未成年人、酒精等敏感表述），"
+            "请修改提示词后重试。"
+            f" 详情：{snippet[:240]}"
+        )
     raise RuntimeError(f"Seedream error {status_code}: {snippet}")
 
 
@@ -588,7 +594,11 @@ class ArkGateway:
         size: str | None = None,
         model: str | None = None,
     ) -> ImageResult:
-        """调用 Seedream 生图；策略拦截直接失败，不改写/软化提示词兜底。"""
+        """调用 Seedream 生图。
+
+        发送前仅软化易触发文本审核的措辞；不做空主体 / CG 厚涂兜底。
+        策略拦截仍直接失败。
+        """
         if self.mock:
             local = await asyncio.to_thread(self._write_mock_image, prompt, size)
             # _write_mock_image returns /static/...; publish to OSS when enabled
@@ -596,7 +606,17 @@ class ArkGateway:
             url = storage.publish_local(path) if path and path.exists() else local
             return ImageResult(local_url=url, remote_url=None)
 
-        current = (prompt or "").strip()
+        from app.services.seedream_text_soften import soften_seedream_input_text
+
+        # 发送前软化易触发文本审核的措辞（保留主体，非空场景/CG 兜底）
+        current = soften_seedream_input_text((prompt or "").strip())
+        if current != (prompt or "").strip():
+            logger.info(
+                "Seedream input softened shot=%s before=%s after=%s",
+                shot_no,
+                len(prompt or ""),
+                len(current),
+            )
         full_prompt = f"{current}。避免：{negative}" if negative else current
         try:
             return await self._seedream_once(
