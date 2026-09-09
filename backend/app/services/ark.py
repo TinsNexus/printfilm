@@ -41,7 +41,7 @@ def _raise_seedream_http_error(status_code: int, body: str) -> None:
         )
     if "InputTextSensitive" in snippet or "InputTextSensitiveContentDetected" in snippet:
         raise RuntimeError(
-            "生图文案未通过内容审核（含未成年人、酒精等敏感表述），"
+            "生图文案未通过内容审核（可能含敏感或历史名人相关表述），"
             "请修改提示词后重试。"
             f" 详情：{snippet[:240]}"
         )
@@ -596,8 +596,8 @@ class ArkGateway:
     ) -> ImageResult:
         """调用 Seedream 生图。
 
-        发送前仅软化易触发文本审核的措辞；不做空主体 / CG 厚涂兜底。
-        策略拦截仍直接失败。
+        发送前软化易触发文本审核的措辞；InputTextSensitive 时再用短前缀压缩重试一次。
+        不做空主体 / CG 厚涂兜底。
         """
         if self.mock:
             local = await asyncio.to_thread(self._write_mock_image, prompt, size)
@@ -606,34 +606,62 @@ class ArkGateway:
             url = storage.publish_local(path) if path and path.exists() else local
             return ImageResult(local_url=url, remote_url=None)
 
-        from app.services.seedream_text_soften import soften_seedream_input_text
+        from app.services.seedream_text_soften import (
+            compact_seedream_prompt_for_retry,
+            soften_seedream_input_text,
+        )
 
         # 发送前软化易触发文本审核的措辞（保留主体，非空场景/CG 兜底）
-        current = soften_seedream_input_text((prompt or "").strip())
-        if current != (prompt or "").strip():
+        original = (prompt or "").strip()
+        current = soften_seedream_input_text(original)
+        if current != original:
             logger.info(
                 "Seedream input softened shot=%s before=%s after=%s",
                 shot_no,
-                len(prompt or ""),
+                len(original),
                 len(current),
             )
-        full_prompt = f"{current}。避免：{negative}" if negative else current
-        try:
-            return await self._seedream_once(
-                full_prompt,
-                ref_urls,
-                project_id=project_id,
-                shot_no=shot_no,
-                size=size,
-                model=model,
-            )
-        except Exception as exc:  # noqa: BLE001
-            if self._is_seedream_policy_error(str(exc)):
+
+        attempts = [current]
+        compact = compact_seedream_prompt_for_retry(current)
+        if compact and compact != current:
+            attempts.append(compact)
+
+        last_err: Exception | None = None
+        for idx, candidate in enumerate(attempts):
+            full_prompt = f"{candidate}。避免：{negative}" if negative else candidate
+            try:
+                return await self._seedream_once(
+                    full_prompt,
+                    ref_urls,
+                    project_id=project_id,
+                    shot_no=shot_no,
+                    size=size,
+                    model=model,
+                )
+            except Exception as exc:  # noqa: BLE001
+                last_err = exc
+                msg = str(exc)
+                # 仅文本审核可走压缩重试；其它策略/错误直接失败
+                if not self._is_seedream_input_text_sensitive(msg):
+                    if self._is_seedream_policy_error(msg):
+                        logger.warning(
+                            "Seedream policy hit shot=%s; failing without fallback",
+                            shot_no,
+                        )
+                    raise
+                if idx + 1 < len(attempts):
+                    logger.warning(
+                        "Seedream InputTextSensitive shot=%s; retrying compact prompt",
+                        shot_no,
+                    )
+                    continue
                 logger.warning(
-                    "Seedream policy hit shot=%s; failing without fallback",
+                    "Seedream InputTextSensitive shot=%s; compact retry exhausted",
                     shot_no,
                 )
-            raise
+                raise
+        raise RuntimeError(str(last_err) if last_err else "Seedream failed")
 
     async def _seedream_once(
         self,
@@ -701,6 +729,16 @@ class ArkGateway:
         )
 
     @staticmethod
+    def _is_seedream_input_text_sensitive(msg: str) -> bool:
+        """Seedream 输入文案审核拦截（可压缩提示词重试）。"""
+        text = msg or ""
+        return (
+            "InputTextSensitive" in text
+            or "InputTextSensitiveContentDetected" in text
+            or "生图文案未通过内容审核" in text
+        )
+
+    @staticmethod
     def _is_seedream_input_privacy_error(msg: str) -> bool:
         """参考图 / 输入侧真人隐私拦截（改文案无效）。"""
         text = msg or ""
@@ -715,6 +753,8 @@ class ArkGateway:
         text = msg or ""
         if ArkGateway._is_seedream_input_privacy_error(text):
             return False
+        if ArkGateway._is_seedream_input_text_sensitive(text):
+            return True
         return (
             "PolicyViolation" in text
             or "SensitiveContent" in text

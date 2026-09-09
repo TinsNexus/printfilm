@@ -1,6 +1,6 @@
 """Seedream 输入文案软化：保留主体语义，降低 InputTextSensitive 误杀。
 
-不做空主体 / CG 厚涂兜底；仅替换易触发审核的未成年人、酒精、兵器与网红等表述。
+不做空主体 / CG 厚涂兜底；仅替换易触发审核的表述，必要时压缩设定板前缀重试。
 """
 
 from __future__ import annotations
@@ -32,13 +32,36 @@ _SEEDREAM_TEXT_SOFTEN: list[tuple[str, str]] = [
     ("校服", "学院制服"),
     ("课堂", "学堂"),
     ("学生", "学子"),
-    # 兵器 / 网红 / 名号
+    # 兵器 / 网红 / 名号 / 气质
     ("白衣佩剑", "白衣腰佩长绦"),
     ("腰佩长剑", "腰佩长绦"),
     ("佩剑", "腰佩长绦"),
     ("顶流", "名士"),
-    ("诗仙", "盛唐豪放诗人"),
+    ("诗仙", "盛唐洒脱文人"),
+    ("盛唐豪放诗人", "盛唐洒脱文人"),
+    ("豪放诗人", "洒脱文人"),
+    ("眼神狂放不羁", "目光明亮自信"),
+    ("狂放不羁", "洒脱自信"),
+    ("超凡脱俗", "气度从容"),
+    ("豪放", "洒脱"),
+    ("电影质感", "细腻画质"),
 ]
+
+# 设定板长前缀结束标记（之后为用户正文）
+_STRUCTURE_BODY_MARKERS: tuple[str, ...] = (
+    "请严格依据以下用户描述生成上述结构的角色设定图：",
+    "请严格依据以下用户描述生成上述结构的场景设计图：",
+    "请严格依据以下用户描述生成上述结构的道具设定图：",
+    "请严格依据以下用户描述生成白底人物角色全身照：",
+    "请严格依据以下用户描述生成场景画面：",
+    "请严格依据以下用户描述生成道具画面：",
+    "请严格依据以下用户描述生成素材画面：",
+)
+
+_COMPACT_CHARACTER_PREFIX = (
+    "纯白背景，单人全身角色立绘，无复杂背景、无文字水印，毛毡手作可爱风格。"
+    "请依据以下描述生成："
+)
 
 
 # 软化易触发 Seedream 文本审核的措辞；无变化则原样返回
@@ -50,3 +73,20 @@ def soften_seedream_input_text(prompt: str) -> str:
         if src in out:
             out = out.replace(src, dst)
     return out
+
+
+# 拆出设定板前缀后的用户正文；无标记则返回全文
+def extract_seedream_user_body(prompt: str) -> str:
+    text = prompt or ""
+    for marker in _STRUCTURE_BODY_MARKERS:
+        if marker in text:
+            return text.split(marker, 1)[1].strip()
+    return text.strip()
+
+
+# 文本审核失败后的压缩重试：短前缀 + 再软化正文（仍保留主体）
+def compact_seedream_prompt_for_retry(prompt: str) -> str:
+    body = soften_seedream_input_text(extract_seedream_user_body(prompt))
+    if not body:
+        body = soften_seedream_input_text(prompt or "")
+    return f"{_COMPACT_CHARACTER_PREFIX}{body}"
