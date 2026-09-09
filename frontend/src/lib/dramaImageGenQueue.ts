@@ -174,6 +174,7 @@ function readGenerationStatus(asset: DramaAsset): string {
 }
 
 // 轮询直到资产生图结束；generating 时回调以便 UI 切到「生成中」
+// 必须先判 failed/cancelled：重试失败时旧 url/cover 仍在，不能当成功
 async function waitForAssetImage(
   projectId: number,
   assetId: number,
@@ -186,17 +187,11 @@ async function waitForAssetImage(
     if (!latest) throw new Error('资产不存在')
     const status = readGenerationStatus(latest)
     onRemoteStatus?.(status)
-    if ((latest.url || latest.cover) && status !== 'generating' && status !== 'queued') {
-      return latest
-    }
-    if (status === 'failed') {
+    if (status === 'failed' || status === 'cancelled') {
       const gen = (latest.params || {}).generation as { error?: string } | undefined
-      throw new Error(String(gen?.error || '生图失败'))
+      throw new Error(String(gen?.error || (status === 'cancelled' ? '生图已取消' : '生图失败')))
     }
     if (status === 'done' && (latest.url || latest.cover)) {
-      return latest
-    }
-    if (!['queued', 'generating', ''].includes(status) && (latest.url || latest.cover)) {
       return latest
     }
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))

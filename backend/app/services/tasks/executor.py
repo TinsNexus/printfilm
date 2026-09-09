@@ -108,6 +108,11 @@ async def execute_task_run(task_id: int) -> None:
                 if isinstance(result, dict) and result.get("cancelled"):
                     await _mark_cancelled(db, task)
                     return
+                # handler 返回 ok:False 时必须失败收敛（勿当成 succeeded）
+                if isinstance(result, dict) and result.get("ok") is False:
+                    err_msg = str(result.get("error") or "任务执行失败")[:500]
+                    await _fail_task(db, task, RuntimeError(err_msg))
+                    return
                 await _complete_task(db, task, result or {"ok": True})
     except asyncio.CancelledError:
         async with AsyncSessionLocal() as db:

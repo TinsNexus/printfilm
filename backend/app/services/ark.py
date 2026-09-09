@@ -9,6 +9,7 @@ import json
 import logging
 import re
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -126,11 +127,6 @@ _SEEDREAM_SANITIZE: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"埃隆"), "航天企业家"),
     (re.compile(r"Space\s*X"), "民营商业航天公司"),
 ]
-
-_SEEDREAM_STRIP_PROPER: re.Pattern[str] = re.compile(
-    r"(SpaceX|Space\s*X|Falcon\s*\d*|Starship|Elon\s*Musk|Tesla|"
-    r"猎鹰一号|猎鹰\s*9|猎鹰重型|猎鹰|马斯克|埃隆|特斯拉)"
-)
 
 # 真人 / 写实人脸审核命中后追加的画风引导，压低照片级真人触发概率
 _SEEDREAM_CG_STYLE = (
@@ -592,6 +588,7 @@ class ArkGateway:
         size: str | None = None,
         model: str | None = None,
     ) -> ImageResult:
+        """调用 Seedream 生图；策略拦截直接失败，不改写/软化提示词兜底。"""
         if self.mock:
             local = await asyncio.to_thread(self._write_mock_image, prompt, size)
             # _write_mock_image returns /static/...; publish to OSS when enabled
@@ -599,62 +596,24 @@ class ArkGateway:
             url = storage.publish_local(path) if path and path.exists() else local
             return ImageResult(local_url=url, remote_url=None)
 
-        candidates = [
-            self._sanitize_seedream_prompt(prompt),
-            self._aggressive_sanitize_seedream(prompt),
-            self._generic_scene_prompt(prompt),
-        ]
-        # de-dupe while preserving order
-        seen: set[str] = set()
-        prompts: list[str] = []
-        for p in candidates:
-            p = (p or "").strip()
-            if p and p not in seen:
-                seen.add(p)
-                prompts.append(p)
-
-        last_err: Exception | None = None
-        for idx, base in enumerate(prompts):
-            # queue 同档提示词；文案/输出策略命中后再追加 CG 厚涂变体重试
-            queue = [base]
-            qi = 0
-            while qi < len(queue):
-                current = queue[qi]
-                qi += 1
-                full_prompt = f"{current}。避免：{negative}" if negative else current
-                try:
-                    return await self._seedream_once(
-                        full_prompt,
-                        ref_urls,
-                        project_id=project_id,
-                        shot_no=shot_no,
-                        size=size,
-                        model=model,
-                        prompt_hash_src=prompt,
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    last_err = exc
-                    msg = str(exc)
-                    # 参考图真人等输入侧拦截：改文案无效，直接失败
-                    if self._is_seedream_input_privacy_error(msg):
-                        raise
-                    if not self._is_seedream_policy_error(msg):
-                        raise
-                    cg = self._with_seedream_cg_style(current)
-                    if cg != current and cg not in queue:
-                        logger.warning(
-                            "Seedream policy hit shot=%s attempt=%s; retrying with CG style",
-                            shot_no,
-                            idx + 1,
-                        )
-                        queue.append(cg)
-                    else:
-                        logger.warning(
-                            "Seedream policy hit shot=%s attempt=%s; advancing softened candidate",
-                            shot_no,
-                            idx + 1,
-                        )
-        raise RuntimeError(str(last_err) if last_err else "Seedream failed")
+        current = (prompt or "").strip()
+        full_prompt = f"{current}。避免：{negative}" if negative else current
+        try:
+            return await self._seedream_once(
+                full_prompt,
+                ref_urls,
+                project_id=project_id,
+                shot_no=shot_no,
+                size=size,
+                model=model,
+            )
+        except Exception as exc:  # noqa: BLE001
+            if self._is_seedream_policy_error(str(exc)):
+                logger.warning(
+                    "Seedream policy hit shot=%s; failing without fallback",
+                    shot_no,
+                )
+            raise
 
     async def _seedream_once(
         self,
@@ -664,9 +623,9 @@ class ArkGateway:
         project_id: int | None,
         shot_no: int | None,
         size: str | None,
-        prompt_hash_src: str,
         model: str | None = None,
     ) -> ImageResult:
+        """单次 Seedream 请求并落盘（文件名含 uuid，避免重生成覆盖）。"""
         route = self._resolve_ark_route("image", model)
         upstream_model = route.upstream_model if route else ((model or "").strip() or self.settings.model_image)
         body: dict[str, Any] = {
@@ -708,7 +667,7 @@ class ArkGateway:
             raise RuntimeError(f"Seedream missing url: {json.dumps(data)[:500]}")
 
         dest_dir = storage.project_dir(project_id or 0)
-        name = f"shot_{(shot_no or 0):03d}_{hashlib.md5(prompt_hash_src.encode()).hexdigest()[:8]}.png"
+        name = f"shot_{(shot_no or 0):03d}_{uuid.uuid4().hex[:12]}.png"
         dest = dest_dir / name
         await storage.download_to(remote, dest)
         return ImageResult(
@@ -732,7 +691,7 @@ class ArkGateway:
 
     @staticmethod
     def _is_seedream_policy_error(msg: str) -> bool:
-        """文案或输出内容策略拦截（可走脱敏 / CG 重试）。"""
+        """文案或输出内容策略拦截（生图侧直接失败，不做提示词兜底）。"""
         text = msg or ""
         if ArkGateway._is_seedream_input_privacy_error(text):
             return False
@@ -819,46 +778,11 @@ class ArkGateway:
 
     @staticmethod
     def _sanitize_seedream_prompt(prompt: str) -> str:
+        """品牌/IP 软化（科普分镜等调用方可选使用；生图主路径不做兜底改写）。"""
         out = prompt or ""
         for pat, repl in _SEEDREAM_SANITIZE:
             out = pat.sub(repl, out)
         return out
-
-    @classmethod
-    def _aggressive_sanitize_seedream(cls, prompt: str) -> str:
-        out = cls._sanitize_seedream_prompt(prompt)
-        out = _SEEDREAM_STRIP_PROPER.sub("主体", out)
-        # Drop Latin brand leftovers
-        out = re.sub(r"[A-Za-z]{3,}", "场景", out)
-        return out
-
-    @classmethod
-    def _generic_scene_prompt(cls, prompt: str) -> str:
-        """Last-resort prompt: keep style cues, drop concrete names."""
-        style_bits: list[str] = []
-        for key in (
-            "水墨",
-            "插画",
-            "扁平",
-            "像素",
-            "剪纸",
-            "粉笔",
-            "拼贴",
-            "竖屏",
-            "电影感",
-            "绘本",
-            "写意",
-            "概念插画",
-            "CG厚涂",
-            "游戏CG",
-        ):
-            if key in (prompt or ""):
-                style_bits.append(key)
-        style = "，".join(style_bits) + "，" if style_bits else "统一插画风格，"
-        return (
-            f"{style}{_SEEDREAM_CG_STYLE}，竖屏构图，主体偏中下，顶部留白，"
-            "同一画风贯穿，禁止写实摄影与真人脸，无文字水印"
-        )
 
     def _extract_image_url(self, data: dict[str, Any]) -> str | None:
         if "data" in data and data["data"]:
@@ -1621,7 +1545,8 @@ class ArkGateway:
         return storage.to_public_url(raw)
 
     def _write_mock_image(self, prompt: str, size: str | None = None) -> str:
-        digest = hashlib.md5(prompt.encode()).hexdigest()[:8]
+        """写出 mock 立绘 SVG；每次唯一文件名，避免重试覆盖。"""
+        digest = uuid.uuid4().hex[:12]
         root = Path(__file__).resolve().parents[2] / "static" / "mock"
         root.mkdir(parents=True, exist_ok=True)
         path = root / f"image_{digest}.svg"
