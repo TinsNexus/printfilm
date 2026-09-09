@@ -1,6 +1,6 @@
-"""Seedream 输入文案软化：保留主体语义，降低 InputTextSensitive 误杀。
+"""Seedream 输入文案软化：保留外形/风格，降低 InputTextSensitive 误杀。
 
-不做空主体 / CG 厚涂兜底；仅替换易触发审核的表述，必要时压缩设定板前缀重试。
+不做空主体 / CG 厚涂兜底；必要时压缩前缀，并去掉易被识别为历史名人的身份词。
 """
 
 from __future__ import annotations
@@ -32,19 +32,28 @@ _SEEDREAM_TEXT_SOFTEN: list[tuple[str, str]] = [
     ("校服", "学院制服"),
     ("课堂", "学堂"),
     ("学生", "学子"),
-    # 兵器 / 网红 / 名号 / 气质
+    # 兵器 / 网红 / 气质
     ("白衣佩剑", "白衣腰佩长绦"),
     ("腰佩长剑", "腰佩长绦"),
     ("佩剑", "腰佩长绦"),
-    ("顶流", "名士"),
-    ("诗仙", "盛唐洒脱文人"),
-    ("盛唐豪放诗人", "盛唐洒脱文人"),
-    ("豪放诗人", "洒脱文人"),
     ("眼神狂放不羁", "目光明亮自信"),
     ("狂放不羁", "洒脱自信"),
     ("超凡脱俗", "气度从容"),
     ("豪放", "洒脱"),
     ("电影质感", "细腻画质"),
+    # 历史名人身份（勿再写回「盛唐/诗仙/名士」等可指认词）
+    ("盛唐豪放诗人", "古风洒脱书生"),
+    ("盛唐洒脱文人", "古风洒脱书生"),
+    ("豪放诗人", "洒脱书生"),
+    ("诗仙", "古风洒脱书生"),
+    ("诗圣", "古风沉稳书生"),
+    ("顶流", "风雅书生"),
+    ("名士", "书生"),
+    ("文人", "书生"),
+    ("诗人", "书生"),
+    ("盛唐", "古风年代"),
+    ("李白", "古风白衣青年"),
+    ("杜甫", "古风青衫青年"),
 ]
 
 # 设定板长前缀结束标记（之后为用户正文）
@@ -90,3 +99,30 @@ def compact_seedream_prompt_for_retry(prompt: str) -> str:
     if not body:
         body = soften_seedream_input_text(prompt or "")
     return f"{_COMPACT_CHARACTER_PREFIX}{body}"
+
+
+# 仍审核失败时：只保留服装/风格线索，去掉朝代与可指认身份
+def style_only_seedream_prompt_for_retry(prompt: str) -> str:
+    body = soften_seedream_input_text(extract_seedream_user_body(prompt) or prompt or "")
+    style_bits: list[str] = []
+    for key in (
+        "羊毛毡",
+        "毛毡定格",
+        "毛毡",
+        "粘土软萌",
+        "粘土",
+        "软萌",
+        "治愈系",
+        "3D",
+        "毛绒",
+        "缝线",
+    ):
+        if key in body and key not in style_bits:
+            style_bits.append(key)
+    style = "、".join(style_bits) if style_bits else "手作可爱质感"
+    robe = "白衣宽袖" if ("白衣" in body or "月白" in body) else "古风常服"
+    return (
+        f"纯白背景，单人全身立绘，{robe}青年书生，腰间圆润佩饰，"
+        f"{style}，轮廓略不规整，针孔与绒感清晰，无文字水印，"
+        "禁止真实历史人物肖像。"
+    )

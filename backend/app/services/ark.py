@@ -596,8 +596,8 @@ class ArkGateway:
     ) -> ImageResult:
         """调用 Seedream 生图。
 
-        发送前软化易触发文本审核的措辞；InputTextSensitive 时再用短前缀压缩重试一次。
-        不做空主体 / CG 厚涂兜底。
+        发送前软化易触发文本审核的措辞；InputTextSensitive 时依次压缩前缀、
+        再退化到「服装+风格」短描述重试。不做空主体 / CG 厚涂兜底。
         """
         if self.mock:
             local = await asyncio.to_thread(self._write_mock_image, prompt, size)
@@ -609,6 +609,7 @@ class ArkGateway:
         from app.services.seedream_text_soften import (
             compact_seedream_prompt_for_retry,
             soften_seedream_input_text,
+            style_only_seedream_prompt_for_retry,
         )
 
         # 发送前软化易触发文本审核的措辞（保留主体，非空场景/CG 兜底）
@@ -623,11 +624,16 @@ class ArkGateway:
             )
 
         attempts = [current]
-        compact = compact_seedream_prompt_for_retry(current)
-        if compact and compact != current:
-            attempts.append(compact)
+        for builder in (
+            compact_seedream_prompt_for_retry,
+            style_only_seedream_prompt_for_retry,
+        ):
+            candidate = builder(current)
+            if candidate and candidate not in attempts:
+                attempts.append(candidate)
 
         last_err: Exception | None = None
+        labels = ("softened", "compact", "style_only")
         for idx, candidate in enumerate(attempts):
             full_prompt = f"{candidate}。避免：{negative}" if negative else candidate
             try:
@@ -642,7 +648,7 @@ class ArkGateway:
             except Exception as exc:  # noqa: BLE001
                 last_err = exc
                 msg = str(exc)
-                # 仅文本审核可走压缩重试；其它策略/错误直接失败
+                # 仅文本审核可走压缩/风格重试；其它策略/错误直接失败
                 if not self._is_seedream_input_text_sensitive(msg):
                     if self._is_seedream_policy_error(msg):
                         logger.warning(
@@ -651,13 +657,15 @@ class ArkGateway:
                         )
                     raise
                 if idx + 1 < len(attempts):
+                    nxt = labels[idx + 1] if idx + 1 < len(labels) else "next"
                     logger.warning(
-                        "Seedream InputTextSensitive shot=%s; retrying compact prompt",
+                        "Seedream InputTextSensitive shot=%s; retrying %s prompt",
                         shot_no,
+                        nxt,
                     )
                     continue
                 logger.warning(
-                    "Seedream InputTextSensitive shot=%s; compact retry exhausted",
+                    "Seedream InputTextSensitive shot=%s; retries exhausted",
                     shot_no,
                 )
                 raise
