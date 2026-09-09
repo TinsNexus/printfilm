@@ -5,23 +5,31 @@ from app.services.seedream_text_soften import soften_seedream_input_text
 
 
 def test_soften_xiaoxuesheng_and_child_terms() -> None:
-    raw = "毛毡教室，小学生穿着校服，标签：传承+童声+童真"
+    raw = (
+        "毛毡教室剪影，课桌后坐着齐刷刷毛毡小人，穿着现代校服，"
+        "身份：现代课堂学生。标签：传承+童声+童真"
+    )
     out = soften_seedream_input_text(raw)
     assert "小学生" not in out
     assert "童声" not in out
     assert "童真" not in out
-    assert "少年学子" in out
-    assert "校服" in out
+    assert "校服" not in out
+    assert "课堂" not in out
+    assert "学生" not in out
+    assert "毛毡小人" not in out
+    assert "少年学子" in out or "学堂" in out
 
 
-def test_soften_libai_alcohol_and_celeb_slang() -> None:
+def test_soften_libai_alcohol_weapon_and_title() -> None:
     raw = "盛唐顶流，白衣佩剑，腰悬酒葫芦，身份：诗仙"
     out = soften_seedream_input_text(raw)
     assert "酒葫芦" not in out
     assert "顶流" not in out
-    assert "葫芦形" in out or "葫芦" in out
-    assert "佩剑" in out
-    assert "诗仙" in out
+    assert "佩剑" not in out
+    assert "诗仙" not in out
+    assert "葫芦" not in out
+    assert "盛唐豪放诗人" in out
+    assert "名士" in out
 
 
 def test_soften_noop_when_clean() -> None:
