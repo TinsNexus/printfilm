@@ -596,8 +596,8 @@ class ArkGateway:
     ) -> ImageResult:
         """调用 Seedream 生图。
 
-        发送前软化易触发文本审核的措辞；InputTextSensitive 时依次压缩前缀、
-        再退化到「服装+风格」短描述重试。不做空主体 / CG 厚涂兜底。
+        只软化用户正文并保留设定板前缀；InputTextSensitive 时仍用简化三视图重试，
+        最后一档才缩成「三视图+服装风格」。不做空主体 / CG 厚涂兜底。
         """
         if self.mock:
             local = await asyncio.to_thread(self._write_mock_image, prompt, size)
@@ -612,7 +612,7 @@ class ArkGateway:
             style_only_seedream_prompt_for_retry,
         )
 
-        # 发送前软化易触发文本审核的措辞（保留主体，非空场景/CG 兜底）
+        # 只软化用户正文，保留角色/场景/道具结构前缀（三视图等）
         original = (prompt or "").strip()
         current = soften_seedream_input_text(original)
         if current != original:

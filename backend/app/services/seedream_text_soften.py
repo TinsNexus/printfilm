@@ -1,6 +1,7 @@
-"""Seedream 输入文案软化：保留外形/风格，降低 InputTextSensitive 误杀。
+"""Seedream 输入文案软化：保留外形/风格与设定板结构，降低 InputTextSensitive 误杀。
 
-不做空主体 / CG 厚涂兜底；必要时压缩前缀，并去掉易被识别为历史名人的身份词。
+软化只改用户正文，不改结构前缀；审核重试仍尽量保留三视图设定板。
+不做空主体 / CG 厚涂兜底。
 """
 
 from __future__ import annotations
@@ -67,43 +68,63 @@ _STRUCTURE_BODY_MARKERS: tuple[str, ...] = (
     "请严格依据以下用户描述生成素材画面：",
 )
 
-_COMPACT_CHARACTER_PREFIX = (
-    "纯白背景，单人全身角色立绘，无复杂背景、无文字水印，毛毡手作可爱风格。"
+# 审核重试用的简化三视图前缀（仍要求设定板，而非单张立绘）
+_COMPACT_TURNAROUND_PREFIX = (
+    "【强制任务：角色设定板】纯白背景，无复杂背景、无文字水印。"
+    "画面含同一角色全身三视图（正面、左侧面、背面），站姿自然、双臂下垂；"
+    "并含面部特写与半身特写；五官发型服装体型一致。"
     "请依据以下描述生成："
 )
 
 
-# 软化易触发 Seedream 文本审核的措辞；无变化则原样返回
-def soften_seedream_input_text(prompt: str) -> str:
-    out = prompt or ""
-    if not out:
-        return out
+# 对纯文本做敏感词替换
+def _replace_sensitive_terms(text: str) -> str:
+    out = text or ""
     for src, dst in _SEEDREAM_TEXT_SOFTEN:
         if src in out:
             out = out.replace(src, dst)
     return out
 
 
-# 拆出设定板前缀后的用户正文；无标记则返回全文
-def extract_seedream_user_body(prompt: str) -> str:
+# 拆出设定板前缀与用户正文；(prefix, body)，无标记则 prefix 为空
+def split_seedream_structure_prompt(prompt: str) -> tuple[str, str]:
     text = prompt or ""
     for marker in _STRUCTURE_BODY_MARKERS:
         if marker in text:
-            return text.split(marker, 1)[1].strip()
-    return text.strip()
+            prefix, body = text.split(marker, 1)
+            return f"{prefix}{marker}", body.strip()
+    return "", text.strip()
 
 
-# 文本审核失败后的压缩重试：短前缀 + 再软化正文（仍保留主体）
+# 软化易触发审核的措辞：只改用户正文，保留结构前缀（三视图等）
+def soften_seedream_input_text(prompt: str) -> str:
+    text = prompt or ""
+    if not text:
+        return text
+    prefix, body = split_seedream_structure_prompt(text)
+    soft_body = _replace_sensitive_terms(body)
+    if prefix:
+        return f"{prefix}{soft_body}"
+    return soft_body
+
+
+# 拆出设定板前缀后的用户正文；无标记则返回全文
+def extract_seedream_user_body(prompt: str) -> str:
+    _, body = split_seedream_structure_prompt(prompt or "")
+    return body
+
+
+# 文本审核失败后的压缩重试：简化三视图前缀 + 软化正文
 def compact_seedream_prompt_for_retry(prompt: str) -> str:
-    body = soften_seedream_input_text(extract_seedream_user_body(prompt))
+    body = _replace_sensitive_terms(extract_seedream_user_body(prompt))
     if not body:
-        body = soften_seedream_input_text(prompt or "")
-    return f"{_COMPACT_CHARACTER_PREFIX}{body}"
+        body = _replace_sensitive_terms(prompt or "")
+    return f"{_COMPACT_TURNAROUND_PREFIX}{body}"
 
 
-# 仍审核失败时：只保留服装/风格线索，去掉朝代与可指认身份
+# 仍审核失败时：简化三视图 + 只保留服装/风格线索
 def style_only_seedream_prompt_for_retry(prompt: str) -> str:
-    body = soften_seedream_input_text(extract_seedream_user_body(prompt) or prompt or "")
+    body = _replace_sensitive_terms(extract_seedream_user_body(prompt) or prompt or "")
     style_bits: list[str] = []
     for key in (
         "羊毛毡",
@@ -122,7 +143,7 @@ def style_only_seedream_prompt_for_retry(prompt: str) -> str:
     style = "、".join(style_bits) if style_bits else "手作可爱质感"
     robe = "白衣宽袖" if ("白衣" in body or "月白" in body) else "古风常服"
     return (
-        f"纯白背景，单人全身立绘，{robe}青年书生，腰间圆润佩饰，"
-        f"{style}，轮廓略不规整，针孔与绒感清晰，无文字水印，"
-        "禁止真实历史人物肖像。"
+        f"{_COMPACT_TURNAROUND_PREFIX}"
+        f"{robe}青年书生，腰间圆润佩饰，{style}，"
+        "轮廓略不规整，针孔与绒感清晰，禁止真实历史人物肖像。"
     )
