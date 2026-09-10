@@ -26,26 +26,35 @@ backend/.venv/
 .venv/
 venv/
 
-# Secrets & local env (keep *.example and frontend/.env.production committed)
+# Secrets & local env（仅允许 *.example 与 frontend/.env.production）
 .env
-**/.env
+.env.*
+!.env.example
+!.env.*.example
 !**/.env.example
 !**/.env.*.example
 !frontend/.env.production
-backend/.env.secrets.local
-deploy/.env.secrets.local
-deploy/.env.prod
 deploy/scripts/deploy_kepu.py
 deploy/scripts/deploy_kepu_8136.py
-frontend/.env.local
-frontend/.env.*.local
+deploy/scripts/deploy_kepu*.py
 
-# Never commit tokens / credentials dumps
+# Never commit tokens / credentials dumps / private keys
 **/token.txt
 **/*credentials*.json
+**/secrets.json
+**/*secret*.json
 **/*.pem
 **/*.key
+**/*.p12
+**/*.pfx
+**/*.ppk
+id_rsa
+id_ed25519
+*.id_rsa
+*.id_ed25519
 !**/example*.pem
+.netrc
+.npmrc
 
 # Backend runtime data
 backend/ai_movie.db
