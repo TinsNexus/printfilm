@@ -23,8 +23,8 @@ def test_remap_video_path_on_tokenfree():
         "/contents/generations/tasks/task-1",
         base_url=TOKENFREE_BASE_URL,
     )
-    assert create == "/video/generations"
-    assert poll == "/video/generations/task-1"
+    assert create == "/videos"
+    assert poll == "/videos/task-1"
 
 
 def test_remap_video_path_keeps_ark_volces():
@@ -36,7 +36,7 @@ def test_remap_video_path_keeps_ark_volces():
     assert uses_tokenfree_video(base_url="https://ark.cn-beijing.volces.com/api/v3") is False
 
 
-def test_wrap_seedance_payload_puts_content_in_metadata():
+def test_wrap_seedance_payload_uses_videos_metadata_input():
     payload = {
         "model": "seedance-2-5",
         "content": [
@@ -47,9 +47,9 @@ def test_wrap_seedance_payload_puts_content_in_metadata():
                 "role": "first_frame",
             },
         ],
-        "duration": 8,
+        "duration": 5,
         "resolution": "720p",
-        "ratio": "9:16",
+        "ratio": "16:9",
         "watermark": False,
         "generate_audio": True,
         "return_last_frame": True,
@@ -58,12 +58,13 @@ def test_wrap_seedance_payload_puts_content_in_metadata():
     assert wrapped["model"] == "seedance-2-5"
     assert wrapped["prompt"] == "镜头推进"
     assert wrapped["image"] == "https://cdn.example.com/a.jpg"
-    assert wrapped["duration"] == 8
-    assert wrapped["seconds"] == "8"
-    assert wrapped["metadata"]["content"] == payload["content"]
-    assert wrapped["metadata"]["ratio"] == "9:16"
-    assert wrapped["metadata"]["generate_audio"] is True
-    assert "content" not in wrapped or wrapped.get("content") is None
+    assert wrapped["seconds"] == "5"
+    meta_input = wrapped["metadata"]["input"]
+    assert meta_input["duration"] == "5"
+    assert meta_input["aspect_ratio"] == "16:9"
+    assert meta_input["content"] == payload["content"]
+    assert meta_input["generate_audio"] is True
+    assert "content" not in wrapped
 
 
 def test_prepare_video_create_body_only_wraps_tokenfree():
@@ -75,7 +76,8 @@ def test_prepare_video_create_body_only_wraps_tokenfree():
     tf = prepare_video_create_body(body, base_url=TOKENFREE_BASE_URL)
     assert ark["content"][0]["text"] == "hi"
     assert tf["prompt"] == "hi"
-    assert tf["metadata"]["content"] == body["content"]
+    assert tf["metadata"]["input"]["duration"] == "5"
+    assert tf["metadata"]["input"]["content"] == body["content"]
 
 
 def test_extract_video_task_id_from_newapi_and_wrapped_data():
@@ -117,17 +119,22 @@ def test_ark_client_tokenfree_video_url():
 
     settings = get_settings().model_copy(update={"ark_base_url": TOKENFREE_BASE_URL})
     client = ArkGateway(settings=settings)
-    assert client._url("/contents/generations/tasks") == f"{TOKENFREE_BASE_URL}/video/generations"
-    assert (
-        client._url("/contents/generations/tasks/t1")
-        == f"{TOKENFREE_BASE_URL}/video/generations/t1"
-    )
+    assert client._url("/contents/generations/tasks") == f"{TOKENFREE_BASE_URL}/videos"
+    assert client._url("/contents/generations/tasks/t1") == f"{TOKENFREE_BASE_URL}/videos/t1"
     wrapped = client._video_json(
         {
             "model": "seedance-2-5",
             "content": [{"type": "text", "text": "hi"}],
-            "duration": 4,
+            "duration": 5,
+            "ratio": "16:9",
         }
     )
     assert wrapped["prompt"] == "hi"
-    assert wrapped["metadata"]["duration"] == 4
+    assert wrapped["metadata"]["input"]["duration"] == "5"
+    assert wrapped["metadata"]["input"]["aspect_ratio"] == "16:9"
+    finalized = client._finalize_video_result(
+        _build_task_result_from_payload({"status": "completed"}),
+        "task-9",
+    )
+    assert finalized.status == "succeeded"
+    assert finalized.url == f"{TOKENFREE_BASE_URL}/videos/task-9/content"

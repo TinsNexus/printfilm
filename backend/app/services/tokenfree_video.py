@@ -1,7 +1,7 @@
 """TokenFree / New API 视频任务：路径映射与 Seedance 请求体包装。
 
-方舟原生是 POST /contents/generations/tasks；New API 不注册该路径，
-客户端应走 POST /video/generations，由网关再转到上游 /api/v3/contents/generations/tasks。
+方舟原生是 POST /contents/generations/tasks。TokenFree 走 OpenAI Videos 兼容接口：
+POST /v1/videos、GET /v1/videos/:id、GET /v1/videos/:id/content。
 """
 
 from __future__ import annotations
@@ -12,9 +12,9 @@ from app.services.tokenfree_gateway import TOKENFREE_CHANNEL_ID
 
 # 方舟原生异步视频任务前缀
 ARK_VIDEO_TASK_PREFIX = "/contents/generations/tasks"
-# New API 通用视频任务前缀（相对 /v1）
-NEWAPI_VIDEO_TASK_PREFIX = "/video/generations"
-# 任务成功态（方舟 + New API）
+# TokenFree OpenAI Videos 兼容前缀（相对 /v1）
+NEWAPI_VIDEO_TASK_PREFIX = "/videos"
+# 任务成功态（方舟 + New API / OpenAI Videos）
 VIDEO_SUCCESS_STATUSES = {"succeeded", "success", "completed", "complete"}
 # 任务失败态
 VIDEO_FAILED_STATUSES = {"failed", "cancelled", "canceled", "expired", "failure"}
@@ -33,7 +33,7 @@ def uses_tokenfree_video(*, base_url: str = "", channel_id: str = "") -> bool:
 
 
 def remap_video_path(path: str, *, base_url: str = "", channel_id: str = "") -> str:
-    """TokenFree 上将方舟任务路径改写成 New API /video/generations。"""
+    """TokenFree 上将方舟任务路径改写成 /videos 与 /videos/{id}。"""
     normalized = path if str(path).startswith("/") else f"/{path}"
     if not uses_tokenfree_video(base_url=base_url, channel_id=channel_id):
         return normalized
@@ -42,16 +42,30 @@ def remap_video_path(path: str, *, base_url: str = "", channel_id: str = "") -> 
     return normalized
 
 
-def wrap_seedance_payload_for_newapi(payload: dict[str, Any]) -> dict[str, Any]:
-    """把方舟 Seedance body 转成 New API /video/generations 请求体。
+def tokenfree_video_content_url(base_url: str, task_id: str) -> str:
+    """拼接 GET /v1/videos/{task_id}/content 下载地址。"""
+    base = (base_url or "").rstrip("/")
+    tid = (task_id or "").strip().lstrip("/")
+    return f"{base}/videos/{tid}/content"
 
-    顶层走 prompt/image/duration；完整 content、ratio、generate_audio 等放进 metadata，
-    供 doubao adaptor UnmarshalMetadata 还原上游 payload。
+
+def is_tokenfree_content_url(url: str) -> bool:
+    """是否为 TokenFree /videos/:id/content 拉取地址（下载需带 Bearer）。"""
+    raw = (url or "").strip().lower()
+    if "/videos/" not in raw:
+        return False
+    return raw.rstrip("/").endswith("/content")
+
+
+def wrap_seedance_payload_for_newapi(payload: dict[str, Any]) -> dict[str, Any]:
+    """把方舟 Seedance body 转成 TokenFree POST /v1/videos 请求体。
+
+    约定：model + prompt + metadata.input.duration / aspect_ratio。
+    图生视频仍把参考图和完整 content 放进 metadata.input，避免丢掉 role。
     """
     src = dict(payload)
     content = src.get("content")
-    # texts 全部文案段（adaptor 可能丢掉非首段 text）
-    # images 参考图 URL，顶层 image 给通用 i2v；带 role 的完整项仍在 metadata.content
+    # texts 全部文案段；images 参考图 URL（顶层 image 给通用 i2v）
     texts: list[str] = []
     images: list[str] = []
     if isinstance(content, list):
@@ -68,27 +82,43 @@ def wrap_seedance_payload_for_newapi(payload: dict[str, Any]) -> dict[str, Any]:
                 if isinstance(url, str) and url.strip():
                     images.append(url.strip())
     prompt = "\n".join(texts) or str(src.get("prompt") or "").strip() or "."
-    metadata = {
-        key: value
-        for key, value in src.items()
-        if key not in {"prompt", "image", "images", "seconds", "metadata"}
-    }
+    duration = src.get("duration")
+    duration_text = ""
+    if duration is not None:
+        try:
+            duration_text = str(int(duration))
+        except (TypeError, ValueError):
+            duration_text = str(duration).strip()
+    ratio = str(src.get("ratio") or "").strip()
+    meta_input: dict[str, Any] = {}
+    if duration_text:
+        meta_input["duration"] = duration_text
+    if ratio and ratio.lower() != "adaptive":
+        meta_input["aspect_ratio"] = ratio
+    resolution = str(src.get("resolution") or "").strip()
+    if resolution:
+        meta_input["resolution"] = resolution
+    if "generate_audio" in src:
+        meta_input["generate_audio"] = bool(src.get("generate_audio"))
+    if "watermark" in src:
+        meta_input["watermark"] = bool(src.get("watermark"))
+    if "return_last_frame" in src:
+        meta_input["return_last_frame"] = bool(src.get("return_last_frame"))
+    if isinstance(content, list) and content:
+        meta_input["content"] = content
+    if images:
+        meta_input["image"] = images[0]
+        if len(images) > 1:
+            meta_input["images"] = images
     out: dict[str, Any] = {
         "model": src.get("model"),
         "prompt": prompt,
-        "metadata": metadata,
+        "metadata": {"input": meta_input},
     }
-    duration = src.get("duration")
-    if duration is not None:
-        try:
-            out["duration"] = int(duration)
-            out["seconds"] = str(int(duration))
-        except (TypeError, ValueError):
-            out["duration"] = duration
+    if duration_text:
+        out["seconds"] = duration_text
     if images:
         out["image"] = images[0]
-        if len(images) > 1:
-            out["images"] = images
     return out
 
 

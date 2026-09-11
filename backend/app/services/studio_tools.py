@@ -455,7 +455,7 @@ async def poll_video_task(user: User, task_id: str) -> dict:
         elif dest.exists() and dest.stat().st_size > 1000:
             url = publish_public(dest)
         else:
-            await storage.download_to(result.url, dest)
+            await ark.download_result_media(result.url, dest)
             url = publish_public(dest)
         return {
             "status": "succeeded",

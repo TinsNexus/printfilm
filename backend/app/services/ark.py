@@ -24,10 +24,13 @@ from app.services.tokenfree_video import (
     extract_video_result_url,
     extract_video_task_id,
     format_video_task_error,
+    is_tokenfree_content_url,
     normalize_video_task_status,
     prepare_video_create_body,
     remap_video_path,
+    tokenfree_video_content_url,
     unwrap_video_task_payload,
+    uses_tokenfree_video,
 )
 from app.services import storage
 from app.services.drama.seedance_i2v_role import resolve_seedance_i2v_image_role
@@ -193,18 +196,9 @@ def _build_task_result_from_payload(data: dict[str, Any]) -> TaskResult:
     raw_usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else None
 
     if status == "succeeded":
-        url = extract_video_result_url(payload)
-        if not url:
-            # completed 但结果 URL 尚未回填时继续轮询，避免空 URL 被当成终态
-            return TaskResult(
-                status="running",
-                total_tokens=total_tokens,
-                completion_tokens=completion_tokens,
-                raw_usage=raw_usage,
-            )
         return TaskResult(
             status="succeeded",
-            url=url,
+            url=extract_video_result_url(payload),
             last_frame_url=_extract_seedance_last_frame_url(payload),
             total_tokens=total_tokens,
             completion_tokens=completion_tokens,
@@ -359,7 +353,7 @@ class ArkGateway:
         }
 
     def _url(self, path: str) -> str:
-        """拼接方舟/TokenFree 基址；视频任务路径在 TokenFree 上改写为 /video/generations。"""
+        """拼接方舟/TokenFree 基址；视频任务路径在 TokenFree 上改写为 /videos。"""
         path = remap_video_path(path, base_url=self.settings.ark_base_url)
         base = self.settings.ark_base_url.rstrip("/")
         if not path.startswith("/"):
@@ -398,10 +392,26 @@ class ArkGateway:
         body: dict[str, Any],
         route: ResolvedModelRoute | None = None,
     ) -> dict[str, Any]:
-        """TokenFree 上把 Seedance 方舟 body 包装成 New API /video/generations 请求体。"""
+        """TokenFree 上把 Seedance 方舟 body 包装成 POST /v1/videos 请求体。"""
         base = (route.base_url if route and route.base_url else self.settings.ark_base_url) or ""
         channel_id = (route.channel_id if route else "") or ""
         return prepare_video_create_body(body, base_url=base, channel_id=channel_id)
+
+    def _finalize_video_result(self, result: TaskResult, task_id: str) -> TaskResult:
+        """TokenFree 成功但无公网 URL 时，改用 GET /videos/{id}/content。"""
+        result.provider_task_id = task_id
+        if result.status == "succeeded" and not result.url and uses_tokenfree_video(
+            base_url=self.settings.ark_base_url
+        ):
+            result.url = tokenfree_video_content_url(self.settings.ark_base_url, task_id)
+        return result
+
+    async def download_result_media(self, url: str, dest: Path) -> None:
+        """下载生成媒体；TokenFree /videos/:id/content 带 Bearer。"""
+        headers = None
+        if is_tokenfree_content_url(url):
+            headers = {"Authorization": f"Bearer {self._ark_api_key()}"}
+        await storage.download_to(url, dest, headers=headers)
 
     async def chat_storyboard(
         self,
@@ -1288,8 +1298,7 @@ class ArkGateway:
                 if resp.status_code >= 400:
                     return TaskResult(status="failed", error=resp.text[:500])
                 data = resp.json()
-                result = _build_task_result_from_payload(data)
-                result.provider_task_id = task_id
+                result = self._finalize_video_result(_build_task_result_from_payload(data), task_id)
                 if result.status == "succeeded":
                     return result
                 if result.status == "failed":
@@ -1312,9 +1321,7 @@ class ArkGateway:
             )
         if resp.status_code >= 400:
             return TaskResult(status="failed", error=resp.text[:500], provider_task_id=task_id)
-        result = _build_task_result_from_payload(resp.json())
-        result.provider_task_id = task_id
-        return result
+        return self._finalize_video_result(_build_task_result_from_payload(resp.json()), task_id)
 
     async def save_video_assets_from_result(
         self,
@@ -1333,7 +1340,7 @@ class ArkGateway:
             # 每次生成独立文件名，避免覆盖旧成片导致历史版本失效
             stamp = int(time.time())
             dest = storage.project_dir(project_id) / f"shot_{shot_no:03d}_{stamp}.mp4"
-            await storage.download_to(result.url, dest)
+            await self.download_result_media(result.url, dest)
             video_local = storage.publish_local(dest)
 
         last_local: str | None = None

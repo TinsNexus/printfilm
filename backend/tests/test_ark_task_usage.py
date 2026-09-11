@@ -44,9 +44,9 @@ def test_build_task_result_completed_with_top_level_url():
     assert result.url == "https://example.com/newapi.mp4"
 
 
-def test_build_task_result_completed_without_url_stays_running():
+def test_build_task_result_completed_without_url_is_succeeded():
     result = _build_task_result_from_payload({"status": "completed"})
-    assert result.status == "running"
+    assert result.status == "succeeded"
     assert result.url is None
 
 

@@ -86,15 +86,17 @@ def local_path_from_url(url: str) -> Path | None:
     return None
 
 
+# 下载远程文件到 dest；TokenFree 成片 URL 可传 Bearer headers
 async def download_to(
     url: str,
     dest: Path,
     *,
     timeout: float = 120.0,
+    headers: dict[str, str] | None = None,
 ) -> Path:
     dest.parent.mkdir(parents=True, exist_ok=True)
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-        resp = await client.get(url)
+        resp = await client.get(url, headers=headers)
         resp.raise_for_status()
         dest.write_bytes(resp.content)
     return dest
