@@ -1,17 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { api, type AdminRoutingSettings } from "@/api/client";
-import {
-  ArkVolcMediaPanel,
-  ARK_BASE,
-  ARK_VOLC_CHANNEL_ID,
-  consolidateArkVolcChannels,
-  DEFAULT_VIDEO_MODEL,
-  inferVolcMediaDraft,
-  resolveDefaultModelsFromUpstream,
-  type VolcMediaDraft,
-} from "@/components/settings/ArkVolcMediaPanel";
 import {
   LabeledControl,
   SettingsLoading,
@@ -19,16 +9,14 @@ import {
   SettingsSurface,
   SettingsTabShell,
 } from "@/components/settings/SettingsPanel";
-import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
-type ChannelDraft = AdminRoutingSettings["system_channels"][number] & {
-  api_key_input: string;
-};
-
 type Capability = "text" | "image" | "video" | "audio";
-
 type UpstreamModelOption = { id: string; label: string; capability: string };
+
+const TOKENFREE_CHANNEL_ID = "tokenfree";
+const TOKENFREE_BASE_URL = "https://www.tokenfree.com/v1";
+const TOKENFREE_CONSOLE_URL = "https://www.tokenfree.com/channels";
 
 const CAPABILITY_LABELS: Record<Capability, string> = {
   text: "文本",
@@ -37,38 +25,16 @@ const CAPABILITY_LABELS: Record<Capability, string> = {
   audio: "语音",
 };
 
-const PROTOCOL_LABELS: Record<string, string> = {
-  auto: "自动",
-  openai: "OpenAI 兼容",
-  ark: "ARK（生图/视频）",
-  kie: "Kie.ai（主流图/视频）",
-  volc_tts: "豆包 TTS",
-};
+const DEFAULT_KEYS = ["text_model", "image_model", "video_model", "audio_model"] as const;
 
-export const KIE_CHANNEL_ID = "kie-default";
-export const KIE_BASE = "https://api.kie.ai";
-
-// 与后端 infer_model_capability 对齐，用于渠道能力徽标
-function inferCapability(model: string, protocol: string): Capability {
+// 与后端 infer_model_capability 对齐
+function inferCapability(model: string): Capability {
   const mid = (model || "").trim().toLowerCase().replace(/\s+/g, "");
-  const proto = (protocol || "auto").toLowerCase();
-  if (proto === "openai") return "text";
-  if (proto === "volc_tts") return "audio";
-  if (!mid) {
-    if (proto === "kie") return "image";
-    return "text";
-  }
+  if (!mid) return "text";
   if (mid.includes("tts") || mid.startsWith("zh_") || mid.includes("speaker") || mid.startsWith("s_")) {
     return "audio";
   }
-  if (
-    mid.includes("seedance") ||
-    mid.includes("veo") ||
-    mid.includes("video") ||
-    mid.includes("i2v") ||
-    mid.startsWith("kie-veo") ||
-    mid.startsWith("kie-seedance")
-  ) {
+  if (mid.includes("seedance") || mid.includes("veo") || mid.includes("video") || mid.includes("i2v")) {
     return "video";
   }
   if (
@@ -76,79 +42,47 @@ function inferCapability(model: string, protocol: string): Capability {
     mid.includes("nano-banana") ||
     mid.includes("banana") ||
     mid.includes("dream") ||
-    mid.includes("image") ||
-    mid.startsWith("kie-")
+    mid.includes("image")
   ) {
     return "image";
   }
-  if (proto === "ark" || proto === "kie") return "image";
   return "text";
 }
 
-function channelCapabilities(channel: AdminRoutingSettings["system_channels"][number]): Capability[] {
-  const caps = new Set<Capability>();
-  for (const model of channel.models) {
-    caps.add(inferCapability(model, channel.protocol));
-  }
-  if (caps.size === 0 && channel.protocol === "ark") caps.add("image");
-  if (caps.size === 0 && channel.protocol === "kie") {
-    caps.add("image");
-    caps.add("video");
-  }
-  if (caps.size === 0 && channel.protocol === "volc_tts") caps.add("audio");
-  if (caps.size === 0) caps.add("text");
-  return Array.from(caps);
-}
-
-// 计算路由就绪条
-function buildReadiness(data: AdminRoutingSettings | null) {
-  const channels = data?.system_channels ?? [];
-  const enabled = channels.filter((c) => c.enabled);
-  const hasCap = (cap: Capability) =>
-    enabled.some(
-      (c) =>
-        (c.has_api_key || Boolean(c.api_key)) &&
-        (channelCapabilities(c).includes(cap) || c.models.some((m) => inferCapability(m, c.protocol) === cap)),
-    );
+function buildReadiness(data: AdminRoutingSettings | null, hasKey: boolean) {
+  const defaults = data?.default_models;
   return [
-    { id: "text", label: "文本路由", ready: hasCap("text") || Boolean(data?.default_models.text_model) },
-    { id: "image", label: "图像路由", ready: hasCap("image") || Boolean(data?.default_models.image_model) },
-    { id: "video", label: "视频路由", ready: hasCap("video") || Boolean(data?.default_models.video_model) },
-    { id: "audio", label: "语音路由", ready: hasCap("audio") || Boolean(data?.default_models.audio_model) },
-    { id: "secret", label: "密钥加密存储", ready: true },
+    { id: "secret", label: "API Key", ready: hasKey },
+    { id: "text", label: "文本模型", ready: Boolean(defaults?.text_model) },
+    { id: "image", label: "图像模型", ready: Boolean(defaults?.image_model) },
+    { id: "video", label: "视频模型", ready: Boolean(defaults?.video_model) },
+    { id: "audio", label: "语音模型", ready: Boolean(defaults?.audio_model) },
   ] as const;
 }
 
-// 渠道 + 逻辑模型路由配置面板（设计稿：就绪条 + 主从渠道 + 方舟专区 + 逻辑路由表）
+// 开源版模型配置：固定 TokenFree，只填 Key、拉取并选择模型
 export function RoutingSettingsPanel() {
   const [data, setData] = useState<AdminRoutingSettings | null>(null);
-  const [apiKeyInputs, setApiKeyInputs] = useState<Record<string, string>>({});
+  const [apiKeyInput, setApiKeyInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [selectedChannelId, setSelectedChannelId] = useState("");
   const [upstreamModels, setUpstreamModels] = useState<UpstreamModelOption[]>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
   const [manualModel, setManualModel] = useState("");
-  const [volcDraft, setVolcDraft] = useState<VolcMediaDraft>({
-    imageModel: "",
-    image45Model: "",
-    videoModel: "",
-  });
+
+  const channel = data?.system_channels.find((item) => item.id === TOKENFREE_CHANNEL_ID) ?? data?.system_channels[0];
+  const hasSavedKey = Boolean(channel?.has_api_key);
+  const hasKey = hasSavedKey || Boolean(apiKeyInput.trim());
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api<AdminRoutingSettings>("/api/admin/settings/routing");
-      const arkChannel =
-        res.system_channels.find((c) => c.id === ARK_VOLC_CHANNEL_ID) ??
-        res.system_channels.find((c) => c.protocol === "ark");
-      setVolcDraft(inferVolcMediaDraft(arkChannel?.models ?? [], inferCapability));
       setData(res);
-      setSelectedChannelId((prev) => prev || res.system_channels[0]?.id || "");
-      setApiKeyInputs({});
+      setApiKeyInput("");
       setUpstreamModels([]);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "加载路由配置失败");
+      toast.error(err instanceof Error ? err.message : "加载模型配置失败");
     } finally {
       setLoading(false);
     }
@@ -158,116 +92,48 @@ export function RoutingSettingsPanel() {
     void load();
   }, [load]);
 
-  const channels = useMemo<ChannelDraft[]>(
-    () =>
-      (data?.system_channels ?? []).map((channel) => ({
-        ...channel,
-        api_key_input: apiKeyInputs[channel.id] ?? "",
-      })),
-    [apiKeyInputs, data],
-  );
-
-  const selectedChannel =
-    channels.find((item) => item.id === selectedChannelId) ?? channels[0] ?? null;
-  const arkVolcChannel =
-    channels.find((c) => c.id === ARK_VOLC_CHANNEL_ID) ?? channels.find((c) => c.protocol === "ark");
-  const readiness = buildReadiness(data);
-
+  const selectedModels = channel?.models ?? [];
   const catalogModels = useMemo(() => {
-    if (!selectedChannel) return [] as UpstreamModelOption[];
     const map = new Map<string, UpstreamModelOption>();
     for (const m of upstreamModels) map.set(m.id, m);
-    for (const id of selectedChannel.models) {
+    for (const id of selectedModels) {
       if (!map.has(id)) {
-        map.set(id, {
-          id,
-          label: id,
-          capability: inferCapability(id, selectedChannel.protocol),
-        });
+        map.set(id, { id, label: id, capability: inferCapability(id) });
       }
     }
     return Array.from(map.values());
-  }, [selectedChannel, upstreamModels]);
+  }, [selectedModels, upstreamModels]);
 
-  function updateChannel(channelId: string, patch: Partial<AdminRoutingSettings["system_channels"][number]>) {
-    setData((prev) =>
-      prev
-        ? {
-            ...prev,
-            system_channels: prev.system_channels.map((item) =>
-              item.id === channelId ? { ...item, ...patch } : item,
-            ),
-          }
-        : prev,
-    );
-  }
+  const readiness = buildReadiness(data, hasKey);
 
-  function insertChannel(channel: AdminRoutingSettings["system_channels"][number]) {
-    setData((prev) =>
-      prev
-        ? {
-            ...prev,
-            system_channels: [...prev.system_channels, channel],
-          }
-        : prev,
-    );
-    setSelectedChannelId(channel.id);
-    setUpstreamModels([]);
-  }
-
-  // 新增空白 OpenAI 兼容渠道
-  function addChannel() {
-    const id = `channel-${Date.now()}`;
-    insertChannel({
-      id,
-      name: "新渠道",
-      base_url: "",
-      api_key: "",
-      has_api_key: false,
-      api_format: "openai",
-      protocol: "openai",
-      models: [],
-      enabled: true,
-      sort_order: channels.length,
+  function setSelectedModels(models: string[]) {
+    setData((prev) => {
+      if (!prev) return prev;
+      const channels = prev.system_channels.length
+        ? prev.system_channels.map((item) =>
+            item.id === (channel?.id || TOKENFREE_CHANNEL_ID) ? { ...item, models } : item,
+          )
+        : [
+            {
+              id: TOKENFREE_CHANNEL_ID,
+              name: "TokenFree New API",
+              base_url: TOKENFREE_BASE_URL,
+              api_key: "",
+              has_api_key: hasSavedKey,
+              api_format: "openai" as const,
+              protocol: "auto" as const,
+              models,
+              enabled: true,
+              sort_order: 0,
+            },
+          ];
+      return { ...prev, system_channels: channels };
     });
   }
 
-  function removeChannel(channelId: string) {
-    if (channelId === ARK_VOLC_CHANNEL_ID) {
-      toast.error("火山方舟媒体渠道请通过下方专区管理，不可直接删除");
-      return;
-    }
-    if (channelId === KIE_CHANNEL_ID) {
-      toast.error("Kie.ai 渠道为系统引导渠道，可关闭开关，不可删除");
-      return;
-    }
-    setData((prev) =>
-      prev
-        ? {
-            ...prev,
-            system_channels: prev.system_channels.filter((item) => item.id !== channelId),
-            logical_models: prev.logical_models
-              .map((model) => ({
-                ...model,
-                bindings: model.bindings.filter((binding) => binding.channel_id !== channelId),
-              }))
-              .filter((model) => model.bindings.length > 0),
-          }
-        : prev,
-    );
-    setUpstreamModels([]);
-  }
-
-  // 从上游 /models 拉取可用模型
   async function fetchUpstreamModels() {
-    if (!selectedChannel) return;
-    const keyInput = apiKeyInputs[selectedChannel.id]?.trim();
-    if (!selectedChannel.has_api_key && !keyInput) {
+    if (!hasKey) {
       toast.error("请先填写 API Key");
-      return;
-    }
-    if (selectedChannel.protocol === "volc_tts") {
-      toast.error("豆包 TTS 请手动填写音色 ID");
       return;
     }
     setFetchingModels(true);
@@ -275,10 +141,10 @@ export function RoutingSettingsPanel() {
       const res = await api<{ models: UpstreamModelOption[] }>("/api/admin/settings/upstream/models", {
         method: "POST",
         body: JSON.stringify({
-          channel_id: selectedChannel.id,
-          protocol: selectedChannel.protocol,
-          base_url: selectedChannel.base_url,
-          api_key: keyInput || undefined,
+          channel_id: TOKENFREE_CHANNEL_ID,
+          protocol: "auto",
+          base_url: TOKENFREE_BASE_URL,
+          api_key: apiKeyInput.trim() || undefined,
           capability: "all",
         }),
       });
@@ -292,20 +158,16 @@ export function RoutingSettingsPanel() {
   }
 
   function toggleModel(modelId: string, checked: boolean) {
-    if (!selectedChannel) return;
     const next = checked
-      ? [...new Set([...selectedChannel.models, modelId])]
-      : selectedChannel.models.filter((id) => id !== modelId);
-    updateChannel(selectedChannel.id, { models: next });
+      ? [...new Set([...selectedModels, modelId])]
+      : selectedModels.filter((id) => id !== modelId);
+    setSelectedModels(next);
   }
 
   function addManualModel() {
-    if (!selectedChannel) return;
     const id = manualModel.trim();
     if (!id) return;
-    if (!selectedChannel.models.includes(id)) {
-      updateChannel(selectedChannel.id, { models: [...selectedChannel.models, id] });
-    }
+    if (!selectedModels.includes(id)) setSelectedModels([...selectedModels, id]);
     setManualModel("");
   }
 
@@ -313,79 +175,28 @@ export function RoutingSettingsPanel() {
     if (!data) return;
     setSaving(true);
     try {
-      const existingArk = data.system_channels.find((c) => c.id === ARK_VOLC_CHANNEL_ID) ?? arkVolcChannel;
-      const { channels: mergedChannels } = consolidateArkVolcChannels(
-        data.system_channels,
-        volcDraft,
-        existingArk,
-      );
-
       const res = await api<{ settings: AdminRoutingSettings }>("/api/admin/settings/routing", {
         method: "PATCH",
         body: JSON.stringify({
-          system_channels: mergedChannels.map((channel) => ({
-            id: channel.id,
-            name: channel.name,
-            base_url: channel.base_url,
-            api_key: apiKeyInputs[channel.id]?.trim() || undefined,
-            api_format: channel.api_format,
-            protocol: channel.protocol,
-            models:
-              channel.id === ARK_VOLC_CHANNEL_ID
-                ? [
-                    ...new Set(
-                      [volcDraft.imageModel, volcDraft.image45Model, volcDraft.videoModel].filter(Boolean),
-                    ),
-                  ]
-                : channel.models,
-            enabled: channel.enabled,
-            sort_order: channel.sort_order,
-          })),
-          logical_models: data.logical_models,
+          system_channels: [
+            {
+              id: TOKENFREE_CHANNEL_ID,
+              name: "TokenFree New API",
+              base_url: TOKENFREE_BASE_URL,
+              api_key: apiKeyInput.trim() || undefined,
+              api_format: "openai",
+              protocol: "auto",
+              models: selectedModels,
+              enabled: true,
+              sort_order: 0,
+            },
+          ],
           default_models: data.default_models,
         }),
       });
-
-      let nextDefaults = resolveDefaultModelsFromUpstream(res.settings, volcDraft);
-      if (!nextDefaults.video_model) {
-        const preferred =
-          res.settings.logical_models.find((m) => m.capability === "video" && m.id === "seedance-2.5") ??
-          res.settings.logical_models.find((m) => m.capability === "video");
-        if (preferred) nextDefaults = { ...nextDefaults, video_model: preferred.id };
-      }
-
-      const arkKey = apiKeyInputs[ARK_VOLC_CHANNEL_ID]?.trim();
-      if (
-        nextDefaults.image_model !== res.settings.default_models.image_model ||
-        nextDefaults.video_model !== res.settings.default_models.video_model
-      ) {
-        const res2 = await api<{ settings: AdminRoutingSettings }>("/api/admin/settings/routing", {
-          method: "PATCH",
-          body: JSON.stringify({
-            default_models: nextDefaults,
-          }),
-        });
-        setData(res2.settings);
-      } else {
-        setData(res.settings);
-      }
-
-      if (arkKey || volcDraft.imageModel || volcDraft.videoModel) {
-        await api("/api/admin/settings/models", {
-          method: "PATCH",
-          body: JSON.stringify({
-            ark_api_key: arkKey || undefined,
-            ark_base_url: ARK_BASE,
-            model_image: volcDraft.imageModel || undefined,
-            model_image_45: volcDraft.image45Model || undefined,
-            model_video: volcDraft.videoModel || undefined,
-          }),
-        });
-      }
-
-      setApiKeyInputs({});
-      await load();
-      toast.success("路由配置已保存");
+      setData(res.settings);
+      setApiKeyInput("");
+      toast.success("模型配置已保存");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "保存失败");
     } finally {
@@ -394,19 +205,19 @@ export function RoutingSettingsPanel() {
   }
 
   if (loading && !data) {
-    return <SettingsLoading label="加载路由配置…" />;
+    return <SettingsLoading label="加载模型配置…" />;
   }
 
   return (
     <SettingsTabShell onSave={() => void handleSave()} saving={saving} saveLabel="保存">
       <SettingsSurface className="settings-readiness-bar">
-        <div className="settings-readiness-title">路由就绪状态</div>
+        <div className="settings-readiness-title">配置就绪</div>
         <div className="settings-readiness-row">
           {readiness.map((item) => (
             <div key={item.id} className={cn("settings-readiness-item", item.ready && "is-ready")}>
               <span className={cn("settings-readiness-dot", item.ready ? "is-on" : "is-off")} />
               <span>{item.label}</span>
-              <em>{item.ready ? (item.id === "secret" ? "已启用" : "已配置") : "未就绪"}</em>
+              <em>{item.ready ? "已配置" : "未就绪"}</em>
             </div>
           ))}
         </div>
@@ -423,348 +234,135 @@ export function RoutingSettingsPanel() {
         </SettingsSurface>
       ) : null}
 
-      <div className="settings-routing-grid">
-        <SettingsPanel
-          className="settings-panel--compact"
-          title="1. 渠道管理"
-          description="启用上游渠道并维护凭证"
-          actions={
-            <button type="button" className="admin-btn admin-btn-secondary settings-mini-btn" onClick={addChannel}>
-              <Plus className="h-3.5 w-3.5" />
-              添加渠道
-            </button>
-          }
-        >
-          <div className="settings-channel-list">
-            {channels.map((channel) => {
-              const caps = channelCapabilities(channel);
-              return (
+      <SettingsPanel
+        title="TokenFree New API"
+        description="上游已锁定，不可切换。到控制台创建令牌后粘贴 Key，拉取模型并勾选后保存。"
+      >
+        <div className="settings-field-grid">
+          <LabeledControl label="接口地址" className="settings-field-span-full">
+            <input className="settings-input" value={TOKENFREE_BASE_URL} readOnly />
+            <p className="mt-1 text-xs text-[#909399]">
+              控制台：
+              <a className="ml-1 text-[#409eff] hover:underline" href={TOKENFREE_CONSOLE_URL} target="_blank" rel="noreferrer">
+                {TOKENFREE_CONSOLE_URL}
+              </a>
+            </p>
+          </LabeledControl>
+          <LabeledControl
+            label="API Key"
+            hint={hasSavedKey ? "已保存，留空不修改" : "未配置"}
+            className="settings-field-span-full"
+          >
+            <div className="settings-secret-row">
+              <input
+                className="settings-input is-secret"
+                type="password"
+                placeholder={hasSavedKey ? "已保存，留空则不修改" : "粘贴 TokenFree API Key"}
+                value={apiKeyInput}
+                onChange={(e) => setApiKeyInput(e.target.value)}
+              />
+              {apiKeyInput ? (
                 <button
-                  key={channel.id}
                   type="button"
-                  className={cn(
-                    "settings-channel-item",
-                    selectedChannel?.id === channel.id && "is-active",
-                  )}
-                  onClick={() => {
-                    setSelectedChannelId(channel.id);
-                    setUpstreamModels([]);
-                    setManualModel("");
-                  }}
+                  className="admin-btn admin-btn-secondary settings-mini-btn"
+                  onClick={() => setApiKeyInput("")}
                 >
-                  <div className="settings-channel-item-top">
-                    <strong>{channel.name}</strong>
-                    <span
-                      onClick={(e) => e.stopPropagation()}
-                      onKeyDown={(e) => e.stopPropagation()}
-                      role="presentation"
-                    >
-                      <Switch
-                        checked={channel.enabled}
-                        onCheckedChange={(checked) => {
-                          updateChannel(channel.id, { enabled: checked });
-                        }}
-                      />
-                    </span>
-                  </div>
-                  <div className="settings-channel-item-meta">
-                    {caps.map((cap) => (
-                      <span key={cap} className={cn("settings-cap-tag", `is-${cap}`)}>
-                        {CAPABILITY_LABELS[cap]}
-                      </span>
-                    ))}
-                    {channel.has_api_key ? (
-                      <span className="settings-cap-tag">已有 Key</span>
-                    ) : (
-                      <span className="settings-cap-tag is-warn">缺 Key</span>
-                    )}
-                  </div>
+                  清除
                 </button>
-              );
-            })}
-            {channels.length === 0 ? (
-              <div className="settings-empty-hint">暂无渠道，点击右上角添加</div>
-            ) : null}
-          </div>
-        </SettingsPanel>
+              ) : null}
+            </div>
+          </LabeledControl>
 
-        <SettingsPanel
-          className="settings-panel--compact"
-          title={`渠道配置${selectedChannel ? `（当前: ${selectedChannel.name}）` : ""}`}
-          description="密钥留空保存不修改；可用模型从上游拉取"
-          actions={
-            selectedChannel &&
-            selectedChannel.id !== ARK_VOLC_CHANNEL_ID &&
-            selectedChannel.id !== KIE_CHANNEL_ID ? (
+          <LabeledControl className="settings-field-span-full" label="可用模型" hint="先拉取，再勾选本站要用的模型">
+            <div className="settings-model-toolbar">
               <button
                 type="button"
-                className="admin-btn admin-btn-danger settings-mini-btn"
-                onClick={() => removeChannel(selectedChannel.id)}
+                className="admin-btn admin-btn-secondary settings-mini-btn"
+                disabled={fetchingModels || !hasKey}
+                onClick={() => void fetchUpstreamModels()}
               >
-                <Trash2 className="h-3.5 w-3.5" />
-                删除
+                {fetchingModels ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                拉取模型
               </button>
-            ) : null
-          }
-        >
-          {selectedChannel ? (
-            <div className="settings-field-grid">
-              <LabeledControl label="名称">
-                <input
-                  className="settings-input"
-                  value={selectedChannel.name}
-                  onChange={(e) => updateChannel(selectedChannel.id, { name: e.target.value })}
-                />
-              </LabeledControl>
-              <LabeledControl label="协议">
+              <span className="settings-model-count">
+                已选 {selectedModels.length}
+                {upstreamModels.length > 0 ? ` / 上游 ${upstreamModels.length}` : ""}
+              </span>
+            </div>
+            <div className="settings-model-catalog">
+              {catalogModels.length === 0 ? (
+                <div className="settings-empty-hint">填写 Key 后点击「拉取模型」</div>
+              ) : (
+                catalogModels.map((model) => {
+                  const checked = selectedModels.includes(model.id);
+                  const cap = (model.capability as Capability) || inferCapability(model.id);
+                  return (
+                    <label key={model.id} className={cn("settings-model-option", checked && "is-checked")}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => toggleModel(model.id, e.target.checked)}
+                      />
+                      <span className="font-mono text-xs">{model.label || model.id}</span>
+                      <em className={cn("settings-cap-tag", `is-${cap}`)}>{CAPABILITY_LABELS[cap] || cap}</em>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+            <div className="settings-model-manual">
+              <input
+                className="settings-input"
+                value={manualModel}
+                onChange={(e) => setManualModel(e.target.value)}
+                placeholder="手动追加模型 ID"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addManualModel();
+                  }
+                }}
+              />
+              <button type="button" className="admin-btn admin-btn-secondary settings-mini-btn" onClick={addManualModel}>
+                添加
+              </button>
+            </div>
+          </LabeledControl>
+        </div>
+      </SettingsPanel>
+
+      <SettingsPanel title="使用模型" description="按能力选择默认模型，选项来自上方已勾选列表">
+        <div className="settings-field-grid settings-field-grid--2">
+          {DEFAULT_KEYS.map((key) => {
+            const cap = key.replace("_model", "") as Capability;
+            const options = (data?.logical_models ?? []).filter((model) => model.capability === cap);
+            const fallback = selectedModels.filter((id) => inferCapability(id) === cap);
+            const ids = options.length > 0 ? options.map((m) => m.id) : fallback;
+            return (
+              <LabeledControl key={key} label={`${CAPABILITY_LABELS[cap]}默认`}>
                 <select
                   className="settings-select"
-                  value={selectedChannel.protocol}
-                  disabled={selectedChannel.id === KIE_CHANNEL_ID || selectedChannel.id === ARK_VOLC_CHANNEL_ID}
-                  onChange={(e) => {
-                    const next = e.target.value as AdminRoutingSettings["system_channels"][number]["protocol"];
-                    const patch: Partial<AdminRoutingSettings["system_channels"][number]> = {
-                      protocol: next,
-                      api_format:
-                        next === "ark"
-                          ? "ark"
-                          : next === "kie"
-                            ? "kie"
-                            : selectedChannel.api_format === "ark" || selectedChannel.api_format === "kie"
-                              ? "openai"
-                              : selectedChannel.api_format,
-                    };
-                    if (next === "kie" && !selectedChannel.base_url.trim()) {
-                      patch.base_url = KIE_BASE;
-                    }
-                    if (next === "kie" && selectedChannel.models.length === 0) {
-                      patch.models = [
-                        "kie-seedream-5",
-                        "kie-nano-banana-2",
-                        "kie-nano-banana",
-                        "kie-seedance-2.5",
-                        "kie-veo3-fast",
-                        "kie-veo3",
-                      ];
-                    }
-                    updateChannel(selectedChannel.id, patch);
-                  }}
+                  value={data?.default_models[key] ?? ""}
+                  onChange={(e) =>
+                    setData((prev) =>
+                      prev
+                        ? { ...prev, default_models: { ...prev.default_models, [key]: e.target.value } }
+                        : prev,
+                    )
+                  }
                 >
-                  {Object.entries(PROTOCOL_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
+                  <option value="">未设置</option>
+                  {ids.map((id) => (
+                    <option key={id} value={id}>
+                      {options.find((m) => m.id === id)?.name || id}
                     </option>
                   ))}
                 </select>
               </LabeledControl>
-              <LabeledControl label="Base URL" className="settings-field-span-full">
-                <input
-                  className="settings-input"
-                  value={selectedChannel.base_url}
-                  onChange={(e) => updateChannel(selectedChannel.id, { base_url: e.target.value })}
-                  placeholder={
-                    selectedChannel.protocol === "ark"
-                      ? ARK_BASE
-                      : selectedChannel.protocol === "kie"
-                        ? KIE_BASE
-                        : "https://api.example.com/v1"
-                  }
-                />
-              </LabeledControl>
-              <LabeledControl
-                label="API Key"
-                hint={selectedChannel.has_api_key ? "已保存，留空不修改" : "未配置"}
-                className="settings-field-span-full"
-              >
-                <div className="settings-secret-row">
-                  <input
-                    className="settings-input is-secret"
-                    type="password"
-                    placeholder={selectedChannel.has_api_key ? "已保存，留空则不修改" : "输入 API Key"}
-                    value={selectedChannel.api_key_input}
-                    onChange={(e) =>
-                      setApiKeyInputs((prev) => ({ ...prev, [selectedChannel.id]: e.target.value }))
-                    }
-                  />
-                  {selectedChannel.has_api_key || selectedChannel.api_key_input ? (
-                    <button
-                      type="button"
-                      className="admin-btn admin-btn-secondary settings-mini-btn"
-                      onClick={() => setApiKeyInputs((prev) => ({ ...prev, [selectedChannel.id]: "" }))}
-                    >
-                      清除密钥
-                    </button>
-                  ) : null}
-                </div>
-              </LabeledControl>
-
-              <LabeledControl
-                className="settings-field-span-full"
-                label="可用模型"
-                hint={
-                  selectedChannel.protocol === "volc_tts"
-                    ? "TTS 请手动填写音色 ID"
-                    : selectedChannel.protocol === "kie"
-                      ? "拉取内置主流图/视频目录后勾选；也可手动追加 kie-* id"
-                      : "点击「从上游拉取」后勾选；也可手动追加"
-                }
-              >
-                <div className="settings-model-toolbar">
-                  <button
-                    type="button"
-                    className="admin-btn admin-btn-secondary settings-mini-btn"
-                    disabled={fetchingModels || selectedChannel.protocol === "volc_tts"}
-                    onClick={() => void fetchUpstreamModels()}
-                  >
-                    {fetchingModels ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-3.5 w-3.5" />
-                    )}
-                    从上游拉取
-                  </button>
-                  <span className="settings-model-count">
-                    已选 {selectedChannel.models.length}
-                    {upstreamModels.length > 0 ? ` / 上游 ${upstreamModels.length}` : ""}
-                  </span>
-                </div>
-                <div className="settings-model-catalog">
-                  {catalogModels.length === 0 ? (
-                    <div className="settings-empty-hint">
-                      {selectedChannel.protocol === "volc_tts"
-                        ? "在下方手动添加音色 ID"
-                        : "尚未拉取，请先配置 Key 后点击「从上游拉取」"}
-                    </div>
-                  ) : (
-                    catalogModels.map((model) => {
-                      const checked = selectedChannel.models.includes(model.id);
-                      return (
-                        <label key={model.id} className={cn("settings-model-option", checked && "is-checked")}>
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={(e) => toggleModel(model.id, e.target.checked)}
-                          />
-                          <span className="font-mono text-xs">{model.id}</span>
-                          <em className={cn("settings-cap-tag", `is-${model.capability}`)}>
-                            {CAPABILITY_LABELS[(model.capability as Capability) || "text"] || model.capability}
-                          </em>
-                        </label>
-                      );
-                    })
-                  )}
-                </div>
-                <div className="settings-model-manual">
-                  <input
-                    className="settings-input"
-                    value={manualModel}
-                    onChange={(e) => setManualModel(e.target.value)}
-                    placeholder={
-                      selectedChannel.protocol === "volc_tts"
-                        ? "手动添加音色 ID"
-                        : `手动追加（如 ${DEFAULT_VIDEO_MODEL}）`
-                    }
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        addManualModel();
-                      }
-                    }}
-                  />
-                  <button type="button" className="admin-btn admin-btn-secondary settings-mini-btn" onClick={addManualModel}>
-                    添加
-                  </button>
-                </div>
-              </LabeledControl>
-            </div>
-          ) : (
-            <div className="settings-empty-hint">请选择左侧渠道</div>
-          )}
-        </SettingsPanel>
-      </div>
-
-      <div className="settings-routing-grid">
-        <ArkVolcMediaPanel
-          channelId={ARK_VOLC_CHANNEL_ID}
-          hasApiKey={Boolean(arkVolcChannel?.has_api_key)}
-          apiKeyInput={apiKeyInputs[ARK_VOLC_CHANNEL_ID] ?? ""}
-          onApiKeyChange={(value) => setApiKeyInputs((prev) => ({ ...prev, [ARK_VOLC_CHANNEL_ID]: value }))}
-          draft={volcDraft}
-          onDraftChange={(patch) => setVolcDraft((prev) => ({ ...prev, ...patch }))}
-        />
-
-        <SettingsPanel
-          className="settings-panel--compact"
-          title="3. 逻辑模型路由"
-          description="能力 → 默认渠道 / 上游模型"
-        >
-          <div className="settings-field-grid settings-field-grid--2 mb-3">
-            {(["text_model", "image_model", "video_model", "audio_model"] as const).map((key) => {
-              const cap = key.replace("_model", "") as Capability;
-              const options = (data?.logical_models ?? []).filter((model) => model.capability === cap);
-              return (
-                <LabeledControl key={key} label={`${CAPABILITY_LABELS[cap]}默认`}>
-                  <select
-                    className="settings-select"
-                    value={data?.default_models[key] ?? ""}
-                    onChange={(e) =>
-                      setData((prev) =>
-                        prev
-                          ? {
-                              ...prev,
-                              default_models: { ...prev.default_models, [key]: e.target.value },
-                            }
-                          : prev,
-                      )
-                    }
-                  >
-                    <option value="">未设置</option>
-                    {options.map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {model.name || model.id}
-                      </option>
-                    ))}
-                  </select>
-                </LabeledControl>
-              );
-            })}
-          </div>
-          <div className="admin-table-wrap settings-logic-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>能力</th>
-                  <th>默认渠道</th>
-                  <th>上游模型</th>
-                  <th>优先级</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(data?.logical_models ?? []).flatMap((model) =>
-                  model.bindings.map((binding) => {
-                    const channel = data?.system_channels.find((item) => item.id === binding.channel_id);
-                    return (
-                      <tr key={`${model.id}-${binding.id}`}>
-                        <td>{CAPABILITY_LABELS[model.capability]}</td>
-                        <td>{channel?.name ?? binding.channel_id}</td>
-                        <td className="font-mono text-xs">{binding.upstream_model}</td>
-                        <td>{binding.priority}</td>
-                      </tr>
-                    );
-                  }),
-                )}
-                {(data?.logical_models ?? []).every((m) => m.bindings.length === 0) ? (
-                  <tr>
-                    <td colSpan={4} className="text-center text-[#909399]">
-                      保存渠道后将自动同步逻辑路由
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-        </SettingsPanel>
-      </div>
+            );
+          })}
+        </div>
+      </SettingsPanel>
     </SettingsTabShell>
   );
 }

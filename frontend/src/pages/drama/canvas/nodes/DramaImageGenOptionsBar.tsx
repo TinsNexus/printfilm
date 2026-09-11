@@ -11,13 +11,15 @@ import {
   formatOutputSettingsLabel,
   GENERATION_ASPECT_RATIO_OPTIONS,
   GENERATION_RESOLUTION_OPTIONS,
-  getImageModelLabel,
-  IMAGE_GENERATION_MODELS,
   type GenerationAspectRatioId,
   type GenerationResolution,
-  type ImageGenerationModelId,
   type ImageGenerationOptions,
 } from '../../../../lib/dramaGenerationOptions'
+import {
+  catalogImageModels,
+  catalogModelLabel,
+  useMediaModelsCatalog,
+} from '../../../../hooks/useMediaModelsCatalog'
 import './dramaImageGenOptions.css'
 
 type DramaImageGenOptionsBarProps = {
@@ -39,6 +41,18 @@ export function DramaImageGenOptionsBar({
 }: DramaImageGenOptionsBarProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState<OpenPanel>(null)
+  const catalog = useMediaModelsCatalog()
+  const imageModels = catalogImageModels(catalog)
+
+  useEffect(() => {
+    // 目录到达后，把旧 Kie/方舟 id 换成后台默认图片模型
+    if (!catalog || disabled) return
+    const ids = imageModels.map((m) => m.id)
+    if (!ids.length) return
+    if (value.model_id && ids.includes(value.model_id)) return
+    const next = catalog.defaults.image_model || ids[0]
+    if (next && next !== value.model_id) onChange({ ...value, model_id: next })
+  }, [catalog, disabled])
 
   useEffect(() => {
     if (!open) return
@@ -58,7 +72,7 @@ export function DramaImageGenOptionsBar({
   }
 
   const styleLabel = getImageStyleLabel(value.image_style_id) || '风格'
-  const modelLabel = getImageModelLabel(value.model_id)
+  const modelLabel = catalogModelLabel(value.model_id, imageModels, '图片模型')
   const outputLabel = formatOutputSettingsLabel(value.aspect_ratio, value.resolution)
 
   return (
@@ -126,18 +140,21 @@ export function DramaImageGenOptionsBar({
         <div className="fc-gen-opt-panel" role="dialog" aria-label="生图模型">
           <div className="fc-gen-opt-panel-title">模型</div>
           <div className="fc-gen-model-list">
-            {IMAGE_GENERATION_MODELS.map((m) => (
+            {imageModels.length === 0 ? (
+              <p className="fc-gen-model-empty">请先在管理后台「模型」勾选图片模型</p>
+            ) : null}
+            {imageModels.map((m) => (
               <button
                 key={m.id}
                 type="button"
                 className={`fc-gen-model-item${value.model_id === m.id ? ' selected' : ''}`}
                 onClick={() => {
-                  onChange({ ...value, model_id: m.id as ImageGenerationModelId })
+                  onChange({ ...value, model_id: m.id })
                   setOpen(null)
                 }}
               >
                 <strong>{m.label}</strong>
-                <span>{m.description}</span>
+                <span>{m.description || 'TokenFree'}</span>
               </button>
             ))}
           </div>

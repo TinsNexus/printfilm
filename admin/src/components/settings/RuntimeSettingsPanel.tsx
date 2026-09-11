@@ -92,11 +92,11 @@ export function RuntimeSettingsPanel() {
         items={
           statusItems.length > 0
             ? statusItems
-            : [{ id: "empty", label: "能力路由", ready: false, pendingText: "请先配置模型路由" }]
+            : [{ id: "empty", label: "能力路由", ready: false, pendingText: "请先在「模型」填写 Key 并选择模型" }]
         }
         extra={
           <span className="settings-status-extra">
-            {form.readiness?.every((item) => item.ready) ? "四类能力已就绪" : "请在「模型路由」补全渠道"}
+            {form.readiness?.every((item) => item.ready) ? "四类能力已就绪" : "请在「模型」填写 TokenFree Key 并选择模型"}
           </span>
         }
       />

@@ -194,12 +194,18 @@ def _build_route(
 
 def _auto_protocol(channel: SystemModelChannel, upstream_model: str) -> str:
     explicit = (channel.protocol or "auto").lower()
-    if explicit != "auto":
+    if explicit not in {"", "auto"}:
         return explicit
     cap = infer_model_capability(upstream_model)
     if cap == "audio":
-        return "volc_tts"
+        return "openai"
     if cap in {"image", "video"}:
+        # TokenFree / New API 走 OpenAI 兼容根路径；方舟专有渠道仍用 ark 路径
+        from app.services.tokenfree_gateway import TOKENFREE_CHANNEL_ID, TOKENFREE_BASE_URL
+
+        base = (channel.base_url or "").rstrip("/").lower()
+        if channel.id == TOKENFREE_CHANNEL_ID or TOKENFREE_BASE_URL.split("://")[-1].lower() in base:
+            return "openai"
         return "ark"
     return "openai"
 

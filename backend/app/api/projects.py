@@ -58,8 +58,8 @@ async def get_voices() -> list[dict]:
 
 @router.get("/media-models")
 async def get_media_models() -> dict:
-    """科普前台可选图/视频模型目录。"""
-    from app.services.kie_catalog import catalog_payload
+    """科普前台可选图/视频模型目录（TokenFree 已勾选模型）。"""
+    from app.services.media_catalog import catalog_payload
 
     return catalog_payload()
 

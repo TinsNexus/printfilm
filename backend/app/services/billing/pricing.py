@@ -74,11 +74,33 @@ def charge_fen_for_tokens(
     return cost, charge
 
 
+def _has_request_tokens(block: dict[str, Any]) -> bool:
+    """是否像单次调用 usage（带 token 字段），而不是账户余额。"""
+    return any(
+        block.get(key) is not None
+        for key in ("prompt_tokens", "completion_tokens", "total_tokens", "input_tokens", "output_tokens")
+    )
+
+
+def _extract_newapi_quota(data: dict[str, Any], usage: dict[str, Any]) -> Any:
+    """从单次调用响应提取 New API 消耗额度（不是账户剩余）。"""
+    for key in ("quota_consumed", "consumed_quota"):
+        if usage.get(key) is not None:
+            return usage.get(key)
+        if data.get(key) is not None:
+            return data.get(key)
+    if usage.get("quota") is None:
+        return None
+    if usage is not data or _has_request_tokens(usage):
+        return usage.get("quota")
+    return None
+
+
 def parse_upstream_cost_fen(
     data: dict[str, Any] | None,
     settings: Settings | None = None,
 ) -> int | None:
-    """从火山 usage / Kie credits / 响应块解析上游成本（分）；无则 None。"""
+    """从 New API quota / 火山 usage / Kie credits 解析上游成本（分）；无则 None。"""
     if not data:
         return None
     usage = data.get("usage") if isinstance(data.get("usage"), dict) else data
@@ -96,6 +118,13 @@ def parse_upstream_cost_fen(
                 return max(0, int(math.ceil(float(usage[key]) * 100)))
             except (TypeError, ValueError):
                 pass
+    from app.services.tokenfree_usage import quota_to_cost_fen
+
+    newapi_quota = _extract_newapi_quota(data, usage)
+    if newapi_quota is not None:
+        converted = quota_to_cost_fen(newapi_quota, settings)
+        if converted > 0:
+            return converted
     # Kie：任务级 creditsConsumed（usage 内或顶层）
     credits = usage.get("creditsConsumed")
     if credits is None:
@@ -166,73 +195,50 @@ def billing_key_label(billing_key: str) -> str:
 
 
 def billing_model_rate_rows(settings: Settings | None = None) -> list[dict[str, Any]]:
-    """管理端展示：各模型计费口径（Ark token 单价 / Kie credit）。"""
-    from app.services.kie_catalog import IMAGE_MODELS, VIDEO_MODELS
-
+    """管理端展示：TokenFree 上游优先按 New API quota，缺省回退 token 单价。"""
     s = settings or get_settings()
     markup = float(s.billing_markup)
-    fen_per = kie_fen_per_credit(s)
-    rows: list[dict[str, Any]] = [
+    return [
         {
             "id": "llm_chat",
             "label": "LLM 对话",
-            "provider": "ark",
+            "provider": "tokenfree",
             "capability": "llm",
-            "basis": "token",
-            "rate_label": f"{s.billing_llm_per_m} 元/百万 tokens",
+            "basis": "quota/token",
+            "rate_label": f"New API quota 优先；缺省 {s.billing_llm_per_m} 元/百万 tokens",
+            "markup": markup,
+        },
+        {
+            "id": "seedream",
+            "label": "图片生成",
+            "provider": "tokenfree",
+            "capability": "image",
+            "basis": "quota/token",
+            "rate_label": f"New API quota 优先；缺省 {s.billing_seedream_per_m} 元/百万 tokens",
+            "markup": markup,
+        },
+        {
+            "id": "seedance",
+            "label": "视频生成",
+            "provider": "tokenfree",
+            "capability": "video",
+            "basis": "quota/token",
+            "rate_label": (
+                f"New API quota 优先；缺省 video0 {s.billing_seedance_video0} / "
+                f"video1 {s.billing_seedance_video1} 元/百万 tokens"
+            ),
             "markup": markup,
         },
         {
             "id": "tts",
             "label": "TTS 语音",
-            "provider": "ark",
+            "provider": "tokenfree",
             "capability": "tts",
-            "basis": "token",
-            "rate_label": f"{s.billing_tts_per_m} 元/百万 tokens",
+            "basis": "quota/token",
+            "rate_label": f"New API quota 优先；缺省 {s.billing_tts_per_m} 元/百万 tokens",
             "markup": markup,
         },
     ]
-    for m in (*IMAGE_MODELS, *VIDEO_MODELS):
-        if m.provider == "kie":
-            rows.append(
-                {
-                    "id": m.id,
-                    "label": m.label,
-                    "provider": "kie",
-                    "capability": m.capability,
-                    "basis": "credit",
-                    "rate_label": f"{fen_per:g} 分/credit × markup",
-                    "markup": markup,
-                }
-            )
-        elif m.capability == "image":
-            rows.append(
-                {
-                    "id": m.id,
-                    "label": m.label,
-                    "provider": "ark",
-                    "capability": "image",
-                    "basis": "token",
-                    "rate_label": f"{s.billing_seedream_per_m} 元/百万 tokens（有上游费用则优先）",
-                    "markup": markup,
-                }
-            )
-        else:
-            rows.append(
-                {
-                    "id": m.id,
-                    "label": m.label,
-                    "provider": "ark",
-                    "capability": "video",
-                    "basis": "token",
-                    "rate_label": (
-                        f"video0 {s.billing_seedance_video0} / "
-                        f"video1 {s.billing_seedance_video1} 元/百万 tokens"
-                    ),
-                    "markup": markup,
-                }
-            )
-    return rows
 
 
 def sku_by_id(sku_id: str) -> dict[str, Any] | None:

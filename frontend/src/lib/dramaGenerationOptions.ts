@@ -1,11 +1,6 @@
-/** 漫剧生图：模型 / 比例 / 清晰度选项（方舟 Seedream + Kie 主流） */
+/** 漫剧生图：模型 / 比例 / 清晰度选项（模型列表来自后台 TokenFree 目录） */
 
-export type ImageGenerationModelId =
-  | 'seedream-5.0'
-  | 'seedream-4.5'
-  | 'kie-seedream-5'
-  | 'kie-nano-banana-2'
-  | 'kie-nano-banana'
+export type ImageGenerationModelId = string
 
 export type GenerationAspectRatioId =
   | 'auto'
@@ -42,42 +37,16 @@ export const GENERATION_ASPECT_RATIO_OPTIONS: Array<{
   { id: '1:1', label: '1:1' },
 ]
 
-/** 生图模型（方舟 + Kie） */
+/** 生图模型由 /api/media-models 提供；此处仅占位默认 id */
 export const IMAGE_GENERATION_MODELS: Array<{
   id: ImageGenerationModelId
   label: string
   description: string
-}> = [
-  {
-    id: 'kie-seedream-5',
-    label: 'Seedream 5 Pro（Kie）',
-    description: '字节 Seedream 文生图，细节与文字表现好。',
-  },
-  {
-    id: 'kie-nano-banana-2',
-    label: 'Nano Banana 2（Kie）',
-    description: 'Google 闪图，速度快、角色一致性强。',
-  },
-  {
-    id: 'kie-nano-banana',
-    label: 'Nano Banana（Kie）',
-    description: 'Google 闪图基础版，成本更低。',
-  },
-  {
-    id: 'seedream-5.0',
-    label: 'Seedream 5.0（方舟）',
-    description: '更智能的理解与推理，支持多图融合。',
-  },
-  {
-    id: 'seedream-4.5',
-    label: 'Seedream 4.5（方舟）',
-    description: '擅长图片编辑与复杂场景还原。',
-  },
-]
+}> = []
 
 /** 默认生图选项（角色偏竖构图） */
 export const DEFAULT_IMAGE_GENERATION_OPTIONS: ImageGenerationOptions = {
-  model_id: 'kie-seedream-5',
+  model_id: '',
   aspect_ratio: '3:4',
   resolution: '3K',
 }
@@ -86,7 +55,7 @@ export const DEFAULT_IMAGE_GENERATION_OPTIONS: ImageGenerationOptions = {
 export function defaultOptionsForAssetKind(kind: string | undefined | null): ImageGenerationOptions {
   const k = String(kind || '').toLowerCase()
   if (k === 'scene') {
-    return { model_id: 'kie-seedream-5', aspect_ratio: '16:9', resolution: '3K' }
+    return { model_id: DEFAULT_IMAGE_GENERATION_OPTIONS.model_id, aspect_ratio: '16:9', resolution: '3K' }
   }
   return { ...DEFAULT_IMAGE_GENERATION_OPTIONS }
 }
@@ -100,12 +69,13 @@ export function formatOutputSettingsLabel(
   return `${aspectRatio} · ${resolution}`
 }
 
-/** 解析模型展示名 */
+/** 解析模型展示名（无目录时回退 id） */
 export function getImageModelLabel(modelId: string | undefined | null): string {
-  return IMAGE_GENERATION_MODELS.find((m) => m.id === modelId)?.label ?? 'Seedream 5 Pro（Kie）'
+  const id = (modelId || '').trim()
+  return id || '图片模型'
 }
 
-/** 是否已登记的生图模型 id */
+/** 任意非空字符串均可作为生图模型 id */
 export function isImageGenerationModelId(id: string): id is ImageGenerationModelId {
-  return IMAGE_GENERATION_MODELS.some((m) => m.id === id)
+  return Boolean((id || '').trim())
 }

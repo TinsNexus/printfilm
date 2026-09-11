@@ -149,24 +149,10 @@ def resolve_video_model_id(model_id: str | None) -> str:
 
 
 def catalog_payload() -> dict:
-    """公开目录 JSON。"""
-    def _row(m: MediaModelSpec) -> dict:
-        return {
-            "id": m.id,
-            "label": m.label,
-            "description": m.description,
-            "provider": m.provider,
-            "recommended": m.recommended,
-        }
+    """公开目录 JSON（委托 TokenFree 路由快照）。"""
+    from app.services.media_catalog import catalog_payload as tokenfree_catalog_payload
 
-    return {
-        "image_models": [_row(m) for m in IMAGE_MODELS],
-        "video_models": [_row(m) for m in VIDEO_MODELS],
-        "defaults": {
-            "image_model": DEFAULT_IMAGE_MODEL_ID,
-            "video_model": DEFAULT_VIDEO_MODEL_ID,
-        },
-    }
+    return tokenfree_catalog_payload()
 
 
 def kie_upstream_catalog(*, capability: str = "all") -> list[dict[str, str]]:

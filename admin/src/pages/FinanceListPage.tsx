@@ -85,8 +85,8 @@ export function FinanceListPage() {
           rangeMismatch
             ? "数据与当前时间范围不一致，请重新加载"
             : data?.configured
-            ? `近 ${days} 日 · 实际成本来自方舟官方用量${data.last_sync_at ? ` · 最近同步 ${new Date(data.last_sync_at).toLocaleString()}` : ""}`
-            : "未配置火山 Access Key，实际成本列为空；可在「系统设置 → 支付计费 → 上游成本监控」配置后刷新"
+            ? `近 ${days} 日 · 实际成本来自 TokenFree New API${data.last_sync_at ? ` · 最近同步 ${new Date(data.last_sync_at).toLocaleString()}` : ""}`
+            : "未配置 TokenFree API Key，实际成本列为空；请在「系统设置 → 模型」填写后刷新"
         }
         actions={
           data?.configured ? (

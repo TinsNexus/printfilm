@@ -22,7 +22,11 @@ import {
   type DramaCharacterIntroMode,
 } from '../../lib/dramaCharacterIntro'
 
-import { MODEL_OPTIONS } from './dramaEpisodeEditUtils'
+import {
+  catalogModelLabel,
+  catalogVideoModels,
+  useMediaModelsCatalog,
+} from '../../hooks/useMediaModelsCatalog'
 
 import { DramaProjectOutputSettings } from './DramaProjectOutputSettings'
 
@@ -72,6 +76,8 @@ export function EpisodeEditHeaderControls({
   const [open, setOpen] = useState<OpenPanel>(null)
   const [rulesOpen, setRulesOpen] = useState(false)
   const [panelStyle, setPanelStyle] = useState<CSSProperties | null>(null)
+  const catalog = useMediaModelsCatalog()
+  const videoModels = catalogVideoModels(catalog)
   useLayoutEffect(() => {
     if (!open || !rootRef.current) {
       setPanelStyle(null)
@@ -123,7 +129,7 @@ export function EpisodeEditHeaderControls({
     e.stopPropagation()
   }
   const styleLabel = getImageStyleLabel(styleId) || '视频风格'
-  const modelLabel = MODEL_OPTIONS.find((m) => m.id === modelId)?.label || modelId
+  const modelLabel = catalogModelLabel(modelId, videoModels, '视频模型')
   const subtitleLabel = subtitleMode === 'model' ? '模型字幕' : '后期字幕'
   const subtitleUsesModel = subtitleModeUsesModelOutput(subtitleMode)
   const introLabel = characterIntroMode === 'model' ? '人物介绍' : '无介绍叠字'
@@ -265,7 +271,10 @@ export function EpisodeEditHeaderControls({
                 >
                   <div className="fc-gen-opt-panel-title">视频模型</div>
                   <div className="fc-gen-model-list">
-                    {MODEL_OPTIONS.map((opt) => (
+                    {videoModels.length === 0 ? (
+                      <p className="fc-gen-model-empty">请先在管理后台「模型」勾选视频模型</p>
+                    ) : null}
+                    {videoModels.map((opt) => (
                       <button
                         key={opt.id}
                         type="button"

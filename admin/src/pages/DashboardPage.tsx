@@ -324,11 +324,11 @@ export function DashboardPage() {
           </PageSection>
 
           <PageSection
-            title="Seedance 官方用量对照"
+            title="TokenFree 官方用量对照"
             description={
               upstreamUsage?.configured
-                ? `近 30 日本地 seedance 成本 vs 方舟 GetInferenceUsage${upstreamUsage.last_sync_at ? ` · 最近同步 ${new Date(upstreamUsage.last_sync_at).toLocaleString()}` : ""}`
-                : "未配置火山 Access Key，请在「支付计费 → 上游成本监控」配置后刷新官方数据"
+                ? `近 30 日本地成本 vs TokenFree New API 用量${upstreamUsage.last_sync_at ? ` · 最近同步 ${new Date(upstreamUsage.last_sync_at).toLocaleString()}` : ""}`
+                : "未配置 TokenFree API Key，请在「系统设置 → 模型」填写后刷新官方数据"
             }
             actions={
               upstreamUsage?.configured ? (

@@ -1,4 +1,6 @@
 # Admin model / provider settings API
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +21,7 @@ from app.services.model_settings import (
 from app.services.upstream_model_catalog import list_upstream_models
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class AdminArkModelsRequest(BaseModel):
@@ -145,29 +148,17 @@ async def admin_billing_model_rates(
     return {"items": billing_model_rate_rows()}
 
 
-@router.get("/settings/kie/credits")
-async def admin_kie_account_credits(
+@router.get("/settings/tokenfree/quota")
+async def admin_tokenfree_account_quota(
     _admin: User = Depends(get_current_admin),
 ) -> dict:
-    """查询 Kie 上游账户剩余 credit（与方舟用量对照互补）。"""
-    from app.services.billing.pricing import kie_fen_per_credit
-    from app.services.kie_client import get_kie, resolve_kie_credentials
+    """查询 TokenFree / New API 账户剩余额度（与模型页同一把 Key）。"""
+    from app.services.tokenfree_usage import fetch_tokenfree_account, tokenfree_usage_configured
 
-    key, base = resolve_kie_credentials()
-    if not key:
-        raise HTTPException(status_code=400, detail="未配置 Kie API Key（请先在路由设置启用 Kie 渠道）")
+    if not tokenfree_usage_configured():
+        raise HTTPException(status_code=400, detail="未配置 TokenFree API Key（请先在「模型」填写）")
     try:
-        credits = await get_kie().get_account_credits()
+        return await fetch_tokenfree_account()
     except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    fen_per = kie_fen_per_credit()
-    cost_fen = int(round(credits * fen_per))
-    return {
-        "ok": True,
-        "credits": credits,
-        "base_url": base,
-        "fen_per_credit": fen_per,
-        "approx_cost_fen": cost_fen,
-        "approx_cost_yuan": round(cost_fen / 100, 4),
-        "markup_hint": "用户扣费 = ceil(credits × fen_per_credit × markup)",
-    }
+        logger.warning("tokenfree quota query failed: %s", exc)
+        raise HTTPException(status_code=502, detail="TokenFree 额度查询失败") from exc

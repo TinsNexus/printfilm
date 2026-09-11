@@ -32,20 +32,19 @@ charge_fen = ceil(tokens / 1e6 * provider_yuan_per_m * markup * 100)
 | seedream | 8（按次折合约；有上游费用则优先） |
 | tts | 2（按次估价） |
 
-### Kie（credit 计费）
+### TokenFree / New API（quota 计费）
 
-Kie 图/视频任务返回 `creditsConsumed`。换算：
+上游统一走 TokenFree。单次调用若返回 `usage.quota` / `quota_consumed`，按 New API 额度折人民币：
 
 ```
-cost_fen = ceil(creditsConsumed × BILLING_KIE_FEN_PER_CREDIT)   # 默认 3.5 分/credit
+cost_fen = ceil(quota / 500000 × BILLING_USD_CNY × 100)   # 500000 quota = 1 USD
 charge_fen = ceil(cost_fen × markup)
 ```
 
-说明：1 credit ≈ $0.005，按约 7 CNY/USD 折合 ¥0.035 ≈ 3.5 分。管理端「支付与计费」可改 `billing_kie_fen_per_credit`，并可「查询 Kie 余额」（`GET /api/v1/chat/credit`）。
+未返回 quota 时回退 token 单价。管理端「支付与计费」可「查询 TokenFree 余额」（`GET /v1/dashboard/billing/subscription` + `usage`）。
 
-Seedance（方舟）视频任务成功后，优先读取官方任务响应中的 `usage` / 费用写入 `usage_events`（`estimated=false`）；仅在上游未返回时回退到时长估算。
+管理端「官方用量对照」复用模型页 TokenFree API Key，拉取 New API 日消耗（`/api/data/self` 或 billing usage，日期无效时按累计额度差分记到当天）并与本地成本对照。
 
-管理端「官方用量对照」需配置 `VOLC_ACCESS_KEY_ID` / `VOLC_SECRET_ACCESS_KEY`，通过方舟管控面 `GetInferenceUsage` 拉取账号日用量并与本地 seedance 成本对照。Kie 侧用「查询 Kie 余额」对照账户 credit。
 ## TaskRun 计费流程
 
 每个 `TaskRun` 独立走「预扣 → 记录用量 → 结算」：
@@ -157,18 +156,18 @@ EPAY_RETURN_URL=https://your-site.example.com/pricing?paid=1
 | POST | `/api/billing/epay/notify` | 易支付回调 |
 | GET | `/api/admin/usage-events` | 管理端用量明细分页 |
 | GET | `/api/admin/tasks/{id}` | 任务详情含 `usage_lines` 与计费字段 |
-| GET | `/api/admin/stats/upstream-usage` | 近 N 日官方/本地 seedance 成本对照 |
+| GET | `/api/admin/stats/upstream-usage` | 近 N 日官方/本地成本对照 |
 | POST | `/api/admin/stats/upstream-usage/sync` | 手动刷新官方用量快照 |
-| GET | `/api/admin/settings/billing/model-rates` | 各模型计费口径（Ark token / Kie credit） |
-| GET | `/api/admin/settings/kie/credits` | 查询 Kie 账户剩余 credit |
+| GET | `/api/admin/settings/billing/model-rates` | 各模型计费口径（TokenFree quota / token） |
+| GET | `/api/admin/settings/tokenfree/quota` | 查询 TokenFree 账户剩余额度 |
 
 ## 管理端
 
-- **设置 → 支付与计费**：各模型单价、markup、`Kie 分/credit`；可查看模型费率表与查询 Kie 余额。
+- **设置 → 支付与计费**：各模型单价、markup；可查看模型费率表与查询 TokenFree 余额。
 - **订单与流水** → 「用量明细」Tab：按用户/任务/领域筛选 `usage_events`。
 - **任务队列** → 列表「费用」列显示 `billing_charged_fen`（冻结中显示预扣）。
 - **任务详情** → 「计费」Tab：预扣/实扣/退回 + 用量行列表。
-- **仪表盘** → 「Seedance 官方用量对照」：本地成本 vs 方舟 `GetInferenceUsage`（需 `VOLC_ACCESS_KEY_ID` / `VOLC_SECRET_ACCESS_KEY`）。
+- **仪表盘** → 「TokenFree 官方用量对照」：本地成本 vs New API 用量（需在「模型」填写 TokenFree API Key）。
 
 ## 验收清单
 
@@ -177,5 +176,5 @@ EPAY_RETURN_URL=https://your-site.example.com/pricing?paid=1
 3. 漫剧聊天 / 选题扩写 / Skill 优化 / 音色描述 / 开放 API / 工作室工具：响应含 `task_id`（轻量 TaskRun），余额变化正确。
 4. 管理端可按 `task_run_id` 或 `billing_key=llm_chat` 查到每条 LLM/图/视频/TTS 费用。
 5. Seedance 视频成功后 `usage_events.estimated=false` 且 `total_tokens` 与官方任务查询一致。
-6. 配置火山 AK/SK 后，管理端可刷新并查看近 30 日官方/本地成本对照。
-7. Kie 图/视频成功后按 `creditsConsumed × fen_per_credit × markup` 扣费；管理端可查询 Kie 余额。
+6. 配置 TokenFree API Key 后，管理端可刷新并查看近 30 日官方/本地成本对照。
+7. 单次调用若带 New API `quota` / `quota_consumed`，按额度折人民币后再 × markup 扣费；管理端可查询 TokenFree 余额。

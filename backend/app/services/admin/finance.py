@@ -9,10 +9,11 @@ from sqlalchemy import Date, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import UpstreamUsageDaily, UsageEvent
-from app.services.ark_control_usage import volc_usage_configured
+from app.services.tokenfree_usage import tokenfree_usage_configured
 
 
 def _utc_today() -> date:
+    """UTC 当天日期，与财务列表窗口对齐。"""
     return datetime.now(UTC).date()
 
 
@@ -126,7 +127,7 @@ async def build_finance_daily_list(
         totals["profit_pct"] = round(totals["profit_fen"] / totals["charge_fen"] * 100.0, 2)
 
     return {
-        "configured": volc_usage_configured(),
+        "configured": tokenfree_usage_configured(),
         "days": window_days,
         "last_sync_at": last_sync_at,
         "totals": totals,

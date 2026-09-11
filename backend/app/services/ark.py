@@ -20,6 +20,15 @@ from app.config import Settings, get_settings
 from app.services.billing.pricing import parse_upstream_cost_fen, parse_usage_dict
 from app.schemas_routing import ResolvedModelRoute
 from app.services.logical_model_router import resolve_logical_model, resolve_logical_model_id
+from app.services.tokenfree_video import (
+    extract_video_result_url,
+    extract_video_task_id,
+    format_video_task_error,
+    normalize_video_task_status,
+    prepare_video_create_body,
+    remap_video_path,
+    unwrap_video_task_payload,
+)
 from app.services import storage
 from app.services.drama.seedance_i2v_role import resolve_seedance_i2v_image_role
 from app.services.ffmpeg_compose import is_near_silent_audio
@@ -174,34 +183,38 @@ class TaskResult:
     upstream_cost_fen: int | None = None
 
 
-# 从 Seedance 任务查询响应解析状态、媒体 URL 与官方 usage
+# 从 Seedance / New API 任务查询响应解析状态、媒体 URL 与官方 usage
 def _build_task_result_from_payload(data: dict[str, Any]) -> TaskResult:
-    status = str(data.get("status", "")).lower() or "running"
-    usage_parsed = parse_usage_dict(data)
+    payload = unwrap_video_task_payload(data)
+    status = normalize_video_task_status(str(payload.get("status", "") or "running"))
+    usage_parsed = parse_usage_dict(payload)
     total_tokens = int(usage_parsed.get("total_tokens") or 0)
     completion_tokens = int(usage_parsed.get("completion_tokens") or 0)
-    raw_usage = data.get("usage") if isinstance(data.get("usage"), dict) else None
+    raw_usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else None
 
-    if status in {"succeeded", "success"}:
-        url = None
-        content = data.get("content")
-        if isinstance(content, dict):
-            url = content.get("video_url")
+    if status == "succeeded":
+        url = extract_video_result_url(payload)
         if not url:
-            url = data.get("video_url")
+            # completed 但结果 URL 尚未回填时继续轮询，避免空 URL 被当成终态
+            return TaskResult(
+                status="running",
+                total_tokens=total_tokens,
+                completion_tokens=completion_tokens,
+                raw_usage=raw_usage,
+            )
         return TaskResult(
             status="succeeded",
             url=url,
-            last_frame_url=_extract_seedance_last_frame_url(data),
+            last_frame_url=_extract_seedance_last_frame_url(payload),
             total_tokens=total_tokens,
             completion_tokens=completion_tokens,
             raw_usage=raw_usage,
         )
-    if status in {"failed", "cancelled", "canceled", "expired"}:
-        err = data.get("error") or data.get("message") or status
+    if status == "failed":
+        err = payload.get("error") or payload.get("message") or payload.get("fail_reason") or "failed"
         return TaskResult(
             status="failed",
-            error=str(err),
+            error=format_video_task_error(err),
             total_tokens=total_tokens,
             completion_tokens=completion_tokens,
             raw_usage=raw_usage,
@@ -308,27 +321,30 @@ class ArkGateway:
     def settings(self) -> Settings:
         return self._settings_override or get_settings()
 
-    # 优先后台渠道 Key，env 仅作空渠道时的兜底
+    # 优先后台 TokenFree / 方舟渠道 Key，env 仅作空渠道时的兜底
     def _ark_api_key(self) -> str:
         try:
             from app.services.model_settings import get_routing_snapshot
+            from app.services.tokenfree_gateway import TOKENFREE_CHANNEL_ID
 
             channels = get_routing_snapshot().channels
         except Exception:  # noqa: BLE001
             channels = []
-        ark_channels = [
-            ch
-            for ch in channels
-            if ch.enabled
-            and (ch.api_key or "").strip()
-            and (
-                ch.protocol == "ark"
-                or ch.api_format == "ark"
-                or "ark.cn-beijing.volces.com" in (ch.base_url or "")
+            TOKENFREE_CHANNEL_ID = "tokenfree"
+        enabled = [ch for ch in channels if ch.enabled and (ch.api_key or "").strip()]
+        preferred = next((ch for ch in enabled if ch.id == TOKENFREE_CHANNEL_ID), None)
+        if preferred is None:
+            preferred = next(
+                (
+                    ch
+                    for ch in enabled
+                    if ch.protocol == "ark"
+                    or ch.api_format == "ark"
+                    or "ark.cn-beijing.volces.com" in (ch.base_url or "")
+                ),
+                enabled[0] if enabled else None,
             )
-        ]
-        if ark_channels:
-            preferred = next((ch for ch in ark_channels if ch.id == "ark-default"), ark_channels[0])
+        if preferred is not None:
             return (preferred.api_key or "").strip()
         return (self.settings.ark_api_key or "").strip()
 
@@ -343,6 +359,8 @@ class ArkGateway:
         }
 
     def _url(self, path: str) -> str:
+        """拼接方舟/TokenFree 基址；视频任务路径在 TokenFree 上改写为 /video/generations。"""
+        path = remap_video_path(path, base_url=self.settings.ark_base_url)
         base = self.settings.ark_base_url.rstrip("/")
         if not path.startswith("/"):
             path = "/" + path
@@ -362,12 +380,28 @@ class ArkGateway:
         return self._headers()
 
     def _route_url(self, path: str, route: ResolvedModelRoute | None = None) -> str:
+        """按逻辑路由基址拼 URL；无路由时回落到 _url。"""
         if route and route.base_url:
+            path = remap_video_path(
+                path,
+                base_url=route.base_url,
+                channel_id=getattr(route, "channel_id", "") or "",
+            )
             base = route.base_url.rstrip("/")
             if not path.startswith("/"):
                 path = "/" + path
             return f"{base}{path}"
         return self._url(path)
+
+    def _video_json(
+        self,
+        body: dict[str, Any],
+        route: ResolvedModelRoute | None = None,
+    ) -> dict[str, Any]:
+        """TokenFree 上把 Seedance 方舟 body 包装成 New API /video/generations 请求体。"""
+        base = (route.base_url if route and route.base_url else self.settings.ark_base_url) or ""
+        channel_id = (route.channel_id if route else "") or ""
+        return prepare_video_create_body(body, base_url=base, channel_id=channel_id)
 
     async def chat_storyboard(
         self,
@@ -999,7 +1033,7 @@ class ArkGateway:
             resp = await client.post(
                 self._route_url("/contents/generations/tasks", route),
                 headers=self._route_headers(route),
-                json=body,
+                json=self._video_json(body, route),
             )
             if resp.status_code >= 400 and prompt_as_json:
                 # Fallback: plain text prompt
@@ -1007,7 +1041,7 @@ class ArkGateway:
                 resp = await client.post(
                     self._route_url("/contents/generations/tasks", route),
                     headers=self._route_headers(route),
-                    json=body,
+                    json=self._video_json(body, route),
                 )
             # 文案策略：在 ratio/adaptive 结构回退前，对当前意图 body 追加 CG 重试
             if resp.status_code >= 400:
@@ -1022,7 +1056,7 @@ class ArkGateway:
                         resp = await client.post(
                             self._route_url("/contents/generations/tasks", route),
                             headers=self._route_headers(route),
-                            json=body,
+                            json=self._video_json(body, route),
                         )
                     if resp.status_code >= 400:
                         raise RuntimeError(
@@ -1040,7 +1074,7 @@ class ArkGateway:
                     resp = await client.post(
                         self._route_url("/contents/generations/tasks", route),
                         headers=self._route_headers(route),
-                        json=body,
+                        json=self._video_json(body, route),
                     )
             if resp.status_code >= 400 and not target_ratio:
                 # 无目标画幅时的兼容回退；有竖屏目标时禁止 adaptive，避免再次出横屏
@@ -1049,16 +1083,16 @@ class ArkGateway:
                 resp = await client.post(
                     self._route_url("/contents/generations/tasks", route),
                     headers=self._route_headers(route),
-                    json=body,
+                    json=self._video_json(body, route),
                 )
             if resp.status_code >= 400:
                 raise RuntimeError(_format_seedance_create_error(resp.status_code, resp.text))
             data = resp.json()
 
-        task_id = data.get("id") or data.get("task_id")
+        task_id = extract_video_task_id(data)
         if not task_id:
             raise RuntimeError(f"Seedance missing task id: {data}")
-        return str(task_id)
+        return task_id
 
     async def _resolve_media_ref(self, media_url: str, *, prefer_https: bool = False) -> str:
         """解析图片/音频 URL 供 Seedance 拉取。"""
@@ -1124,7 +1158,7 @@ class ArkGateway:
             resp = await client.post(
                 self._route_url("/contents/generations/tasks", route),
                 headers=self._route_headers(route),
-                json=payload,
+                json=self._video_json(payload, route),
             )
             if resp.status_code >= 400:
                 raw_err = resp.text or ""
@@ -1149,7 +1183,7 @@ class ArkGateway:
                     resp = await client.post(
                         self._route_url("/contents/generations/tasks", route),
                         headers=self._route_headers(route),
-                        json=payload,
+                        json=self._video_json(payload, route),
                     )
                 if resp.status_code >= 400:
                     raise RuntimeError(
@@ -1161,10 +1195,10 @@ class ArkGateway:
                     )
             data = resp.json()
 
-        task_id = data.get("id") or data.get("task_id")
+        task_id = extract_video_task_id(data)
         if not task_id:
             raise RuntimeError(f"Seedance missing task id: {data}")
-        return str(task_id)
+        return task_id
 
     async def gen_and_wait_seedance_body(
         self,

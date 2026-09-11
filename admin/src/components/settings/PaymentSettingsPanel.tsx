@@ -17,14 +17,14 @@ export function PaymentSettingsPanel() {
   const { form, loading, saving, patchField, save } = useAdminModelSettings();
   const [epayKeyInput, setEpayKeyInput] = useState("");
   const [clearEpayKey, setClearEpayKey] = useState(false);
-  const [volcAkInput, setVolcAkInput] = useState("");
-  const [volcSkInput, setVolcSkInput] = useState("");
-  const [clearVolcAk, setClearVolcAk] = useState(false);
-  const [clearVolcSk, setClearVolcSk] = useState(false);
   const [smtpPasswordInput, setSmtpPasswordInput] = useState("");
   const [clearSmtpPassword, setClearSmtpPassword] = useState(false);
-  const [kieCreditsBusy, setKieCreditsBusy] = useState(false);
-  const [kieCreditsInfo, setKieCreditsInfo] = useState<string>("");
+  /*
+   * tokenfreeBusy 查询 New API 余额中
+   * tokenfreeInfo 余额或错误文案
+   */
+  const [tokenfreeBusy, setTokenfreeBusy] = useState(false);
+  const [tokenfreeInfo, setTokenfreeInfo] = useState<string>("");
   const [modelRates, setModelRates] = useState<
     Array<{
       id: string;
@@ -44,12 +44,7 @@ export function PaymentSettingsPanel() {
     return Boolean(form.epay_pid && form.epay_api_url && hasKey);
   }, [form, clearEpayKey, epayKeyInput]);
 
-  const volcReady = useMemo(() => {
-    if (!form) return false;
-    const hasAk = (form.has_volc_access_key_id && !clearVolcAk) || volcAkInput.trim().length > 0;
-    const hasSk = (form.has_volc_secret_access_key && !clearVolcSk) || volcSkInput.trim().length > 0;
-    return Boolean(form.volc_ark_usage_enabled && hasAk && hasSk);
-  }, [form, clearVolcAk, clearVolcSk, volcAkInput, volcSkInput]);
+  const tokenfreeReady = Boolean(form?.has_openai_api_key);
 
   const smtpReady = useMemo(() => {
     if (!form?.smtp_enabled) return false;
@@ -83,12 +78,6 @@ export function PaymentSettingsPanel() {
         billing_signup_grant_fen: form.billing_signup_grant_fen,
         quota_enabled: form.quota_enabled,
         new_user_quota: form.new_user_quota,
-        volc_access_key_id: volcAkInput.trim() || undefined,
-        volc_secret_access_key: volcSkInput.trim() || undefined,
-        clear_volc_access_key_id: clearVolcAk,
-        clear_volc_secret_access_key: clearVolcSk,
-        volc_ark_region: form.volc_ark_region,
-        volc_ark_usage_enabled: form.volc_ark_usage_enabled,
         billing_user_alert_enabled: form.billing_user_alert_enabled,
         billing_user_alert_interval_fen: form.billing_user_alert_interval_fen,
         billing_admin_cost_alert_enabled: form.billing_admin_cost_alert_enabled,
@@ -108,10 +97,6 @@ export function PaymentSettingsPanel() {
     );
     setEpayKeyInput("");
     setClearEpayKey(false);
-    setVolcAkInput("");
-    setVolcSkInput("");
-    setClearVolcAk(false);
-    setClearVolcSk(false);
     setSmtpPasswordInput("");
     setClearSmtpPassword(false);
   }
@@ -124,30 +109,35 @@ export function PaymentSettingsPanel() {
       setModelRates(res.items || []);
     } catch (err) {
       setModelRates([]);
-      setKieCreditsInfo(err instanceof Error ? err.message : "加载模型费率失败");
+      setTokenfreeInfo(err instanceof Error ? err.message : "加载模型费率失败");
     } finally {
       setModelRatesBusy(false);
     }
   }
 
-  // 查询 Kie 上游剩余 credit
-  async function queryKieCredits() {
-    setKieCreditsBusy(true);
-    setKieCreditsInfo("");
+  // 查询 TokenFree / New API 剩余额度
+  async function queryTokenfreeQuota() {
+    setTokenfreeBusy(true);
+    setTokenfreeInfo("");
     try {
       const res = await api<{
-        credits: number;
-        fen_per_credit: number;
-        approx_cost_yuan: number;
-        base_url: string;
-      }>("/api/admin/settings/kie/credits");
-      setKieCreditsInfo(
-        `剩余 ${res.credits} credit ≈ ¥${res.approx_cost_yuan}（${res.fen_per_credit} 分/credit · ${res.base_url}）`,
+        quota: number | null;
+        used_quota: number | null;
+        remain_yuan: number;
+        used_yuan: number;
+        remain_usd: number | null;
+        usd_cny: number;
+        console_url: string;
+      }>("/api/admin/settings/tokenfree/quota");
+      const remainUsd = res.remain_usd != null ? `$${res.remain_usd.toFixed(4)}` : "—";
+      setTokenfreeInfo(
+        `剩余 ${res.quota ?? "—"} quota ≈ ¥${res.remain_yuan}（${remainUsd} · ${res.usd_cny} CNY/USD）` +
+          `；已用 ${res.used_quota ?? "—"} ≈ ¥${res.used_yuan}。控制台 ${res.console_url}`,
       );
     } catch (err) {
-      setKieCreditsInfo(err instanceof Error ? err.message : "查询 Kie 余额失败");
+      setTokenfreeInfo(err instanceof Error ? err.message : "查询 TokenFree 余额失败");
     } finally {
-      setKieCreditsBusy(false);
+      setTokenfreeBusy(false);
     }
   }
 
@@ -175,11 +165,11 @@ export function PaymentSettingsPanel() {
             pendingText: "已关闭",
           },
           {
-            id: "volc",
+            id: "tokenfree",
             label: "上游成本",
-            ready: volcReady,
-            readyText: "已启用",
-            pendingText: form.volc_ark_usage_enabled ? "缺凭证" : "未启用",
+            ready: tokenfreeReady,
+            readyText: "已配置 Key",
+            pendingText: "缺 TokenFree Key",
           },
           {
             id: "smtp",
@@ -331,31 +321,18 @@ export function PaymentSettingsPanel() {
                 onChange={(e) => patchField("billing_seedance_video1", Number(e.target.value))}
               />
             </LabeledControl>
-            <LabeledControl
-              label="Kie 分/credit"
-              hint="1 credit≈$0.005；默认 3.5 分。用户扣费=ceil(credits×此值×markup)"
-            >
-              <input
-                className="settings-input"
-                type="number"
-                step="0.1"
-                min={0.01}
-                value={form.billing_kie_fen_per_credit ?? 3.5}
-                onChange={(e) => patchField("billing_kie_fen_per_credit", Number(e.target.value))}
-              />
-            </LabeledControl>
           </div>
 
-          <div className="settings-subsection-title mt-3">Kie 上游与模型费率</div>
+          <div className="settings-subsection-title mt-3">TokenFree 上游与模型费率</div>
           <div className="flex flex-wrap items-center gap-2 mt-2">
             <Button
               type="button"
               size="sm"
               variant="outline"
-              disabled={kieCreditsBusy}
-              onClick={() => void queryKieCredits()}
+              disabled={tokenfreeBusy}
+              onClick={() => void queryTokenfreeQuota()}
             >
-              {kieCreditsBusy ? "查询中…" : "查询 Kie 余额"}
+              {tokenfreeBusy ? "查询中…" : "查询 TokenFree 余额"}
             </Button>
             <Button
               type="button"
@@ -367,7 +344,7 @@ export function PaymentSettingsPanel() {
               {modelRatesBusy ? "加载中…" : "查看各模型计费口径"}
             </Button>
           </div>
-          {kieCreditsInfo ? <p className="text-sm text-muted-foreground mt-2">{kieCreditsInfo}</p> : null}
+          {tokenfreeInfo ? <p className="text-sm text-muted-foreground mt-2">{tokenfreeInfo}</p> : null}
           {modelRates.length > 0 ? (
             <div className="mt-3 overflow-x-auto rounded border">
               <table className="w-full text-sm">
@@ -586,47 +563,11 @@ export function PaymentSettingsPanel() {
         <SettingsPanel
           className="settings-panel--compact"
           title="4. 上游成本监控"
-          description="火山 GetInferenceUsage，与方舟 API Key 分离"
+          description="TokenFree New API 用量，与「模型」页同一把 Key"
         >
-          <div className="settings-toggle-row">
-            <div>
-              <strong>启用官方用量拉取</strong>
-              <span>关闭后仪表盘仅展示本地成本</span>
-            </div>
-            <Switch
-              checked={form.volc_ark_usage_enabled}
-              onCheckedChange={(v) => patchField("volc_ark_usage_enabled", v)}
-            />
-          </div>
-          <div className="settings-field-grid mt-3">
-            <SecretField
-              label="Access Key ID"
-              value={volcAkInput}
-              configured={form.has_volc_access_key_id && !clearVolcAk}
-              onChange={setVolcAkInput}
-              onClear={() => {
-                setVolcAkInput("");
-                setClearVolcAk(true);
-              }}
-            />
-            <SecretField
-              label="Secret Access Key"
-              value={volcSkInput}
-              configured={form.has_volc_secret_access_key && !clearVolcSk}
-              onChange={setVolcSkInput}
-              onClear={() => {
-                setVolcSkInput("");
-                setClearVolcSk(true);
-              }}
-            />
-            <LabeledControl label="区域" hint="默认 cn-beijing">
-              <input
-                className="settings-input"
-                value={form.volc_ark_region}
-                onChange={(e) => patchField("volc_ark_region", e.target.value)}
-              />
-            </LabeledControl>
-          </div>
+          <p className="text-sm text-muted-foreground">
+            无需火山 Access Key。填写 TokenFree Key 后，仪表盘与财务列表可同步官方日消耗（quota，500000 ≈ 1 USD）。
+          </p>
         </SettingsPanel>
       </div>
     </SettingsTabShell>

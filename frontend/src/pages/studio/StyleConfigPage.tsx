@@ -527,7 +527,7 @@ export default function StyleConfigPage() {
             <div className="pf-style-block">
               <h3>图片模型</h3>
               <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0 0 0.65rem' }}>
-                分镜首帧所用模型，可切换 Kie 主流或方舟直连。
+                使用管理后台「模型」中已勾选的 TokenFree 模型。
               </p>
               <div className="pf-model-grid">
                 {mediaCatalog.image_models.map((m: MediaModelOption) => (
@@ -542,7 +542,7 @@ export default function StyleConfigPage() {
                       {m.recommended ? <span className="pf-model-badge">推荐</span> : null}
                     </div>
                     <div className="pf-model-opt-desc">{m.description}</div>
-                    <div className="pf-model-opt-provider">{m.provider === 'kie' ? 'Kie.ai' : '火山方舟'}</div>
+                    <div className="pf-model-opt-provider">TokenFree</div>
                   </button>
                 ))}
               </div>
@@ -568,7 +568,7 @@ export default function StyleConfigPage() {
                       {m.recommended ? <span className="pf-model-badge">推荐</span> : null}
                     </div>
                     <div className="pf-model-opt-desc">{m.description}</div>
-                    <div className="pf-model-opt-provider">{m.provider === 'kie' ? 'Kie.ai' : '火山方舟'}</div>
+                    <div className="pf-model-opt-provider">TokenFree</div>
                   </button>
                 ))}
               </div>

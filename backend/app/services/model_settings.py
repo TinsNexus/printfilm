@@ -5,7 +5,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import logging
-import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -116,76 +115,14 @@ def _refresh_routing_snapshot(
     )
 
 
-# 从 env 构建默认渠道
+# 从 env 构建默认渠道（开源版仅 TokenFree）
 def _bootstrap_channels_from_env(settings: Settings | None = None) -> list[SystemModelChannel]:
-    src = settings or get_settings()
-    channels: list[SystemModelChannel] = []
-    if (src.openai_api_key or src.openai_base_url) and src.model_llm:
-        channels.append(
-            SystemModelChannel(
-                id="openai-default",
-                name="OpenAI 兼容 LLM",
-                base_url=(src.openai_base_url or "https://api.openai.com/v1").rstrip("/"),
-                api_key=src.openai_api_key or "",
-                has_api_key=bool(src.openai_api_key),
-                api_format="openai",
-                protocol="openai",
-                models=[src.model_llm],
-                enabled=True,
-                sort_order=0,
-            )
-        )
-    ark_models = [m for m in [src.model_image, src.model_image_45, src.model_video] if m]
-    if src.ark_api_key and ark_models:
-        channels.append(
-            SystemModelChannel(
-                id="ark-default",
-                name="火山方舟 ARK",
-                base_url=(src.ark_base_url or "https://ark.cn-beijing.volces.com/api/v3").rstrip("/"),
-                api_key=src.ark_api_key or "",
-                has_api_key=bool(src.ark_api_key),
-                api_format="ark",
-                protocol="ark",
-                models=list(dict.fromkeys(ark_models)),
-                enabled=True,
-                sort_order=1,
-            )
-        )
-    tts_models = [m for m in [src.model_audio, src.volc_tts_speaker] if m]
-    if (src.volc_tts_api_key or (src.volc_tts_app_id and src.volc_tts_access_key)) and tts_models:
-        channels.append(
-            SystemModelChannel(
-                id="volc-tts-default",
-                name="豆包语音 TTS",
-                base_url=(src.volc_tts_url or "").rstrip("/"),
-                api_key=src.volc_tts_api_key or src.volc_tts_access_key or "",
-                has_api_key=bool(src.volc_tts_api_key or src.volc_tts_access_key),
-                api_format="openai",
-                protocol="volc_tts",
-                models=list(dict.fromkeys(tts_models)),
-                enabled=True,
-                sort_order=2,
-            )
-        )
-    from app.services.kie_catalog import default_kie_channel_models
-    from app.services.kie_client import KIE_CHANNEL_ID, KIE_DEFAULT_BASE
+    from app.services.tokenfree_gateway import locked_tokenfree_channel
 
-    kie_key = (getattr(src, "kie_api_key", "") or "").strip()
-    channels.append(
-        SystemModelChannel(
-            id=KIE_CHANNEL_ID,
-            name="Kie.ai（主流图/视频）",
-            base_url=(getattr(src, "kie_base_url", "") or KIE_DEFAULT_BASE).rstrip("/") or KIE_DEFAULT_BASE,
-            api_key=kie_key,
-            has_api_key=bool(kie_key),
-            api_format="kie",
-            protocol="kie",
-            models=default_kie_channel_models(),
-            enabled=True,
-            sort_order=3,
-        )
-    )
-    return channels
+    src = settings or get_settings()
+    key = (src.openai_api_key or src.ark_api_key or "").strip()
+    models = [m for m in [src.model_llm, src.model_image, src.model_image_45, src.model_video, src.model_audio] if m]
+    return [locked_tokenfree_channel(api_key=key, models=models, enabled=True)]
 
 
 # 从 env 构建默认逻辑模型与默认模型 ID
@@ -302,7 +239,7 @@ async def _load_channels(db: AsyncSession, *, runtime: bool) -> list[SystemModel
 async def _ensure_bootstrapped_channels(db: AsyncSession) -> list[SystemModelChannelRow]:
     existing = list((await db.execute(select(SystemModelChannelRow))).scalars().all())
     if existing:
-        await _ensure_kie_channel(db, existing)
+        await _ensure_tokenfree_channel(db, existing)
         return list((await db.execute(select(SystemModelChannelRow))).scalars().all())
     channels = _bootstrap_channels_from_env()
     rows: list[SystemModelChannelRow] = []
@@ -332,28 +269,38 @@ async def _ensure_bootstrapped_channels(db: AsyncSession) -> list[SystemModelCha
     return rows
 
 
-async def _ensure_kie_channel(db: AsyncSession, existing: list[SystemModelChannelRow]) -> None:
-    """已有库缺少 Kie 渠道时补一条（Key 可从 env 灌入）。"""
-    from app.services.kie_catalog import default_kie_channel_models
-    from app.services.kie_client import KIE_CHANNEL_ID, KIE_DEFAULT_BASE
-
-    if any((row.protocol or "").lower() == "kie" or row.id == KIE_CHANNEL_ID for row in existing):
-        return
-    src = get_settings()
-    kie_key = (getattr(src, "kie_api_key", "") or "").strip()
-    row = SystemModelChannelRow(
-        id=KIE_CHANNEL_ID,
-        name="Kie.ai（主流图/视频）",
-        base_url=(getattr(src, "kie_base_url", "") or KIE_DEFAULT_BASE).rstrip("/") or KIE_DEFAULT_BASE,
-        api_key_ciphertext=_encrypt_secret(kie_key) if kie_key else None,
-        api_format="kie",
-        protocol="kie",
-        models=default_kie_channel_models(),
-        enabled=True,
-        sort_order=max((int(r.sort_order or 0) for r in existing), default=0) + 1,
-        advanced_config=None,
+async def _ensure_tokenfree_channel(db: AsyncSession, existing: list[SystemModelChannelRow]) -> None:
+    """锁定唯一 TokenFree 渠道：固定 Base URL，其它渠道停用。"""
+    from app.services.tokenfree_gateway import (
+        TOKENFREE_BASE_URL,
+        TOKENFREE_CHANNEL_ID,
+        TOKENFREE_CHANNEL_NAME,
+        pick_migratable_api_key,
     )
-    db.add(row)
+
+    runtime = [_channel_row_to_runtime(row) for row in existing]
+    migrated_key = pick_migratable_api_key(runtime)
+    token_row = next((row for row in existing if row.id == TOKENFREE_CHANNEL_ID), None)
+    if token_row is None:
+        token_row = SystemModelChannelRow(id=TOKENFREE_CHANNEL_ID)
+        db.add(token_row)
+    current_key = _decrypt_secret(token_row.api_key_ciphertext or "")
+    token_row.name = TOKENFREE_CHANNEL_NAME
+    token_row.base_url = TOKENFREE_BASE_URL
+    token_row.api_format = "openai"
+    token_row.protocol = "auto"
+    token_row.enabled = True
+    token_row.sort_order = 0
+    token_row.advanced_config = None
+    if not current_key and migrated_key:
+        token_row.api_key_ciphertext = _encrypt_secret(migrated_key)
+        current_key = migrated_key
+    if not token_row.models:
+        src = get_settings()
+        token_row.models = [m for m in [src.model_llm, src.model_image, src.model_video, src.model_audio] if m]
+    for row in existing:
+        if row.id != TOKENFREE_CHANNEL_ID:
+            row.enabled = False
     await db.commit()
 
 
@@ -408,8 +355,17 @@ async def _compose_runtime_state(db: AsyncSession) -> tuple[list[SystemModelChan
     logical_models = synchronize_logical_models_with_channels(logical_models, channels)
     default_models = normalize_default_models(default_models, logical_models, channels)
     flat = _effective_flat(_decrypt_flat_config(config))
+    from app.services.tokenfree_gateway import apply_tokenfree_flat_overlay
+
+    flat = apply_tokenfree_flat_overlay(flat, channels)
     if default_models.text_model:
         flat["model_llm"] = default_models.text_model
+    if default_models.image_model:
+        flat["model_image"] = default_models.image_model
+    if default_models.video_model:
+        flat["model_video"] = default_models.video_model
+    if default_models.audio_model:
+        flat["model_audio"] = default_models.audio_model
     return channels, logical_models, default_models, flat, app_row
 
 
@@ -481,9 +437,13 @@ async def get_admin_model_settings(db: AsyncSession) -> AdminModelSettingsOut:
 
 
 async def get_admin_routing_settings(db: AsyncSession) -> AdminRoutingSettingsOut:
+    from app.services.tokenfree_gateway import TOKENFREE_CHANNEL_ID
+
     channels, logical_models, defaults, _, app_row = await _compose_runtime_state(db)
-    admin_channels = await _load_channels(db, runtime=False)
-    errors = model_routing_validation_errors(logical_models, admin_channels, defaults)
+    admin_channels = [
+        item for item in await _load_channels(db, runtime=False) if item.id == TOKENFREE_CHANNEL_ID
+    ]
+    errors = model_routing_validation_errors(logical_models, admin_channels or channels, defaults)
     return AdminRoutingSettingsOut(
         system_channels=admin_channels,
         logical_models=logical_models,
@@ -585,29 +545,39 @@ async def patch_admin_routing_settings(
     }
 
     if body.system_channels is not None:
-        seen_ids: set[str] = set()
-        for index, channel_in in enumerate(body.system_channels):
-            channel_id = (channel_in.id or "").strip() or f"channel-{uuid.uuid4().hex[:8]}"
-            seen_ids.add(channel_id)
-            prev = existing_rows.get(channel_id)
-            prev_key = _decrypt_secret(prev.api_key_ciphertext or "") if prev else ""
-            api_key = prev_key
-            if channel_in.clear_api_key:
+        from app.services.tokenfree_gateway import (
+            TOKENFREE_BASE_URL,
+            TOKENFREE_CHANNEL_ID,
+            TOKENFREE_CHANNEL_NAME,
+            locked_tokenfree_channel,
+        )
+
+        incoming = next(
+            (item for item in body.system_channels if (item.id or "").strip() == TOKENFREE_CHANNEL_ID),
+            body.system_channels[0] if body.system_channels else None,
+        )
+        prev = existing_rows.get(TOKENFREE_CHANNEL_ID)
+        prev_key = _decrypt_secret(prev.api_key_ciphertext or "") if prev else ""
+        api_key = prev_key
+        if incoming is not None:
+            if incoming.clear_api_key:
                 api_key = ""
-            elif channel_in.api_key is not None and str(channel_in.api_key).strip():
-                api_key = str(channel_in.api_key).strip()
-            row = existing_rows.get(channel_id) or SystemModelChannelRow(id=channel_id)
-            row.name = channel_in.name.strip() or channel_id
-            row.base_url = (channel_in.base_url or "").strip()
-            row.api_key_ciphertext = _encrypt_secret(api_key) if api_key else None
-            row.api_format = channel_in.api_format
-            row.protocol = channel_in.protocol
-            row.models = [str(item).strip() for item in channel_in.models if str(item).strip()]
-            row.enabled = bool(channel_in.enabled)
-            row.sort_order = channel_in.sort_order if channel_in.sort_order else index
-            row.advanced_config = channel_in.advanced_config.model_dump() if channel_in.advanced_config else None
-            db.add(row)
-        stale_ids = [cid for cid in existing_rows if cid not in seen_ids]
+            elif incoming.api_key is not None and str(incoming.api_key).strip():
+                api_key = str(incoming.api_key).strip()
+        models = list(incoming.models) if incoming is not None else (list(prev.models or []) if prev else [])
+        locked = locked_tokenfree_channel(api_key=api_key, models=models, enabled=True)
+        row = prev or SystemModelChannelRow(id=TOKENFREE_CHANNEL_ID)
+        row.name = TOKENFREE_CHANNEL_NAME
+        row.base_url = TOKENFREE_BASE_URL
+        row.api_key_ciphertext = _encrypt_secret(locked.api_key) if locked.api_key else None
+        row.api_format = "openai"
+        row.protocol = "auto"
+        row.models = locked.models
+        row.enabled = True
+        row.sort_order = 0
+        row.advanced_config = None
+        db.add(row)
+        stale_ids = [cid for cid in existing_rows if cid != TOKENFREE_CHANNEL_ID]
         if stale_ids:
             await db.execute(delete(SystemModelChannelRow).where(SystemModelChannelRow.id.in_(stale_ids)))
         applied.append("system_channels")

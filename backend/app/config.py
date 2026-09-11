@@ -31,13 +31,13 @@ class Settings(BaseSettings):
     redis_url: str = "redis://127.0.0.1:6379/0"
 
     ark_api_key: str = ""
-    ark_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
-    # Kie.ai（主流图/视频聚合：Seedream / Nano Banana / Seedance / Veo）
+    ark_base_url: str = "https://www.tokenfree.com/v1"
+    # Kie.ai（开源版不再作为可切换上游，保留字段以免旧配置报错）
     kie_api_key: str = ""
     kie_base_url: str = "https://api.kie.ai"
-    # 文字模型（任意 OpenAI 兼容 API：DeepSeek / Kimi / OpenAI 等）
+    # 文字模型：开源版固定 TokenFree New API，后台选模型
     openai_api_key: str = ""
-    openai_base_url: str = ""
+    openai_base_url: str = "https://www.tokenfree.com/v1"
     # 默认示例为 kimi；实际以后台渠道 models + 默认定稿为准，可改为 deepseek-chat 等
     model_llm: str = "kimi-k2.6"
     model_image: str = "doubao-seedream-5-0-260128"
@@ -113,6 +113,8 @@ class Settings(BaseSettings):
     billing_tts_per_m: float = 2.0
     # Kie：1 credit 折合人民币分（约 $0.005 ≈ ¥0.035 → 3.5）；用户扣费再 × markup
     billing_kie_fen_per_credit: float = 3.5
+    # TokenFree / New API：quota→USD→人民币（500000 quota = 1 USD）
+    billing_usd_cny: float = 7.0
     # Fallback tokens when API omits usage
     billing_est_llm_tokens: int = 80_000
     # Seedream 单张实测约 3–3.5 万 tokens；预估略留余量，避免预扣远高于实扣

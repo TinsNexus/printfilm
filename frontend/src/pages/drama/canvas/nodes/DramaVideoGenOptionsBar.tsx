@@ -9,18 +9,20 @@ import { DramaImageStylePreviewImg } from '../../../../components/drama/DramaIma
 import {
   clampVideoDuration,
   formatVideoOutputLabel,
-  getVideoModelLabel,
   VIDEO_ASPECT_RATIO_OPTIONS,
   VIDEO_DURATION_MAX,
   VIDEO_DURATION_MIN,
   VIDEO_DURATION_PRESETS,
-  VIDEO_GENERATION_MODELS,
   VIDEO_RESOLUTION_OPTIONS,
   type VideoAspectRatio,
-  type VideoGenerationModelId,
   type VideoGenerationOptions,
   type VideoResolution,
 } from '../../../../lib/dramaVideoGenerationOptions'
+import {
+  catalogModelLabel,
+  catalogVideoModels,
+  useMediaModelsCatalog,
+} from '../../../../hooks/useMediaModelsCatalog'
 import './dramaImageGenOptions.css'
 
 type DramaVideoGenOptionsBarProps = {
@@ -39,6 +41,18 @@ export function DramaVideoGenOptionsBar({
 }: DramaVideoGenOptionsBarProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState<OpenPanel>(null)
+  const catalog = useMediaModelsCatalog()
+  const videoModels = catalogVideoModels(catalog)
+
+  useEffect(() => {
+    // 目录到达后，把旧 Kie/方舟 id 换成后台默认视频模型
+    if (!catalog || disabled) return
+    const ids = videoModels.map((m) => m.id)
+    if (!ids.length) return
+    if (value.model_id && ids.includes(value.model_id)) return
+    const next = catalog.defaults.video_model || ids[0]
+    if (next && next !== value.model_id) onChange({ ...value, model_id: next })
+  }, [catalog, disabled])
 
   useEffect(() => {
     if (!open) return
@@ -57,7 +71,7 @@ export function DramaVideoGenOptionsBar({
   }
 
   const styleLabel = getImageStyleLabel(value.image_style_id) || '风格'
-  const modelLabel = getVideoModelLabel(value.model_id)
+  const modelLabel = catalogModelLabel(value.model_id, videoModels, '视频模型')
   const outputLabel = formatVideoOutputLabel(value.aspect_ratio, value.resolution)
 
   return (
@@ -134,18 +148,21 @@ export function DramaVideoGenOptionsBar({
         <div className="fc-gen-opt-panel" role="dialog" aria-label="视频模型">
           <div className="fc-gen-opt-panel-title">模型</div>
           <div className="fc-gen-model-list">
-            {VIDEO_GENERATION_MODELS.map((m) => (
+            {videoModels.length === 0 ? (
+              <p className="fc-gen-model-empty">请先在管理后台「模型」勾选视频模型</p>
+            ) : null}
+            {videoModels.map((m) => (
               <button
                 key={m.id}
                 type="button"
                 className={`fc-gen-model-item${value.model_id === m.id ? ' selected' : ''}`}
                 onClick={() => {
-                  onChange({ ...value, model_id: m.id as VideoGenerationModelId })
+                  onChange({ ...value, model_id: m.id })
                   setOpen(null)
                 }}
               >
                 <strong>{m.label}</strong>
-                <span>{m.description}</span>
+                <span>{m.description || 'TokenFree'}</span>
               </button>
             ))}
           </div>

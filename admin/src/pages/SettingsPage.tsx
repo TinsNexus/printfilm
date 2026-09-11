@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 type SettingsTab = "routing" | "runtime" | "oss" | "payment" | "site";
 
 const TABS: { id: SettingsTab; label: string }[] = [
-  { id: "routing", label: "模型路由" },
+  { id: "routing", label: "模型" },
   { id: "runtime", label: "运行参数" },
   { id: "oss", label: "存储 OSS" },
   { id: "payment", label: "支付计费" },
@@ -29,7 +29,7 @@ function SettingsPageHeader() {
       <div className="min-w-0">
         <h1 className="settings-page-title">系统设置</h1>
         <p className="settings-head-desc">
-          渠道路由、运行参数、OSS / 易支付 / 计费与站点配置；密钥加密存库，留空保存不修改。
+          TokenFree API Key、运行参数、OSS / 易支付 / 计费与站点配置；密钥加密存库，留空保存不修改。
         </p>
       </div>
       {action ? (

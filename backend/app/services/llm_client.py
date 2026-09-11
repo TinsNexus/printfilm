@@ -27,8 +27,7 @@ def resolve_llm_api_key() -> str:
     if not key:
         raise LlmUnavailableError(
             "未配置 OPENAI_API_KEY，无法调用文字模型。"
-            "请在后台渠道或 backend/.env 配置 OpenAI 兼容 Key、Base URL，"
-            "并将 MODEL_LLM / 渠道 models 设为该上游的模型 ID（如 deepseek-chat、kimi-k2.6）。"
+            "请在管理后台「系统设置 → 模型」填写 TokenFree API Key 并选择文本模型。"
         )
     return key
 
@@ -86,8 +85,7 @@ async def chat_completions(
         base = resolve_llm_base_url()
     if not model:
         raise LlmUnavailableError(
-            "未解析到可用文字模型。请在后台启用 OpenAI 兼容渠道，"
-            "并在渠道 models / 默认文本模型中填写上游模型 ID。"
+            "未解析到可用文字模型。请在管理后台填写 TokenFree API Key，拉取并选择文本模型。"
         )
     # kimi 系列仅允许 temperature=0.6，其它值会 400
     effective_temperature = 0.6 if model.lower().startswith("kimi") else temperature

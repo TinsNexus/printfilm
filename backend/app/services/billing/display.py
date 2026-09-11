@@ -28,6 +28,9 @@ _UPSTREAM_COST_JSON_KEYS = (
     "cost_yuan",
     "total_cost_yuan",
     "creditsConsumed",
+    "quota",
+    "quota_consumed",
+    "consumed_quota",
 )
 
 

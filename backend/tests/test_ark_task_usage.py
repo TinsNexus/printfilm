@@ -37,6 +37,19 @@ def test_build_task_result_running_without_usage():
     assert result.total_tokens == 0
 
 
+def test_build_task_result_completed_with_top_level_url():
+    data = {"status": "completed", "url": "https://example.com/newapi.mp4"}
+    result = _build_task_result_from_payload(data)
+    assert result.status == "succeeded"
+    assert result.url == "https://example.com/newapi.mp4"
+
+
+def test_build_task_result_completed_without_url_stays_running():
+    result = _build_task_result_from_payload({"status": "completed"})
+    assert result.status == "running"
+    assert result.url is None
+
+
 def test_task_result_dataclass_defaults():
     row = TaskResult(status="running")
     assert row.total_tokens == 0

@@ -1,11 +1,8 @@
 # -*- coding: utf-8 -*-
 """科普媒体模型目录归一化。"""
 from app.services.kie_catalog import (
-    DEFAULT_IMAGE_MODEL_ID,
-    DEFAULT_VIDEO_MODEL_ID,
     LEGACY_IMAGE_MODEL_ID,
     LEGACY_VIDEO_MODEL_ID,
-    catalog_payload,
     get_media_model,
     resolve_image_model_id,
     resolve_video_model_id,
@@ -24,12 +21,31 @@ def test_resolve_known_kie_ids() -> None:
     assert get_media_model("kie-seedance-2.5").provider == "kie"
 
 
-def test_catalog_defaults_are_mainstream() -> None:
-    payload = catalog_payload()
-    assert payload["defaults"]["image_model"] == DEFAULT_IMAGE_MODEL_ID
-    assert payload["defaults"]["video_model"] == DEFAULT_VIDEO_MODEL_ID
-    assert any(m["id"] == "kie-seedream-5" for m in payload["image_models"])
-    assert any(m["id"] == "kie-seedance-2.5" for m in payload["video_models"])
+def test_catalog_payload_uses_tokenfree_routing() -> None:
+    from app.services.media_catalog import build_media_catalog
+    from app.schemas_routing import DefaultModels, LogicalModel, SystemModelChannel
+
+    payload = build_media_catalog(
+        logical_models=[
+            LogicalModel(id="seedream-5.0", name="Seedream 5.0", capability="image", enabled=True),
+            LogicalModel(id="seedance-2.5", name="Seedance 2.5", capability="video", enabled=True),
+        ],
+        channels=[
+            SystemModelChannel(
+                id="tokenfree",
+                name="TokenFree",
+                base_url="https://www.tokenfree.com/v1",
+                models=["doubao-seedance-2-5-260628"],
+                enabled=True,
+            )
+        ],
+        defaults=DefaultModels(image_model="seedream-5.0", video_model="seedance-2.5"),
+    )
+    assert payload["defaults"]["video_model"] == "seedance-2.5"
+    assert any(m["id"] == "seedance-2.5" for m in payload["video_models"])
+    assert all(m["provider"] == "tokenfree" for m in payload["video_models"])
+    assert not any("kie" in m["id"] for m in payload["video_models"])
+    assert not any("方舟" in m["label"] for m in payload["video_models"])
 
 
 def test_kie_upstream_catalog_for_admin() -> None:

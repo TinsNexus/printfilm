@@ -1,4 +1,4 @@
-"""管理端：官方上游用量快照与本地成本对照。"""
+"""管理端：官方上游用量快照与本地成本对照（TokenFree / New API）。"""
 
 from __future__ import annotations
 
@@ -9,29 +9,30 @@ from typing import Any
 from sqlalchemy import Date, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import Settings, get_settings
+from app.config import get_settings
 from app.models import UpstreamUsageDaily, UsageEvent
-from app.services.ark_control_usage import get_inference_usage, volc_usage_configured
-from app.services.billing.pricing import charge_fen_for_tokens
+from app.services.tokenfree_usage import (
+    day_start_used_quota_from_raw_json,
+    fetch_tokenfree_account,
+    fetch_tokenfree_daily_usage,
+    quota_to_cost_fen,
+    tokenfree_usage_configured,
+    used_quota_from_raw_json,
+)
 
 
 def _utc_today() -> date:
+    """UTC 当天日期，与快照 usage_date 对齐。"""
     return datetime.now(UTC).date()
 
 
-def _tokens_to_official_cost_fen(tokens: int, settings: Settings | None = None) -> int:
-    """按 seedance video0 单价估算官方 token 成本（对照图仅供参考）。"""
-    s = settings or get_settings()
-    cost, _charge = charge_fen_for_tokens(int(tokens), "seedance2:video0", settings=s)
-    return int(cost or 0)
-
-
-async def _local_seedance_daily(
+async def _local_usage_daily(
     db: AsyncSession,
     *,
     since: date,
     until: date,
 ) -> dict[str, dict[str, int]]:
+    """按日聚合全部本地 usage_events（TokenFree 覆盖全部模型）。"""
     day_expr = cast(UsageEvent.created_at, Date)
     rows = (
         await db.execute(
@@ -41,7 +42,6 @@ async def _local_seedance_daily(
                 func.coalesce(func.sum(UsageEvent.total_tokens), 0).label("tokens"),
             )
             .where(
-                UsageEvent.billing_key.like("seedance%"),
                 day_expr >= since,
                 day_expr <= until,
             )
@@ -59,39 +59,95 @@ async def _local_seedance_daily(
     return out
 
 
+async def _latest_used_quota_before(
+    db: AsyncSession,
+    *,
+    before: date,
+) -> int | None:
+    """取 before 日之前最近一条快照里的累计 used_quota。"""
+    row = (
+        await db.execute(
+            select(UpstreamUsageDaily)
+            .where(UpstreamUsageDaily.usage_date < before)
+            .order_by(UpstreamUsageDaily.usage_date.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        return None
+    return used_quota_from_raw_json(row.raw_json)
+
+
+async def _today_from_cumulative(
+    db: AsyncSession,
+    *,
+    today: date,
+    used_quota: int,
+    settings: Any,
+) -> dict[str, Any]:
+    """当 New API 不按日返回用量时，用累计 used_quota 差分记到今天。"""
+    existing = (
+        await db.execute(select(UpstreamUsageDaily).where(UpstreamUsageDaily.usage_date == today))
+    ).scalar_one_or_none()
+    baseline = day_start_used_quota_from_raw_json(existing.raw_json if existing else None)
+    if baseline is None:
+        baseline = await _latest_used_quota_before(db, before=today)
+    if baseline is None:
+        return {
+            "quota": 0,
+            "tokens": 0,
+            "cost_fen": 0,
+            "used_quota": used_quota,
+            "day_start_used_quota": used_quota,
+            "source": "baseline",
+        }
+    delta = max(0, int(used_quota) - int(baseline))
+    return {
+        "quota": delta,
+        "tokens": 0,
+        "cost_fen": quota_to_cost_fen(delta, settings),
+        "used_quota": used_quota,
+        "day_start_used_quota": baseline,
+        "source": "cumulative_delta",
+    }
+
+
 async def sync_upstream_usage(
     db: AsyncSession,
     *,
     days: int = 30,
     force: bool = False,
 ) -> dict[str, Any]:
-    """拉取官方日用量并写入 upstream_usage_daily。"""
-    if not volc_usage_configured():
+    """拉取 TokenFree 官方日用量并写入 upstream_usage_daily。"""
+    if not tokenfree_usage_configured():
         return {"configured": False, "synced": 0, "skipped": 0}
 
     s = get_settings()
     today = _utc_today()
     start = today - timedelta(days=max(1, int(days)) - 1)
-    local_map = await _local_seedance_daily(db, since=start, until=today)
+    local_map = await _local_usage_daily(db, since=start, until=today)
+
+    official_daily = await fetch_tokenfree_daily_usage(start, today, settings=s)
+    account: dict[str, Any] | None = None
+    try:
+        account = await fetch_tokenfree_account(settings=s)
+    except RuntimeError:
+        if not official_daily:
+            raise
+    if not official_daily and account and account.get("used_quota") is not None:
+        official_daily = {
+            today.isoformat(): await _today_from_cumulative(
+                db,
+                today=today,
+                used_quota=int(account["used_quota"]),
+                settings=s,
+            )
+        }
 
     synced = 0
     skipped = 0
     now = datetime.now(UTC)
     one_hour_ago = now - timedelta(hours=1)
-
-    # 按 7 日窗口批量请求，减少管控面调用次数
-    window_start = start
-    official_daily: dict[str, int] = {}
-    while window_start <= today:
-        window_end = min(window_start + timedelta(days=6), today)
-        payload = await get_inference_usage(
-            window_start.isoformat(),
-            window_end.isoformat(),
-            settings=s,
-        )
-        for day_key, tokens in (payload.get("daily_tokens") or {}).items():
-            official_daily[str(day_key)[:10]] = int(tokens or 0)
-        window_start = window_end + timedelta(days=1)
 
     cur = start
     while cur <= today:
@@ -99,24 +155,44 @@ async def sync_upstream_usage(
         existing = (
             await db.execute(select(UpstreamUsageDaily).where(UpstreamUsageDaily.usage_date == cur))
         ).scalar_one_or_none()
+        hit = official_daily.get(day_key)
         if (
             existing
             and not force
+            and hit is None
             and existing.fetched_at
             and existing.fetched_at.replace(tzinfo=UTC) >= one_hour_ago
         ):
             skipped += 1
             cur += timedelta(days=1)
             continue
+        if (
+            existing
+            and not force
+            and hit is None
+            and cur < today
+        ):
+            skipped += 1
+            cur += timedelta(days=1)
+            continue
 
-        tokens = int(official_daily.get(day_key, 0))
         local_hit = local_map.get(day_key) or {"local_cost_fen": 0, "local_tokens": 0}
         row = existing or UpstreamUsageDaily(usage_date=cur)
-        row.official_tokens = tokens
-        row.official_cost_fen = _tokens_to_official_cost_fen(tokens, s)
+        if hit is not None:
+            row.official_tokens = int(hit.get("tokens") or 0)
+            row.official_cost_fen = int(hit.get("cost_fen") or 0)
+        elif existing is None:
+            row.official_tokens = 0
+            row.official_cost_fen = 0
         row.local_cost_fen = int(local_hit["local_cost_fen"])
         row.local_tokens = int(local_hit["local_tokens"])
-        row.raw_json = json.dumps({"day": day_key, "official_tokens": tokens}, ensure_ascii=False)[:4000]
+        raw: dict[str, Any] = {"day": day_key, "source": "tokenfree"}
+        if hit:
+            raw.update({k: v for k, v in hit.items() if k != "tokens"})
+        if account and cur == today:
+            raw["used_quota"] = account.get("used_quota")
+            raw["remain_quota"] = account.get("quota")
+        row.raw_json = json.dumps(raw, ensure_ascii=False)[:4000]
         row.fetched_at = now
         if existing is None:
             db.add(row)
@@ -143,7 +219,7 @@ async def build_upstream_usage_compare(
         )
     ).scalars().all()
     row_map = {r.usage_date.isoformat(): r for r in rows}
-    local_map = await _local_seedance_daily(db, since=start, until=today)
+    local_map = await _local_usage_daily(db, since=start, until=today)
 
     series: list[dict[str, Any]] = []
     cur = start
@@ -178,7 +254,7 @@ async def build_upstream_usage_compare(
         cur += timedelta(days=1)
 
     return {
-        "configured": volc_usage_configured(),
+        "configured": tokenfree_usage_configured(),
         "days": int(days),
         "last_sync_at": last_sync_at,
         "series": series,

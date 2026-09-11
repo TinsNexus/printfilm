@@ -225,7 +225,7 @@ class UsageEvent(Base):
 
 
 class UpstreamUsageDaily(Base):
-    """方舟官方日用量快照，用于与本地 usage_events 对照。"""
+    """TokenFree / New API 官方日用量快照，用于与本地 usage_events 对照。"""
 
     __tablename__ = "upstream_usage_daily"
 

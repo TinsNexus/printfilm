@@ -50,6 +50,7 @@ import { FragmentPlanSkillModal } from '../../components/drama/FragmentPlanSkill
 import { DramaGenTaskDetail } from '../../components/drama/DramaGenTaskDetail'
 import { CircleAlert } from 'lucide-react'
 import { useDramaImageGenQueue } from '../../hooks/useDramaImageGenQueue'
+import { useMediaModelsCatalog } from '../../hooks/useMediaModelsCatalog'
 import { enqueueDramaImageGen } from '../../lib/dramaImageGenQueue'
 import { defaultOptionsForAssetKind } from '../../lib/dramaGenerationOptions'
 import { dramaAssetImageGenButtonLabel } from '../../lib/dramaAssetImage'
@@ -148,7 +149,8 @@ function EpisodeEditInner() {
   const [assetTab, setAssetTab] = useState<AssetTab | null>('character')
   const [editing, setEditing] = useState(false)
   const [videoStyleId, setVideoStyleId] = useState<ImageStyleId | ''>('')
-  const [modelId, setModelId] = useState('kie-seedance-2.5')
+  const [modelId, setModelId] = useState('')
+  const mediaCatalog = useMediaModelsCatalog()
   const [aspectRatio, setAspectRatio] = useState<(typeof RATIO_OPTIONS)[number]>('9:16')
   // subtitleMode 本集字幕方式：模型自出 / 后期拼接（默认后期）
   const [subtitleMode, setSubtitleMode] = useState<DramaSubtitleMode>('post')
@@ -187,6 +189,14 @@ function EpisodeEditInner() {
   const reloadRef = useRef<() => Promise<void>>(async () => {})
   const projectParamsRef = useRef<Record<string, unknown>>({})
   const episodeParamsRef = useRef<Record<string, unknown>>({})
+
+  useEffect(() => {
+    // 目录到达后，把旧 Kie/方舟 id 换成后台默认视频模型
+    if (!mediaCatalog) return
+    const ids = mediaCatalog.video_models.map((m) => m.id)
+    if (!ids.length) return
+    setModelId((prev) => (ids.includes(prev) ? prev : mediaCatalog.defaults.video_model || ids[0]))
+  }, [mediaCatalog])
 
   const selected = fragments[selectedIndex] || null
   const selectedDuration = selected?.duration_sec ?? 8

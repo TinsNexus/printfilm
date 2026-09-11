@@ -138,6 +138,11 @@ async def list_upstream_models(
             api_key_override=key or api_key_override,
         )
 
+    if not base:
+        from app.services.tokenfree_gateway import TOKENFREE_BASE_URL
+
+        base = TOKENFREE_BASE_URL
+
     return await _list_openai_compatible_models(
         base_url=base,
         api_key=key,
