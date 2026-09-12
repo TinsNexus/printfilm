@@ -16,11 +16,15 @@ from app.services.drama.build_fragments import (
     _clamp_duration,
     _estimate_line_duration,
     _find_asset_by_name,
-    _format_narrative_line,
+    _expand_narrative_lines,
     _inject_character_mentions,
+    _rescale_timed_blocks,
+    repair_fragment_timed_layout,
     build_character_binding,
     build_summary_character_lookup,
 )
+from app.services.drama.fragment_budget import cap_llm_fragment_items, trim_episode_fragment_drafts
+from app.services.drama.fragment_content_duration import sum_fragment_content_duration_seconds
 from app.services.drama.fragment_plan_prompt import (
     FRAGMENT_PLAN_SYSTEM_PROMPT,
     build_fragment_plan_user_prompt,
@@ -371,18 +375,28 @@ def normalize_llm_fragment_items(
         inject_bindings = [*bindings, *prop_bindings]
         for line in lines:
             raw = _inject_character_mentions(line, inject_bindings)
-            formatted = _format_narrative_line(raw)
-            if not include_subtitles:
-                formatted = _strip_subtitle_instruction(formatted)
-            if scene_asset_id and scene_name and scene_name in formatted and f"@asset:{scene_asset_id}" not in formatted:
-                formatted = formatted.replace(scene_name, f"@asset:{scene_asset_id} {scene_name}", 1)
-            line_dur = _clamp_duration(_estimate_line_duration(formatted))
-            if line_dur <= 0:
-                continue
-            timed_blocks.append((line_dur, [f"@duration:{line_dur}", formatted]))
+            for formatted in _expand_narrative_lines(raw):
+                if not include_subtitles:
+                    formatted = _strip_subtitle_instruction(formatted)
+                if scene_asset_id and scene_name and scene_name in formatted and f"@asset:{scene_asset_id}" not in formatted:
+                    formatted = formatted.replace(scene_name, f"@asset:{scene_asset_id} {scene_name}", 1)
+                line_dur = _clamp_duration(_estimate_line_duration(formatted))
+                if line_dur <= 0:
+                    continue
+                timed_blocks.append((line_dur, [f"@duration:{line_dur}", formatted]))
 
         if not timed_blocks:
             continue
+
+        llm_target = _clamp_duration(int(item.get("duration_sec") or 0))
+        block_sum = sum(d for d, _ in timed_blocks)
+        # 仅在单镜可容纳范围内按 LLM 时长缩段；超硬上限仍走拆镜逻辑
+        if (
+            llm_target > 0
+            and block_sum > llm_target
+            and block_sum <= FRAGMENT_TOTAL_MAX
+        ):
+            timed_blocks = _rescale_timed_blocks(timed_blocks, llm_target)
 
         chunk_index = 0
 
@@ -457,8 +471,14 @@ def normalize_llm_fragment_items(
                 [*opening_lines, *intro_lines],
                 include_subtitles=include_subtitles,
             )
-            content = "\n".join([*cues, *body_lines]).strip()
-            duration = min(FRAGMENT_TOTAL_MAX, max(used, FRAGMENT_DURATION_MIN))
+            content = repair_fragment_timed_layout(
+                "\n".join([*cues, *body_lines]).strip(),
+                duration_sec=min(FRAGMENT_TOTAL_MAX, max(used, FRAGMENT_DURATION_MIN)),
+            )
+            duration = min(
+                FRAGMENT_TOTAL_MAX,
+                max(sum_fragment_content_duration_seconds(content) or used, FRAGMENT_DURATION_MIN),
+            )
             drafts.append(
                 {
                     "content": content,
@@ -565,6 +585,8 @@ async def plan_fragments_with_llm(
     if not isinstance(items, list) or not items:
         raise RuntimeError("LLM 分镜结果为空")
 
+    items = cap_llm_fragment_items(items)
+
     drafts = normalize_llm_fragment_items(
         items,
         assets,
@@ -585,6 +607,7 @@ async def plan_fragments_with_llm(
     )
     if not drafts:
         raise RuntimeError("LLM 分镜规范化后为空")
+    drafts = trim_episode_fragment_drafts(drafts)
     logger.info(
         "LLM 分镜完成 episode=%s ep_no=%s fragments=%s introduced_before=%s locked=%s",
         episode_name,

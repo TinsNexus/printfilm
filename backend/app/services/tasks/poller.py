@@ -97,6 +97,9 @@ def poller_tick_stale() -> bool:
         return False
     poll_interval = max(1.0, float(get_settings().ark_video_poll_interval or 8.0))
     stale_sec = max(30.0, float(get_settings().task_poll_stale_sec), poll_interval * 4)
+    if _poll_inflight:
+        # 拉成片时心跳会停；放宽到读超时上限，但超时仍要拉起
+        stale_sec = max(stale_sec, 720.0)
     return poller_tick_age_sec() > stale_sec
 
 

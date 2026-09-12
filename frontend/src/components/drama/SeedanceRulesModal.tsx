@@ -2,10 +2,11 @@
 import { useState } from 'react'
 import Modal from '../ui/Modal'
 import {
-  SEGMENT_DURATION_MAX,
-  SEGMENT_DURATION_MIN,
-  SHOT_DURATION_MAX,
-} from '../../lib/segmentDuration'
+  DRAMA_SEGMENT_DURATION_MAX,
+  DRAMA_SEGMENT_DURATION_MIN,
+  DRAMA_SHOT_DURATION_HARD_MAX,
+  FRAGMENT_CONTENT_DURATION_MAX,
+} from '../../lib/dramaEpisodePromptEditor'
 import {
   DIALOGUE_PREFIX,
   DRAMA_NARRATION_PREFIX,
@@ -85,7 +86,7 @@ export function SeedanceRulesModal({ open, onClose }: Props) {
               </li>
               <li>
                 <strong>时长</strong> → <code>duration</code>：脚本内{' '}
-                <code>@duration</code> 合计（建议 4–{SHOT_DURATION_MAX} 秒）；无标签时用本镜「时长」字段
+                <code>@duration</code> 合计（建议 4–{FRAGMENT_CONTENT_DURATION_MAX} 秒）；无标签时用本镜「时长」字段
               </li>
               <li>
                 <strong>视频风格</strong> → 写入提示词「画面风格」强制约束块
@@ -130,10 +131,10 @@ export function SeedanceRulesModal({ open, onClose }: Props) {
             <ul className="seedance-rules-list">
               <li>
                 <code>@duration:N</code>：标记一段内容的时长（秒），单段建议{' '}
-                {SEGMENT_DURATION_MIN}–{SEGMENT_DURATION_MAX} 秒
+                {DRAMA_SEGMENT_DURATION_MIN}–{DRAMA_SEGMENT_DURATION_MAX} 秒
               </li>
               <li>
-                一镜内所有 <code>@duration</code> 合计不超过 {SHOT_DURATION_MAX} 秒
+                新分镜建议镜内合计 ≤ {FRAGMENT_CONTENT_DURATION_MAX} 秒；旧稿最高 {DRAMA_SHOT_DURATION_HARD_MAX} 秒
               </li>
               <li>键入 <code>@</code> 可插入时长 chip 或引用资产</li>
             </ul>

@@ -1292,6 +1292,16 @@ async def _recover_complete_fragment_video(
         result_payload["recovered"] = True
     await _complete_task(db, locked, result_payload)
     await activate_next_sequential_task(db, batch_key, batch_index)
+    payload = locked.payload if isinstance(locked.payload, dict) else {}
+    if payload.get("sequential") and locked.drama_project_id:
+        from app.services.tasks.service import rebalance_project_fragment_video_queue
+
+        await rebalance_project_fragment_video_queue(
+            db,
+            int(locked.drama_project_id),
+            sequential=True,
+            user_id=int(locked.requested_by),
+        )
     return True
 
 

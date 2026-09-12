@@ -8,6 +8,7 @@ from app.config import get_settings
 from app.models import User
 from app.models_drama import DramaAsset, DramaProject
 from app.services.ark import get_ark
+from app.services.logical_model_router import resolve_upstream_model
 from app.services.billing import record_line
 from app.services.drama.voice_design import (
     design_voice,
@@ -220,7 +221,7 @@ async def synthesize_voice_asset(
         project_id=None,
         drama_project_id=project.id,
         billing_key="tts",
-        model=settings.model_audio,
+        model=(resolve_upstream_model("audio", None) or settings.model_audio),
         estimated=True,
         domain="drama",
     )

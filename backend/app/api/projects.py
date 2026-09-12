@@ -558,16 +558,14 @@ async def update_project(
         if key in data:
             data[key] = str(data[key] or "").strip()
     if "image_model" in data and data["image_model"]:
-        from app.services.kie_catalog import get_media_model
+        from app.services.media_catalog import is_valid_project_media_model
 
-        spec = get_media_model(data["image_model"])
-        if not spec or spec.capability != "image":
+        if not is_valid_project_media_model(data["image_model"], "image"):
             raise HTTPException(status_code=400, detail="无效图片模型")
     if "video_model" in data and data["video_model"]:
-        from app.services.kie_catalog import get_media_model
+        from app.services.media_catalog import is_valid_project_media_model
 
-        spec = get_media_model(data["video_model"])
-        if not spec or spec.capability != "video":
+        if not is_valid_project_media_model(data["video_model"], "video"):
             raise HTTPException(status_code=400, detail="无效视频模型")
     for k, v in data.items():
         setattr(project, k, v)

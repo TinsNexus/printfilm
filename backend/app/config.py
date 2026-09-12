@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     # Seedream 4.5 接入点（可选；未配则回退 model_image）
     model_image_45: str = ""
     model_video: str = "doubao-seedance-2-5-260628"
+    # Seedance 2.0 接入点（可选；未配则仅使用 MODEL_VIDEO）
+    model_video_2: str = ""
     # Seedance 2.5 官方范围约 4–30 秒
     seedance_duration_min: int = 4
     seedance_duration_max: int = 30

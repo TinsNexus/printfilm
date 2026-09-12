@@ -86,19 +86,49 @@ def local_path_from_url(url: str) -> Path | None:
     return None
 
 
+def _download_timeout(timeout: float | httpx.Timeout) -> httpx.Timeout:
+    """把秒数收成 httpx.Timeout：连接短、读体长，避免整包 120s 把大视频掐断。"""
+    if isinstance(timeout, httpx.Timeout):
+        return timeout
+    seconds = max(30.0, float(timeout))
+    return httpx.Timeout(connect=min(30.0, seconds), read=seconds, write=60.0, pool=30.0)
+
+
 # 下载远程文件到 dest；TokenFree 成片 URL 可传 Bearer headers
 async def download_to(
     url: str,
     dest: Path,
     *,
-    timeout: float = 120.0,
+    timeout: float | httpx.Timeout = 300.0,
     headers: dict[str, str] | None = None,
 ) -> Path:
     dest.parent.mkdir(parents=True, exist_ok=True)
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-        resp = await client.get(url, headers=headers)
-        resp.raise_for_status()
-        dest.write_bytes(resp.content)
+    tmp = dest.with_name(dest.name + ".part")
+    try:
+        async with httpx.AsyncClient(timeout=_download_timeout(timeout), follow_redirects=True) as client:
+            async with client.stream("GET", url, headers=headers) as resp:
+                resp.raise_for_status()
+                expected = resp.headers.get("Content-Length")
+                written = 0
+                with tmp.open("wb") as handle:
+                    async for chunk in resp.aiter_bytes(64 * 1024):
+                        if chunk:
+                            handle.write(chunk)
+                            written += len(chunk)
+        if written <= 0:
+            raise RuntimeError(f"empty download: {url}")
+        if expected and expected.isdigit() and written != int(expected):
+            raise RuntimeError(
+                f"incomplete download: {url} got {written} bytes, expected {expected}"
+            )
+        tmp.replace(dest)
+    except BaseException:
+        try:
+            if tmp.exists():
+                tmp.unlink(missing_ok=True)
+        except OSError:
+            logger.warning("failed to remove partial download %s", tmp)
+        raise
     return dest
 
 

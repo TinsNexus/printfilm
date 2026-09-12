@@ -141,6 +141,31 @@ def list_voices() -> list[dict[str, Any]]:
     return list(VOICE_PRESETS)
 
 
+def infer_speaker_gender(speaker: str) -> str | None:
+    """openspeech speaker id → female | male（勿用子串 male，zh_female_* 会误判）。"""
+    s = (speaker or "").strip().lower()
+    if not s:
+        return None
+    if s.startswith("zh_female_") or s.startswith("saturn_female"):
+        return "female"
+    if s.startswith("zh_male_") or s.startswith("saturn_male"):
+        return "male"
+    return None
+
+
+def edge_tts_voice_for_speaker(speaker: str) -> str:
+    """edge-tts 兜底：按 speaker 前缀选中文 neural 声线。"""
+    g = infer_speaker_gender(speaker)
+    if g == "male":
+        return "zh-CN-YunxiNeural"
+    if g == "female":
+        return "zh-CN-XiaoxiaoNeural"
+    hint = speaker or ""
+    if "男" in hint and "女" not in hint:
+        return "zh-CN-YunxiNeural"
+    return "zh-CN-XiaoxiaoNeural"
+
+
 def resolve_speaker(voice_id: str | None, *, template_preset: str | None = None) -> str:
     """Map UI voice id / template alias to openspeech speaker."""
     raw = (voice_id or "").strip() or (template_preset or "").strip()
@@ -201,6 +226,8 @@ def infer_speaker_from_voice_prompt(voice_prompt: str, *, character_name: str = 
 
 
 PREVIEW_TEXT = "大家好，这是当前音色的试听效果，适合科普短视频旁白讲解。"
+# 试听缓存文件名后缀：TTS 路由/edge 性别修复后递增，避免继续播放旧错误样例
+PREVIEW_CACHE_TAG = "v2"
 
 
 async def ensure_voice_preview(voice_id: str) -> str:
@@ -215,7 +242,7 @@ async def ensure_voice_preview(voice_id: str) -> str:
     safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in speaker)[:80]
     cache_dir = Path(__file__).resolve().parents[2] / "static" / "voice_previews"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    dest = cache_dir / f"{safe}.mp3"
+    dest = cache_dir / f"{safe}_{PREVIEW_CACHE_TAG}.mp3"
     if dest.exists() and dest.stat().st_size > 2000:
         return storage.publish_local(dest)
 

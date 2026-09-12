@@ -200,10 +200,17 @@ function EpisodeEditInner() {
 
   const selected = fragments[selectedIndex] || null
   const selectedDuration = selected?.duration_sec ?? 8
-  // generatingIds 当前排队/生成中的分镜 id
+  // generatingIds 当前分集排队/生成中的分镜 id
   const generatingIds = useMemo(() => {
     const ids = new Set<number>()
     for (const task of episode?.active_tasks || []) {
+      if (
+        typeof task.episode_id === 'number' &&
+        task.episode_id > 0 &&
+        task.episode_id !== eid
+      ) {
+        continue
+      }
       if (
         task.task_type === 'fragment_video' &&
         typeof task.fragment_id === 'number' &&
@@ -213,6 +220,7 @@ function EpisodeEditInner() {
         // 成片已 done：忽略残留活跃任务，避免徽标长期「生成中」
         const frag = fragments.find((f) => f.id === task.fragment_id)
         if (frag && readFragmentGenerationStatus(frag).status === 'done') continue
+        if (!frag) continue
         ids.add(task.fragment_id)
       }
     }
@@ -223,7 +231,7 @@ function EpisodeEditInner() {
       if (isFragmentGenerationBusy(st)) ids.add(frag.id)
     }
     return ids
-  }, [fragments, episode?.active_tasks])
+  }, [eid, fragments, episode?.active_tasks])
   // anyFragmentGenerating 本集是否有分镜在排队/生成（不锁编辑，仅锁批量生成）
   const anyFragmentGenerating = generatingIds.size > 0
   // selectedIsGenerating 当前选中镜是否正在生成
@@ -241,8 +249,9 @@ function EpisodeEditInner() {
   const previewPosterUrl = previewVersion?.cover ? resolveDramaMediaUrl(previewVersion.cover) : null
   // generateAllLocked 仅提交入队时锁定，生成过程不阻塞编辑
   const generateAllLocked = busy
-  // planFragmentsLocked AI 重新分镜与视频生成互斥
-  const planFragmentsLocked = busy || anyFragmentGenerating
+  // planFragmentsLocked 仅本集有视频生成或 AI 分镜进行中时锁定
+  const planFragmentsLocked =
+    busy || anyFragmentGenerating || readFragmentPlanStatus(episode) === 'generating'
   const selectedRefIds = useMemo(
     () => new Set(collectFragmentAssetIds(selected)),
     [selected],
@@ -282,13 +291,13 @@ function EpisodeEditInner() {
     return ''
   }, [fragments, selectedIndex])
 
-  // 开启尾帧衔接时：上一镜未完成则禁止点本镜；已有成片即可（缺尾帧由后端补抽）
+  // 开启尾帧衔接时：仅上一镜从未生成过才禁止；上一镜在生成/排队时本镜可入队等待
   const continuityBlockedReason = useMemo(() => {
     if (!linkLastFrame || selectedIndex <= 0) return ''
     const prev = fragments[selectedIndex - 1]
     if (!prev) return '缺少上一镜，无法衔接'
     if (prev.id && generatingIds.has(prev.id)) {
-      return '上一镜仍在生成，请完成后再生成本镜'
+      return ''
     }
     const prevDone =
       Boolean((prev.video || '').trim()) ||
@@ -299,6 +308,13 @@ function EpisodeEditInner() {
     }
     return ''
   }, [linkLastFrame, selectedIndex, fragments, generatingIds, prevLastFrameUrl])
+
+  const continuityQueueHint = useMemo(() => {
+    if (!linkLastFrame || selectedIndex <= 0) return ''
+    const prev = fragments[selectedIndex - 1]
+    if (!prev?.id || !generatingIds.has(prev.id)) return ''
+    return '上一镜仍在生成，本镜将入队等待上一镜完成后再开始'
+  }, [linkLastFrame, selectedIndex, fragments, generatingIds])
 
   // selectedGenerateLocked 仅锁当前镜的「生成」按钮（含尾帧衔接门禁）
   const selectedGenerateLocked = busy || selectedIsGenerating || Boolean(continuityBlockedReason)
@@ -706,6 +722,9 @@ function EpisodeEditInner() {
 
   useEffect(() => {
     if (!eid || !pid) return
+    setBusy(false)
+    setStatus('')
+    setError('')
     reload().catch((err) => setError(err instanceof Error ? err.message : '加载失败'))
     dramaApi
       .listAssets(pid)
@@ -858,7 +877,7 @@ function EpisodeEditInner() {
         setError(continuityBlockedReason)
         await dialog.alert({
           title: '无法生成',
-          message: `${continuityBlockedReason}。开启「尾帧衔接」后须按镜序生成：先完成上一镜，再点本镜。`,
+          message: `${continuityBlockedReason}。开启「尾帧衔接」后须先有上一镜成片，再按镜序生成本镜。`,
         })
       } else if (selectedIsGenerating) {
         setError('当前分镜正在生成，请等待完成后再试')
@@ -888,7 +907,9 @@ function EpisodeEditInner() {
         isRegen
           ? `将保存并重新生成「${fragLabel}」。当前成片会清空并改存为历史版本，入队后可在右下角队列查看进度。`
           : linkLastFrame
-            ? `将保存并按镜序生成「${fragLabel}」。入队后可继续编辑；本镜会使用上一镜尾帧作衔接参考。`
+            ? continuityQueueHint
+              ? `将保存「${fragLabel}」并入队。${continuityQueueHint}。`
+              : `将保存并按镜序生成「${fragLabel}」。入队后可继续编辑；本镜会使用上一镜尾帧作衔接参考。`
             : `将保存并生成「${fragLabel}」。入队后可继续编辑；当前未开启尾帧衔接，本镜会独立生成。`,
       ),
       confirmText: warnings.length > 0 ? '仍要生成' : isRegen ? '重新生成' : '开始生成',
@@ -1479,7 +1500,7 @@ function EpisodeEditInner() {
               <input
                 type="number"
                 min={4}
-                max={30}
+                max={15}
                 value={selectedDuration}
                 disabled={!editing && !selected}
                 onChange={(e) =>
@@ -1543,9 +1564,11 @@ function EpisodeEditInner() {
             >
               {continuityBlockedReason
                 ? `已开启尾帧衔接：${continuityBlockedReason}`
-                : prevLastFrameUrl
-                  ? '将使用上一镜尾帧作为衔接参考（与角色参考图一并提交）'
-                  : '上一镜已成片：生成时将自动抽取尾帧作衔接参考'}
+                : continuityQueueHint
+                  ? continuityQueueHint
+                  : prevLastFrameUrl
+                    ? '将使用上一镜尾帧作为衔接参考（与角色参考图一并提交）'
+                    : '上一镜已成片：生成时将自动抽取尾帧作衔接参考'}
             </p>
           ) : !linkLastFrame ? (
             <p className="drama-ep-continuity-hint">
@@ -1592,6 +1615,7 @@ function EpisodeEditInner() {
                   disabled={selectedGenerateLocked || !selected}
                   title={
                     continuityBlockedReason ||
+                    continuityQueueHint ||
                     (selectedIsGenerating ? '当前分镜正在生成' : undefined)
                   }
                   onClick={() => void generateSelected()}
@@ -1600,9 +1624,11 @@ function EpisodeEditInner() {
                     ? '生成中…'
                     : busy
                       ? '处理中…'
-                      : continuityBlockedReason
-                        ? '待上一镜'
-                        : selectedHasVideo
+                      : continuityQueueHint
+                        ? '排队生成'
+                        : continuityBlockedReason
+                          ? '待上一镜'
+                          : selectedHasVideo
                           ? '重新生成'
                           : '生成'}
                 </button>

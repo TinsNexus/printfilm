@@ -64,7 +64,115 @@ def test_wrap_seedance_payload_uses_videos_metadata_input():
     assert meta_input["aspect_ratio"] == "16:9"
     assert meta_input["content"] == payload["content"]
     assert meta_input["generate_audio"] is True
+    assert meta_input["first_frame_url"] == "https://cdn.example.com/a.jpg"
+    assert "reference_image_urls" not in meta_input
     assert "content" not in wrapped
+
+
+def test_wrap_seedance_payload_keeps_all_reference_images_for_kie():
+    """多参考必须写成 reference_image_urls，不能只留顶层第一张图。"""
+    payload = {
+        "model": "seedance-2-5",
+        "content": [
+            {"type": "text", "text": "光光飞过"},
+            {
+                "type": "image_url",
+                "image_url": {"url": "https://cdn.example.com/guang.png"},
+                "role": "reference_image",
+            },
+            {
+                "type": "image_url",
+                "image_url": {"url": "https://cdn.example.com/mimi.png"},
+                "role": "reference_image",
+            },
+            {
+                "type": "image_url",
+                "image_url": {"url": "https://cdn.example.com/last.jpg"},
+                "role": "reference_image",
+            },
+            {
+                "type": "audio_url",
+                "audio_url": {"url": "https://cdn.example.com/voice.mp3"},
+                "role": "reference_audio",
+            },
+        ],
+        "duration": 22,
+        "resolution": "480p",
+        "ratio": "16:9",
+        "watermark": False,
+        "generate_audio": True,
+        "return_last_frame": True,
+    }
+    wrapped = wrap_seedance_payload_for_newapi(payload)
+    meta_input = wrapped["metadata"]["input"]
+    refs = [
+        "https://cdn.example.com/guang.png",
+        "https://cdn.example.com/mimi.png",
+        "https://cdn.example.com/last.jpg",
+    ]
+    assert "image" not in wrapped
+    assert wrapped["images"] == refs
+    assert meta_input["reference_image_urls"] == refs
+    assert meta_input["images"] == refs
+    assert meta_input["reference_audio_urls"] == ["https://cdn.example.com/voice.mp3"]
+    assert "first_frame_url" not in meta_input
+    assert "image" not in meta_input
+
+
+def test_wrap_seedance_payload_single_reference_image_keeps_ratio_mode():
+    """有画幅的单张 i2v 也是 reference_image，不能退化成 first_frame。"""
+    payload = {
+        "model": "seedance-2-5",
+        "content": [
+            {"type": "text", "text": "镜头推进"},
+            {
+                "type": "image_url",
+                "image_url": {"url": "https://cdn.example.com/a.jpg"},
+                "role": "reference_image",
+            },
+        ],
+        "duration": 5,
+        "ratio": "9:16",
+        "resolution": "480p",
+    }
+    wrapped = wrap_seedance_payload_for_newapi(payload)
+    meta_input = wrapped["metadata"]["input"]
+    assert wrapped["images"] == ["https://cdn.example.com/a.jpg"]
+    assert "image" not in wrapped
+    assert meta_input["reference_image_urls"] == ["https://cdn.example.com/a.jpg"]
+    assert meta_input["aspect_ratio"] == "9:16"
+    assert "first_frame_url" not in meta_input
+
+
+def test_wrap_seedance_payload_from_generate_body_includes_continuity():
+    """真实组装体：角色图 + 上一镜尾帧都要进 reference_image_urls。"""
+    from app.services.drama.build_seedance_generate_body import build_seedance_generate_body
+
+    body = build_seedance_generate_body(
+        {
+            "content": "@duration:6\n禹：水患未平。",
+            "aspect_ratio": "16:9",
+            "resolution": "480p",
+            "duration_fallback": 8,
+            "continuity_first_frame_url": "https://cdn.example.com/prev_last.jpg",
+            "reference": [
+                {
+                    "id": 1,
+                    "type": "character",
+                    "name": "禹",
+                    "cover": "https://cdn.example.com/yu.jpg",
+                    "url": "https://cdn.example.com/yu.jpg",
+                    "params": {},
+                }
+            ],
+        }
+    )
+    wrapped = wrap_seedance_payload_for_newapi(body)
+    refs = wrapped["metadata"]["input"]["reference_image_urls"]
+    assert refs[0] == "https://cdn.example.com/yu.jpg"
+    assert refs[-1] == "https://cdn.example.com/prev_last.jpg"
+    assert "image" not in wrapped
+    assert "first_frame_url" not in wrapped["metadata"]["input"]
 
 
 def test_prepare_video_create_body_only_wraps_tokenfree():

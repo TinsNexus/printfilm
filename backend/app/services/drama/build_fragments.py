@@ -5,7 +5,12 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from app.services.seedance_segments import DRAMA_SUBTITLE_CUE, DIALOGUE_PREFIX, VISUAL_PREFIX
+from app.services.seedance_segments import (
+    DRAMA_SUBTITLE_CUE,
+    DIALOGUE_PREFIX,
+    VISUAL_PREFIX,
+    is_production_meta_line,
+)
 
 # 场次标题：### 场1-2 / ### 场景1-2
 SCENE_HEADER_RE = re.compile(r"^###\s*场(?:景)?\s*\d+\s*[-－—]\s*\d+\s*$")
@@ -20,12 +25,15 @@ CAST_LINE_RE = re.compile(r"^出场人物[：:]\s*(.+)$")
 EMPTY_CAST = {"无", "无出场", "无人物", "-", "—", "无。"}
 
 FRAGMENT_DURATION_MIN = 3
-FRAGMENT_DURATION_MAX = 12
-# 单分镜软上限：超过后新开一条分镜（仍可继续填到硬上限）
-FRAGMENT_SOFT_MAX = 20
-# 单分镜总时长硬上限（Seedance 2.5 支持至 30s）
-FRAGMENT_TOTAL_MAX = 30
-
+# 单行/单块 @duration 上限（对白、空镜等；整镜硬上限见 FRAGMENT_TOTAL_MAX）
+FRAGMENT_DURATION_MAX = 15
+# 单分镜软上限：尽量打满再拆，减少镜数（与硬上限对齐）
+FRAGMENT_SOFT_MAX = 15
+# 单分镜总时长硬上限（短剧节奏；Seedance 仍支持更长，此处刻意收紧）
+FRAGMENT_TOTAL_MAX = 15
+# 整集分镜条数 / 时长预算（重新分镜与规则切分共用）
+EPISODE_FRAGMENT_MAX = 10
+EPISODE_DURATION_BUDGET_SEC = 90
 # 重要角色：roleType / title / tags 命中则需要人物介绍叠字
 IMPORTANT_ROLE_RE = re.compile(r"主角|男主|女主|重要|反派|BOSS|核心|主人公")
 # 次要定位：默认不介绍
@@ -50,6 +58,15 @@ VISUAL_SHOT_LABEL_RE = re.compile(
     r"建立镜头|气氛镜头"
     r")\s*[：:]"
 )
+# 「角色名（动作）：台词」——动作应走画面行，冒号后才是口播
+DIALOGUE_WITH_ACTION_BODY_RE = re.compile(
+    r"^(?P<speaker>[^（(:：\n]{1,16})"
+    r"[（(](?P<action>[^）)]+)[）)]"
+    r"\s*[：:]\s*"
+    r"(?P<text>.+)$"
+)
+# 括号内为口播类型标记（非舞台动作），禁止拆成画面行
+VOICE_TYPE_ACTION_RE = re.compile(r"^(?:vo|os|旁白|VO|OS)$", re.I)
 
 
 def normalize_scene_location_name(raw: str) -> str:
@@ -246,6 +263,66 @@ def _is_visual_description_line(line: str) -> bool:
     return False
 
 
+def _split_dialogue_action_line(line: str) -> list[str]:
+    """将「角色（动作）：台词」拆成画面动作行 + 纯口播对白行；无法识别则原样返回。"""
+    trimmed = (line or "").strip()
+    if not trimmed:
+        return []
+    dialogue_prefix = ""
+    body = trimmed
+    if trimmed.startswith("【对白"):
+        match = re.match(r"^(【对白[^】]*】)\s*(.*)$", trimmed)
+        if match:
+            dialogue_prefix = match.group(1)
+            body = match.group(2).strip()
+    action_match = DIALOGUE_WITH_ACTION_BODY_RE.match(body)
+    if not action_match:
+        return [trimmed]
+    speaker = action_match.group("speaker").strip()
+    action = action_match.group("action").strip()
+    text = action_match.group("text").strip()
+    if speaker == "旁白" or VOICE_TYPE_ACTION_RE.match(action):
+        return [trimmed]
+    visual = f"{speaker}（{action}）。"
+    dialogue = f"{speaker}：{text}"
+    if dialogue_prefix:
+        return [visual, f"{dialogue_prefix}{dialogue}"]
+    return [visual, dialogue]
+
+
+def _expand_narrative_lines(line: str) -> list[str]:
+    """叙事行展开：含括号舞台指示的对白拆成多行后再打生产前缀。"""
+    return [
+        formatted
+        for part in _split_dialogue_action_line(line)
+        if part.strip()
+        for formatted in [_format_narrative_line(part)]
+        if formatted.strip()
+    ]
+
+
+def rewrite_dialogue_action_lines(content: str) -> str:
+    """提交前兜底：纠正对白行内误塞的舞台指示（兼容旧分镜）。"""
+    from app.services.seedance_segments import is_production_meta_line
+
+    out: list[str] = []
+    for raw in (content or "").replace("\r\n", "\n").split("\n"):
+        line = raw.strip()
+        if not line:
+            out.append(raw)
+            continue
+        if line.startswith("@duration:") or is_production_meta_line(line):
+            out.append(raw)
+            continue
+        split = _split_dialogue_action_line(line)
+        if len(split) <= 1:
+            out.append(raw)
+            continue
+        for part in split:
+            out.append(_format_narrative_line(part))
+    return "\n".join(out)
+
+
 def _format_narrative_line(line: str) -> str:
     # 将场记行标成画面/旁白/对白；空镜类必须走无配音前缀
     trimmed = line.strip()
@@ -279,22 +356,34 @@ def _format_narrative_line(line: str) -> str:
     return f"{VISUAL_PREFIX}{trimmed}"
 
 
+def _speakable_body(line: str) -> str:
+    """估算口播时长用：去掉生产前缀与「角色名：」标签，只计真正念出的字。"""
+    body = re.sub(r"^【[^】]*】\s*", "", (line or "").strip()).strip()
+    speaker = re.match(r"^([^：:\n]{1,16})[：:](.+)$", body)
+    if speaker:
+        return speaker.group(2).strip()
+    return body
+
+
 def _estimate_line_duration(line: str) -> int:
     trimmed = line.strip()
     if not trimmed:
         return 0
     if trimmed.startswith("【画面") or trimmed.startswith(VISUAL_PREFIX):
         body = re.sub(r"^【[^】]*】", "", trimmed).strip()
-        return min(6, max(2, len(re.sub(r"\s+", "", body)) // 12))
+        return min(8, max(2, len(re.sub(r"\s+", "", body)) // 14))
     if trimmed.startswith("△"):
         return 2
     if trimmed.startswith("【空镜"):
-        return 4
+        return min(6, max(3, len(re.sub(r"\s+", "", _speakable_body(trimmed))) // 16))
     if "旁白" in trimmed and trimmed.startswith("【旁白"):
-        return min(8, max(3, len(re.sub(r"\s+", "", trimmed)) // 8))
+        chars = len(re.sub(r"\s+", "", _speakable_body(trimmed)))
+        return min(12, max(3, (chars + 3) // 4))
     if trimmed.startswith("【对白") or "内心独白" in trimmed:
-        return min(8, max(3, len(re.sub(r"\s+", "", trimmed)) // 10))
-    return min(6, max(2, len(re.sub(r"\s+", "", trimmed)) // 12))
+        chars = len(re.sub(r"\s+", "", _speakable_body(trimmed)))
+        return min(12, max(3, (chars + 3) // 4))
+    chars = len(re.sub(r"\s+", "", _speakable_body(trimmed)))
+    return min(8, max(2, (chars + 3) // 5))
 
 
 def _clamp_duration(seconds: int) -> int:
@@ -764,13 +853,13 @@ def plan_fragments_from_scene(
 
     for line in narrative_lines:
         raw = _inject_character_mentions(line, character_bindings)
-        formatted = _format_narrative_line(raw)
-        if not include_subtitles:
-            formatted = _strip_subtitle_instruction(formatted)
-        line_dur = _clamp_duration(_estimate_line_duration(formatted))
-        if line_dur <= 0:
-            continue
-        timed_blocks.append((line_dur, [f"@duration:{line_dur}", formatted]))
+        for formatted in _expand_narrative_lines(raw):
+            if not include_subtitles:
+                formatted = _strip_subtitle_instruction(formatted)
+            line_dur = _clamp_duration(_estimate_line_duration(formatted))
+            if line_dur <= 0:
+                continue
+            timed_blocks.append((line_dur, [f"@duration:{line_dur}", formatted]))
 
     if not timed_blocks:
         to_intro = _pick_intros_for_fragment([], intro_candidates, introduced_names, flush_remaining=True)
@@ -865,6 +954,132 @@ def parse_fragment_timed_blocks(content: str) -> tuple[list[str], list[tuple[int
         if dur > 0:
             blocks.append((dur, block_lines))
     return header, blocks
+
+
+def _is_header_meta_line(line: str) -> bool:
+    """片头 cue（字幕/BGM/介绍等），不属于需单独计时的叙事段。"""
+    stripped = (line or "").strip()
+    if not stripped:
+        return True
+    if stripped.startswith("@asset:"):
+        return True
+    if is_production_meta_line(stripped):
+        return True
+    if stripped.startswith("【BGM") or stripped.startswith("【字幕") or "人物介绍" in stripped:
+        return True
+    return False
+
+
+def _split_header_meta_and_narrative(header: list[str]) -> tuple[list[str], list[str]]:
+    meta: list[str] = []
+    narrative: list[str] = []
+    for raw in header:
+        stripped = raw.strip()
+        if not stripped:
+            if not narrative:
+                meta.append(raw)
+            continue
+        if not narrative and _is_header_meta_line(raw):
+            meta.append(raw)
+        else:
+            narrative.append(raw)
+    return meta, narrative
+
+
+def _sum_duration_tags(content: str) -> int:
+    total = 0
+    for match in re.finditer(r"@duration:(\d+)", content or ""):
+        seconds = int(match.group(1))
+        if seconds > 0:
+            total += seconds
+    return total
+
+
+def repair_fragment_timed_layout(content: str, *, duration_sec: int | None = None) -> str:
+    """
+    修正旧稿/合并稿中 @duration 仅在末尾或整镜共用一条的问题，
+    改为「@duration + 叙事行」逐段交替（与编辑器场记板位置一致）。
+    """
+    text = (content or "").replace("\r\n", "\n").strip()
+    if not text:
+        return text
+
+    header, blocks = parse_fragment_timed_blocks(text)
+    meta, header_narrative = _split_header_meta_and_narrative(header)
+    narrative: list[str] = list(header_narrative)
+
+    if len(blocks) == 1:
+        _, rows = blocks[0]
+        narrative.extend(
+            ln for ln in rows if ln.strip() and not ln.strip().startswith("@duration:")
+        )
+    elif blocks:
+        per_block_ok = True
+        for _, rows in blocks:
+            body = [ln for ln in rows if ln.strip() and not ln.strip().startswith("@duration:")]
+            if len(body) != 1:
+                per_block_ok = False
+            narrative.extend(body)
+        if per_block_ok and not header_narrative:
+            return text
+
+    tag_count = len(re.findall(r"@duration:\d+", text))
+    if tag_count > 1 and len(blocks) > 1 and not header_narrative:
+        per_block_ok = all(
+            len([ln for ln in rows if ln.strip() and not ln.strip().startswith("@duration:")]) == 1
+            for _, rows in blocks
+        )
+        if per_block_ok:
+            return text
+
+    if len(narrative) <= 1:
+        return text
+
+    tagged = _sum_duration_tags(text)
+    target = int(duration_sec or tagged or FRAGMENT_DURATION_MIN)
+    target = min(FRAGMENT_TOTAL_MAX, max(FRAGMENT_DURATION_MIN, target))
+
+    timed: list[tuple[int, list[str]]] = []
+    for ln in narrative:
+        stripped = ln.strip()
+        formatted = ln if stripped.startswith("【") else _format_narrative_line(stripped)
+        line_dur = _clamp_duration(_estimate_line_duration(formatted))
+        if line_dur <= 0:
+            continue
+        timed.append((line_dur, [f"@duration:{line_dur}", formatted]))
+
+    if not timed:
+        return text
+
+    total = sum(d for d, _ in timed)
+    if total != target:
+        timed = _rescale_timed_blocks(timed, target)
+
+    body_out = [ln for _, rows in timed for ln in rows]
+    return "\n".join([*meta, *body_out]).strip()
+
+
+def _rescale_timed_blocks(
+    blocks: list[tuple[int, list[str]]],
+    target: int,
+) -> list[tuple[int, list[str]]]:
+    """timed_blocks 合计超过目标秒数时，按段等比缩放到 target。"""
+    if not blocks or target <= 0:
+        return blocks
+    current = sum(d for d, _ in blocks)
+    if current <= target:
+        return blocks
+    from app.services.drama.fragment_budget import _proportional_int_durations
+
+    new_durs = _proportional_int_durations([d for d, _ in blocks], target)
+    out: list[tuple[int, list[str]]] = []
+    for (_, rows), new_d in zip(blocks, new_durs):
+        rewritten = [
+            f"@duration:{new_d}" if ln.strip().startswith("@duration:") else ln
+            for ln in rows
+        ]
+        out.append((new_d, rewritten))
+    return out
 
 
 # 将已有超长分镜正文按软/硬上限拆成多条 content（保留片头 cue）
@@ -1062,4 +1277,6 @@ def build_fragments_from_episode_body(
                 }
             )
 
-    return fragments
+    from app.services.drama.fragment_budget import trim_episode_fragment_drafts
+
+    return trim_episode_fragment_drafts(fragments)

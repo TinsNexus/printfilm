@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import re
 
-FRAGMENT_CONTENT_DURATION_MAX = 30
+from app.services.drama.build_fragments import FRAGMENT_TOTAL_MAX
+
+# 新分镜规划建议上限（重新分镜 / 规则切分）
+FRAGMENT_CONTENT_DURATION_MAX = FRAGMENT_TOTAL_MAX
+# Seedance 单次生成 API 上限（旧稿落库脚本仍可按此提交）
 SEEDANCE_DURATION_MIN = 4
+SEEDANCE_DURATION_MAX = 30
 
 DURATION_MENTION_TOKEN_PATTERN = re.compile(r"@duration:(\d+)")
 
@@ -47,5 +52,5 @@ def replace_duration_mentions_with_time_ranges(content: str) -> str:
 def resolve_seedance_duration_from_content(content: str | None, fallback: int = 8) -> int:
     total = sum_fragment_content_duration_seconds(content or "")
     if total <= 0:
-        return max(SEEDANCE_DURATION_MIN, min(int(fallback), FRAGMENT_CONTENT_DURATION_MAX))
-    return max(SEEDANCE_DURATION_MIN, min(total, FRAGMENT_CONTENT_DURATION_MAX))
+        return max(SEEDANCE_DURATION_MIN, min(int(fallback), SEEDANCE_DURATION_MAX))
+    return max(SEEDANCE_DURATION_MIN, min(total, SEEDANCE_DURATION_MAX))

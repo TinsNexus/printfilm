@@ -9,6 +9,7 @@ from typing import Any, TypedDict
 from app.config import get_settings
 from app.services.logical_model_router import resolve_logical_model_id, resolve_upstream_model
 from app.models_drama import DramaAsset
+from app.services.drama.build_fragments import rewrite_dialogue_action_lines
 from app.services.drama.fragment_content_duration import (
     replace_duration_mentions_with_time_ranges,
     resolve_seedance_duration_from_content,
@@ -22,7 +23,8 @@ from app.services.seedance_segments import (
 )
 
 ASSET_MENTION_TOKEN_PATTERN = re.compile(r"@asset:(\d+)")
-WHITESPACE_PATTERN = re.compile(r"\s+")
+# 仅压缩行内空白，保留换行以便 Seedance 按时间轴段落演绎
+INLINE_WHITESPACE_PATTERN = re.compile(r"[^\S\n]+")
 
 SEEDANCE_VISUAL_STYLE_SECTION_INTRO = (
     "【强制约束：视频画面风格】全片画面必须严格遵循以下风格描述，"
@@ -333,20 +335,29 @@ def build_reference_index_section(
 
 
 # 将分镜脚本转为正文提示词
+def _normalize_body_whitespace(text: str) -> str:
+    lines = [
+        INLINE_WHITESPACE_PATTERN.sub(" ", raw).strip()
+        for raw in text.replace("\r\n", "\n").split("\n")
+    ]
+    return "\n".join(line for line in lines if line).strip()
+
+
 def build_seedance_body_text(
     content: str | None,
     reference: list[dict[str, Any]] | None,
     catalog: SeedanceReferenceCatalog,
 ) -> str:
-    # 先纠正误标为对白/旁白的空镜画面行
-    normalized = rewrite_misclassified_visual_voice_lines(content or "")
+    # 拆分对白内舞台指示，并纠正误标为对白/旁白的空镜画面行
+    normalized = rewrite_dialogue_action_lines(content or "")
+    normalized = rewrite_misclassified_visual_voice_lines(normalized)
     asset_by_id = {int(asset["id"]): asset for asset in (reference or [])}
     replaced = replace_duration_mentions_with_time_ranges(normalized)
     replaced = ASSET_MENTION_TOKEN_PATTERN.sub(
         lambda match: replace_asset_mention_token(int(match.group(1)), asset_by_id, catalog),
         replaced,
     )
-    return WHITESPACE_PATTERN.sub(" ", replaced).strip()
+    return _normalize_body_whitespace(replaced)
 
 
 def build_seedance_prompt_text(
@@ -358,8 +369,9 @@ def build_seedance_prompt_text(
     burn_subtitles: bool = True,
     character_intro: bool = True,
 ) -> str:
-    # 提交前统一纠正空镜误标，保证强制约束与正文一致
-    normalized = rewrite_misclassified_visual_voice_lines(content or "")
+    # 提交前拆分对白舞台指示并纠正空镜误标，保证强制约束与正文一致
+    normalized = rewrite_dialogue_action_lines(content or "")
+    normalized = rewrite_misclassified_visual_voice_lines(normalized)
     if not burn_subtitles:
         # 后期模式：去掉字幕 cue /「同步字幕」前缀，避免模型仍按字烧屏
         normalized = strip_model_burn_subtitle_cues(normalized)
@@ -488,18 +500,17 @@ def resolve_seedance_model_endpoint(model_id: str | None) -> str:
     settings = get_settings()
     raw = (model_id or "").strip()
     logical_id = resolve_logical_model_id("video", model_id)
-    routed = resolve_upstream_model("video", logical_id)
+    routed = resolve_upstream_model("video", logical_id or (raw if raw else None))
     if routed:
         return routed
-    aliases = {
-        "seedance-2.5": settings.model_video,
-        "seedance-2": settings.model_video,
-        "seedance-1.5": settings.model_video,
-        "seedance-1": settings.model_video,
-    }
     if not raw:
-        return settings.model_video
-    return aliases.get(raw.lower(), raw)
+        return settings.model_video or (settings.model_video_2 or "").strip()
+    lowered = raw.lower()
+    if lowered in {"seedance-2", "seedance-1.5", "seedance-1"}:
+        return (settings.model_video_2 or "").strip() or settings.model_video or raw
+    if lowered == "seedance-2.5":
+        return settings.model_video or (settings.model_video_2 or "").strip() or raw
+    return raw
 
 
 def resolve_seedance_ratio(aspect_ratio: str | None) -> str:

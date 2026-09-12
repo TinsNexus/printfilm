@@ -233,9 +233,9 @@ def _capability_aliases(capability: LogicalModelCapability) -> dict[str, str]:
     if capability == "video":
         return {
             "seedance-2.5": "seedance-2.5",
-            "seedance-2": "seedance-2.5",
-            "seedance-1.5": "seedance-2.5",
-            "seedance-1": "seedance-2.5",
+            "seedance-2": "seedance-2",
+            "seedance-1.5": "seedance-2",
+            "seedance-1": "seedance-2",
         }
     return {}
 
@@ -262,5 +262,9 @@ def _legacy_upstream_fallback(
         aliases = _capability_aliases("video")
         logical = aliases.get(raw.lower(), raw) if raw else defaults.video_model
         route = resolve_logical_model("video", logical or defaults.video_model)
-        return route.upstream_model if route else settings.model_video
+        if route:
+            return route.upstream_model
+        if logical == "seedance-2":
+            return (settings.model_video_2 or "").strip() or settings.model_video
+        return settings.model_video or (settings.model_video_2 or "").strip()
     return raw

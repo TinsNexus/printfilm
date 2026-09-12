@@ -22,5 +22,5 @@ def test_split_overlong_keeps_header_and_caps_chunks():
     assert len(chunks) >= 2
     for text, dur in chunks:
         assert "【字幕：" in text
-        assert dur <= 30
+        assert dur <= 15
         assert text.count("@duration:") >= 1

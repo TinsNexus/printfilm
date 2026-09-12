@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.config import get_settings
-from app.schemas_routing import DefaultModels, LogicalModel, SystemModelChannel
+from app.schemas_routing import DefaultModels, LogicalModel, LogicalModelCapability, SystemModelChannel
 from app.services.model_routing_config import infer_model_capability, normalize_model_name
 
 
@@ -33,6 +33,13 @@ def build_media_catalog(
     videos: list[dict[str, Any]] = []
     seen_image: set[str] = set()
     seen_video: set[str] = set()
+    friendly_alias_ids = {"seedream-5.0", "seedream-4.5", "seedance-2.5", "seedance-2"}
+    aliased_upstreams = {
+        normalize_model_name(binding.upstream_model)
+        for model in logical_models
+        if model.id in friendly_alias_ids
+        for binding in model.bindings
+    }
 
     default_image = (defaults.image_model or "").strip()
     default_video = (defaults.video_model or "").strip()
@@ -62,9 +69,13 @@ def build_media_catalog(
             key = normalize_model_name(mid)
             cap = infer_model_capability(mid)
             if cap == "image" and key not in seen_image:
+                if key in aliased_upstreams:
+                    continue
                 seen_image.add(key)
                 images.append(_row(model_id=mid, label=mid, recommended=mid == default_image))
             elif cap == "video" and key not in seen_video:
+                if key in aliased_upstreams:
+                    continue
                 seen_video.add(key)
                 videos.append(_row(model_id=mid, label=mid, recommended=mid == default_video))
 
@@ -72,6 +83,18 @@ def build_media_catalog(
         default_image = images[0]["id"] if images else (fallback_image or "").strip()
     if not default_video:
         default_video = videos[0]["id"] if videos else (fallback_video or "").strip()
+
+    def _ensure_default_in_list(default_id: str, bucket: list[dict[str, Any]]) -> None:
+        did = (default_id or "").strip()
+        if not did:
+            return
+        norm = normalize_model_name(did)
+        if any(normalize_model_name(str(row.get("id") or "")) == norm for row in bucket):
+            return
+        bucket.insert(0, _row(model_id=did, label=did, recommended=True))
+
+    _ensure_default_in_list(default_image, images)
+    _ensure_default_in_list(default_video, videos)
     if not images and default_image:
         images.append(_row(model_id=default_image, label=default_image, recommended=True))
     if not videos and default_video:
@@ -100,3 +123,36 @@ def catalog_payload() -> dict[str, Any]:
         fallback_image=settings.model_image,
         fallback_video=settings.model_video,
     )
+
+
+def is_valid_project_media_model(model_id: str | None, capability: LogicalModelCapability) -> bool:
+    """科普项目 image_model / video_model：与 /api/media-models 及路由一致，兼容 Kie catalog id。"""
+    mid = (model_id or "").strip()
+    if not mid:
+        return True
+    from app.services.kie_catalog import get_media_model
+    from app.services.logical_model_router import resolve_logical_model_candidates
+
+    spec = get_media_model(mid)
+    if spec and spec.capability == capability:
+        return True
+    cat = catalog_payload()
+    list_key = "image_models" if capability == "image" else "video_models"
+    norm_mid = normalize_model_name(mid)
+    for row in cat.get(list_key) or []:
+        if normalize_model_name(str(row.get("id") or "")) == norm_mid:
+            return True
+    defaults = cat.get("defaults") if isinstance(cat.get("defaults"), dict) else {}
+    def_key = "image_model" if capability == "image" else "video_model"
+    if normalize_model_name(str(defaults.get(def_key) or "")) == norm_mid:
+        return True
+    if resolve_logical_model_candidates(capability, mid):
+        return True
+    # 与前台 /api/media-models 同源；能力推断一致即允许保存，具体路由在生成阶段解析
+    if infer_model_capability(mid) == capability:
+        return True
+    settings = get_settings()
+    fallback = (settings.model_image if capability == "image" else settings.model_video) or ""
+    if normalize_model_name(fallback) == norm_mid:
+        return True
+    return False

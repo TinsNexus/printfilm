@@ -13,7 +13,7 @@ def test_fragment_plan_system_prompt_requires_visual_density():
     assert "结束态" in prompt
     assert "主体 + 动作" in prompt or "主体 + 动作/姿态" in prompt
     assert "禁止的瘦写法" in prompt
-    assert "3–7 行" in prompt or "3-7 行" in prompt
+    assert "2–5 行" in prompt or "2-5 行" in prompt
 
 
 def test_normalize_llm_injects_intro_once_for_important_cast():
@@ -127,7 +127,7 @@ def test_build_asset_catalog_excludes_material_and_voice():
 
 
 def test_normalize_llm_splits_when_durations_exceed_hard_max():
-    # LLM 把过多对白塞进一镜时，规范化须按 30s 硬上限拆成多条
+    # LLM 把过多对白塞进一镜时，规范化须按 15s 硬上限拆成多条
     import re
 
     long = "这是一句足够长的对白用来推高单行估算时长到上限附近，确保多行合计必然超过三十秒硬上限。"
@@ -153,5 +153,5 @@ def test_normalize_llm_splits_when_durations_exceed_hard_max():
     assert len(drafts) >= 2
     for draft in drafts:
         total = sum(int(m) for m in re.findall(r"@duration:(\d+)", draft["content"]))
-        assert total <= 30
+        assert total <= 15
         assert draft["duration_sec"] == total

@@ -46,6 +46,8 @@ def infer_model_capability(model: str) -> LogicalModelCapability:
         or "nano-banana" in mid
         or "banana" in mid
         or "dream" in mid
+        or mid.startswith("gpt-image")
+        or "grok-imagine" in mid
         or "image" in mid
         or mid.startswith("kie-")
     ):

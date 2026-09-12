@@ -59,9 +59,9 @@ export const DRAMA_EDIT_RHYTHM_PRESETS: DramaEditRhythmPreset[] = [
 ]
 
 const SEGMENT_MIN = 3
-const SEGMENT_MAX = 12
+const SEGMENT_MAX = 15
 
-// 按节奏公式为 N 段分配秒数（钳制 3–12，合计贴近 targetTotal）
+// 按节奏公式为 N 段分配秒数（钳制 3–15，合计贴近 targetTotal）
 export function suggestRhythmDurations(
   segmentCount: number,
   rhythmId: DramaEditRhythmId,
@@ -79,7 +79,7 @@ export function suggestRhythmDurations(
   const clamped = raw.map((v) => Math.max(SEGMENT_MIN, Math.min(SEGMENT_MAX, Math.round(v))))
   // 微调合计：过短则从最大段加，过长则从最大段减
   let total = clamped.reduce((a, b) => a + b, 0)
-  const goal = Math.max(SEGMENT_MIN * count, Math.min(30, Math.round(targetTotal)))
+  const goal = Math.max(SEGMENT_MIN * count, Math.min(15, Math.round(targetTotal)))
   let guard = 0
   while (total < goal && guard < 40) {
     const idx = clamped.indexOf(Math.max(...clamped))
@@ -108,8 +108,8 @@ export function suggestEpisodeFragmentDurations(
   perFragmentTarget = 10,
 ): number[] {
   const count = Math.max(1, Math.floor(fragmentCount))
-  const total = Math.min(30 * count, Math.max(4 * count, perFragmentTarget * count))
+  const total = Math.min(15 * count, Math.max(4 * count, perFragmentTarget * count))
   return suggestRhythmDurations(count, rhythmId, total).map((sec) =>
-    Math.max(4, Math.min(30, sec)),
+    Math.max(4, Math.min(15, sec)),
   )
 }

@@ -55,6 +55,7 @@ from app.services.drama.generation import (
     read_fragment_last_frame_url,
     reconcile_orphaned_fragment_generations,
 )
+from app.services.drama.build_fragments import repair_fragment_timed_layout
 from app.services.drama.fragment_content_duration import resolve_seedance_duration_from_content
 from app.services.drama.billing_util import record_seed_assets_llm_usage
 from app.services.drama.jobs import (
@@ -75,6 +76,7 @@ from app.services.tasks.service import (
     cancel_tasks_for_scope,
     create_task,
     list_active_tasks_for_owner,
+    rebalance_project_fragment_video_queue,
 )
 
 router = APIRouter()
@@ -83,11 +85,15 @@ logger = logging.getLogger("app.drama.episodes")
 
 def _fragment_out(frag: DramaEpisodeFragment) -> DramaFragmentOut:
     asset_ids = [r.asset_id for r in (frag.asset_references or [])]
+    content = repair_fragment_timed_layout(
+        frag.content or "",
+        duration_sec=int(frag.duration_sec or 0) or None,
+    )
     return DramaFragmentOut(
         id=frag.id,
         episode_id=frag.episode_id,
         sort_order=frag.sort_order,
-        content=frag.content,
+        content=content,
         cover=frag.cover or "",
         video=frag.video or "",
         duration_sec=frag.duration_sec,
@@ -173,12 +179,15 @@ async def _episode_out_with_tasks(
     user: User,
     ep: DramaEpisode,
 ) -> DramaEpisodeOut:
-    ep.active_tasks = await list_active_tasks_for_owner(
+    active_tasks = await list_active_tasks_for_owner(
         db,
         user.id,
         drama_project_id=ep.project_id,
     )
-    ep.active_tasks = _expand_episode_task_items(list(ep.active_tasks or []))
+    # 单集详情只挂本集任务；勿把全项目活跃任务混入，否则其他集生成中会误锁「重新分镜」
+    ep.active_tasks = _expand_episode_task_items(
+        [task for task in active_tasks if int(task.episode_id or 0) == int(ep.id)]
+    )
     return _episode_out(ep)
 
 
@@ -615,7 +624,7 @@ async def generate_episode(
             detail="所选分镜正在生成，请等待完成后再试",
         )
 
-    # 尾帧衔接：分次点生成时，上一镜必须已有尾帧（同批入队的连续镜可依赖串行等待）
+    # 尾帧衔接：上一镜在生成/排队时可先入队本镜，由任务队列按镜序等待；未开上一镜则仍拒绝
     if project_link_last_frame_enabled(project):
         all_sorted = sorted(all_frags, key=lambda f: (int(f.sort_order or 0), int(f.id or 0)))
         index_by_id = {int(f.id): i for i, f in enumerate(all_sorted) if f.id is not None}
@@ -631,10 +640,7 @@ async def generate_episode(
                 continue
             prev_st = str(fragment_generation_status(prev).get("status") or "")
             if prev_st in {"queued", "running", "generating"}:
-                raise HTTPException(
-                    status_code=409,
-                    detail="已开启尾帧衔接：上一镜仍在生成，请完成后再生成本镜",
-                )
+                continue
             prev_last = read_fragment_last_frame_url(prev)
             if not prev_last:
                 prev_last = await ensure_fragment_last_frame_url(project, prev)
@@ -666,9 +672,9 @@ async def generate_episode(
     created_tasks: list[int] = []
     deferred_count = 0
     for index, f in enumerate(idle_frags):
-        # 串行：仅首镜可激活；并行：仅前 activate_slots 镜立即执行，其余真正排队
+        # 串行：先入队再由 rebalance 按镜序激活；并行：仅前 activate_slots 镜立即执行
         if sequential:
-            defer_activation = index > 0 or activate_slots <= 0
+            defer_activation = True
         else:
             defer_activation = index >= activate_slots
         if defer_activation:
@@ -715,6 +721,13 @@ async def generate_episode(
             raise http_exception_for_value_error(exc) from exc
         created_tasks.append(task.id)
     await db.commit()
+    if sequential:
+        await rebalance_project_fragment_video_queue(
+            db,
+            int(ep.project_id),
+            sequential=True,
+            user_id=int(user.id),
+        )
     logger.info(
         "已创建分集视频任务 episode_id=%s project_id=%s fragments=%s activated=%s deferred=%s task_ids=%s",
         episode_id,

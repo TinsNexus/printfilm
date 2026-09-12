@@ -150,3 +150,20 @@ async def test_runtime_summary_reports_components():
         assert summary["watchdog"] == "running"
         assert summary["healthy"] is True
         assert "scheduler_tick_age_sec" in summary
+
+
+@pytest.mark.asyncio
+async def test_poller_not_stale_while_download_inflight():
+    """拉 TokenFree 成片时心跳会停，不能被看门狗当成死循环掐断。"""
+    import time
+
+    poller_mod._intentionally_stopped = False
+    poller_mod._last_poll_mono = time.monotonic() - 120
+    poller_mod._poll_inflight.add(3244)
+    try:
+        assert poller_mod.poller_tick_stale() is False
+        poller_mod._last_poll_mono = time.monotonic() - 999
+        assert poller_mod.poller_tick_stale() is True
+    finally:
+        poller_mod._poll_inflight.clear()
+        poller_mod._intentionally_stopped = True

@@ -3799,8 +3799,7 @@
 
 .pf-voice-card.selected {
   border-color: var(--pf-lime);
-  background: #f7ffe8;
-  box-shadow: 0 0 0 2px rgba(182, 255, 0, 0.28);
+  box-shadow: 0 0 0 2px rgba(182, 255, 0, 0.3);
 }
 
 .pf-voice-name {
@@ -4114,6 +4113,81 @@ button.pf-shot-editable:disabled {
 .pf-prompt-modal {
   max-width: 560px;
   width: min(560px, 92vw);
+  max-height: min(88vh, 680px);
+  overflow: hidden;
+  padding: 0;
+  gap: 0;
+}
+
+.pf-prompt-modal > h3 {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 1.1rem 1.25rem 0.65rem;
+  font-size: 1.05rem;
+  line-height: 1.35;
+}
+
+.pf-prompt-modal-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0 1.25rem 0.35rem;
+  overscroll-behavior: contain;
+}
+
+.pf-prompt-modal-foot {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 1.25rem 1.1rem;
+  border-top: 1px solid rgba(17, 19, 24, 0.08);
+  background: #fbfcfa;
+}
+
+.pf-prompt-modal-foot-spacer {
+  flex: 1 1 0.5rem;
+  min-width: 0.25rem;
+}
+
+.pf-prompt-hint {
+  font-size: 0.75rem;
+  margin-top: 4px;
+  display: block;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.pf-prompt-duration-chips {
+  margin-top: -0.35rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.pf-prompt-duration-error {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+}
+
+.pf-prompt-modal--narration {
+  max-height: min(72vh, 520px);
+}
+
+.pf-prompt-modal--segment {
+  max-width: 620px;
+  width: min(620px, 94vw);
+}
+
+.pf-prompt-modal textarea {
+  min-height: 4.25rem;
+  max-height: 11rem;
+}
+
+.pf-prompt-modal textarea.pf-prompt-segment {
+  min-height: 5.5rem;
+  max-height: 13rem;
 }
 
 .pf-prompt-modal label {
@@ -6668,8 +6742,10 @@ button.pf-shot-editable:disabled {
     rgba(17, 19, 24, 0.42);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: safe center;
+  justify-content: center;
+  overflow-y: auto;
   padding: 1rem;
   z-index: 50;
   animation: pf-dialog-root-in 0.22s ease-out;

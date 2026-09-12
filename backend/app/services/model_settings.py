@@ -121,8 +121,93 @@ def _bootstrap_channels_from_env(settings: Settings | None = None) -> list[Syste
 
     src = settings or get_settings()
     key = (src.openai_api_key or src.ark_api_key or "").strip()
-    models = [m for m in [src.model_llm, src.model_image, src.model_image_45, src.model_video, src.model_audio] if m]
+    models = [
+        m
+        for m in [
+            src.model_llm,
+            src.model_image,
+            src.model_image_45,
+            src.model_video,
+            src.model_video_2,
+            src.model_audio,
+        ]
+        if m
+    ]
     return [locked_tokenfree_channel(api_key=key, models=models, enabled=True)]
+
+
+def _seedance_logical_meta(upstream: str) -> tuple[str, str]:
+    """按接入点 ID 推断 Seedance 逻辑模型（2.0 vs 2.5）。"""
+    mid = (upstream or "").strip().lower()
+    if any(token in mid for token in ("2-5", "2.5", "260628")):
+        return "seedance-2.5", "Seedance 2.5"
+    if any(token in mid for token in ("2-0", "2.0", "260128", "seedance-2")):
+        return "seedance-2", "Seedance 2"
+    return "seedance-2.5", "Seedance 2.5"
+
+
+def _append_seedance_alias(
+    alias_models: list[LogicalModel],
+    *,
+    upstream: str,
+    logical_id: str,
+    name: str,
+    bindings_for_upstream,
+) -> None:
+    if any(model.id == logical_id for model in alias_models):
+        return
+    bindings = bindings_for_upstream(upstream)
+    if not bindings:
+        return
+    alias_models.append(
+        LogicalModel(
+            id=logical_id,
+            name=name,
+            capability="video",
+            enabled=True,
+            bindings=bindings,
+        )
+    )
+
+
+def _merge_friendly_alias_models(
+    synced: list[LogicalModel],
+    aliases: list[LogicalModel],
+) -> list[LogicalModel]:
+    """保留 seedance/seedream 友好别名；去掉与别名同上游的 raw endpoint 重复项。"""
+    from app.services.model_routing_config import normalize_model_name
+
+    if not aliases:
+        return synced
+    alias_ids = {model.id for model in aliases}
+    alias_upstream = {
+        normalize_model_name(binding.upstream_model)
+        for alias in aliases
+        for binding in alias.bindings
+    }
+    merged: list[LogicalModel] = []
+    seen_ids: set[str] = set()
+    for model in synced:
+        model_key = normalize_model_name(model.id)
+        binding_keys = {normalize_model_name(b.upstream_model) for b in model.bindings}
+        if (
+            model.capability in {"video", "image"}
+            and model.id not in alias_ids
+            and binding_keys
+            and binding_keys <= alias_upstream
+            and model_key in binding_keys
+        ):
+            continue
+        if model.id.lower() in seen_ids:
+            continue
+        merged.append(model)
+        seen_ids.add(model.id.lower())
+    for alias in aliases:
+        if alias.id.lower() in seen_ids:
+            continue
+        merged.append(alias)
+        seen_ids.add(alias.id.lower())
+    return merged
 
 
 # 从 env 构建默认逻辑模型与默认模型 ID
@@ -166,22 +251,33 @@ def _bootstrap_logical_from_channels(channels: list[SystemModelChannel]) -> tupl
                 )
             )
     if settings.model_video:
-        bindings = _bindings_for_upstream(settings.model_video)
-        if bindings:
-            alias_models.append(
-                LogicalModel(
-                    id="seedance-2.5",
-                    name="Seedance 2.5",
-                    capability="video",
-                    enabled=True,
-                    bindings=bindings,
-                )
-            )
-    merged = synchronize_logical_models_with_channels(logical_models + alias_models, channels)
+        logical_id, name = _seedance_logical_meta(settings.model_video)
+        _append_seedance_alias(
+            alias_models,
+            upstream=settings.model_video,
+            logical_id=logical_id,
+            name=name,
+            bindings_for_upstream=_bindings_for_upstream,
+        )
+    if settings.model_video_2:
+        _append_seedance_alias(
+            alias_models,
+            upstream=settings.model_video_2,
+            logical_id="seedance-2",
+            name="Seedance 2",
+            bindings_for_upstream=_bindings_for_upstream,
+        )
+    default_video = ""
+    if settings.model_video:
+        default_video, _ = _seedance_logical_meta(settings.model_video)
+    elif settings.model_video_2:
+        default_video = "seedance-2"
+    synced = synchronize_logical_models_with_channels(logical_models, channels)
+    merged = _merge_friendly_alias_models(synced, alias_models)
     defaults = DefaultModels(
         text_model=settings.model_llm,
         image_model="seedream-5.0" if settings.model_image else "",
-        video_model="seedance-2.5" if settings.model_video else "",
+        video_model=default_video,
         audio_model=settings.model_audio or settings.volc_tts_speaker,
     )
     return merged, normalize_default_models(defaults, merged, channels)
@@ -295,9 +391,31 @@ async def _ensure_tokenfree_channel(db: AsyncSession, existing: list[SystemModel
     if not current_key and migrated_key:
         token_row.api_key_ciphertext = _encrypt_secret(migrated_key)
         current_key = migrated_key
+    src = get_settings()
+    env_models = [
+        m
+        for m in [
+            src.model_llm,
+            src.model_image,
+            src.model_image_45,
+            src.model_video,
+            src.model_video_2,
+            src.model_audio,
+        ]
+        if m
+    ]
     if not token_row.models:
-        src = get_settings()
-        token_row.models = [m for m in [src.model_llm, src.model_image, src.model_video, src.model_audio] if m]
+        token_row.models = env_models
+    elif env_models:
+        # 已有 DB 配置时，把 .env 新增的接入点（如 MODEL_VIDEO_2）补进渠道 models
+        merged = list(token_row.models or [])
+        changed = False
+        for model in env_models:
+            if model not in merged:
+                merged.append(model)
+                changed = True
+        if changed:
+            token_row.models = merged
     for row in existing:
         if row.id != TOKENFREE_CHANNEL_ID:
             row.enabled = False
@@ -353,6 +471,16 @@ async def _compose_runtime_state(db: AsyncSession) -> tuple[list[SystemModelChan
         )
     # 渠道 models 变更后，丢弃失效绑定并补齐新上游（支持任意 OpenAI 兼容模型）
     logical_models = synchronize_logical_models_with_channels(logical_models, channels)
+    boot_logical, boot_defaults = _bootstrap_logical_from_channels(
+        [_channel_row_to_admin(row) for row in (await db.execute(select(SystemModelChannelRow))).scalars().all()]
+    )
+    alias_ids = {"seedream-5.0", "seedream-4.5", "seedance-2.5", "seedance-2"}
+    logical_models = _merge_friendly_alias_models(
+        logical_models,
+        [model for model in boot_logical if model.id in alias_ids],
+    )
+    if not (default_models.video_model or "").strip() and boot_defaults.video_model:
+        default_models = default_models.model_copy(update={"video_model": boot_defaults.video_model})
     default_models = normalize_default_models(default_models, logical_models, channels)
     flat = _effective_flat(_decrypt_flat_config(config))
     from app.services.tokenfree_gateway import apply_tokenfree_flat_overlay
@@ -376,13 +504,13 @@ async def load_model_settings_cache(db: AsyncSession) -> None:
     old_ids = {(item or {}).get("id") for item in (config.get("logical_models") or [])}
     new_ids = {model.id for model in logical_models}
     old_defaults = default_models_from_dict(config.get("default_models"))
-    if old_ids != new_ids or old_defaults != default_models:
+    flat_cfg = dict(config.get("flat") or {})
+    flat_cfg.update({k: v for k, v in flat.items() if v not in (None, "")})
+    flat_changed = flat_cfg != dict(config.get("flat") or {})
+    if old_ids != new_ids or old_defaults != default_models or flat_changed:
         config["logical_models"] = [model.model_dump() for model in logical_models]
         config["default_models"] = default_models_to_dict(default_models)
-        flat_cfg = dict(config.get("flat") or {})
-        if default_models.text_model:
-            flat_cfg["model_llm"] = default_models.text_model
-            config["flat"] = flat_cfg
+        config["flat"] = _encrypt_flat_config(flat_cfg) if flat_cfg else config.get("flat")
         app_row.config_json = config
         await db.commit()
     _refresh_routing_snapshot(channels, logical_models, default_models)
@@ -585,20 +713,22 @@ async def patch_admin_routing_settings(
     config = dict(app_row.config_json or {})
     channels_after = await _load_channels(db, runtime=False)
     logical_models = [LogicalModel.model_validate(item) for item in config.get("logical_models") or []]
+    defaults = default_models_from_dict(config.get("default_models"))
 
     if body.logical_models is not None:
         logical_models = body.logical_models
         applied.append("logical_models")
-    elif body.system_channels is not None:
-        bootstrapped, _ = _bootstrap_logical_from_channels(channels_after)
-        alias_ids = {"seedream-5.0", "seedream-4.5", "seedance-2.5"}
-        extras = [model for model in bootstrapped if model.id in alias_ids]
-        logical_models = logical_models + extras
 
     # 无论前端是否提交逻辑模型，最终都以渠道 models 为准同步（通用 OpenAI 兼容）
-    logical_models = synchronize_logical_models_with_channels(logical_models, channels_after)
-
-    defaults = default_models_from_dict(config.get("default_models"))
+    synced = synchronize_logical_models_with_channels(logical_models, channels_after)
+    bootstrapped, boot_defaults = _bootstrap_logical_from_channels(channels_after)
+    alias_ids = {"seedream-5.0", "seedream-4.5", "seedance-2.5", "seedance-2"}
+    logical_models = _merge_friendly_alias_models(
+        synced,
+        [model for model in bootstrapped if model.id in alias_ids],
+    )
+    if body.system_channels is not None and not (defaults.video_model or "").strip() and boot_defaults.video_model:
+        defaults = defaults.model_copy(update={"video_model": boot_defaults.video_model})
     if body.default_models is not None:
         defaults = body.default_models
         applied.append("default_models")

@@ -119,6 +119,19 @@ export type VoicePreset = {
   speaker: string
 }
 
+/** 项目 voice_id / 模板别名 → 与音色列表一致的 speaker id */
+export function resolveVoiceId(raw: string, voices: VoicePreset[]): string {
+  const id = (raw || '').trim()
+  if (!id) {
+    const first = voices[0]
+    return first ? first.speaker || first.id : ''
+  }
+  const alias = VOICE_PRESET_ALIASES[id]
+  if (alias) return alias
+  const hit = voices.find((v) => v.id === id || v.speaker === id)
+  return hit ? hit.speaker || hit.id : id
+}
+
 export type Project = {
   id: number
   template_id: string

@@ -4,13 +4,13 @@
  */
 import type { DramaAsset, DramaFragment } from '../api/drama'
 import {
-  SEGMENT_DURATION_MAX,
-  SEGMENT_DURATION_MIN,
-  SHOT_DURATION_MAX,
-  extractDurations,
-  isValidSegmentDuration,
-  sumDuration,
-} from './segmentDuration'
+  DRAMA_SEGMENT_DURATION_HARD_MAX,
+  DRAMA_SEGMENT_DURATION_MAX,
+  DRAMA_SEGMENT_DURATION_MIN,
+  DRAMA_SHOT_DURATION_HARD_MAX,
+  FRAGMENT_CONTENT_DURATION_MAX,
+} from './dramaEpisodePromptEditor'
+import { extractDurations, sumDuration } from './segmentDuration'
 
 /** 漫剧字幕 cue（与后端 DRAMA_SUBTITLE_CUE 一致） */
 export const DRAMA_SUBTITLE_CUE = '【字幕：底部居中·简体中文·逐句轮换·与口播同步】'
@@ -127,17 +127,33 @@ export function validateDramaFragmentScript(content: string): DramaScriptIssue[]
   const durations = extractDurations(content || '')
   const total = sumDuration(content || '')
 
-  if (durations.some((value) => !isValidSegmentDuration(value))) {
+  const badSegment = durations.find(
+    (value) =>
+      !Number.isFinite(value) ||
+      value < DRAMA_SEGMENT_DURATION_MIN ||
+      value > DRAMA_SEGMENT_DURATION_HARD_MAX,
+  )
+  if (badSegment != null) {
     issues.push({
       level: 'error',
-      message: `单个 @duration 需在 ${SEGMENT_DURATION_MIN}–${SEGMENT_DURATION_MAX} 秒之间`,
+      message: `单个 @duration 需在 ${DRAMA_SEGMENT_DURATION_MIN}–${DRAMA_SEGMENT_DURATION_HARD_MAX} 秒之间`,
+    })
+  } else if (durations.some((value) => value > DRAMA_SEGMENT_DURATION_MAX)) {
+    issues.push({
+      level: 'warn',
+      message: `部分 @duration 超过新分镜建议 ${DRAMA_SEGMENT_DURATION_MAX}s，旧稿可继续生成`,
     })
   }
 
-  if (total > SHOT_DURATION_MAX) {
+  if (total > DRAMA_SHOT_DURATION_HARD_MAX) {
     issues.push({
       level: 'error',
-      message: `本镜 @duration 合计 ${total}s，超过上限 ${SHOT_DURATION_MAX}s`,
+      message: `本镜 @duration 合计 ${total}s，超过 Seedance 上限 ${DRAMA_SHOT_DURATION_HARD_MAX}s`,
+    })
+  } else if (total > FRAGMENT_CONTENT_DURATION_MAX) {
+    issues.push({
+      level: 'warn',
+      message: `本镜 @duration 合计 ${total}s，超过新分镜建议 ${FRAGMENT_CONTENT_DURATION_MAX}s（旧稿可继续生成）`,
     })
   }
 

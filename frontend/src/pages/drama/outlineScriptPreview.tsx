@@ -41,9 +41,9 @@ const SCENE_DURATION_MIN = 4
 const SCENE_DURATION_MAX = 120
 /** 与后端 build_fragments 行时长 clamp / 打包上限对齐 */
 const LINE_DURATION_MIN = 3
-const LINE_DURATION_MAX = 12
-const FRAGMENT_SOFT_MAX = 20
-const FRAGMENT_TOTAL_MAX = 30
+const LINE_DURATION_MAX = 15
+const FRAGMENT_SOFT_MAX = 15
+const FRAGMENT_TOTAL_MAX = 15
 
 // 角色名稳定配色
 export function speakerColor(name: string): string {
@@ -117,13 +117,13 @@ function estimateLineSec(line: ParsedScriptLine): number {
     const t = line.text.trim()
     if (t.startsWith('【空镜')) return 4
     if (t.startsWith('△') || /^[△▲]/.test(t)) return 2
-    return Math.min(6, Math.max(2, Math.floor(compactLen(t) / 12)))
+    return Math.min(10, Math.max(2, Math.floor(compactLen(t) / 12)))
   }
   if (line.kind === 'dialogue') {
     const body = `${line.paren || ''}${line.dialogue || line.text}`
-    return Math.min(8, Math.max(3, Math.floor(compactLen(body) / 10)))
+    return Math.min(12, Math.max(3, Math.floor(compactLen(body) / 10)))
   }
-  return Math.min(6, Math.max(2, Math.floor(compactLen(line.text) / 12)))
+  return Math.min(10, Math.max(2, Math.floor(compactLen(line.text) / 12)))
 }
 
 function clampLineDuration(sec: number): number {

@@ -31,6 +31,7 @@ class AdminModelSettingsOut(BaseModel):
     model_image: str = ""
     model_image_45: str = ""
     model_video: str = ""
+    model_video_2: str = ""
     model_audio: str = ""
     has_ark_api_key: bool = False
 
@@ -163,6 +164,7 @@ class AdminModelSettingsPatch(BaseModel):
     model_image: str | None = None
     model_image_45: str | None = None
     model_video: str | None = None
+    model_video_2: str | None = None
     model_audio: str | None = None
     clear_ark_api_key: bool = False
 
@@ -297,6 +299,7 @@ def model_config_field_names() -> tuple[str, ...]:
         "model_image",
         "model_image_45",
         "model_video",
+        "model_video_2",
         "model_audio",
         "volc_tts_app_id",
         "volc_tts_access_key",

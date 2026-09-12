@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { api, defaultsFromTemplate } from '../../api'
+import { api, defaultsFromTemplate, resolveVoiceId } from '../../api'
 import type { MediaModelOption, MediaModelsCatalog, PipelineMode, Project, Template, VoicePreset } from '../../api'
 import AppShell from '../../components/layout/AppShell'
 import Stepper from '../../components/ui/Stepper'
@@ -60,6 +60,11 @@ const RATIOS: { id: string; label: string; w: number; h: number }[] = [
 ]
 
 /** 画幅是否竖向（高 > 宽），用于预览卡与实时预览比例 */
+/** 音色卡片与 API 试听共用的 speaker 键 */
+function voiceKey(v: VoicePreset): string {
+  return v.speaker || v.id
+}
+
 function isPortraitRatio(ratio: string | undefined | null): boolean {
   const raw = String(ratio || '').trim()
   const m = raw.match(/^(\d+(?:\.\d+)?)\s*[:/x]\s*(\d+(?:\.\d+)?)$/i)
@@ -131,13 +136,21 @@ export default function StyleConfigPage() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!voices.length) return
+    setVoiceId((prev) => {
+      const next = resolveVoiceId(prev, voices)
+      return next === prev ? prev : next
+    })
+  }, [voices])
+
   const currentTpl = useMemo(
     () => templates.find((t) => t.id === project?.template_id),
     [templates, project?.template_id],
   )
 
   const styleOptions = useMemo(() => templates.slice(0, 8), [templates])
-  const selectedVoice = voices.find((v) => v.speaker === voiceId || v.id === voiceId)
+  const selectedVoice = voices.find((v) => voiceKey(v) === voiceId || v.id === voiceId)
 
   useEffect(() => {
     if (!project || !currentTpl) return
@@ -189,10 +202,16 @@ export default function StyleConfigPage() {
     setPlayingId(null)
   }
 
+  function selectVoice(v: VoicePreset) {
+    const vid = voiceKey(v)
+    if (vid !== voiceId) stopPreview()
+    setVoiceId(vid)
+  }
+
   async function previewVoice(v: VoicePreset, e: MouseEvent) {
     e.stopPropagation()
-    const vid = v.speaker || v.id
-    setVoiceId(vid)
+    const vid = voiceKey(v)
+    selectVoice(v)
     setError('')
 
     if (playingId === vid && audioRef.current && !audioRef.current.paused) {
@@ -423,7 +442,7 @@ export default function StyleConfigPage() {
             </h3>
             <div className="pf-voice-row">
               {voices.map((v) => {
-                const vid = v.speaker || v.id
+                const vid = voiceKey(v)
                 const selected = voiceId === vid
                 const loading = previewBusy === vid
                 const playing = playingId === vid
@@ -433,11 +452,11 @@ export default function StyleConfigPage() {
                     className={selected ? 'pf-voice-card selected' : 'pf-voice-card'}
                     role="button"
                     tabIndex={0}
-                    onClick={() => setVoiceId(vid)}
+                    onClick={() => selectVoice(v)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault()
-                        setVoiceId(vid)
+                        selectVoice(v)
                       }
                     }}
                   >
@@ -477,29 +496,6 @@ export default function StyleConfigPage() {
                 当前：{selectedVoice.label} · 点击「试听」可听约 5 秒样例
               </p>
             ) : null}
-          </div>
-
-          <div className="pf-style-block">
-            <h3>
-              背景音乐 <ComingSoon />
-            </h3>
-            <div className="pf-bgm-card">
-              <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm pf-btn-icon" disabled>
-                <IconPlay size={14} />
-              </button>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <strong style={{ fontSize: '0.9rem' }}>星际远航</strong>
-                <div className="pf-bgm-wave" />
-              </div>
-              <span className="pf-muted">02:28</span>
-            </div>
-          </div>
-
-          <div className="pf-style-block">
-            <h3>
-              字幕样式 <ComingSoon />
-            </h3>
-            <div className="pf-hint">字体、字号、对齐与颜色工具条将在成片编辑器中提供。</div>
           </div>
 
           <div className="pf-style-block">
@@ -641,11 +637,11 @@ export default function StyleConfigPage() {
               type="button"
               className="pf-btn pf-btn-ghost pf-btn-block pf-btn-sm pf-btn-icon"
               style={{ marginTop: '0.75rem' }}
-              disabled={busy || previewBusy === (selectedVoice.speaker || selectedVoice.id)}
+              disabled={busy || previewBusy === voiceKey(selectedVoice)}
               onClick={(e) => previewVoice(selectedVoice, e)}
             >
               <IconPlay size={14} />
-              {playingId === (selectedVoice.speaker || selectedVoice.id)
+              {playingId === voiceKey(selectedVoice)
                 ? '停止试听'
                 : `试听「${selectedVoice.label}」`}
             </button>

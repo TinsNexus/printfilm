@@ -140,6 +140,8 @@ export default function StoryboardPage() {
   const [error, setError] = useState('')
   const [editing, setEditing] = useState<Shot | null>(null)
   const [editFocus, setEditFocus] = useState<string>('')
+  /** 表格入口：旁白列 / 逐段分镜列 / 操作栏「编辑」 */
+  const [editMode, setEditMode] = useState<'full' | 'narration' | 'segment'>('full')
   const [promptEdit, setPromptEdit] = useState<{
     style_prompt: string
     character_prompt: string
@@ -524,8 +526,17 @@ export default function StoryboardPage() {
 
   function openShotEdit(shot: Shot, focus = '') {
     setEditFocus(focus)
+    if (focus === 'narration') setEditMode('narration')
+    else if (focus === 'segment_script') setEditMode('segment')
+    else setEditMode('full')
     setEditing({ ...shot })
     setMenuShotId(null)
+  }
+
+  function closeShotEdit() {
+    setEditing(null)
+    setEditFocus('')
+    setEditMode('full')
   }
 
   // 改旁白时同步写入脚本旁白段
@@ -588,8 +599,7 @@ export default function StoryboardPage() {
         duration: Number(editing.duration) || 4,
         camera: editing.camera,
       })
-      setEditing(null)
-      setEditFocus('')
+      closeShotEdit()
       setProject(await api.getProject(project.id))
     } catch (err) {
       setError(err instanceof Error ? err.message : '保存失败')
@@ -1329,119 +1339,174 @@ title="用当前镜头重新拼接"
       ) : null}
 
       {editing ? (
-        <div
-          className="modal-backdrop"
-          onClick={() => {
-            setEditing(null)
-            setEditFocus('')
-          }}
-        >
-          <div className="modal pf-prompt-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>编辑镜头 {editing.shot_no} · 提示词</h3>
-            <label>
-              镜头标题
-              <input
-                autoFocus={editFocus === 'title'}
-                value={editing.overlay_title || ''}
-                onChange={(e) => setEditing({ ...editing, overlay_title: e.target.value })}
-              />
-              <span className="pf-muted" style={{ fontSize: '0.75rem', marginTop: 4, display: 'block' }}>
-                分镜列表名称；图文成片会叠到画面顶部
-              </span>
-            </label>
-            <label>
-              副标题
-              <input
-                value={editing.overlay_subtitle || ''}
-                onChange={(e) => setEditing({ ...editing, overlay_subtitle: e.target.value })}
-              />
-              <span className="pf-muted" style={{ fontSize: '0.75rem', marginTop: 4, display: 'block' }}>
-                图文成片叠字；AI 视频成片不烧这行，只作分镜说明
-              </span>
-            </label>
-            <label>
-              旁白
-              <textarea
-                autoFocus={editFocus === 'narration'}
-                value={editing.narration}
-                onChange={(e) => patchEditingNarration(e.target.value)}
-                rows={3}
-              />
-              <span className="pf-muted" style={{ fontSize: '0.75rem', marginTop: 4, display: 'block' }}>
-                会同步到下方脚本旁白段，配音与视频按脚本生成
-              </span>
-            </label>
-            <label>
-              画面提示词（首帧）
-              <textarea
-                autoFocus={editFocus === 'img_prompt'}
-                value={editing.img_prompt}
-                onChange={(e) => patchEditingVisual(e.target.value)}
-                rows={3}
-              />
-              <span className="pf-muted" style={{ fontSize: '0.75rem', marginTop: 4, display: 'block' }}>
-                会同步到脚本首段画面，出图与视频都用这一段
-              </span>
-            </label>
-            <label>
-              逐段分镜脚本（@duration + 字幕/BGM）
-              <textarea
-                autoFocus={editFocus === 'segment_script' || editFocus === ''}
-                value={editing.segment_script || editing.video_prompt || ''}
-                onChange={(e) => patchEditingScript(e.target.value)}
-                rows={10}
-                placeholder={SEGMENT_SCRIPT_PLACEHOLDER}
-              />
-            </label>
-            <div
-              className="pf-chips"
-              style={{ marginTop: '-0.35rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}
-            >
-              {editDurationCheck.durations.length > 0 ? (
-                editDurationCheck.durations.map((sec, i) => (
-                  <span key={`${sec}-${i}`} className="pf-chip" style={{ cursor: 'default' }}>
-                    {sec}s
+        <div className="modal-backdrop" onClick={closeShotEdit}>
+          <div
+            className={[
+              'modal',
+              'pf-prompt-modal',
+              editMode === 'narration' ? 'pf-prompt-modal--narration' : '',
+              editMode === 'segment' ? 'pf-prompt-modal--segment' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3>
+              {editMode === 'narration'
+                ? `编辑镜头 ${editing.shot_no} · 旁白与标题`
+                : editMode === 'segment'
+                  ? `编辑镜头 ${editing.shot_no} · 逐段分镜`
+                  : `编辑镜头 ${editing.shot_no} · 全部提示词`}
+            </h3>
+            <div className="pf-prompt-modal-scroll">
+              {editMode === 'narration' || editMode === 'full' ? (
+                <>
+                  <label>
+                    镜头标题
+                    <input
+                      autoFocus={editFocus === 'title' || editMode === 'narration'}
+                      value={editing.overlay_title || ''}
+                      onChange={(e) => setEditing({ ...editing, overlay_title: e.target.value })}
+                    />
+                    <span className="pf-muted pf-prompt-hint">
+                      分镜列表名称；图文成片会叠到画面顶部
+                    </span>
+                  </label>
+                  <label>
+                    副标题
+                    <input
+                      value={editing.overlay_subtitle || ''}
+                      onChange={(e) => setEditing({ ...editing, overlay_subtitle: e.target.value })}
+                    />
+                    <span className="pf-muted pf-prompt-hint">
+                      图文成片叠字；AI 视频成片不烧这行，只作分镜说明
+                    </span>
+                  </label>
+                  <label>
+                    旁白
+                    <textarea
+                      autoFocus={editFocus === 'narration'}
+                      value={editing.narration}
+                      onChange={(e) => patchEditingNarration(e.target.value)}
+                      rows={editMode === 'narration' ? 6 : 3}
+                    />
+                    <span className="pf-muted pf-prompt-hint">
+                      会同步到脚本旁白段，配音与视频按脚本生成
+                    </span>
+                  </label>
+                </>
+              ) : null}
+              {editMode === 'full' ? (
+                <label>
+                  画面提示词（首帧）
+                  <textarea
+                    autoFocus={editFocus === 'img_prompt'}
+                    value={editing.img_prompt}
+                    onChange={(e) => patchEditingVisual(e.target.value)}
+                    rows={3}
+                  />
+                  <span className="pf-muted pf-prompt-hint">
+                    会同步到脚本首段画面，出图与视频都用这一段
                   </span>
-                ))
-              ) : (
-                <span className="pf-muted" style={{ fontSize: '0.8rem' }}>
-                  暂无 @duration 标签
-                </span>
-              )}
-              <span
-                className="pf-muted"
-                style={{
-                  fontSize: '0.8rem',
-                  marginLeft: 'auto',
-                  color: editDurationCheck.valid ? undefined : 'var(--pf-danger, #c0392b)',
-                }}
-              >
-                合计 {editDurationCheck.total}s / {SHOT_DURATION_MAX}s
-              </span>
+                </label>
+              ) : null}
+              {editMode === 'segment' || editMode === 'full' ? (
+                <>
+                  <label>
+                    逐段分镜脚本（@duration + 字幕/BGM）
+                    <textarea
+                      className="pf-prompt-segment"
+                      autoFocus={editFocus === 'segment_script' || editMode === 'segment'}
+                      value={editing.segment_script || editing.video_prompt || ''}
+                      onChange={(e) => patchEditingScript(e.target.value)}
+                      rows={editMode === 'segment' ? 8 : 5}
+                      placeholder={SEGMENT_SCRIPT_PLACEHOLDER}
+                    />
+                  </label>
+                  <div className="pf-chips pf-prompt-duration-chips">
+                    {editDurationCheck.durations.length > 0 ? (
+                      editDurationCheck.durations.map((sec, i) => (
+                        <span key={`${sec}-${i}`} className="pf-chip" style={{ cursor: 'default' }}>
+                          {sec}s
+                        </span>
+                      ))
+                    ) : (
+                      <span className="pf-muted" style={{ fontSize: '0.8rem' }}>
+                        暂无 @duration 标签
+                      </span>
+                    )}
+                    <span
+                      className="pf-muted"
+                      style={{
+                        fontSize: '0.8rem',
+                        marginLeft: 'auto',
+                        color: editDurationCheck.valid ? undefined : 'var(--pf-danger, #c0392b)',
+                      }}
+                    >
+                      合计 {editDurationCheck.total}s / {SHOT_DURATION_MAX}s
+                    </span>
+                  </div>
+                  {!editDurationCheck.valid && editDurationCheck.message ? (
+                    <p className="pf-error pf-prompt-duration-error">{editDurationCheck.message}</p>
+                  ) : null}
+                  <label>
+                    运镜备注
+                    <input
+                      value={editing.camera || ''}
+                      onChange={(e) => setEditing({ ...editing, camera: e.target.value })}
+                    />
+                  </label>
+                  <div className="pf-prompt-modal-row">
+                    <label>
+                      时长（秒，保存后按 @duration 重算）
+                      <input
+                        type="number"
+                        value={editing.duration}
+                        onChange={(e) => setEditing({ ...editing, duration: Number(e.target.value) })}
+                      />
+                    </label>
+                  </div>
+                </>
+              ) : null}
             </div>
-            {!editDurationCheck.valid && editDurationCheck.message ? (
-              <p className="pf-error" style={{ margin: '0 0 0.75rem', fontSize: '0.85rem' }}>
-                {editDurationCheck.message}
-              </p>
-            ) : null}
-            <label>
-              运镜备注
-              <input
-                value={editing.camera || ''}
-                onChange={(e) => setEditing({ ...editing, camera: e.target.value })}
-              />
-            </label>
-            <div className="pf-prompt-modal-row">
-              <label>
-                时长（秒，保存脚本后会按 @duration 重算）
-                <input
-                  type="number"
-                  value={editing.duration}
-                  onChange={(e) => setEditing({ ...editing, duration: Number(e.target.value) })}
-                />
-              </label>
-            </div>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <div className="pf-prompt-modal-foot">
+              {editMode !== 'segment' ? (
+                <button
+                  type="button"
+                  className="pf-btn pf-btn-ghost pf-btn-sm"
+                  onClick={() => {
+                    setEditMode('segment')
+                    setEditFocus('segment_script')
+                  }}
+                >
+                  逐段分镜…
+                </button>
+              ) : null}
+              {editMode !== 'narration' ? (
+                <button
+                  type="button"
+                  className="pf-btn pf-btn-ghost pf-btn-sm"
+                  onClick={() => {
+                    setEditMode('narration')
+                    setEditFocus('narration')
+                  }}
+                >
+                  旁白与标题…
+                </button>
+              ) : null}
+              {editMode !== 'full' ? (
+                <button
+                  type="button"
+                  className="pf-btn pf-btn-ghost pf-btn-sm"
+                  onClick={() => {
+                    setEditMode('full')
+                    setEditFocus('')
+                  }}
+                >
+                  全部字段
+                </button>
+              ) : null}
+              <span className="pf-prompt-modal-foot-spacer" />
               <button
                 type="button"
                 className="pf-btn pf-btn-lime"
@@ -1450,14 +1515,7 @@ title="用当前镜头重新拼接"
               >
                 保存
               </button>
-              <button
-                type="button"
-                className="pf-btn pf-btn-ghost"
-                onClick={() => {
-                  setEditing(null)
-                  setEditFocus('')
-                }}
-              >
+              <button type="button" className="pf-btn pf-btn-ghost" onClick={closeShotEdit}>
                 取消
               </button>
             </div>

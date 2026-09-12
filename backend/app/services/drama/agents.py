@@ -10,6 +10,16 @@ from app.services.drama.script_summary_prompt import (
     build_script_summary_user_message,
 )
 
+# 正文过短阈值（汉字量近似用去空白后长度）
+MIN_EPISODE_CONTENT_CHARS = 450
+# 短剧单集目标篇幅（约 1–1.5 分钟成片，对应 6–10 镜）
+TARGET_EPISODE_CONTENT_CHARS = 550
+EPISODE_SCENE_COUNT_HINT = "2-3 场"
+# 手动加集标记；自动流水线不会填这些空集
+MANUAL_EPISODE_ORIGIN = "manual"
+# 与创建项目上限对齐
+MAX_DRAMA_EPISODES = 120
+
 # 与 manju episodeScript 对齐：先规划全集集名
 EPISODE_OUTLINE_SYSTEM = """你是专业的短剧/网剧编剧策划，负责根据原始创意与剧本摘要，规划全部分集的「集数 + 集名」大纲。
 
@@ -43,15 +53,8 @@ EPISODE_BATCH_CONTENT_SYSTEM = """你是专业的短剧/网剧编剧，负责根
 5. 台词格式：角色名（情绪/vo/os/动作）：台词内容；旁白用 vo，内心独白用 os；台词要有潜台词与冲突；括号内写情绪/vo/os，不要写「声音」「音色」
 6. 关键镜头可用【空镜：描述】收尾一场或一段
 7. content 内不要输出「第X集」或「X.集名：」标题行，只输出场戏正文
-8. 每集 3-5 场；每场至少 3 段 △ 动作与 4 句以上台词（或对白+vo）；整集 content 不少于 800 汉字
+8. 每集 2-3 场；每场 2-3 段 △ 动作与 2-3 句台词（或对白+vo）；整集 content 约 450-600 汉字，节奏紧凑、不注水
 9. 语言使用简体中文，偏影视剧本风格，动作与台词可拍摄、有张力"""
-
-# 正文过短阈值（汉字量近似用去空白后长度）
-MIN_EPISODE_CONTENT_CHARS = 500
-# 手动加集标记；自动流水线不会填这些空集
-MANUAL_EPISODE_ORIGIN = "manual"
-# 与创建项目上限对齐
-MAX_DRAMA_EPISODES = 120
 
 # 把用户草稿改写成可拍摄分集正文
 EPISODE_OPTIMIZE_SYSTEM = """你是专业的短剧/网剧编剧，负责把用户提供的分集剧本草稿，改写成可拍摄的分集正文。
@@ -71,7 +74,7 @@ EPISODE_OPTIMIZE_SYSTEM = """你是专业的短剧/网剧编剧，负责把用�
 5. 台词格式：角色名（情绪/vo/os/动作）：台词内容；旁白用 vo，内心独白用 os
 6. 关键镜头可用【空镜：描述】
 7. content 内不要输出「第X集」或「X.集名：」标题行，只输出场戏正文
-8. 每集 3-5 场；整集 content 不少于 800 汉字
+8. 每集 2-3 场；整集 content 约 450-600 汉字，节奏紧凑
 9. 语言使用简体中文
 
 必须输出严格 JSON：
@@ -111,7 +114,7 @@ EPISODE_BODY_FROM_BRIEF_SYSTEM = """你是专业的短剧/网剧编剧，根据�
 5. 台词格式：角色名（情绪/vo/os/动作）：台词内容；旁白用 vo，内心独白用 os；台词要有潜台词与冲突；括号内写情绪/vo/os，不要写「声音」「音色」
 6. 关键镜头可用【空镜：描述】收尾一场或一段
 7. content 内不要输出「第X集」或「X.集名：」标题行，只输出场戏正文
-8. 每集 3-5 场；每场至少 3 段 △ 动作与 4 句以上台词（或对白+vo）；整集 content 不少于 800 汉字
+8. 每集 2-3 场；每场 2-3 段 △ 动作与 2-3 句台词（或对白+vo）；整集 content 约 450-600 汉字
 9. 语言使用简体中文，偏影视剧本风格，动作与台词可拍摄、有张力
 
 必须输出严格 JSON：
@@ -324,8 +327,8 @@ async def run_episode_body_from_brief(
             "\n\n".join(
                 user_parts
                 + [
-                    f"上一稿过短（不足 {MIN_EPISODE_CONTENT_CHARS} 字），请扩写至不少于 800 汉字，"
-                    f"每场至少 3 段 △ 与 4 句台词，仍只输出第 {number} 集。"
+                    f"上一稿过短（不足 {MIN_EPISODE_CONTENT_CHARS} 字），请扩写至约 {TARGET_EPISODE_CONTENT_CHARS} 汉字，"
+                    f"含 {EPISODE_SCENE_COUNT_HINT}、每场 2-3 段 △ 与 2-3 句台词，仍只输出第 {number} 集。"
                 ]
             ),
             max_tokens=8192,
@@ -828,7 +831,7 @@ async def run_episode_script_batch(
             f"当前任务：撰写第 {start} 集至第 {end} 集（共 {batch_size_n} 集）的完整剧本正文",
             f"全剧共 {target} 集",
             f"episodes 输出数组必须恰好 {batch_size_n} 项，episodeNumber 从 {start} 到 {end}",
-            f"每集 content 不少于 {MIN_EPISODE_CONTENT_CHARS} 汉字，含 3-5 场戏、充分 △ 动作与台词",
+            f"每集 content 约 {TARGET_EPISODE_CONTENT_CHARS} 汉字（不少于 {MIN_EPISODE_CONTENT_CHARS}），含 {EPISODE_SCENE_COUNT_HINT}、精简 △ 与台词",
             "",
             f"原始创意：\n{(creative or '').strip() or '（无额外创意，以摘要为准）'}",
             "",
@@ -865,9 +868,9 @@ async def run_episode_script_batch(
     if too_short:
         retry_user = (
             user
-            + "\n\n上次输出过短。请重写本批次，每集 content 必须 ≥ "
-            + str(MIN_EPISODE_CONTENT_CHARS)
-            + " 汉字，包含完整场次、△ 动作与对白，不得压缩成梗概。"
+            + "\n\n上次输出过短。请重写本批次，每集 content 约 "
+            + str(TARGET_EPISODE_CONTENT_CHARS)
+            + f" 汉字（不少于 {MIN_EPISODE_CONTENT_CHARS}），含 {EPISODE_SCENE_COUNT_HINT}、精简 △ 与台词，不得压缩成梗概。"
         )
         retry = await drama_chat_json(
             EPISODE_BATCH_CONTENT_SYSTEM,
@@ -918,7 +921,7 @@ async def run_episode_script_from_draft(
             f"当前任务：把用户草稿优化为第 {number} 集完整拍摄剧本",
             f"episodeNumber 必须为 {number}，episodes 数组必须恰好 1 项",
             f"当前集名：{current_title}（可按草稿核心事件微调 title）",
-            f"每集 content 不少于 {MIN_EPISODE_CONTENT_CHARS} 汉字，含 3-5 场戏、充分 △ 动作与台词",
+            f"每集 content 约 {TARGET_EPISODE_CONTENT_CHARS} 汉字（不少于 {MIN_EPISODE_CONTENT_CHARS}），含 {EPISODE_SCENE_COUNT_HINT}、精简 △ 与台词",
             *ctx,
             f"用户提供的第 {number} 集草稿：\n{draft_text}",
             f"请输出第 {number} 集的 title 与 content。",
@@ -944,9 +947,9 @@ async def run_episode_script_from_draft(
             user
             + "\n\n上次输出过短。请按用户草稿重写第 "
             + str(number)
-            + " 集，content 必须 ≥ "
-            + str(MIN_EPISODE_CONTENT_CHARS)
-            + " 汉字，包含完整场次、△ 动作与对白。"
+            + " 集，content 约 "
+            + str(TARGET_EPISODE_CONTENT_CHARS)
+            + f" 汉字（不少于 {MIN_EPISODE_CONTENT_CHARS}），含 {EPISODE_SCENE_COUNT_HINT}、精简 △ 与台词。"
         )
         retry = await drama_chat_json(
             EPISODE_OPTIMIZE_SYSTEM,

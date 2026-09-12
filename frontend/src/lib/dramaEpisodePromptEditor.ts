@@ -8,8 +8,17 @@ export type DramaMentionChipData = {
 export const DURATION_CHIP_SELECTOR = '[data-duration-sec]'
 export const MENTION_CHIP_SELECTOR = "[data-mention='true']"
 export const CONTENT_TOKEN_PATTERN = /@(asset:\d+|duration:\d+)/g
-export const DURATION_PRESET_OPTIONS = [5, 10, 15, 30] as const
-export const FRAGMENT_CONTENT_DURATION_MAX = 30
+export const DURATION_PRESET_OPTIONS = [4, 5, 8, 10, 12, 15] as const
+/** 新分镜建议：镜内 @duration 合计上限（秒） */
+export const FRAGMENT_CONTENT_DURATION_MAX = 15
+/** Seedance 单镜/API 硬上限（秒）；旧稿可高于建议值 */
+export const DRAMA_SHOT_DURATION_HARD_MAX = 30
+/** 单段 @duration 下限（秒） */
+export const DRAMA_SEGMENT_DURATION_MIN = 3
+/** 新分镜建议：单段 @duration 上限（秒） */
+export const DRAMA_SEGMENT_DURATION_MAX = 15
+/** 单段 @duration API 硬上限（秒） */
+export const DRAMA_SEGMENT_DURATION_HARD_MAX = 30
 
 const BLOCK_ELEMENT_TAGS = new Set(['DIV', 'P'])
 

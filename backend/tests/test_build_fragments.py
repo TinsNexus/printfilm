@@ -178,6 +178,72 @@ def test_stub_identity_background_not_used_as_intro():
     assert "舜" in binding["introText"]
 
 
+def test_repair_fragment_timed_layout_splits_trailing_duration_tag():
+    from app.services.drama.build_fragments import repair_fragment_timed_layout
+
+    legacy = "\n".join(
+        [
+            "【字幕：底部居中白色描边；仅标记段落同步】",
+            "【BGM：神秘悬疑；音量低于人声】",
+            "【对白·慢速清晰·同步字幕】波波：很好。记住，月相变化是一个循环。",
+            "【对白·慢速清晰·同步字幕】小宇：那彩虹是怎么出现的？",
+            "【画面·无配音仅环境音】小宇和米米击掌。",
+            "@duration:15",
+        ]
+    )
+    fixed = repair_fragment_timed_layout(legacy, duration_sec=15)
+    assert fixed.count("@duration:") >= 3
+    assert fixed.index("@duration:") < fixed.index("波波：")
+    assert fixed.rfind("@duration:") < fixed.index("小宇和米米击掌")
+
+
+def test_vo_os_dialogue_not_split_by_action_expander():
+    from app.services.drama.build_fragments import _expand_narrative_lines
+
+    vo = _expand_narrative_lines("旁白（VO）：第1段旁白内容用来累计时长。")
+    assert len(vo) == 1
+    assert vo[0].startswith("【旁白")
+
+    os_line = _expand_narrative_lines("小宇（OS）：原来月亮是这样变化的。")
+    assert len(os_line) == 1
+    assert "内心独白" in os_line[0]
+
+
+def test_dialogue_with_action_splits_into_visual_and_speech():
+    from app.services.drama.build_fragments import (
+        _expand_narrative_lines,
+        rewrite_dialogue_action_lines,
+    )
+    from app.services.drama.build_seedance_generate_body import build_seedance_body_text
+    from app.services.seedance_segments import DIALOGUE_PREFIX, VISUAL_PREFIX
+
+    raw = "波波（头顶亮起绿灯）：很好。记住，月相变化是一个循环。"
+    expanded = _expand_narrative_lines(raw)
+    assert len(expanded) == 2
+    assert expanded[0].startswith(VISUAL_PREFIX)
+    assert "头顶亮起绿灯" in expanded[0]
+    assert expanded[1].startswith(DIALOGUE_PREFIX)
+    assert "波波：很好" in expanded[1]
+    assert "（头顶亮起绿灯）" not in expanded[1]
+
+    script = "\n".join(
+        [
+            "@duration:4",
+            f"{DIALOGUE_PREFIX}{raw}",
+            "@duration:3",
+            f"{VISUAL_PREFIX}小宇和米米击掌。",
+        ]
+    )
+    fixed = rewrite_dialogue_action_lines(script)
+    assert fixed.count(DIALOGUE_PREFIX) == 1
+    assert fixed.count(VISUAL_PREFIX) >= 2
+
+    body = build_seedance_body_text(script, [], catalog=type("C", (), {"images": [], "audios": []})())
+    assert "\n" in body
+    assert "00:00-00:04" in body
+    assert "00:04-00:07" in body
+
+
 def test_scene_description_marked_visual_not_voiceover():
     from app.services.drama.build_fragments import _format_narrative_line
     from app.services.seedance_segments import (

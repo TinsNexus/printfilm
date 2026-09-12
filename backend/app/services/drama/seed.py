@@ -934,6 +934,7 @@ async def seed_episodes_from_script(
                 assets,
                 already_introduced=series_introduced,
                 summary=summary,
+                preserve_protected=not force,
             )
             for frag in planned:
                 series_introduced.update(
@@ -1183,6 +1184,7 @@ async def seed_single_episode_from_script(
                 assets,
                 already_introduced=series_introduced,
                 summary=summary,
+                preserve_protected=not force,
             )
     await db.commit()
     reloaded = await _reload_episode(db, int(target.id))
@@ -1365,11 +1367,11 @@ def _episode_should_replace_fragments(episode: DramaEpisode, script_body: str) -
     frags = list(episode.fragments or [])
     if not frags:
         return True
-    if any(is_raw_screenplay_fragment(f.content or "") for f in frags):
-        # 场记原文必须重切；若已有保护项仍重切（自动修复旧数据）
-        return True
     if _episode_has_protected_fragments(episode):
         return False
+    if any(is_raw_screenplay_fragment(f.content or "") for f in frags):
+        # 场记原文须重切，但已有成片/手改时不覆盖
+        return True
     params = episode.params if isinstance(episode.params, dict) else {}
     stored_fp = str(params.get("fragment_source_fp") or "")
     current_fp = _script_body_fingerprint(script_body) if script_body else ""

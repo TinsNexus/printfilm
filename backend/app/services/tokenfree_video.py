@@ -57,17 +57,29 @@ def is_tokenfree_content_url(url: str) -> bool:
     return raw.rstrip("/").endswith("/content")
 
 
+def _media_url_from_item(item: dict[str, Any], key: str) -> str | None:
+    """从 content 项取出 image_url / audio_url 的公网地址。"""
+    raw = item.get(key)
+    url = raw.get("url") if isinstance(raw, dict) else None
+    if isinstance(url, str) and url.strip():
+        return url.strip()
+    return None
+
+
 def wrap_seedance_payload_for_newapi(payload: dict[str, Any]) -> dict[str, Any]:
     """把方舟 Seedance body 转成 TokenFree POST /v1/videos 请求体。
 
-    约定：model + prompt + metadata.input.duration / aspect_ratio。
-    图生视频仍把参考图和完整 content 放进 metadata.input，避免丢掉 role。
+    TokenFree 会把 metadata.input 转成 Kie 风格 `{model, input}`。
+    Kie Seedance 只认 reference_image_urls / first_frame_url，不认 content/images。
+    多参考时禁止再写顶层 image，否则网关会只留下第 1 张设定图。
     """
     src = dict(payload)
     content = src.get("content")
-    # texts 全部文案段；images 参考图 URL（顶层 image 给通用 i2v）
+    # texts 全部文案；images/audios 按 content 顺序；roles 用来区分首帧 vs 多参考
     texts: list[str] = []
     images: list[str] = []
+    image_roles: list[str] = []
+    audios: list[str] = []
     if isinstance(content, list):
         for item in content:
             if not isinstance(item, dict):
@@ -77,10 +89,14 @@ def wrap_seedance_payload_for_newapi(payload: dict[str, Any]) -> dict[str, Any]:
                 if piece:
                     texts.append(piece)
             if item.get("type") == "image_url":
-                image_url = item.get("image_url")
-                url = image_url.get("url") if isinstance(image_url, dict) else None
-                if isinstance(url, str) and url.strip():
-                    images.append(url.strip())
+                url = _media_url_from_item(item, "image_url")
+                if url:
+                    images.append(url)
+                    image_roles.append(str(item.get("role") or "").strip())
+            if item.get("type") == "audio_url":
+                url = _media_url_from_item(item, "audio_url")
+                if url:
+                    audios.append(url)
     prompt = "\n".join(texts) or str(src.get("prompt") or "").strip() or "."
     duration = src.get("duration")
     duration_text = ""
@@ -106,10 +122,27 @@ def wrap_seedance_payload_for_newapi(payload: dict[str, Any]) -> dict[str, Any]:
         meta_input["return_last_frame"] = bool(src.get("return_last_frame"))
     if isinstance(content, list) and content:
         meta_input["content"] = content
+    uses_reference_images = any(role == "reference_image" for role in image_roles)
+    first_frame_url: str | None = None
+    last_frame_url: str | None = None
     if images:
-        meta_input["image"] = images[0]
-        if len(images) > 1:
-            meta_input["images"] = images
+        meta_input["images"] = images
+        if uses_reference_images:
+            # Kie / TokenFree 多参考：全部图走 reference_image_urls（含衔接尾帧）
+            meta_input["reference_image_urls"] = images[:30]
+        else:
+            # 纯首/尾帧：与 reference_* 互斥，按 role 填
+            for url, role in zip(images, image_roles):
+                if role == "first_frame" and not first_frame_url:
+                    first_frame_url = url
+                elif role == "last_frame":
+                    last_frame_url = url
+            first_frame_url = first_frame_url or images[0]
+            meta_input["first_frame_url"] = first_frame_url
+            if last_frame_url:
+                meta_input["last_frame_url"] = last_frame_url
+    if audios:
+        meta_input["reference_audio_urls"] = audios[:10]
     out: dict[str, Any] = {
         "model": src.get("model"),
         "prompt": prompt,
@@ -117,7 +150,11 @@ def wrap_seedance_payload_for_newapi(payload: dict[str, Any]) -> dict[str, Any]:
     }
     if duration_text:
         out["seconds"] = duration_text
-    if images:
+    if uses_reference_images and images:
+        out["images"] = images
+    elif first_frame_url:
+        out["image"] = first_frame_url
+    elif images:
         out["image"] = images[0]
     return out
 
