@@ -107,3 +107,52 @@ async def test_execute_task_run_survives_freeze_populate_existing(
     assert done is not None
     assert done.status == "succeeded"
     assert done.steps and done.steps[0].status == "done"
+
+
+@pytest.mark.asyncio
+async def test_execute_task_run_marks_failed_when_handler_returns_ok_false(
+    db_session: AsyncSession,
+) -> None:
+    """handler 返回 {ok:False} 时 TaskRun 必须 failed，不能当成 succeeded。"""
+    from app.services.tasks.handlers import TaskHandler
+
+    user = await make_user(db_session, balance_fen=50_000)
+    task = await make_task(
+        db_session,
+        user,
+        domain="api",
+        task_type="v1_image",
+        status="leased",
+    )
+    db_session.add(
+        TaskStep(
+            task_id=task.id,
+            step_key="main",
+            step_type="run",
+            status="pending",
+        )
+    )
+    await db_session.commit()
+    task_id = int(task.id)
+
+    async def _failing_executor(_task):
+        return {"ok": False, "error": "seedream_policy"}
+
+    @asynccontextmanager
+    async def same_session():
+        yield db_session
+
+    fake = TaskHandler("api", "v1_image", _failing_executor)
+    with (
+        patch("app.services.tasks.executor.AsyncSessionLocal", same_session),
+        patch("app.services.tasks.executor.get_task_handler", return_value=fake),
+    ):
+        await execute_task_run(task_id)
+
+    db_session.expire_all()
+    done = await get_task_for_runtime(db_session, task_id)
+    assert done is not None
+    assert done.status == "failed"
+    assert "seedream_policy" in (done.error_message or "")
+    assert done.steps and done.steps[0].status == "failed"
+

@@ -9,6 +9,7 @@ import json
 import logging
 import re
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -83,6 +84,12 @@ def _raise_seedream_http_error(
     )
     if tokenfree:
         raise RuntimeError(tokenfree_image_user_error(model=model, status_code=status_code, body=snippet))
+    if "InputTextSensitive" in snippet or "InputTextSensitiveContentDetected" in snippet:
+        raise RuntimeError(
+            "生图文案未通过内容审核（可能含敏感或历史名人相关表述），"
+            "请修改提示词后重试。"
+            f" 详情：{snippet[:240]}"
+        )
     raise RuntimeError(f"Seedream error {status_code}: {snippet}")
 
 
@@ -171,11 +178,6 @@ _SEEDREAM_SANITIZE: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"埃隆"), "航天企业家"),
     (re.compile(r"Space\s*X"), "民营商业航天公司"),
 ]
-
-_SEEDREAM_STRIP_PROPER: re.Pattern[str] = re.compile(
-    r"(SpaceX|Space\s*X|Falcon\s*\d*|Starship|Elon\s*Musk|Tesla|"
-    r"猎鹰一号|猎鹰\s*9|猎鹰重型|猎鹰|马斯克|埃隆|特斯拉)"
-)
 
 # 真人 / 写实人脸审核命中后追加的画风引导，压低照片级真人触发概率
 _SEEDREAM_CG_STYLE = (
@@ -677,7 +679,11 @@ class ArkGateway:
         aspect_ratio: str | None = None,
         style_ref_urls: list[str] | None = None,
     ) -> ImageResult:
-        # Kie 主流图模型（前台 image_model=kie-*）；不走 ARK_MOCK
+        """调用 Seedream 生图。
+
+        只软化用户正文并保留设定板前缀；InputTextSensitive 时仍用简化三视图重试，
+        最后一档才缩成「三视图+服装风格」。不做空主体 / CG 厚涂兜底。
+        """
         from app.services.kie_catalog import get_media_model, resolve_image_model_id
         from app.services.kie_client import get_kie
         from app.services.style_lock import split_seedream_subject_style_refs
@@ -705,64 +711,71 @@ class ArkGateway:
             return ImageResult(local_url=url, remote_url=None)
 
         ark_model = None if resolved in {"", "ark-seedream"} else (model or resolved)
+        from app.services.seedream_text_soften import (
+            compact_seedream_prompt_for_retry,
+            soften_seedream_input_text,
+            style_only_seedream_prompt_for_retry,
+        )
 
-        candidates = [
-            self._sanitize_seedream_prompt(prompt),
-            self._aggressive_sanitize_seedream(prompt),
-            self._generic_scene_prompt(prompt),
-        ]
-        # de-dupe while preserving order
-        seen: set[str] = set()
-        prompts: list[str] = []
-        for p in candidates:
-            p = (p or "").strip()
-            if p and p not in seen:
-                seen.add(p)
-                prompts.append(p)
+        # 只软化用户正文，保留角色/场景/道具结构前缀（三视图等）
+        original = (prompt or "").strip()
+        current = soften_seedream_input_text(original)
+        if current != original:
+            logger.info(
+                "Seedream input softened shot=%s before=%s after=%s",
+                shot_no,
+                len(original),
+                len(current),
+            )
+
+        attempts = [current]
+        for builder in (
+            compact_seedream_prompt_for_retry,
+            style_only_seedream_prompt_for_retry,
+        ):
+            candidate = builder(current)
+            if candidate and candidate not in attempts:
+                attempts.append(candidate)
 
         last_err: Exception | None = None
-        for idx, base in enumerate(prompts):
-            # queue 同档提示词；文案/输出策略命中后再追加 CG 厚涂变体重试
-            queue = [base]
-            qi = 0
-            while qi < len(queue):
-                current = queue[qi]
-                qi += 1
-                full_prompt = f"{current}。避免：{negative}" if negative else current
-                try:
-                    return await self._seedream_once(
-                        full_prompt,
-                        ref_urls,
-                        project_id=project_id,
-                        shot_no=shot_no,
-                        size=size,
-                        model=ark_model,
-                        prompt_hash_src=prompt,
-                        aspect_ratio=aspect_ratio,
-                        style_ref_urls=style_ref_urls,
+        labels = ("softened", "compact", "style_only")
+        for idx, candidate in enumerate(attempts):
+            full_prompt = f"{candidate}。避免：{negative}" if negative else candidate
+            try:
+                return await self._seedream_once(
+                    full_prompt,
+                    ref_urls,
+                    project_id=project_id,
+                    shot_no=shot_no,
+                    size=size,
+                    model=ark_model,
+                    aspect_ratio=aspect_ratio,
+                    style_ref_urls=style_ref_urls,
+                )
+            except Exception as exc:  # noqa: BLE001
+                last_err = exc
+                msg = str(exc)
+                # 仅文本审核可走压缩/风格重试；其它策略/错误直接失败
+                if not self._is_seedream_input_text_sensitive(msg):
+                    if self._is_seedream_policy_error(msg):
+                        logger.warning(
+                            "Seedream policy hit shot=%s; failing without fallback",
+                            shot_no,
+                        )
+                    raise
+                if idx + 1 < len(attempts):
+                    nxt = labels[idx + 1] if idx + 1 < len(labels) else "next"
+                    logger.warning(
+                        "Seedream InputTextSensitive shot=%s; retrying %s prompt",
+                        shot_no,
+                        nxt,
                     )
-                except Exception as exc:  # noqa: BLE001
-                    last_err = exc
-                    msg = str(exc)
-                    # 参考图真人等输入侧拦截：改文案无效，直接失败
-                    if self._is_seedream_input_privacy_error(msg):
-                        raise
-                    if not self._is_seedream_policy_error(msg):
-                        raise
-                    cg = self._with_seedream_cg_style(current)
-                    if cg != current and cg not in queue:
-                        logger.warning(
-                            "Seedream policy hit shot=%s attempt=%s; retrying with CG style",
-                            shot_no,
-                            idx + 1,
-                        )
-                        queue.append(cg)
-                    else:
-                        logger.warning(
-                            "Seedream policy hit shot=%s attempt=%s; advancing softened candidate",
-                            shot_no,
-                            idx + 1,
-                        )
+                    continue
+                logger.warning(
+                    "Seedream InputTextSensitive shot=%s; retries exhausted",
+                    shot_no,
+                )
+                raise
         raise RuntimeError(str(last_err) if last_err else "Seedream failed")
 
     async def _kie_image_fallback(
@@ -804,11 +817,11 @@ class ArkGateway:
         project_id: int | None,
         shot_no: int | None,
         size: str | None,
-        prompt_hash_src: str,
         model: str | None = None,
         aspect_ratio: str | None = None,
         style_ref_urls: list[str] | None = None,
     ) -> ImageResult:
+        """单次 Seedream 请求并落盘（文件名含 uuid，避免重生成覆盖）。"""
         route = self._resolve_ark_route("image", model)
         upstream_model = route.upstream_model if route else ((model or "").strip() or self.settings.model_image)
         from app.services.drama.seedream_options import (
@@ -915,12 +928,7 @@ class ArkGateway:
             raise RuntimeError(f"Seedream missing url: {json.dumps(data)[:500]}")
 
         dest_dir = storage.project_dir(project_id or 0)
-        # 每次生成唯一文件名，避免覆盖同路径导致前端/CDN 缓存不刷新
-        name = (
-            f"shot_{(shot_no or 0):03d}_"
-            f"{hashlib.md5(prompt_hash_src.encode()).hexdigest()[:8]}_"
-            f"{int(time.time() * 1000) % 10_000_000:07d}.png"
-        )
+        name = f"shot_{(shot_no or 0):03d}_{uuid.uuid4().hex[:12]}.png"
         dest = dest_dir / name
         dl_headers = None
         if is_tokenfree_image_url(remote) or is_tokenfree_content_url(remote):
@@ -937,6 +945,16 @@ class ArkGateway:
         )
 
     @staticmethod
+    def _is_seedream_input_text_sensitive(msg: str) -> bool:
+        """Seedream 输入文案审核拦截（可压缩提示词重试）。"""
+        text = msg or ""
+        return (
+            "InputTextSensitive" in text
+            or "InputTextSensitiveContentDetected" in text
+            or "生图文案未通过内容审核" in text
+        )
+
+    @staticmethod
     def _is_seedream_input_privacy_error(msg: str) -> bool:
         """参考图 / 输入侧真人隐私拦截（改文案无效）。"""
         text = msg or ""
@@ -947,10 +965,12 @@ class ArkGateway:
 
     @staticmethod
     def _is_seedream_policy_error(msg: str) -> bool:
-        """文案或输出内容策略拦截（可走脱敏 / CG 重试）。"""
+        """文案或输出内容策略拦截（生图侧直接失败，不做提示词兜底）。"""
         text = msg or ""
         if ArkGateway._is_seedream_input_privacy_error(text):
             return False
+        if ArkGateway._is_seedream_input_text_sensitive(text):
+            return True
         return (
             "PolicyViolation" in text
             or "SensitiveContent" in text
@@ -1034,46 +1054,11 @@ class ArkGateway:
 
     @staticmethod
     def _sanitize_seedream_prompt(prompt: str) -> str:
+        """品牌/IP 软化（科普分镜等调用方可选使用；生图主路径不做兜底改写）。"""
         out = prompt or ""
         for pat, repl in _SEEDREAM_SANITIZE:
             out = pat.sub(repl, out)
         return out
-
-    @classmethod
-    def _aggressive_sanitize_seedream(cls, prompt: str) -> str:
-        out = cls._sanitize_seedream_prompt(prompt)
-        out = _SEEDREAM_STRIP_PROPER.sub("主体", out)
-        # Drop Latin brand leftovers
-        out = re.sub(r"[A-Za-z]{3,}", "场景", out)
-        return out
-
-    @classmethod
-    def _generic_scene_prompt(cls, prompt: str) -> str:
-        """Last-resort prompt: keep style cues, drop concrete names."""
-        style_bits: list[str] = []
-        for key in (
-            "水墨",
-            "插画",
-            "扁平",
-            "像素",
-            "剪纸",
-            "粉笔",
-            "拼贴",
-            "竖屏",
-            "电影感",
-            "绘本",
-            "写意",
-            "概念插画",
-            "CG厚涂",
-            "游戏CG",
-        ):
-            if key in (prompt or ""):
-                style_bits.append(key)
-        style = "，".join(style_bits) + "，" if style_bits else "统一插画风格，"
-        return (
-            f"{style}{_SEEDREAM_CG_STYLE}，竖屏构图，主体偏中下，顶部留白，"
-            "同一画风贯穿，禁止写实摄影与真人脸，无文字水印"
-        )
 
     def _extract_image_url(self, data: dict[str, Any]) -> str | None:
         if "data" in data and data["data"]:
@@ -1943,7 +1928,8 @@ class ArkGateway:
         return storage.to_public_url(raw)
 
     def _write_mock_image(self, prompt: str, size: str | None = None) -> str:
-        digest = hashlib.md5(prompt.encode()).hexdigest()[:8]
+        """写出 mock 立绘 SVG；每次唯一文件名，避免重试覆盖。"""
+        digest = uuid.uuid4().hex[:12]
         root = Path(__file__).resolve().parents[2] / "static" / "mock"
         root.mkdir(parents=True, exist_ok=True)
         path = root / f"image_{digest}.svg"

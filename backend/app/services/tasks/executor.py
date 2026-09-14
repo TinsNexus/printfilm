@@ -108,9 +108,9 @@ async def execute_task_run(task_id: int) -> None:
                 if isinstance(result, dict) and result.get("cancelled"):
                     await _mark_cancelled(db, task)
                     return
-                # handler 以 {ok:false} 返回时须记失败，否则前端只能看到空的「生图失败」
+                # handler 返回 ok:False 时必须失败收敛（勿当成 succeeded）
                 if isinstance(result, dict) and result.get("ok") is False:
-                    err_text = str(result.get("error") or "").strip() or "任务执行失败"
+                    err_text = str(result.get("error") or "任务执行失败").strip()[:500] or "任务执行失败"
                     await _fail_task(db, task, RuntimeError(err_text))
                     return
                 await _complete_task(db, task, result or {"ok": True})

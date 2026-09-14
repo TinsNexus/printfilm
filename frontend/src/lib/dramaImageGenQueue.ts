@@ -184,6 +184,7 @@ function assetMediaUrl(asset: DramaAsset): string {
 /**
  * 轮询直到本次生图真正结束。
  * 有旧图时必须见到 queued/generating，或 URL 相对基线变化，避免秒回旧图当成功。
+ * 必须先判 failed/cancelled：重试失败时旧 url/cover 仍在，不能当成功。
  */
 async function waitForAssetImage(
   projectId: number,
@@ -215,10 +216,10 @@ async function waitForAssetImage(
       continue
     }
 
-    if (status === 'failed') {
+    if (status === 'failed' || status === 'cancelled') {
       const gen = (latest.params || {}).generation as { error?: string } | undefined
       const raw = String(gen?.error || '').trim()
-      throw new Error(raw || '生图失败')
+      throw new Error(raw || (status === 'cancelled' ? '生图已取消' : '生图失败'))
     }
 
     const urlChanged = Boolean(currentUrl) && currentUrl !== baselineUrl

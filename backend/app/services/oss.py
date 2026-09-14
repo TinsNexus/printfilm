@@ -33,6 +33,11 @@ def _bucket():
     return oss2.Bucket(auth, endpoint, s.oss_bucket)
 
 
+def reset_oss_client() -> None:
+    """后台改 OSS 密钥后丢掉缓存的 Bucket，避免继续用已禁用的旧 Key。"""
+    _bucket.cache_clear()
+
+
 def oss_enabled() -> bool:
     s = get_settings()
     return bool(

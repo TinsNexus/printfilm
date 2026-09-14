@@ -210,4 +210,10 @@ def get_settings() -> Settings:
 
 def reload_settings() -> Settings:
     get_settings.cache_clear()
+    try:
+        from app.services.oss import reset_oss_client
+
+        reset_oss_client()
+    except Exception:  # noqa: BLE001
+        pass
     return get_settings()
