@@ -64,17 +64,15 @@ def locked_tokenfree_channel(
 
 
 def pick_migratable_api_key(channels: list[SystemModelChannel]) -> str:
-    """从旧多渠道里挑一条已有 Key，迁移到 TokenFree。"""
+    """只迁 TokenFree 渠道或 base_url 含 tokenfree.com 的 Key，避免把 Moonshot/方舟 Key 写进去。"""
     for channel in channels:
         if channel.id == TOKENFREE_CHANNEL_ID and (channel.api_key or "").strip():
             return (channel.api_key or "").strip()
-    for prefer_id in ("openai-default", "ark-default", "ark-volc-media", "kie-default"):
-        for channel in channels:
-            if channel.id == prefer_id and (channel.api_key or "").strip():
-                return (channel.api_key or "").strip()
     for channel in channels:
-        if (channel.api_key or "").strip():
-            return (channel.api_key or "").strip()
+        key = (channel.api_key or "").strip()
+        base = (channel.base_url or "").strip().lower()
+        if key and "tokenfree.com" in base:
+            return key
     return ""
 
 

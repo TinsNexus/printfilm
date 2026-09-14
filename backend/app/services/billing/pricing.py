@@ -119,12 +119,6 @@ def parse_upstream_cost_fen(
                 return max(0, int(usage[key]))
             except (TypeError, ValueError):
                 pass
-    for key in ("cost", "total_cost", "amount", "cost_yuan", "total_cost_yuan"):
-        if usage.get(key) is not None:
-            try:
-                return max(0, int(math.ceil(float(usage[key]) * 100)))
-            except (TypeError, ValueError):
-                pass
     from app.services.tokenfree_usage import quota_to_cost_fen
 
     newapi_quota = _extract_newapi_quota(data, usage)
@@ -132,6 +126,20 @@ def parse_upstream_cost_fen(
         converted = quota_to_cost_fen(newapi_quota, settings)
         if converted > 0:
             return converted
+    # 明确人民币字段；无 New API quota 时才把火山 cost 当人民币元
+    has_quota_field = any(
+        usage.get(key) is not None or data.get(key) is not None
+        for key in ("quota", "quota_consumed", "consumed_quota")
+    )
+    yuan_keys = ("cost_yuan", "total_cost_yuan")
+    if not has_quota_field:
+        yuan_keys = yuan_keys + ("cost", "total_cost", "amount")
+    for key in yuan_keys:
+        if usage.get(key) is not None:
+            try:
+                return max(0, int(math.ceil(float(usage[key]) * 100)))
+            except (TypeError, ValueError):
+                pass
     # Kie：任务级 creditsConsumed（usage 内或顶层）
     credits = usage.get("creditsConsumed")
     if credits is None:

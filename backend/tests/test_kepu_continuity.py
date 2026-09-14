@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from app.services.kepu_continuity import (
     image_refs_for_shot,
+    persist_last_frame_from_video,
     previous_shot,
     previous_usable_shot,
     shot_image_ref,
@@ -59,6 +60,38 @@ def test_video_extra_refs_fall_back_to_prev_still():
     prev = _shot(image_ark_url="https://cdn.example.com/shot1.png")
     assert video_extra_refs_for_shot(prev) == ["https://cdn.example.com/shot1.png"]
     assert video_extra_refs_for_shot(None) == []
+
+
+def test_shot_last_frame_ref_skips_tokenfree_url():
+    """TokenFree 尾帧地址不能传给下一镜，退回已发布静帧。"""
+    prev = _shot(
+        last_frame_url="https://www.tokenfree.com/v1/videos/abc/content",
+        image_ark_url="https://cdn.example.com/shot1.png",
+    )
+    assert shot_last_frame_ref(prev) == "https://cdn.example.com/shot1.png"
+    assert video_extra_refs_for_shot(prev) == ["https://cdn.example.com/shot1.png"]
+
+
+def test_shot_last_frame_ref_prefers_local_still_over_tokenfree_ark():
+    """TokenFree ark 静帧跳过，改用本地 /static。"""
+    prev = _shot(
+        last_frame_url="https://www.tokenfree.com/v1/videos/abc/content",
+        image_ark_url="https://www.tokenfree.com/v1/tasks/t1/artifacts/image-0/content",
+        image_url="/static/generated/p1/shot_001.png",
+    )
+    assert shot_last_frame_ref(prev) == "/static/generated/p1/shot_001.png"
+
+
+def test_persist_last_frame_skips_tokenfree_content_url(monkeypatch):
+    """TokenFree /videos/:id/content 不能当 preferred 写回。"""
+    monkeypatch.setattr("app.services.storage.local_path_from_url", lambda _url: None)
+    out = persist_last_frame_from_video(
+        1,
+        1,
+        "/static/x.mp4",
+        preferred_url="https://www.tokenfree.com/v1/videos/abc/content",
+    )
+    assert out is None
 
 
 def test_shot_image_ref_skips_tokenfree_and_uses_oss():

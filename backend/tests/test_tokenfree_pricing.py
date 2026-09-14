@@ -62,11 +62,12 @@ def test_parse_pricing_payload_per_call_and_token() -> None:
 
 
 def test_recommended_models_cover_text_image_video() -> None:
-    """短名单覆盖文字/图/视频，且含默认推荐。"""
+    """短名单覆盖文字/图/视频，且含默认推荐；不含 TokenFree 不可用的 Seedream。"""
     caps = {row["capability"] for row in RECOMMENDED_MODELS}
     assert caps == {"text", "image", "video"}
     ids = {row["id"] for row in RECOMMENDED_MODELS}
-    assert {"kimi-k2.6", "gpt-image-2-5", "seedance-2-5"} <= ids
+    assert {"kimi-k2.6", "gpt-image-2-5", "seedance-2-5", "seedance-2-0"} <= ids
+    assert "seedream-5-0-pro" not in ids
     assert any(row["recommended"] and row["id"] == "kimi-k2.6" for row in RECOMMENDED_MODELS)
 
 
@@ -88,16 +89,25 @@ def test_charge_official_image_uses_per_call() -> None:
 
 
 def test_charge_official_image_falls_back_without_cache() -> None:
-    """无价目缓存时回退旧 token 估价。"""
+    """无价目缓存时按 gpt-image 保底，不再退回 8 元/百万 token。"""
     settings = get_settings()
     settings.billing_markup = 1.5
+    settings.billing_usd_cny = 7.0
     settings.billing_seedream_per_m = 8.0
     settings.billing_est_seedream_tokens = 45_000
     set_cached_rates(None)
-    from app.services.billing.pricing import charge_fen_for_tokens
+    # $0.625 × 7 = ¥4.375 → 438 分
+    assert charge_fen_official_image(settings) == 438
 
-    _, expected = charge_fen_for_tokens(45_000, "seedream", settings=settings)
-    assert charge_fen_official_image(settings) == expected
+
+def test_charge_official_video_720p_is_double_480p() -> None:
+    """720p 预扣为 480p 的两倍。"""
+    settings = get_settings()
+    settings.billing_markup = 1.0
+    fen_480 = charge_fen_official_video(5.0, settings, model="seedance-2-5", resolution="480p")
+    fen_720 = charge_fen_official_video(5.0, settings, model="seedance-2-5", resolution="720p")
+    assert fen_480 == 336
+    assert fen_720 == 672
 
 
 def test_charge_official_video_uses_vendor_sec_not_placeholder() -> None:
@@ -108,7 +118,7 @@ def test_charge_official_video_uses_vendor_sec_not_placeholder() -> None:
     rates = parse_pricing_payload(_sample_payload(), settings)
     set_cached_rates(rates)
     try:
-        charge = charge_fen_official_video(5.0, settings, model="seedance-2-5")
+        charge = charge_fen_official_video(5.0, settings, model="seedance-2-5", resolution="480p")
         # 3.36 元 → 336 分
         assert charge == 336
     finally:

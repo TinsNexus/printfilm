@@ -67,22 +67,35 @@ def shot_image_ref(shot: Any | None) -> str | None:
 
 
 def _any_shot_image(shot: Any) -> str | None:
-    """静帧任意可用地址（含本地 /static，交给下游 resolve）。"""
-    for raw in (getattr(shot, "image_ark_url", None), getattr(shot, "image_url", None)):
-        url = str(raw or "").strip()
+    """静帧任意可用地址（含本地 /static）；TokenFree 产物跳过。优先本地路径。"""
+    for raw in (getattr(shot, "image_url", None), getattr(shot, "image_ark_url", None)):
+        url = _usable_video_ref(raw)
         if url:
             return url
     return None
 
 
 def shot_last_frame_ref(shot: Any | None) -> str | None:
-    """上一镜尾帧；没有则退回该镜静帧。本地路径由 Seedance resolve 再上公网。"""
+    """上一镜尾帧；TokenFree 任务 URL 跳过，避免下游无鉴权拉不到。"""
     if shot is None:
         return None
     last = str(getattr(shot, "last_frame_url", None) or "").strip()
-    if last:
+    if last and _usable_video_ref(last):
         return last
     return shot_image_ref(shot) or _any_shot_image(shot)
+
+
+def _usable_video_ref(raw: str | None) -> str | None:
+    """本地路径或公网图可作下一镜参考；TokenFree 产物地址不行。"""
+    url = str(raw or "").strip()
+    if not url:
+        return None
+    from app.services.tokenfree_image import is_tokenfree_image_url
+    from app.services.tokenfree_video import is_tokenfree_content_url
+
+    if is_tokenfree_image_url(url) or is_tokenfree_content_url(url):
+        return None
+    return url
 
 
 def image_refs_for_shot(prev: Any | None, base_refs: list[str] | None = None) -> list[str]:
@@ -106,21 +119,21 @@ def persist_last_frame_from_video(
     video_url: str,
     preferred_url: str | None = None,
 ) -> str | None:
-    """优先落盘/公网尾帧；没有再用 ffmpeg 从成片抽。"""
+    """优先已落盘/公网尾帧；TokenFree 任务 URL 不当公网尾帧，改从成片抽。"""
     from app.services import storage
     from app.services.ffmpeg_compose import extract_video_last_frame
 
     pref = str(preferred_url or "").strip()
     if pref:
-        from app.services.tokenfree_image import is_tokenfree_image_url
-
-        if (pref.startswith("http://") or pref.startswith("https://")) and not is_tokenfree_image_url(pref):
+        if (pref.startswith("http://") or pref.startswith("https://")) and _usable_video_ref(pref):
             return pref
-        https = storage.republish_url(pref, sync=True)
-        if https and str(https).startswith("http") and not is_tokenfree_image_url(str(https)):
-            return str(https)
-        if pref.startswith("/static/"):
-            return pref
+        if _usable_video_ref(pref):
+            https = storage.republish_url(pref, sync=True)
+            published = _usable_video_ref(str(https or ""))
+            if published and published.startswith("http"):
+                return published
+            if pref.startswith("/static/"):
+                return pref
     path = storage.local_path_from_url(video_url)
     if path and path.exists():
         dest = storage.project_dir(int(project_id)) / f"shot_{int(shot_no):03d}_{int(time.time())}_last.jpg"

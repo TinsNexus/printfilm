@@ -34,6 +34,14 @@ VENDOR_VIDEO_YUAN_PER_SEC_480P = {
     "seedance-2-0": 2.31 / 5.0,
     "seedance-2-0-mini": 2.31 / 5.0,
 }
+# 相对 480P 的预估倍率（宁多冻、少结算超扣）
+VIDEO_RESOLUTION_MULT = {
+    "480p": 1.0,
+    "720p": 2.0,
+    "1080p": 4.0,
+}
+# 价目失败时按 gpt-image-2-5 现价保底，避免退回 8 元/百万 token 低估约 10 倍
+GPT_IMAGE_USD_PER_CALL_FLOOR = 0.625
 
 # 产品里好用、目录有、方便去 TokenFree 核对的短名单
 RECOMMENDED_MODELS: tuple[dict[str, Any], ...] = (
@@ -62,15 +70,8 @@ RECOMMENDED_MODELS: tuple[dict[str, Any], ...] = (
         "id": "gpt-image-2-5",
         "capability": "image",
         "label": "GPT Image 2.5",
-        "note": "TokenFree 实测可通；Seedream 会改走此模型",
+        "note": "TokenFree 实测可通；Seedream 在此上游会改走此模型，按张计价",
         "recommended": True,
-    },
-    {
-        "id": "seedream-5-0-pro",
-        "capability": "image",
-        "label": "Seedream 5.0 Pro",
-        "note": "便宜，但 TokenFree /responses 可能不通",
-        "recommended": False,
     },
     {
         "id": "nano-banana-2",
@@ -85,6 +86,13 @@ RECOMMENDED_MODELS: tuple[dict[str, Any], ...] = (
         "label": "Seedance 2.5",
         "note": "默认成片，最长约 30 秒",
         "recommended": True,
+    },
+    {
+        "id": "seedance-2-0",
+        "capability": "video",
+        "label": "Seedance 2.0",
+        "note": "标准 2.0，与 Mini 不同价档",
+        "recommended": False,
     },
     {
         "id": "seedance-2-0-mini",
@@ -269,16 +277,15 @@ def _markup_charge(cost_fen: int, settings: Settings) -> int:
 
 
 def charge_fen_official_image(settings: Settings, *, model: str = "") -> int:
-    """生图预估：按 TokenFree 按张价；Seedream 按实际工作模型。"""
-    from app.services.billing.pricing import charge_fen_for_tokens
+    """生图预估：按 TokenFree 按张价；Seedream 按实际工作模型；无价目时用 gpt-image 保底。"""
     from app.services.tokenfree_image import tokenfree_working_image_model
 
     mid = tokenfree_working_image_model(model or "gpt-image-2-5")
     rate = lookup_rate(mid)
     if rate and rate.billing == "per_call" and rate.cny_per_call > 0:
         return _markup_charge(max(1, int(math.ceil(rate.cny_per_call * 100))), settings)
-    _, charge = charge_fen_for_tokens(settings.billing_est_seedream_tokens, "seedream", settings=settings)
-    return charge
+    yuan = GPT_IMAGE_USD_PER_CALL_FLOOR * usd_cny_rate(settings)
+    return _markup_charge(max(1, int(math.ceil(yuan * 100))), settings)
 
 
 def charge_fen_official_llm(tokens: int, settings: Settings, *, model: str = "") -> int:
@@ -297,16 +304,32 @@ def charge_fen_official_llm(tokens: int, settings: Settings, *, model: str = "")
     return charge
 
 
-def charge_fen_official_video(seconds: float, settings: Settings, *, model: str = "") -> int:
-    """视频预估：用火山 480P 秒价，不用 TokenFree 占位 37.5。"""
+def normalize_video_resolution(resolution: str | None, settings: Settings | None = None) -> str:
+    """预估用清晰度：只认 480p/720p/1080p。"""
+    raw = (resolution or "").strip().lower()
+    if raw in VIDEO_RESOLUTION_MULT:
+        return raw
+    fallback = str(getattr(settings or get_settings(), "ark_video_resolution", "") or "480p").strip().lower()
+    return fallback if fallback in VIDEO_RESOLUTION_MULT else "480p"
+
+
+def charge_fen_official_video(
+    seconds: float,
+    settings: Settings,
+    *,
+    model: str = "",
+    resolution: str = "",
+) -> int:
+    """视频预估：火山 480P 秒价 × 清晰度倍率，不用 TokenFree 占位 37.5。"""
     from app.services.billing.pricing import charge_fen_for_tokens
 
     secs = max(float(seconds or 0), 2.0)
     mid = video_catalog_id(model or getattr(settings, "model_video", "") or "seedance-2-5")
     vendor = VENDOR_VIDEO_YUAN_PER_SEC_480P.get(mid)
+    mult = VIDEO_RESOLUTION_MULT[normalize_video_resolution(resolution, settings)]
     if vendor:
-        return _markup_charge(max(1, int(math.ceil(secs * vendor * 100))), settings)
-    tok = int(secs * settings.billing_est_seedance_tokens_per_sec)
+        return _markup_charge(max(1, int(math.ceil(secs * vendor * mult * 100))), settings)
+    tok = int(secs * settings.billing_est_seedance_tokens_per_sec * mult)
     _, charge = charge_fen_for_tokens(tok, "seedance2:video0", settings=settings)
     return charge
 
@@ -334,7 +357,7 @@ def build_official_rate_rows(
                     listed = f"；TokenFree 表 model_ratio={rate.model_ratio} 疑似占位"
                 rate_label = (
                     f"预估按火山 480P 约 {vendor:.3f} 元/秒"
-                    f"（{VIDEO_RATE_SAMPLE_SECONDS:g}秒 ¥{official_yuan:.2f}）{listed}"
+                    f"（{VIDEO_RATE_SAMPLE_SECONDS:g}秒 ¥{official_yuan:.2f}；720P×2 / 1080P×4）{listed}"
                 )
         elif rate and rate.billing == "per_call":
             official_yuan = rate.cny_per_call

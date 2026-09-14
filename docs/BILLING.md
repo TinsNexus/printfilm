@@ -43,7 +43,7 @@ charge_fen = cost_fen
 
 未返回 quota 时回退 token 单价。管理端「支付与计费」可「查询 TokenFree 余额」（`GET /v1/dashboard/billing/subscription` + `usage`），并拉取公开价目 `GET https://www.tokenfree.com/api/pricing` 展示推荐模型官方价。
 
-预扣：生图按 TokenFree 按张价（Seedream 实际走 `gpt-image-2-5`）；LLM 按官方 in/out（默认 kimi-k2.6，70/30 拆）；视频不用价目表占位 `model_ratio=37.5`，按火山 480P 秒价估。结算仍优先单次 `quota`。
+预扣：生图按 TokenFree 按张价（Seedream 实际走 `gpt-image-2-5`）；价目失败时用 gpt-image 保底（约 $0.625/张），不再退回 8 元/百万 token。LLM 按官方 in/out（默认 kimi-k2.6，70/30 拆）。视频不用价目表占位 `model_ratio=37.5`，按火山 480P 秒价 × 清晰度倍率（720P×2 / 1080P×4）；漫剧缺省按 720P。结算仍优先单次 `quota`（勿把 New API 的美元 `cost` 当人民币）。
 
 管理端「官方用量对照」复用模型页 TokenFree API Key，拉取 New API 日消耗（`/api/data/self` 或 billing usage，日期无效时按累计额度差分记到当天）并与本地成本对照。
 

@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from app.config import get_settings
-from app.services.billing.estimates import estimate_phase_fen
+from app.models_tasks import TaskRun
+from app.services.billing.estimates import estimate_phase_fen, estimate_task_fen
 from app.services.kepu_stages import (
     normalize_kepu_pipeline_phase,
     resolve_kepu_billing_phase,
@@ -24,8 +28,13 @@ def _shot(**kwargs):
     return SimpleNamespace(**defaults)
 
 
-def _project(shots, pipeline_mode="full", project_id=1):
-    return SimpleNamespace(id=project_id, shots=shots, pipeline_mode=pipeline_mode)
+def _project(shots, pipeline_mode="full", project_id=1, resolution_mode="preview"):
+    return SimpleNamespace(
+        id=project_id,
+        shots=shots,
+        pipeline_mode=pipeline_mode,
+        resolution_mode=resolution_mode,
+    )
 
 
 def test_resolve_phase_script_when_no_shots() -> None:
@@ -110,6 +119,45 @@ def test_videos_estimate_only_remaining_shots() -> None:
     two = estimate_phase_fen(_project(shots), "videos", settings=settings)
     # 每镜 ceil 后再乘 buffer，两镜合计可能差 1 分
     assert abs(two - one * 2) <= 1
+
+
+def test_videos_estimate_hd_doubles_480p_preview() -> None:
+    """HD 且配置 480p 时预扣按 720p（×2）。"""
+    settings = get_settings()
+    settings.ark_video_resolution = "480p"
+    settings.billing_estimate_buffer = 1.0
+    settings.model_video = "seedance-2-5"
+    shots = [_shot(image_url="/i.png", audio_url="/a.wav", duration=5)]
+    preview = estimate_phase_fen(_project(shots), "videos", settings=settings)
+    hd = estimate_phase_fen(
+        _project(shots, resolution_mode="hd"),
+        "videos",
+        settings=settings,
+    )
+    assert hd == preview * 2
+
+
+@pytest.mark.asyncio
+async def test_shot_regen_video_estimate_uses_project_hd() -> None:
+    """单镜重生成视频预扣跟随项目 HD（480p→720p）。"""
+    settings = get_settings()
+    settings.ark_video_resolution = "480p"
+    settings.billing_estimate_buffer = 1.0
+    settings.model_video = "seedance-2-5"
+    db = MagicMock()
+    db.get = AsyncMock(return_value=SimpleNamespace(resolution_mode="hd"))
+    task = TaskRun(
+        id=9,
+        domain="kepu",
+        task_type="shot_regen_video",
+        requested_by=1,
+        project_id=3,
+        payload={"duration": 5},
+    )
+    hd = await estimate_task_fen(db, task, settings=settings)
+    db.get = AsyncMock(return_value=SimpleNamespace(resolution_mode="preview"))
+    preview = await estimate_task_fen(db, task, settings=settings)
+    assert hd == preview * 2
 
 
 def test_normalize_produce_maps_to_current_phase(monkeypatch) -> None:

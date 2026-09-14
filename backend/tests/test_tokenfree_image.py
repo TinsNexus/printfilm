@@ -7,6 +7,7 @@ import pytest
 from app.services.tokenfree_image import (
     build_tokenfree_image_body,
     extract_tokenfree_image_url,
+    is_tokenfree_input_text_sensitive,
     is_tokenfree_no_distributor,
     is_tokenfree_protocol_error,
     is_tokenfree_rate_limit,
@@ -115,6 +116,24 @@ def test_raise_seedream_http_error_tokenfree_vs_ark():
         _raise_seedream_http_error(502, protocol, model="gpt-image-2-5", tokenfree=False)
 
 
+def test_is_tokenfree_input_text_sensitive_skips_protocol_and_429():
+    """协议失败和限流不算审核，避免 compact/style_only 被通道故障误触发。"""
+    protocol = '{"error":{"code":"task_protocol_error","message":"Task protocol request failed"}}'
+    assert is_tokenfree_input_text_sensitive(status_code=502, body=protocol) is False
+    assert is_tokenfree_input_text_sensitive(status_code=429, body="Too many active task observations") is False
+    body = '{"error":{"code":"InputTextSensitive","message":"text sensitive"}}'
+    assert is_tokenfree_input_text_sensitive(status_code=400, body=body) is True
+
+
+def test_raise_seedream_http_error_tokenfree_moderation_uses_audit_text():
+    """TokenFree 审核失败抛「内容审核」，才能走 compact/style_only。"""
+    from app.services.ark import _raise_seedream_http_error
+
+    body = '{"error":{"code":"InputTextSensitive","message":"text sensitive"}}'
+    with pytest.raises(RuntimeError, match="内容审核"):
+        _raise_seedream_http_error(400, body, model="gpt-image-2-5", tokenfree=True)
+
+
 @pytest.mark.asyncio
 async def test_post_until_not_rate_limited_retries_then_ok():
     calls = {"n": 0}
@@ -220,7 +239,6 @@ async def test_seedream_once_falls_back_to_kie_on_protocol_error(monkeypatch):
         project_id=1,
         shot_no=1,
         size="2k",
-        prompt_hash_src="湖",
         model="gpt-image-2-5",
     )
     assert result.local_url == "/static/x.png"
@@ -272,6 +290,5 @@ async def test_seedream_once_keeps_tokenfree_error_when_kie_fallback_raises(monk
             project_id=1,
             shot_no=1,
             size="2k",
-            prompt_hash_src="湖",
             model="gpt-image-2-5",
         )

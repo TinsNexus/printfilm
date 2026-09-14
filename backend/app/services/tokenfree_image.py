@@ -150,6 +150,21 @@ def tokenfree_image_channel_dead(*, status_code: int = 0, body: str = "") -> boo
     )
 
 
+def is_tokenfree_input_text_sensitive(*, status_code: int = 0, body: str = "") -> bool:
+    """文案审核拦截；协议失败、限流、无线路不算，才能走 compact/style_only。"""
+    if is_tokenfree_rate_limit(status_code=status_code, body=body):
+        return False
+    if tokenfree_image_channel_dead(status_code=status_code, body=body):
+        return False
+    text = body or ""
+    if "InputTextSensitive" in text or "InputTextSensitiveContentDetected" in text:
+        return True
+    lowered = text.lower()
+    if any(token in lowered for token in ("content_filter", "content_policy", "text sensitive", "sensitive content")):
+        return True
+    return "内容审核" in text or "敏感内容" in text
+
+
 def tokenfree_image_user_error(*, model: str = "", status_code: int = 0, body: str = "") -> str:
     """用户可见的 TokenFree 出图失败文案；通道挂了不再误导改模型。"""
     if is_tokenfree_rate_limit(status_code=status_code, body=body):

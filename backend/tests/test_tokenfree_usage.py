@@ -75,6 +75,53 @@ def test_parse_upstream_cost_fen_from_newapi_quota():
     assert parse_upstream_cost_fen({"quota": 500_000}, settings) is None
 
 
+def test_pick_migratable_api_key_skips_moonshot_and_ark():
+    """启动迁 Key 时不要把 Moonshot/方舟 Key 写进 TokenFree。"""
+    from app.schemas_routing import SystemModelChannel
+    from app.services.tokenfree_gateway import pick_migratable_api_key
+
+    moonshot = SystemModelChannel(
+        id="openai-default",
+        name="Moonshot",
+        base_url="https://api.moonshot.cn/v1",
+        api_key="sk-moonshot",
+    )
+    ark = SystemModelChannel(
+        id="ark-default",
+        name="Ark",
+        base_url="https://ark.cn-beijing.volces.com/api/v3",
+        api_key="ark-key",
+    )
+    assert pick_migratable_api_key([moonshot, ark]) == ""
+    tokenfree = SystemModelChannel(
+        id="tokenfree",
+        name="TokenFree",
+        base_url="https://www.tokenfree.com/v1",
+        api_key="sk-tokenfree",
+    )
+    assert pick_migratable_api_key([moonshot, tokenfree]) == "sk-tokenfree"
+    aliased = SystemModelChannel(
+        id="legacy-openai",
+        name="TF",
+        base_url="https://www.tokenfree.com/v1",
+        api_key="sk-from-url",
+    )
+    assert pick_migratable_api_key([moonshot, aliased]) == "sk-from-url"
+
+
+def test_parse_upstream_cost_fen_prefers_quota_over_usd_cost():
+    """New API 的 cost 是美元；与 quota 同时出现时按 quota，避免 0.625 被当成 63 分。"""
+    settings = get_settings()
+    settings.billing_usd_cny = 7.0
+    # 0.625 USD × 500000 quota/USD = 312500 quota → ¥4.375 → 438 分
+    assert parse_upstream_cost_fen(
+        {"usage": {"prompt_tokens": 1, "quota": 312_500, "cost": 0.625}},
+        settings,
+    ) == 438
+    # 无 quota 字段时仍把火山 cost 当人民币元
+    assert parse_upstream_cost_fen({"usage": {"cost": 1.23}}, settings) == 123
+
+
 def test_resolve_billing_basis_newapi_quota():
     raw = '{"usage": {"prompt_tokens": 10, "quota": 500000}}'
     assert resolve_billing_basis(estimated=False, raw_usage_json=raw) == "upstream_cost"

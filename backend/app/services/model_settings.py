@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from cryptography.fernet import Fernet
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings, reload_settings
@@ -708,9 +708,12 @@ async def patch_admin_routing_settings(
         row.sort_order = 0
         row.advanced_config = None
         db.add(row)
-        stale_ids = [cid for cid in existing_rows if cid != TOKENFREE_CHANNEL_ID]
-        if stale_ids:
-            await db.execute(delete(SystemModelChannelRow).where(SystemModelChannelRow.id.in_(stale_ids)))
+        for cid, stale in existing_rows.items():
+            if cid == TOKENFREE_CHANNEL_ID:
+                continue
+            stale.enabled = False
+            db.add(stale)
+        await db.flush()
         applied.append("system_channels")
 
     config = dict(app_row.config_json or {})

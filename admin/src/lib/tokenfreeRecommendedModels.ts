@@ -2,11 +2,11 @@ export type ModelCapability = "text" | "image" | "video" | "audio";
 
 export type UpstreamModelOption = { id: string; label: string; capability: string };
 
-/** 勾选推荐时留下的 TokenFree id；视频只留 2.5 与 2.0 Mini */
+/** 勾选推荐时补上的 TokenFree id；视频含 2.5 / 2.0 / Mini */
 export const RECOMMENDED_MODEL_IDS: Record<ModelCapability, string[]> = {
   text: ["kimi-k2.6"],
   image: ["gpt-image-2-5"],
-  video: ["seedance-2-5", "seedance-2-0-mini"],
+  video: ["seedance-2-5", "seedance-2-0", "seedance-2-0-mini"],
   audio: ["seed-tts-2.0"],
 };
 
@@ -85,13 +85,8 @@ export function pickRecommendedDefaults(models: UpstreamModelOption[]): Record<M
   return out;
 }
 
-// 勾选推荐：补上短名单，Seedance 只留 2.5 / 2.0 Mini
+// 勾选推荐：canonicalize 后补上短名单，不删已选的 Seedance 2.0
 export function mergeRecommendedSelection(selected: string[], catalog: UpstreamModelOption[]): string[] {
   const recommended = pickRecommendedModelIds(catalog);
-  const preferredVideo = new Set(RECOMMENDED_MODEL_IDS.video);
-  const kept = canonicalizeChannelModels(selected).filter((id) => {
-    if (!id.toLowerCase().includes("seedance")) return true;
-    return preferredVideo.has(id);
-  });
-  return canonicalizeChannelModels([...kept, ...recommended]);
+  return canonicalizeChannelModels([...selected, ...recommended]);
 }

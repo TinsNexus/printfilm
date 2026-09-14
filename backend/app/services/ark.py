@@ -30,6 +30,7 @@ from app.services.tokenfree_image import (
     build_tokenfree_image_body,
     extract_tokenfree_image_url,
     is_tokenfree_image_url,
+    is_tokenfree_input_text_sensitive,
     is_tokenfree_retryable_image_error,
     post_until_not_rate_limited,
     tokenfree_image_channel_dead,
@@ -83,6 +84,12 @@ def _raise_seedream_http_error(
         snippet[:200],
     )
     if tokenfree:
+        if is_tokenfree_input_text_sensitive(status_code=status_code, body=snippet):
+            raise RuntimeError(
+                "生图文案未通过内容审核（可能含敏感或历史名人相关表述），"
+                "请修改提示词后重试。"
+                f" 详情：{snippet[:240]}"
+            )
         raise RuntimeError(tokenfree_image_user_error(model=model, status_code=status_code, body=snippet))
     if "InputTextSensitive" in snippet or "InputTextSensitiveContentDetected" in snippet:
         raise RuntimeError(
@@ -442,10 +449,10 @@ class ArkGateway:
         return result
 
     async def download_result_media(self, url: str, dest: Path) -> None:
-        """下载生成媒体；TokenFree /videos/:id/content 带 Bearer，读超时放宽。"""
+        """下载生成媒体；TokenFree 任务/content URL 带 Bearer，读超时放宽。"""
         headers = None
         timeout: float | httpx.Timeout = 300.0
-        if is_tokenfree_content_url(url):
+        if is_tokenfree_content_url(url) or is_tokenfree_image_url(url):
             headers = {"Authorization": f"Bearer {self._ark_api_key()}"}
             timeout = httpx.Timeout(connect=30.0, read=600.0, write=60.0, pool=30.0)
         await storage.download_to(url, dest, headers=headers, timeout=timeout)
@@ -1492,7 +1499,7 @@ class ArkGateway:
                         storage.project_dir(project_id)
                         / f"shot_{shot_no:03d}_{stamp}_last.jpg"
                     )
-                    await storage.download_to(result.last_frame_url, frame_dest)
+                    await self.download_result_media(result.last_frame_url, frame_dest)
                     last_local = storage.publish_local(frame_dest)
             except Exception:  # noqa: BLE001
                 logger.warning("failed to save last frame project=%s shot=%s", project_id, shot_no)
