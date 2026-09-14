@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Header, HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import get_db
 from app.deps import get_api_user
 from app.models import User
+from app.models_tasks import TaskRun
 from app.schemas_api import (
     V1GenerationOut,
     V1ImageGenerateRequest,
@@ -202,10 +204,20 @@ async def get_task(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(_resolve_api_user),
 ) -> V1GenerationOut:
-    """查询 Seedance 视频任务状态。"""
+    """查询 Seedance 视频任务状态（仅可查询本人提交的任务）。"""
     if not task_id.strip():
         raise HTTPException(status_code=400, detail="缺少 task_id")
     tid = task_id.strip()
+    # 归属校验：上游 task_id 本身是可传递的凭据，不校验会拖走他人视频
+    owned = (
+        await db.execute(
+            select(TaskRun.id)
+            .where(TaskRun.requested_by == user.id, TaskRun.provider_task_id == tid)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if owned is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
     data = await poll_video_task(user, tid)
     await settle_deferred_video_poll(
         db,

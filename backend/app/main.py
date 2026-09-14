@@ -142,6 +142,8 @@ async def _apply_schema_patches() -> None:
             await conn.execute(text("ALTER TABLE shots ADD COLUMN segment_script TEXT DEFAULT ''"))
         if "last_frame_url" not in scols:
             await conn.execute(text("ALTER TABLE shots ADD COLUMN last_frame_url VARCHAR(1024)"))
+        if "video_skip_reason" not in scols:
+            await conn.execute(text("ALTER TABLE shots ADD COLUMN video_skip_reason VARCHAR(32)"))
 
         pcols = await _pg_columns(conn, "projects")
         if "pipeline_mode" not in pcols:

@@ -132,66 +132,96 @@ async def _run_drama_seed_assets(task: TaskRun) -> dict[str, Any] | None:
     )
 
 
+# 执行科普可取消子流程：项目已被用户请求取消时，PipelineCancelled 收敛为
+# {"cancelled": True}（executor 据此落取消态并退回冻结）；其余异常照常抛出。
+async def _await_kepu(task: TaskRun, aw: Awaitable[Any], **extra: Any) -> dict[str, Any]:
+    from app.services.pipeline import PipelineCancelled
+
+    try:
+        await aw
+    except PipelineCancelled:
+        if task.cancel_requested:
+            return {"cancelled": True, "project_id": task.project_id, **extra}
+        raise
+    return {"ok": True, "project_id": task.project_id, **extra}
+
+
 # 执行科普分阶段流水线（严格按 payload.phase 预扣对应阶段）。
 async def _run_kepu_project_pipeline(task: TaskRun) -> dict[str, Any] | None:
     from app.services.pipeline import run_pipeline
 
     payload = task.payload if isinstance(task.payload, dict) else {}
     phase = payload.get("phase")
-    await run_pipeline(
-        _require_int(task.project_id, "project_id"),
-        phase=str(phase) if phase is not None else None,
+    return await _await_kepu(
+        task,
+        run_pipeline(
+            _require_int(task.project_id, "project_id"),
+            phase=str(phase) if phase is not None else None,
+        ),
+        phase=phase,
     )
-    return {"ok": True, "project_id": task.project_id, "phase": phase}
 
 
 # 执行科普单镜生图任务。
 async def _run_kepu_shot_image(task: TaskRun) -> dict[str, Any] | None:
     from app.services.pipeline import regen_shot_image
 
-    await regen_shot_image(
-        _require_int(task.project_id, "project_id"),
-        _require_int(task.shot_id, "shot_id"),
+    return await _await_kepu(
+        task,
+        regen_shot_image(
+            _require_int(task.project_id, "project_id"),
+            _require_int(task.shot_id, "shot_id"),
+        ),
+        shot_id=task.shot_id,
     )
-    return {"ok": True, "project_id": task.project_id, "shot_id": task.shot_id}
 
 
 # 执行科普单镜生视频任务。
 async def _run_kepu_shot_video(task: TaskRun) -> dict[str, Any] | None:
     from app.services.pipeline import regen_shot_video
 
-    await regen_shot_video(
-        _require_int(task.project_id, "project_id"),
-        _require_int(task.shot_id, "shot_id"),
+    return await _await_kepu(
+        task,
+        regen_shot_video(
+            _require_int(task.project_id, "project_id"),
+            _require_int(task.shot_id, "shot_id"),
+        ),
+        shot_id=task.shot_id,
     )
-    return {"ok": True, "project_id": task.project_id, "shot_id": task.shot_id}
 
 
 # 执行科普单镜配音任务。
 async def _run_kepu_shot_audio(task: TaskRun) -> dict[str, Any] | None:
     from app.services.pipeline import regen_shot_audio
 
-    await regen_shot_audio(
-        _require_int(task.project_id, "project_id"),
-        _require_int(task.shot_id, "shot_id"),
+    return await _await_kepu(
+        task,
+        regen_shot_audio(
+            _require_int(task.project_id, "project_id"),
+            _require_int(task.shot_id, "shot_id"),
+        ),
+        shot_id=task.shot_id,
     )
-    return {"ok": True, "project_id": task.project_id, "shot_id": task.shot_id}
 
 
 # 执行科普整片重配音任务。
 async def _run_kepu_project_audio(task: TaskRun) -> dict[str, Any] | None:
     from app.services.pipeline import regen_project_audio_and_compose
 
-    await regen_project_audio_and_compose(_require_int(task.project_id, "project_id"))
-    return {"ok": True, "project_id": task.project_id}
+    return await _await_kepu(
+        task,
+        regen_project_audio_and_compose(_require_int(task.project_id, "project_id")),
+    )
 
 
 # 执行科普仅合成任务。
 async def _run_kepu_compose(task: TaskRun) -> dict[str, Any] | None:
     from app.services.pipeline import compose_only
 
-    await compose_only(_require_int(task.project_id, "project_id"))
-    return {"ok": True, "project_id": task.project_id}
+    return await _await_kepu(
+        task,
+        compose_only(_require_int(task.project_id, "project_id")),
+    )
 
 
 # 执行延时模拟任务，便于验证任务平台状态流转。

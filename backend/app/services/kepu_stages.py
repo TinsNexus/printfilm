@@ -8,6 +8,10 @@ from app.services import storage
 from app.services.ffmpeg_compose import is_near_silent_audio
 
 
+# 真人隐私被 Seedance 拦截、确认跳过 AI 视频（成片用静图）的镜头标记
+VIDEO_SKIP_REASON_PRIVACY = "privacy"
+
+
 def _is_image_text(project: Any) -> bool:
     return (getattr(project, "pipeline_mode", None) or "full") == "image_text"
 
@@ -17,9 +21,14 @@ def shot_image_ready(shot: Any) -> bool:
     return bool(getattr(shot, "image_url", None) or getattr(shot, "image_ark_url", None))
 
 
+def shot_video_skipped(shot: Any) -> bool:
+    """分镜是否被确认跳过 AI 视频（如真人隐私拦截），无需再提交上游。"""
+    return getattr(shot, "video_skip_reason", None) == VIDEO_SKIP_REASON_PRIVACY
+
+
 def shot_video_ready(shot: Any) -> bool:
-    """分镜是否已有镜头视频。"""
-    return bool(getattr(shot, "video_url", None))
+    """分镜视频是否已收敛：已有视频，或已确认跳过（隐私拦截后用静图合成）。"""
+    return bool(getattr(shot, "video_url", None)) or shot_video_skipped(shot)
 
 
 def shot_audio_file_ok(shot: Any) -> bool:

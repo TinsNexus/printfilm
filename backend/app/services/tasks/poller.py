@@ -7,7 +7,7 @@ import logging
 import time
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.config import get_settings
 from app.database import AsyncSessionLocal
@@ -127,10 +127,13 @@ async def _select_and_poll_due() -> None:
     now = datetime.now(UTC)
     batch_limit = max(1, int(get_settings().task_poll_max_concurrency or 20))
     async with AsyncSessionLocal() as db:
+        # 仅 drama fragment_video 走 drama 收尾轮询；api/studio 的轻量 deferred
+        # 视频由 _poll_ephemeral_deferred_tasks 处理，误送 drama poller 会被立即判失败。
         stmt = (
             select(TaskRun.id)
             .where(
                 TaskRun.status == "awaiting_poll",
+                TaskRun.task_type == "fragment_video",
                 TaskRun.next_action_at.is_not(None),
                 TaskRun.next_action_at <= now,
             )
@@ -213,12 +216,15 @@ async def _poll_ephemeral_deferred_tasks() -> None:
     timeout_sec = float(get_settings().ark_video_poll_timeout or 900.0)
 
     async with AsyncSessionLocal() as db:
+        # next_action_at 为 NULL（尚未安排退避）视为到期；否则只查到期任务，
+        # 避免每个轮询周期都对全部在途任务请求上游。
         stmt = (
             select(TaskRun)
             .where(
                 TaskRun.status == "awaiting_poll",
                 TaskRun.domain.in_(["api", "studio"]),
                 TaskRun.billing_status == "frozen",
+                or_(TaskRun.next_action_at.is_(None), TaskRun.next_action_at <= now),
             )
             .order_by(TaskRun.next_action_at.asc().nullsfirst(), TaskRun.id.asc())
             .limit(20)
@@ -227,57 +233,72 @@ async def _poll_ephemeral_deferred_tasks() -> None:
 
     for row in rows:
         task_id = int(row.id)
-        async with AsyncSessionLocal() as db:
-            task = await db.get(TaskRun, task_id)
-            if not task or task.status != "awaiting_poll":
-                continue
+        try:
+            await _poll_one_ephemeral_task(task_id, now=now, timeout_sec=timeout_sec)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001
+            # 单条失败不影响本批其余任务，下个周期自然重试
+            logger.exception("ephemeral deferred poll failed task_id=%s", task_id)
 
-            started = task.started_at or task.created_at
-            if started is not None and started.tzinfo is None:
-                started = started.replace(tzinfo=UTC)
-            if started and (now - started).total_seconds() > timeout_sec:
-                task.status = "failed"
-                task.error_code = "poll_timeout"
-                task.error_message = "视频轮询超时，预扣已退回"
-                task.finished_at = now
-                await append_task_event(
-                    db,
-                    task.id,
-                    event_type="task.failed",
-                    status=task.status,
-                    phase=task.current_step_key,
-                    message=task.error_message,
-                )
-                try:
-                    await settle_task(db, task.id)
-                except Exception:  # noqa: BLE001
-                    logger.exception("settle_task failed task_id=%s", task.id)
-                await db.commit()
-                continue
 
-            user = await db.get(User, task.requested_by)
-            provider_id = (task.provider_task_id or "").strip()
-            if not user or not provider_id:
-                continue
+# 轮询单条 api/studio 轻量 deferred 视频任务：超时判失败、运行中写回退避、终态结算。
+async def _poll_one_ephemeral_task(task_id: int, *, now, timeout_sec: float) -> None:
+    from app.models import User
+    from app.services.billing.ephemeral import settle_deferred_video_poll
+    from app.services.studio_tools import poll_video_task
 
-            data = await poll_video_task(user, provider_id)
-            status = str(data.get("status") or "").strip().lower()
-            if status in {"", "running", "queued"}:
-                task.next_action_at = now + timedelta(
-                    seconds=max(1.0, float(get_settings().ark_video_poll_interval or 8.0))
-                )
-                await db.commit()
-                continue
+    async with AsyncSessionLocal() as db:
+        task = await db.get(TaskRun, task_id)
+        if not task or task.status != "awaiting_poll":
+            return
 
-            await settle_deferred_video_poll(
+        started = task.started_at or task.created_at
+        if started is not None and started.tzinfo is None:
+            started = started.replace(tzinfo=UTC)
+        if started and (now - started).total_seconds() > timeout_sec:
+            task.status = "failed"
+            task.error_code = "poll_timeout"
+            task.error_message = "视频轮询超时，预扣已退回"
+            task.finished_at = now
+            await append_task_event(
                 db,
-                user,
-                provider_task_id=provider_id,
-                poll_status=status,
-                error=str(data.get("error") or "") or None,
-                billing_task_id=task.id,
-                usage_tokens=int((data.get("usage") or {}).get("total_tokens") or 0),
-                completion_tokens=int((data.get("usage") or {}).get("completion_tokens") or 0),
-                raw_usage=data.get("raw_usage") if isinstance(data.get("raw_usage"), dict) else None,
+                task.id,
+                event_type="task.failed",
+                status=task.status,
+                phase=task.current_step_key,
+                message=task.error_message,
+            )
+            try:
+                await settle_task(db, task.id)
+            except Exception:  # noqa: BLE001
+                logger.exception("settle_task failed task_id=%s", task.id)
+            await db.commit()
+            return
+
+        user = await db.get(User, task.requested_by)
+        provider_id = (task.provider_task_id or "").strip()
+        if not user or not provider_id:
+            return
+
+        data = await poll_video_task(user, provider_id)
+        status = str(data.get("status") or "").strip().lower()
+        if status in {"", "running", "queued"}:
+            task.next_action_at = now + timedelta(
+                seconds=max(1.0, float(get_settings().ark_video_poll_interval or 8.0))
             )
             await db.commit()
+            return
+
+        await settle_deferred_video_poll(
+            db,
+            user,
+            provider_task_id=provider_id,
+            poll_status=status,
+            error=str(data.get("error") or "") or None,
+            billing_task_id=task.id,
+            usage_tokens=int((data.get("usage") or {}).get("total_tokens") or 0),
+            completion_tokens=int((data.get("usage") or {}).get("completion_tokens") or 0),
+            raw_usage=data.get("raw_usage") if isinstance(data.get("raw_usage"), dict) else None,
+        )
+        await db.commit()

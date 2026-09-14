@@ -23,6 +23,12 @@ class FakeRedis:
     def get(self, key: str) -> str | None:
         return self.store.get(key)
 
+    def getdel(self, key: str) -> str | None:
+        """原子取删（对应 Redis 6.2+ GETDEL）。"""
+        value = self.store.pop(key, None)
+        self.ttls.pop(key, None)
+        return value
+
     def setex(self, key: str, ttl: int, value: str) -> bool:
         self.store[key] = str(value)
         self.ttls[key] = int(ttl)

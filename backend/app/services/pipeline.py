@@ -21,7 +21,6 @@ from app.services.ffmpeg_compose import (
     ShotMedia,
     allocate_durations_by_narration,
     compose_project,
-    concat_native_videos,
     is_ffmpeg_interrupted_error,
     is_near_silent_audio,
     probe_duration,
@@ -51,7 +50,6 @@ logger = logging.getLogger(__name__)
 # 成片 FFmpeg 被 SIGTERM 打断时的自动重试次数
 _COMPOSE_SIGTERM_MAX_ATTEMPTS = 3
 
-_running: dict[int, asyncio.Task] = {}
 _cancelled: set[int] = set()
 
 
@@ -163,128 +161,18 @@ class PipelineCancelled(Exception):
     """Raised when user cancels a running pipeline."""
 
 
-def start_pipeline(project_id: int) -> str:
-    """Start one in-process pipeline task."""
-    _cancelled.discard(project_id)
-    if project_id in _running and not _running[project_id].done():
-        return "in-process"
-    _running[project_id] = asyncio.create_task(run_pipeline(project_id))
-    return "in-process"
-
-
 def cancel_pipeline(project_id: int) -> bool:
-    """Request cancel for one in-process pipeline task."""
+    """标记项目取消；流水线由任务平台 executor 驱动，无进程内任务可停，恒返回 False。"""
     _cancelled.add(project_id)
-    stopped = False
-
-    task = _running.get(project_id)
-    if task and not task.done():
-        task.cancel()
-        stopped = True
-
-    return stopped
+    return False
 
 
 def is_cancelled(project_id: int) -> bool:
     return project_id in _cancelled
 
 
-# 单镜重生 / 合成等短任务的进程内异步执行。
-_regen_tasks: dict[str, asyncio.Task] = {}
-
-
-def _dispatch_side_task(
-    key: str,
-    *,
-    coro_factory,
-) -> str:
-    """Start one in-process side task."""
-    existing = _regen_tasks.get(key)
-    if existing and not existing.done():
-        return "in-process"
-
-    async def _runner() -> None:
-        try:
-            await coro_factory()
-        except Exception:  # noqa: BLE001
-            logger.exception("in-process side task failed key=%s", key)
-
-    _regen_tasks[key] = asyncio.create_task(_runner())
-    return "in-process"
-
-
-def dispatch_regen_image(project_id: int, shot_id: int) -> str:
-    """异步重绘单镜首帧图。"""
-    key = f"regen-image:{project_id}:{shot_id}"
-
-    async def _coro() -> None:
-        await regen_shot_image(project_id, shot_id)
-
-    return _dispatch_side_task(
-        key,
-        coro_factory=_coro,
-    )
-
-
-def dispatch_regen_video(project_id: int, shot_id: int) -> str:
-    """异步重生单镜 Seedance 视频。"""
-    key = f"regen-video:{project_id}:{shot_id}"
-
-    async def _coro() -> None:
-        await regen_shot_video(project_id, shot_id)
-
-    return _dispatch_side_task(
-        key,
-        coro_factory=_coro,
-    )
-
-
-def dispatch_regen_audio(project_id: int, shot_id: int) -> str:
-    """异步重配单镜旁白（整片连贯 TTS）。"""
-    key = f"regen-audio:{project_id}:{shot_id}"
-
-    async def _coro() -> None:
-        await regen_shot_audio(project_id, shot_id)
-
-    return _dispatch_side_task(
-        key,
-        coro_factory=_coro,
-    )
-
-
-def dispatch_regen_project_audio_and_compose(project_id: int) -> str:
-    """异步整片重配音并合成成片。"""
-    key = f"regen-all-audio:{project_id}"
-
-    async def _coro() -> None:
-        await regen_project_audio_and_compose(project_id)
-
-    return _dispatch_side_task(
-        key,
-        coro_factory=_coro,
-    )
-
-
-def dispatch_compose_only(project_id: int) -> str:
-    """异步仅合成成片（不重跑 AI 阶段）。"""
-    key = f"compose:{project_id}"
-
-    async def _coro() -> None:
-        await compose_only(project_id)
-
-    return _dispatch_side_task(
-        key,
-        coro_factory=_coro,
-    )
-
-
 def _is_image_text(project: Project) -> bool:
     return (project.pipeline_mode or "full") == "image_text"
-
-
-def _use_native_video_audio(project: Project | None = None) -> bool:
-    """是否跳过 TTS、直拼 Seedance 口播。科普已改回外部合成，恒为 False。"""
-    return False
 
 
 def _kepu_seedance_sfx_audio(project: Project | None = None) -> bool:
@@ -407,7 +295,8 @@ async def _synthesize_continuous_audio(
         raise ValueError("全部镜头旁白为空，无法配音")
 
     ark = get_ark()
-    if force or not _continuous_audio_ok(project_id):
+    regenerated = force or not _continuous_audio_ok(project_id)
+    if regenerated:
         hint = sum(max(float(getattr(s, "duration", 4) or 4), 2.0) for s in shot_rows)
         audio_url = await ark.tts(
             full_text,
@@ -428,6 +317,9 @@ async def _synthesize_continuous_audio(
             raise RuntimeError("整片配音生成失败")
         if src.resolve() != dest.resolve():
             dest.write_bytes(src.read_bytes())
+        # 新合成必须复查近静音：TTS 偶发返回极低音量音频，静默合成会产出无声成片
+        if is_near_silent_audio(dest):
+            raise RuntimeError("整片配音近静音（音量异常），请重新配音")
 
     dur = await asyncio.to_thread(probe_duration, dest)
     if not dur or dur < 0.8:
@@ -467,11 +359,10 @@ async def _resume_plan(project_id: int) -> tuple[bool, bool, bool, bool]:
         if not project or not project.shots:
             return False, False, False, False
         image_text = _is_image_text(project)
-        native_audio = _use_native_video_audio(project)
         shots = list(project.shots)
         has_images = all(shot_image_ready(s) for s in shots)
         # 与计费 resolve_kepu_billing_phase 共用旁白就绪规则
-        has_audio = True if native_audio else project_audio_ready(project)
+        has_audio = project_audio_ready(project)
         has_videos = all(shot_video_ready(s) for s in shots)
         skip_script = len(shots) > 0
         skip_assets = has_images and has_audio
@@ -666,6 +557,8 @@ async def run_pipeline(project_id: int, *, phase: str | None = None) -> None:
             {"event": "done", "percent": 100, "video_url": await _final_url(project_id)},
         )
     except (PipelineCancelled, asyncio.CancelledError):
+        # 落项目态、推 SSE 后必须 re-raise：本函数由任务平台 executor 驱动，
+        # 吞掉会让 TaskRun 误判 succeeded 扣费，并破坏 asyncio 任务取消语义。
         logger.info("pipeline cancelled project=%s", project_id)
         async with AsyncSessionLocal() as db:
             project = await db.get(Project, project_id)
@@ -683,6 +576,7 @@ async def run_pipeline(project_id: int, *, phase: str | None = None) -> None:
                 "code": "CANCELLED",
             },
         )
+        raise
     except Exception as exc:  # noqa: BLE001
         if is_cancelled(project_id):
             logger.info("pipeline cancelled (during error) project=%s", project_id)
@@ -728,7 +622,6 @@ async def run_pipeline(project_id: int, *, phase: str | None = None) -> None:
         raise
     finally:
         _cancelled.discard(project_id)
-        _running.pop(project_id, None)
 
 
 async def delete_project_assets(project_id: int) -> None:
@@ -963,7 +856,6 @@ async def _parallel_image_and_audio(project_id: int) -> None:
         project = result.scalar_one()
         tpl = project.template
         image_text = _is_image_text(project)
-        native_audio = _use_native_video_audio(project)
         shot_rows = sorted(project.shots, key=lambda s: s.shot_no)
         total = len(shot_rows)
         shot_meta = [
@@ -1005,14 +897,14 @@ async def _parallel_image_and_audio(project_id: int) -> None:
     done_img = 0
     progress_lock = asyncio.Lock()
     # 静图成片与完整模式都合成连贯旁白；已有音轨则跳过
-    need_audio = (not native_audio) and (not _continuous_audio_ok(project_id))
+    need_audio = not _continuous_audio_ok(project_id)
 
     async def bump_images() -> None:
         nonlocal done_img
         async with progress_lock:
             done_img += 1
             # 18 → ~55 while images; audio fills the rest when done
-            img_w = 0.7 if image_text else (0.85 if native_audio else 0.55)
+            img_w = 0.7 if image_text else 0.55
             frac = (done_img / max(total, 1)) * img_w
             pct = 18 + int(40 * frac)
             async with _db_write_lock():
@@ -1022,12 +914,9 @@ async def _parallel_image_and_audio(project_id: int) -> None:
                         project.progress = pct
                         project.status = ProjectStatus.IMAGING
                         await db.commit()
-            if native_audio:
-                msg = f"出图 {done_img}/{total}（配音交由视频模型）"
-            else:
-                msg = f"出图 {done_img}/{total}" + (
-                    " · 整片配音生成中…" if need_audio else " · 配音已就绪"
-                )
+            msg = f"出图 {done_img}/{total}" + (
+                " · 整片配音生成中…" if need_audio else " · 配音已就绪"
+            )
             await publish_progress(
                 project_id,
                 {
@@ -1185,6 +1074,8 @@ async def _parallel_image_and_audio(project_id: int) -> None:
 
 async def _parallel_videos(project_id: int) -> None:
     """按镜序逐个出视频；后镜参考上一镜尾帧。"""
+    from app.services.kepu_stages import VIDEO_SKIP_REASON_PRIVACY
+
     await _set_status(project_id, ProjectStatus.VIDEOING, 55, "VIDEOING")
     cfg = get_settings()
     ark = get_ark()
@@ -1222,6 +1113,7 @@ async def _parallel_videos(project_id: int) -> None:
                 "last_frame_url": getattr(s, "last_frame_url", None),
                 "video_url": s.video_url,
                 "has_video": bool(s.video_url),
+                "video_skip_reason": getattr(s, "video_skip_reason", None),
             }
             for s in sorted(project.shots, key=lambda s: s.shot_no)
         ]
@@ -1242,9 +1134,23 @@ async def _parallel_videos(project_id: int) -> None:
             image_url=meta.get("image_url"),
             last_frame_url=meta.get("last_frame_url"),
         )
-        if meta.get("has_video"):
+        if meta.get("has_video") or meta.get("video_skip_reason") == VIDEO_SKIP_REASON_PRIVACY:
             done += 1
             pct = 55 + int(30 * done / max(total, 1))
+            if meta.get("video_skip_reason") == VIDEO_SKIP_REASON_PRIVACY:
+                # 上一轮已确认真人隐私拦截：不再重提上游，直接沿用静图
+                await publish_progress(
+                    project_id,
+                    {
+                        "event": "progress",
+                        "stage": "VIDEOING",
+                        "shot": meta["shot_no"],
+                        "total": total,
+                        "percent": pct,
+                        "message": f"镜头 {meta['shot_no']} 含真人已跳过 AI 视频，将用静图合成",
+                    },
+                )
+                return proxy
             if not proxy.last_frame_url and meta.get("video_url"):
                 last = persist_last_frame_from_video(
                     project_id, int(meta["shot_no"]), str(meta["video_url"])
@@ -1314,6 +1220,13 @@ async def _parallel_videos(project_id: int) -> None:
                     meta["shot_no"],
                     msg[:240],
                 )
+                # 持久跳过标记：后续轮次不再重提上游（否则每轮都被拦截、白等配额）
+                async with _db_write_lock():
+                    async with AsyncSessionLocal() as db:
+                        skipped_shot = await db.get(Shot, meta["id"])
+                        if skipped_shot:
+                            skipped_shot.video_skip_reason = VIDEO_SKIP_REASON_PRIVACY
+                            await db.commit()
                 done += 1
                 pct = 55 + int(30 * done / max(total, 1))
                 await publish_progress(
@@ -1407,200 +1320,6 @@ async def _parallel_videos(project_id: int) -> None:
     )
 
 
-async def _image_stage(project_id: int) -> None:
-    """逐镜出图；后镜 Seedream 参考上一镜静帧。"""
-    await _set_status(project_id, ProjectStatus.IMAGING, 20, "IMAGING")
-    ark = get_ark()
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            select(Project)
-            .where(Project.id == project_id)
-            .options(selectinload(Project.shots), selectinload(Project.template))
-        )
-        project = result.scalar_one()
-        tpl = project.template
-        total = len(project.shots)
-        ref_urls = _project_base_refs(project)
-        image_size = _image_size_for(project)
-        negative = _project_image_negative(project)
-        style_prefix = _effective_style(project)
-        bible = getattr(project, "character_bible", None) or ""
-        photoreal = template_is_photoreal(tpl)
-        consist = template_consistency_mode(tpl)
-        lock_character = consist == "character"
-        prev_shot = None
-        image_model = (getattr(project, "image_model", None) or "").strip()
-        output_ratio = _project_output_ratio(project) or ""
-
-        for idx, shot in enumerate(sorted(project.shots, key=lambda s: s.shot_no)):
-            await _ensure_not_cancelled(project_id)
-            if shot.image_url or shot.image_ark_url:
-                prev_shot = shot
-                continue
-            refs = image_refs_for_shot(prev_shot, ref_urls)
-            prompt = build_locked_image_prompt(
-                style_prefix,
-                strip_lock_blocks(shot.img_prompt),
-                bible if lock_character else "",
-                photoreal=photoreal,
-                lock_character=lock_character,
-                lock_style=True,
-            )
-            img = await ark.gen_image(
-                prompt,
-                negative,
-                refs,
-                project_id=project_id,
-                shot_no=shot.shot_no,
-                size=image_size,
-                model=image_model,
-                aspect_ratio=output_ratio or None,
-            )
-            shot.image_url = img.local_url
-            shot.image_ark_url = img.remote_url
-            shot.status = ShotStatus.IMAGE_READY
-            prev_shot = shot
-            span = 55 if _is_image_text(project) else 25
-            pct = 20 + int(span * (idx + 1) / max(total, 1))
-            project.progress = pct
-            await db.commit()
-            await publish_progress(
-                project_id,
-                {
-                    "event": "progress",
-                    "stage": "IMAGING",
-                    "shot": shot.shot_no,
-                    "total": total,
-                    "percent": pct,
-                },
-            )
-        if project.shots:
-            project.cover_url = sorted(project.shots, key=lambda s: s.shot_no)[0].image_url
-        project.status = ProjectStatus.IMAGE_READY
-        project.progress = 75 if _is_image_text(project) else 45
-        await db.commit()
-
-
-async def _video_stage(project_id: int) -> None:
-    """逐镜出视频；后镜参考上一镜尾帧（无尾帧则用静帧）。"""
-    await _set_status(project_id, ProjectStatus.VIDEOING, 50, "VIDEOING")
-    ark = get_ark()
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            select(Project)
-            .where(Project.id == project_id)
-            .options(selectinload(Project.shots), selectinload(Project.template))
-        )
-        project = result.scalar_one()
-        tpl = project.template
-        generate_audio = _kepu_seedance_sfx_audio(project)
-        ambient_only = generate_audio
-        consistency = template_consistency_mode(tpl) == "character" and bool(
-            tpl.seedance_config.get("character_consistency", True)
-        )
-        motion = str(tpl.seedance_config.get("motion_bias", ""))
-        total = len(project.shots)
-        cfg = get_settings()
-        resolution = cfg.ark_video_resolution
-        if project.resolution_mode == "hd" and resolution == "480p":
-            resolution = "720p"
-        ratio = _project_output_ratio(project) or cfg.ark_video_ratio
-        style_prefix = _effective_style(project)
-        video_model = (getattr(project, "video_model", None) or "").strip()
-        for idx, shot in enumerate(sorted(project.shots, key=lambda s: s.shot_no)):
-            await _ensure_not_cancelled(project_id)
-            if shot.video_url:
-                if not shot.last_frame_url:
-                    shot.last_frame_url = persist_last_frame_from_video(
-                        project_id, int(shot.shot_no), str(shot.video_url)
-                    )
-                    await db.commit()
-                continue
-            script = (getattr(shot, "segment_script", "") or shot.video_prompt or "").strip()
-            prompt = _kepu_video_prompt(
-                script,
-                style_prefix=style_prefix,
-                motion_bias=motion,
-                camera=shot.camera or "",
-                ambient_only=ambient_only,
-            )
-            dur = segplan.resolve_api_duration(
-                script,
-                fallback=shot.duration,
-                lo=cfg.seedance_duration_min,
-                hi=cfg.seedance_duration_max,
-            )
-            image_ref = shot.image_ark_url or shot.image_url or ""
-            extra_refs = video_extra_refs_for_shot(previous_usable_shot(list(project.shots), shot.shot_no))
-            local_video, task_result = await ark.gen_and_wait_video(
-                image_ref,
-                prompt,
-                int(dur),
-                project_id=project_id,
-                shot_no=shot.shot_no,
-                character_consistency=consistency,
-                resolution=resolution,
-                ratio=ratio,
-                generate_audio=generate_audio,
-                model=video_model,
-                extra_image_urls=extra_refs or None,
-            )
-            shot.video_url = local_video
-            shot.last_frame_url = persist_last_frame_from_video(
-                project_id,
-                int(shot.shot_no),
-                local_video,
-                preferred_url=getattr(task_result, "last_frame_url", None),
-            )
-            shot.status = ShotStatus.VIDEO_READY
-            billing_key = "seedance2:video0" if generate_audio else "seedance2:video1"
-            await _record_seedance_usage(
-                project_id,
-                billing_key=billing_key,
-                model=cfg.model_video,
-                task_result=task_result,
-                fallback_duration_sec=max(float(dur), 2.0),
-                shot_id=shot.id,
-            )
-            pct = 50 + int(25 * (idx + 1) / max(total, 1))
-            project.progress = pct
-            await db.commit()
-            await publish_progress(
-                project_id,
-                {
-                    "event": "progress",
-                    "stage": "VIDEOING",
-                    "shot": shot.shot_no,
-                    "total": total,
-                    "percent": pct,
-                },
-            )
-        project.status = ProjectStatus.VIDEO_READY
-        project.progress = 75
-        await db.commit()
-
-
-async def _audio_stage(project_id: int) -> None:
-    """Fallback audio stage — continuous narration for the whole film."""
-    await _set_status(project_id, ProjectStatus.AUDIOING, 80, "AUDIOING")
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            select(Project)
-            .where(Project.id == project_id)
-            .options(selectinload(Project.shots), selectinload(Project.template))
-        )
-        project = result.scalar_one()
-        voice = _project_voice(project)
-        shots = sorted(project.shots, key=lambda s: s.shot_no)
-    await _synthesize_continuous_audio(
-        project_id, voice=voice, shot_rows=shots, force=False
-    )
-    await publish_progress(
-        project_id,
-        {"event": "progress", "stage": "AUDIOING", "percent": 88, "message": "整片配音完成"},
-    )
-
-
 async def _compose_stage(project_id: int) -> None:
     await _set_status(project_id, ProjectStatus.COMPOSING, 92, "COMPOSING")
     async with AsyncSessionLocal() as db:
@@ -1610,135 +1329,100 @@ async def _compose_stage(project_id: int) -> None:
             .options(selectinload(Project.shots), selectinload(Project.template))
         )
         project = result.scalar_one()
-        native_audio = _use_native_video_audio(project)
         out = storage.project_dir(project_id) / "final.mp4"
 
-        if native_audio:
-            # 模型已含配音/字幕：只拼接镜头，不再 TTS 叠轨与烧字
-            video_paths: list[Path] = []
-            for shot in sorted(project.shots, key=lambda s: s.shot_no):
-                pdir = storage.project_dir(project_id)
-                video_path = storage.local_path_from_url(shot.video_url or "")
-                if shot.video_url and (not video_path or not video_path.exists()):
-                    if shot.video_url.startswith("http"):
-                        video_path = await storage.ensure_local_media(
-                            shot.video_url, pdir / f"shot_{shot.shot_no:03d}.mp4"
-                        )
-                if video_path and video_path.exists():
-                    video_paths.append(video_path)
-            if not video_paths:
-                raise RuntimeError("没有可用镜头视频，无法拼接成片（视频模型配音模式）")
-            await publish_progress(
-                project_id,
-                {
-                    "event": "progress",
-                    "stage": "COMPOSING",
-                    "percent": 94,
-                    "message": f"拼接 {len(video_paths)} 段带配音视频…",
-                },
-            )
-            await _run_ffmpeg_compose_with_retry(
-                project_id,
-                lambda: concat_native_videos(video_paths, out),
-            )
-            project.final_video_url = storage.publish_local(out)
-            if project.status != ProjectStatus.CANCELLED:
-                project.status = ProjectStatus.AUDITING
-                project.progress = 96
-            await db.commit()
-        else:
-            media: list[ShotMedia] = []
-            for shot in sorted(project.shots, key=lambda s: s.shot_no):
-                pdir = storage.project_dir(project_id)
-                # Resolve/download to local for FFmpeg; keep OSS URLs in DB for frontend preview
-                video_path = storage.local_path_from_url(shot.video_url or "")
-                audio_path = storage.local_path_from_url(shot.audio_url or "")
-                image_path = storage.local_path_from_url(shot.image_url or "")
-                if shot.video_url and (not video_path or not video_path.exists()):
-                    if shot.video_url.startswith("http"):
-                        video_path = await storage.ensure_local_media(
-                            shot.video_url, pdir / f"shot_{shot.shot_no:03d}.mp4"
-                        )
-                if shot.audio_url and (not audio_path or not audio_path.exists()):
-                    if shot.audio_url.startswith("http"):
-                        audio_path = await storage.ensure_local_media(
-                            shot.audio_url, pdir / f"shot_{shot.shot_no:03d}_tts.mp3"
-                        )
-                if shot.image_url and (not image_path or not image_path.exists()):
-                    if shot.image_url.startswith("http"):
-                        image_path = await storage.ensure_local_media(
-                            shot.image_url, pdir / f"shot_{shot.shot_no:03d}.png"
-                        )
-                media.append(
-                    ShotMedia(
-                        shot_no=shot.shot_no,
-                        duration=float(shot.duration),
-                        narration=shot.narration,
-                        overlay_title=getattr(shot, "overlay_title", "") or "",
-                        overlay_subtitle=getattr(shot, "overlay_subtitle", "") or "",
-                        video_path=video_path if video_path and video_path.exists() else None,
-                        audio_path=audio_path if audio_path and audio_path.exists() else None,
-                        image_path=image_path if image_path and image_path.exists() else None,
+        media: list[ShotMedia] = []
+        for shot in sorted(project.shots, key=lambda s: s.shot_no):
+            pdir = storage.project_dir(project_id)
+            # Resolve/download to local for FFmpeg; keep OSS URLs in DB for frontend preview
+            video_path = storage.local_path_from_url(shot.video_url or "")
+            audio_path = storage.local_path_from_url(shot.audio_url or "")
+            image_path = storage.local_path_from_url(shot.image_url or "")
+            if shot.video_url and (not video_path or not video_path.exists()):
+                if shot.video_url.startswith("http"):
+                    video_path = await storage.ensure_local_media(
+                        shot.video_url, pdir / f"shot_{shot.shot_no:03d}.mp4"
                     )
+            if shot.audio_url and (not audio_path or not audio_path.exists()):
+                if shot.audio_url.startswith("http"):
+                    audio_path = await storage.ensure_local_media(
+                        shot.audio_url, pdir / f"shot_{shot.shot_no:03d}_tts.mp3"
+                    )
+            if shot.image_url and (not image_path or not image_path.exists()):
+                if shot.image_url.startswith("http"):
+                    image_path = await storage.ensure_local_media(
+                        shot.image_url, pdir / f"shot_{shot.shot_no:03d}.png"
+                    )
+            media.append(
+                ShotMedia(
+                    shot_no=shot.shot_no,
+                    duration=float(shot.duration),
+                    narration=shot.narration,
+                    overlay_title=getattr(shot, "overlay_title", "") or "",
+                    overlay_subtitle=getattr(shot, "overlay_subtitle", "") or "",
+                    video_path=video_path if video_path and video_path.exists() else None,
+                    audio_path=audio_path if audio_path and audio_path.exists() else None,
+                    image_path=image_path if image_path and image_path.exists() else None,
                 )
-
-            ratio = _project_output_ratio(project)
-            mode = project.pipeline_mode or "full"
-
-            full_audio = _full_narration_path(project_id)
-            if not full_audio.exists():
-                full_audio = None
-
-            sub_cfg = _merge_subtitle_preset(
-                (project.template.subtitle_config if project.template else None) or {},
-                getattr(project, "subtitle_preset", "") or "",
             )
-            layout = str(sub_cfg.get("position") or "top")
-            if layout not in {"top", "split", "bottom", "center"}:
-                layout = "top"
-            # bottom/center still use top dual-line unless explicitly split
-            subtitle_layout = "split" if layout == "split" else "top"
 
-            def _f(key: str, default: float) -> float:
-                try:
-                    return float(sub_cfg.get(key, default))
-                except (TypeError, ValueError):
-                    return default
+        ratio = _project_output_ratio(project)
+        mode = project.pipeline_mode or "full"
 
-            bgm_mood = (getattr(project, "bgm_lock", None) or "").strip()
-            if not bgm_mood and project.shots:
-                bgm_mood = (project.shots[0].bgm_mood or "").strip()
-            if not bgm_mood and project.template and isinstance(project.template.audio_config, dict):
-                bgm_mood = str(project.template.audio_config.get("bgm_mood") or "").strip()
-            bgm_path = resolve_bgm_path(bgm_mood)
-            keep_video_sfx = _kepu_seedance_sfx_audio(project)
+        full_audio = _full_narration_path(project_id)
+        if not full_audio.exists():
+            full_audio = None
 
-            await _run_ffmpeg_compose_with_retry(
-                project_id,
-                lambda: compose_project(
-                    media,
-                    out,
-                    ComposeOptions(
-                        ratio=ratio,
-                        mode=mode,
-                        resolution_mode=project.resolution_mode or "preview",
-                        full_audio_path=full_audio,
-                        subtitle_layout=subtitle_layout,
-                        title_scale=_f("title_scale", 1.35),
-                        sub_scale=_f("sub_scale", 1.3),
-                        caption_scale=_f("caption_scale", 1.25),
-                        bgm_path=bgm_path,
-                        bgm_volume=0.22,
-                        keep_video_sfx=keep_video_sfx,
-                        sfx_volume=0.22,
-                    ),
+        sub_cfg = _merge_subtitle_preset(
+            (project.template.subtitle_config if project.template else None) or {},
+            getattr(project, "subtitle_preset", "") or "",
+        )
+        layout = str(sub_cfg.get("position") or "top")
+        if layout not in {"top", "split", "bottom", "center"}:
+            layout = "top"
+        # bottom/center still use top dual-line unless explicitly split
+        subtitle_layout = "split" if layout == "split" else "top"
+
+        def _f(key: str, default: float) -> float:
+            try:
+                return float(sub_cfg.get(key, default))
+            except (TypeError, ValueError):
+                return default
+
+        bgm_mood = (getattr(project, "bgm_lock", None) or "").strip()
+        if not bgm_mood and project.shots:
+            bgm_mood = (project.shots[0].bgm_mood or "").strip()
+        if not bgm_mood and project.template and isinstance(project.template.audio_config, dict):
+            bgm_mood = str(project.template.audio_config.get("bgm_mood") or "").strip()
+        bgm_path = resolve_bgm_path(bgm_mood)
+        keep_video_sfx = _kepu_seedance_sfx_audio(project)
+
+        await _run_ffmpeg_compose_with_retry(
+            project_id,
+            lambda: compose_project(
+                media,
+                out,
+                ComposeOptions(
+                    ratio=ratio,
+                    mode=mode,
+                    resolution_mode=project.resolution_mode or "preview",
+                    full_audio_path=full_audio,
+                    subtitle_layout=subtitle_layout,
+                    title_scale=_f("title_scale", 1.35),
+                    sub_scale=_f("sub_scale", 1.3),
+                    caption_scale=_f("caption_scale", 1.25),
+                    bgm_path=bgm_path,
+                    bgm_volume=0.22,
+                    keep_video_sfx=keep_video_sfx,
+                    sfx_volume=0.22,
                 ),
-            )
-            project.final_video_url = storage.publish_local(out)
-            if project.status != ProjectStatus.CANCELLED:
-                project.status = ProjectStatus.AUDITING
-                project.progress = 96
-            await db.commit()
+            ),
+        )
+        project.final_video_url = storage.publish_local(out)
+        if project.status != ProjectStatus.CANCELLED:
+            project.status = ProjectStatus.AUDITING
+            project.progress = 96
+        await db.commit()
 
     async with AsyncSessionLocal() as db:
         project = await db.get(Project, project_id)
@@ -1830,27 +1514,34 @@ async def regen_shot_image(project_id: int, shot_id: int) -> None:
         model=image_model,
         aspect_ratio=aspect_ratio,
     )
+    cancelled = False
     async with AsyncSessionLocal() as db:
         shot = await db.get(Shot, shot_id)
         project = await db.get(Project, project_id)
         if not shot or not project:
             raise ValueError("shot not found")
-        shot.image_url = img.local_url
-        shot.image_ark_url = img.remote_url
-        shot.video_url = None
-        shot.last_frame_url = None
-        shot.status = ShotStatus.IMAGE_READY
-        shot.version += 1
-        project.status = ProjectStatus.IMAGE_READY
-        project.final_video_url = None
-        await db.commit()
+        cancelled = project.status == ProjectStatus.CANCELLED
+        if not cancelled:
+            shot.image_url = img.local_url
+            shot.image_ark_url = img.remote_url
+            shot.video_url = None
+            shot.last_frame_url = None
+            shot.video_skip_reason = None  # 换了首帧图，真人隐私可能已消失
+            shot.status = ShotStatus.IMAGE_READY
+            shot.version += 1
+            project.status = ProjectStatus.IMAGE_READY
+            project.final_video_url = None
+            await db.commit()
     s = get_settings()
+    # 上游成本已真实发生：即使项目刚被取消也要记账，随后抛出让任务收敛取消态
     await _record_seedream_usage(
         project_id,
         image_result=img,
         model=s.model_image,
         shot_id=shot_id,
     )
+    if cancelled:
+        raise PipelineCancelled(f"project {project_id} cancelled during regen image")
 
 
 @storage.without_intermediate_oss
@@ -1916,19 +1607,24 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
         local_video,
         preferred_url=getattr(task_result, "last_frame_url", None),
     )
+    cancelled = False
     async with AsyncSessionLocal() as db:
         shot = await db.get(Shot, shot_id)
         project = await db.get(Project, project_id)
         if not shot or not project:
             raise ValueError("shot not found")
-        shot.video_url = local_video
-        shot.last_frame_url = last
-        shot.status = ShotStatus.VIDEO_READY
-        shot.version += 1
-        project.final_video_url = None
-        project.status = ProjectStatus.VIDEO_READY
-        await db.commit()
+        cancelled = project.status == ProjectStatus.CANCELLED
+        if not cancelled:
+            shot.video_url = local_video
+            shot.last_frame_url = last
+            shot.video_skip_reason = None  # 视频成功生成，清除跳过标记
+            shot.status = ShotStatus.VIDEO_READY
+            shot.version += 1
+            project.final_video_url = None
+            project.status = ProjectStatus.VIDEO_READY
+            await db.commit()
     billing_key = "seedance2:video0" if generate_audio else "seedance2:video1"
+    # 上游成本已真实发生：即使项目刚被取消也要记账，随后抛出让任务收敛取消态
     await _record_seedance_usage(
         project_id,
         billing_key=billing_key,
@@ -1937,6 +1633,8 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
         fallback_duration_sec=max(float(dur), 2.0),
         shot_id=shot_id,
     )
+    if cancelled:
+        raise PipelineCancelled(f"project {project_id} cancelled during regen video")
 
 
 @storage.without_intermediate_oss
@@ -1949,8 +1647,6 @@ async def regen_shot_audio(project_id: int, shot_id: int) -> None:
             .options(selectinload(Project.template), selectinload(Project.shots))
         )
         project = result.scalar_one()
-        if _use_native_video_audio(project):
-            raise ValueError("当前为视频模型配音，请使用「重生视频」重做该镜旁白")
         shot = next((s for s in project.shots if s.id == shot_id), None)
         if not shot:
             raise ValueError("shot not found")
@@ -1963,6 +1659,7 @@ async def regen_shot_audio(project_id: int, shot_id: int) -> None:
     await _synthesize_continuous_audio(
         project_id, voice=voice, shot_rows=shots, force=True
     )
+    cancelled = False
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(Project)
@@ -1971,9 +1668,11 @@ async def regen_shot_audio(project_id: int, shot_id: int) -> None:
         )
         project = result.scalar_one_or_none()
         shot = await db.get(Shot, shot_id)
-        if shot:
+        if project and project.status == ProjectStatus.CANCELLED:
+            cancelled = True
+        elif shot:
             shot.version += 1
-        if project:
+        if project and not cancelled:
             project.final_video_url = None
             shots = list(project.shots or [])
             if _is_image_text(project):
@@ -1983,15 +1682,13 @@ async def regen_shot_audio(project_id: int, shot_id: int) -> None:
             else:
                 project.status = ProjectStatus.IMAGE_READY
             await db.commit()
+    if cancelled:
+        raise PipelineCancelled(f"project {project_id} cancelled during regen audio")
 
 
 @storage.without_intermediate_oss
 async def regen_project_audio_and_compose(project_id: int) -> None:
     """Force continuous re-TTS with current voice, then compose."""
-    async with AsyncSessionLocal() as db:
-        project = await db.get(Project, project_id)
-        if project and _use_native_video_audio(project):
-            raise ValueError("当前为视频模型配音，请重生各镜视频后点「拼接成片」")
     await _set_status(project_id, ProjectStatus.AUDIOING, 80, "AUDIOING")
     async with AsyncSessionLocal() as db:
         result = await db.execute(

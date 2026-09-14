@@ -15,12 +15,19 @@ def test_normalize_character_name_strips_suffix() -> None:
 
 
 def test_build_voice_sample_line_short() -> None:
-    assert build_voice_sample_line_short("禹") == "你好，我是禹。"
-    assert build_voice_sample_line_short("很长的角色名称测试") == "你好，我是很长的角色名称测。"
+    # 试听句须 ≥2s，固定句在自我介绍后追加声线说明（voice_synthesis.py）
+    assert build_voice_sample_line_short("禹") == (
+        "你好，我是禹。请听我的语气与声线，之后我会用这样的声音来讲述故事。"
+    )
+    assert build_voice_sample_line_short("很长的角色名称测试") == (
+        "你好，我是很长的角色名称测。请听我的语气与声线，之后我会用这样的声音来讲述故事。"
+    )
 
 
 def test_build_voice_sample_text_short_mode() -> None:
-    assert build_voice_sample_text("任意描述", "伯益", short=True) == "你好，我是伯益。"
+    assert build_voice_sample_text("任意描述", "伯益", short=True) == (
+        "你好，我是伯益。请听我的语气与声线，之后我会用这样的声音来讲述故事。"
+    )
 
 
 def test_infer_drama_speaker_differs_by_role() -> None:

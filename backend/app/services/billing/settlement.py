@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -350,69 +351,44 @@ async def settle_task(db: AsyncSession, task_id: int) -> dict[str, int]:
     return {"charged": charged, "refunded": refund}
 
 
-async def settle_project(db: AsyncSession, project_id: int) -> dict[str, int]:
-    """兼容旧科普项目结算：按 project_id 汇总未结算 usage（无 task_run_id 的历史行）。"""
-    from app.models import Project
+# 终态与结算之间的正常窗口：_complete/_fail/_mark_cancelled 都是先置终态再 settle，
+# 对账扫描须越过该窗口，避免与进行中的正常收尾竞争。
+TERMINAL_FROZEN_RECONCILE_GRACE_SEC = 120
 
-    project = await db.get(Project, project_id)
-    if not project:
-        return {"charged": 0, "refunded": 0}
-    user = await _lock_user(db, int(project.user_id))
-    result = await db.execute(
-        select(UsageEvent).where(
-            UsageEvent.project_id == project_id,
-            UsageEvent.settled.is_(False),
+_RECONCILABLE_TERMINAL_STATUSES = ("succeeded", "failed", "cancelled")
+
+
+async def reconcile_terminal_frozen_tasks(db: AsyncSession, *, limit: int = 100) -> int:
+    """对账补偿：终态但 billing_status 仍 frozen 的任务重新结算。
+
+    来源是 settle_task 异常中断（如结算瞬间 DB 故障）的遗留行；不处理会造成
+    冻结额长期不退、usage_events 悬空。settle_task 自带钱包流水幂等门闩，重复调用安全。
+    注意：finalizing 窗口内的任务状态是 awaiting_poll/cancel_requested（非终态），
+    不会被本扫描误伤，窗口协程按实结算的语义不受影响。
+    """
+    cutoff = datetime.now(UTC) - timedelta(seconds=TERMINAL_FROZEN_RECONCILE_GRACE_SEC)
+    stmt = (
+        select(TaskRun)
+        .where(
+            TaskRun.billing_status == "frozen",
+            TaskRun.status.in_(_RECONCILABLE_TERMINAL_STATUSES),
+            TaskRun.finished_at.is_not(None),
+            TaskRun.finished_at < cutoff,
         )
+        .limit(limit)
     )
-    events = list(result.scalars().all())
-    charged = sum(int(e.charge_fen or 0) for e in events)
-    for e in events:
-        e.settled = True
-
-    if not user or not billing_active(user):
-        await db.flush()
-        return {"charged": 0, "refunded": 0}
-
-    frozen_before = int(user.frozen_fen or 0)
-    extra = max(0, charged - frozen_before)
-    refund = max(0, frozen_before - charged)
-    user.frozen_fen = 0
-
-    if extra > 0:
-        await _ledger(
-            db,
-            user,
-            -extra,
-            "settle",
-            ref_type="project",
-            ref_id=str(project_id),
-            note="settle_overage",
-        )
-    if refund > 0:
-        await _ledger(
-            db,
-            user,
-            refund,
-            "unfreeze",
-            ref_type="project",
-            ref_id=str(project_id),
-            note="refund_unused_freeze",
-        )
-    await _ledger(
-        db,
-        user,
-        0,
-        "settle",
-        ref_type="project",
-        ref_id=str(project_id),
-        note=f"charged={charged} refund={refund}",
-    )
-    await db.flush()
-    if charged > 0 and user:
-        from app.services.billing.alerts import process_billing_alerts_after_charge
-
-        await process_billing_alerts_after_charge(db, user, charged_fen=charged)
-    return {"charged": charged, "refunded": refund}
+    rows = list((await db.execute(stmt)).scalars().all())
+    fixed = 0
+    for task in rows:
+        try:
+            await settle_task(db, int(task.id))
+            fixed += 1
+        except Exception:  # noqa: BLE001
+            logger.exception("reconcile terminal frozen task failed task_id=%s", task.id)
+    if fixed:
+        await db.commit()
+        logger.warning("reconciled terminal frozen task runs count=%s", fixed)
+    return fixed
 
 
 async def credit_topup(

@@ -347,7 +347,14 @@ async def test_record_llm_chat_line_skips_without_billing_scope(db_session: Asyn
         drama_project_id=1,
     )
     assert ev is None
-    count = len((await db_session.execute(select(UsageEvent))).scalars().all())
+    # 只统计本用户事件（集成测试共享 dev 库，不能全表计数）
+    count = len(
+        (
+            await db_session.execute(
+                select(UsageEvent).where(UsageEvent.user_id == user.id)
+            )
+        ).scalars().all()
+    )
     assert count == 0
 
 

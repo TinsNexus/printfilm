@@ -13,7 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.models import Project, Shot, User
 from app.models_drama import DramaAsset, DramaEpisode, DramaEpisodeFragment, DramaProject, DramaScript
 from app.models_tasks import TaskEvent, TaskRun, TaskStep, TaskTarget
-from app.schemas_tasks import TaskCreateRequest, TaskEventCreate, TaskStepCreate, TaskUpdateRequest
+from app.schemas_tasks import TaskCreateRequest, TaskEventCreate, TaskStepCreate
 from app.services.tasks.handlers import get_task_handler
 
 logger = logging.getLogger("app.tasks.service")
@@ -35,6 +35,39 @@ def task_detail_options() -> tuple:
         selectinload(TaskRun.targets),
         selectinload(TaskRun.events),
     )
+
+
+# payload 中标记 poller 成片收尾窗口截止时间的键
+FINALIZING_UNTIL_KEY = "finalizing_until"
+
+
+def task_finalizing_window_open(task: TaskRun, *, now: datetime | None = None) -> bool:
+    """任务是否处于 poller 的 finalizing 收尾窗口（成片正在下载落盘并记用量）。
+
+    窗口内收到取消不得直接全额退款：成片可能恰好在落盘，先退款会造成
+    usage_events 悬空（settled=0）且钱货两失。应收敛取消动作，
+    由持有收尾流程的协程完成后按实际用量结算（settle_task 多退少补）。
+    """
+    payload = getattr(task, "payload", None)
+    if not isinstance(payload, dict):
+        return False
+    raw = payload.get(FINALIZING_UNTIL_KEY)
+    if not raw:
+        return False
+    try:
+        until = datetime.fromisoformat(str(raw))
+    except ValueError:
+        return False
+    if until.tzinfo is None:
+        until = until.replace(tzinfo=UTC)
+    return until > (now or datetime.now(UTC))
+
+
+def clear_finalizing_window(payload: Any) -> dict:
+    """返回移除 finalizing 窗口标记后的 payload 副本（无标记时原样拷贝）。"""
+    data = dict(payload) if isinstance(payload, dict) else {}
+    data.pop(FINALIZING_UNTIL_KEY, None)
+    return data
 
 
 def build_task_event(task_id: int, event: TaskEventCreate) -> TaskEvent:
@@ -820,12 +853,6 @@ async def count_user_active_runtime_tasks(db: AsyncSession, user_id: int) -> int
     return int((await db.execute(stmt)).scalar_one() or 0)
 
 
-# 统计已注册、等待 Selector 轮询的上游任务数。
-async def count_awaiting_poll_tasks(db: AsyncSession) -> int:
-    stmt = select(func.count()).select_from(TaskRun).where(TaskRun.status == "awaiting_poll")
-    return int((await db.execute(stmt)).scalar_one() or 0)
-
-
 async def _validate_task_scope(db: AsyncSession, user: User, body: TaskCreateRequest) -> None:
     if body.project_id is not None:
         project = await db.get(Project, body.project_id)
@@ -963,67 +990,6 @@ async def count_active_tasks_for_user(
     return int((await db.execute(stmt)).scalar_one() or 0)
 
 
-async def update_task_for_user(
-    db: AsyncSession,
-    user: User,
-    task_id: int,
-    body: TaskUpdateRequest,
-) -> TaskRun:
-    task = await get_task_for_user(db, user, task_id)
-    now = datetime.now(UTC)
-    prev_status = task.status
-    prev_step_key = task.current_step_key
-    prev_step_status = task.current_step_status
-    if body.status is not None:
-        task.status = body.status
-    if body.current_step_key is not None:
-        task.current_step_key = body.current_step_key
-    if body.current_step_status is not None:
-        task.current_step_status = body.current_step_status
-    if body.provider_task_id is not None:
-        task.provider_task_id = body.provider_task_id
-    if body.scheduled_at is not None:
-        task.scheduled_at = body.scheduled_at
-    if body.next_action_at is not None:
-        task.next_action_at = body.next_action_at
-    if body.lease_token is not None:
-        task.lease_token = body.lease_token
-    if body.lease_until is not None:
-        task.lease_until = body.lease_until
-    if body.progress_percent is not None:
-        task.progress_percent = body.progress_percent
-    if body.error_code is not None:
-        task.error_code = body.error_code
-    if body.error_message is not None:
-        task.error_message = body.error_message
-    if body.payload is not None:
-        task.payload = body.payload
-    if body.result_payload is not None:
-        task.result_payload = body.result_payload
-    if prev_status != "running" and task.status == "running" and task.started_at is None:
-        task.started_at = now
-    if body.status in TERMINAL_TASK_STATUSES:
-        task.finished_at = now
-    db.add(
-        build_task_event(
-            task.id,
-            TaskEventCreate(
-                event_type="task.updated",
-                status=task.status,
-                phase=task.current_step_key,
-                message=f"{prev_status}/{prev_step_status} -> {task.status}/{task.current_step_status}",
-                payload={
-                    "previous_status": prev_status,
-                    "previous_step_key": prev_step_key,
-                    "previous_step_status": prev_step_status,
-                },
-            ),
-        )
-    )
-    await db.commit()
-    return await get_task_for_user(db, user, task.id)
-
-
 async def cancel_task_for_user(db: AsyncSession, user: User, task_id: int) -> TaskRun:
     task = await get_task_for_user(db, user, task_id)
     if not task.cancelable:
@@ -1046,72 +1012,6 @@ async def cancel_task_for_user(db: AsyncSession, user: User, task_id: int) -> Ta
     )
     await db.commit()
     return await get_task_for_user(db, user, task.id)
-
-
-async def retry_task_for_user(db: AsyncSession, user: User, task_id: int) -> TaskRun:
-    task = await get_task_for_user(db, user, task_id)
-    if task.status not in {"failed", "cancelled"}:
-        raise ValueError("仅失败或已取消任务支持重试")
-    # 分镜视频：旧任务绑定的分镜若已删，禁止重试，须在分集页按当前分镜重新生成
-    if task.domain == "drama" and task.task_type == "fragment_video":
-        frag_ids = task_fragment_ids(task)
-        if not frag_ids:
-            raise ValueError(_STALE_FRAGMENT_REASON)
-        for frag_id in frag_ids:
-            frag = await db.get(DramaEpisodeFragment, frag_id)
-            if frag is None:
-                raise ValueError(_STALE_FRAGMENT_REASON)
-            # 用户/后台点重试：清零内部重试计数，并从 prepare 阶段重跑
-            params = dict(frag.params or {})
-            params.pop("generation_attempts", None)
-            params["generation"] = {
-                "status": "queued",
-                "queued_at": datetime.now(UTC).isoformat(),
-                "message": "任务重试已入队",
-            }
-            frag.params = params
-    payload = dict(task.payload or {}) if isinstance(task.payload, dict) else {}
-    # 分镜视频重试不沿用旧 nio 阶段与内部 attempt，避免被「超过上限」直接拦住
-    if task.domain == "drama" and task.task_type == "fragment_video":
-        for key in (
-            "nio_phase",
-            "generation_attempts",
-            "attempt_limit",
-            "prepared",
-            "provider_task_id",
-        ):
-            payload.pop(key, None)
-    body = TaskCreateRequest(
-        domain=task.domain,
-        task_type=task.task_type,
-        priority=task.priority,
-        client_request_id=task.client_request_id,
-        dedupe_key=None,
-        batch_key=task.batch_key,
-        provider_task_id=None,
-        cancelable=task.cancelable,
-        scheduled_at=datetime.now(UTC),
-        payload=payload or None,
-        result_payload=None,
-        project_id=task.project_id,
-        drama_project_id=task.drama_project_id,
-        script_id=task.script_id,
-        episode_id=task.episode_id,
-        fragment_id=task.fragment_id,
-        asset_id=task.asset_id,
-        shot_id=task.shot_id,
-        targets=[
-            {
-                "target_type": item.target_type,
-                "target_id": item.target_id,
-                "sort_order": item.sort_order,
-                "metadata_json": item.metadata_json,
-            }
-            for item in task.targets
-        ],
-    )
-    create_body = TaskCreateRequest.model_validate(body.model_dump())
-    return await create_task(db, user, create_body)
 
 
 async def list_active_tasks_for_owner(

@@ -1002,6 +1002,13 @@ async def update_shot(
         )
     if "bgm_mood" in data and data["bgm_mood"] is not None:
         data["bgm_mood"] = clip_shot_bgm(str(data["bgm_mood"]))
+    # 旁白文本真实变化（直接改旁白或脚本规范化带出的新旁白）时作废整片连贯音轨：
+    # 缓存只看文件存在性不比对文本，不删会导致旧配音配新字幕。
+    new_narration = data.get("narration")
+    audio_dirty = (
+        new_narration is not None
+        and str(new_narration).strip() != str(shot.narration or "").strip()
+    )
     for k, v in data.items():
         setattr(shot, k, v)
     # Invalidate downstream if visual prompts changed
@@ -1009,8 +1016,8 @@ async def update_shot(
         shot.image_url = None
         shot.video_url = None
         shot.last_frame_url = None
-        shot.status = "PENDING"
-        project.final_video_url = None
+        shot.video_skip_reason = None  # 画面变更，隐私拦截结论失效
+        shot.status = ShotStatus.PENDING
     elif (
         "video_prompt" in data
         or "segment_script" in data
@@ -1019,7 +1026,14 @@ async def update_shot(
     ):
         shot.video_url = None
         shot.last_frame_url = None
-        project.final_video_url = None
+        shot.video_skip_reason = None
+    if audio_dirty:
+        full_narration = storage.project_dir(project_id) / "full_narration.mp3"
+        full_narration.unlink(missing_ok=True)
+        for sibling in project.shots:
+            sibling.audio_url = None
+    # 统一按素材进度把终态打回对应阶段并作废成片（本端点此前漏调，状态会卡在 DONE）
+    _demote_after_edit(project)
     shot.version += 1
     await db.commit()
     await db.refresh(shot)

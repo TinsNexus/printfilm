@@ -4,7 +4,7 @@ from __future__ import annotations
 import inspect
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -154,5 +154,73 @@ async def test_execute_task_run_marks_failed_when_handler_returns_ok_false(
     assert done is not None
     assert done.status == "failed"
     assert "seedream_policy" in (done.error_message or "")
+    assert done.steps and done.steps[0].status == "failed"
+
+
+async def _lease_task_with_step(db_session: AsyncSession):
+    """造一个 leased + 单 step 的任务，返回 (task_id, same_session CM)。"""
+    from contextlib import asynccontextmanager as _acm
+
+    user = await make_user(db_session, balance_fen=50_000)
+    task = await make_task(db_session, user, domain="api", task_type="v1_image", status="leased")
+    db_session.add(TaskStep(task_id=task.id, step_key="main", step_type="run", status="pending"))
+    await db_session.commit()
+
+    @_acm
+    async def same_session():
+        yield db_session
+
+    return int(task.id), same_session
+
+
+@pytest.mark.asyncio
+async def test_execute_task_run_fails_task_when_freeze_raises_non_valueerror(
+    db_session: AsyncSession,
+) -> None:
+    """freeze 抛 DB 瞬断等非 ValueError：任务必须 failed 收敛，不得裸逃卡 leased。"""
+    task_id, same_session = await _lease_task_with_step(db_session)
+
+    with (
+        patch("app.services.tasks.executor.AsyncSessionLocal", same_session),
+        patch(
+            "app.services.tasks.executor.freeze_for_task",
+            new=AsyncMock(side_effect=RuntimeError("connection reset")),
+        ),
+    ):
+        await execute_task_run(task_id)
+
+    db_session.expire_all()
+    done = await get_task_for_runtime(db_session, task_id)
+    assert done is not None
+    assert done.status == "failed"
+    assert done.error_code == "RuntimeError"
+    assert "connection reset" in (done.error_message or "")
+    assert done.finished_at is not None
+    assert done.billing_status == "none"
+    assert done.steps and done.steps[0].status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_execute_task_run_insufficient_balance_keeps_special_error_code(
+    db_session: AsyncSession,
+) -> None:
+    """余额不足 ValueError 仍收敛为专用错误码（供前端引导充值），未预扣保持 none。"""
+    task_id, same_session = await _lease_task_with_step(db_session)
+
+    with (
+        patch("app.services.tasks.executor.AsyncSessionLocal", same_session),
+        patch(
+            "app.services.tasks.executor.freeze_for_task",
+            new=AsyncMock(side_effect=ValueError("余额不足：需要 ¥1.00，当前 ¥0.00")),
+        ),
+    ):
+        await execute_task_run(task_id)
+
+    db_session.expire_all()
+    done = await get_task_for_runtime(db_session, task_id)
+    assert done is not None
+    assert done.status == "failed"
+    assert done.error_code == "insufficient_balance"
+    assert done.billing_status == "none"
     assert done.steps and done.steps[0].status == "failed"
 

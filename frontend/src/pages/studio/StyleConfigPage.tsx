@@ -245,10 +245,11 @@ export default function StyleConfigPage() {
     }
   }
 
-  if (!project && !error) {
+  // project 初始加载失败时不得穿透主页面（下方存在 project.xxx 非空访问，会白屏崩溃）
+  if (!project) {
     return (
       <AppShell active="studio">
-        <p className="pf-muted">加载中…</p>
+        {error ? <BillingErrorNotice message={error} /> : <p className="pf-muted">加载中…</p>}
       </AppShell>
     )
   }

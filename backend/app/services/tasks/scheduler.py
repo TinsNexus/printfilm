@@ -13,6 +13,7 @@ from sqlalchemy import and_, or_, select, update
 from app.config import get_settings
 from app.database import AsyncSessionLocal
 from app.models_tasks import TaskRun
+from app.services.billing.settlement import reconcile_terminal_frozen_tasks
 from app.services.tasks.executor import execute_task_run
 from app.services.tasks.service import (
     append_task_event,
@@ -144,6 +145,9 @@ async def _tick() -> None:
     orphan_every = max(5, int(get_settings().task_runtime_orphan_check_sec))
     if time.monotonic() - _last_orphan_check_mono >= orphan_every:
         await recover_orphaned_tasks()
+        # 低频对账：收敛 settle 异常中断遗留的"终态 + frozen"任务（幂等）
+        async with AsyncSessionLocal() as reconcile_db:
+            await reconcile_terminal_frozen_tasks(reconcile_db)
         _last_orphan_check_mono = time.monotonic()
 
     async with AsyncSessionLocal() as db:

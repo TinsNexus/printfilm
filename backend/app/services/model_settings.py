@@ -94,10 +94,13 @@ def get_overlay_dict() -> dict[str, Any]:
 def _refresh_overlay(config: dict[str, Any]) -> None:
     global _overlay
     flat = config.get("flat") if isinstance(config.get("flat"), dict) else config
+    # 空串必须保留：它是管理端「清除密钥」写入的显式值，
+    # 若在此过滤，get_settings() 会回落 .env 中的旧密钥——界面显示已清除、请求仍带旧 Key。
+    # 仅 None（DB 未设置该字段）跳过，让 base Settings 默认值生效。
     _overlay = {
         field: flat[field]
         for field in model_config_field_names()
-        if field in flat and flat[field] is not None and flat[field] != ""
+        if field in flat and flat[field] is not None
     }
 
 

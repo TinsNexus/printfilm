@@ -19,7 +19,6 @@ import { useNavigate, useParams } from 'react-router-dom'
 import {
   dramaApi,
   resolveDramaAssetPreviewUrl,
-  resolveDramaMediaUrl,
   type DramaAsset,
   type DramaEpisode,
   type DramaFragment,

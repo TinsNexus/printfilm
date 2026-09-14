@@ -17,7 +17,6 @@ from app.config import get_settings
 from app.services.billing.context import billing_scope
 from app.services.billing.settlement import freeze_for_task, settle_task
 from app.services.billing.usage import record_line
-from app.services.tasks.executor import execute_task_run
 from app.services.tasks.handlers import get_task_handler
 from app.services.tasks.service import append_task_event, build_task_event, build_task_step
 
@@ -390,19 +389,3 @@ async def settle_deferred_video_poll(
         )
 
     await settle_task(db, task.id)
-
-
-async def run_with_registered_handler(
-    db: AsyncSession,
-    user: User,
-    body: TaskCreateRequest,
-    *,
-    commit: bool = True,
-) -> TaskRun:
-    """创建任务并同步执行已注册 handler（跳过后台调度器）。"""
-    from app.services.tasks.service import create_task
-
-    task = await create_task(db, user, body, commit=commit)
-    await execute_task_run(task.id)
-    refreshed = await db.get(TaskRun, task.id)
-    return refreshed or task

@@ -91,16 +91,16 @@ def consume_reset_token(redis_client: Any, token: str) -> int:
         raise InvalidTokenError("重置链接无效或已过期")
     th = _token_hash(raw)
     key = _token_key(th)
-    user_id_raw = redis_client.get(key)
+    # GETDEL 原子取删：并发的两次重置请求只有一次能拿到 user_id
+    user_id_raw = redis_client.getdel(key)
     if not user_id_raw:
         raise InvalidTokenError("重置链接无效或已过期")
     try:
         user_id = int(user_id_raw)
     except (TypeError, ValueError) as exc:
-        redis_client.delete(key)
         raise InvalidTokenError("重置链接无效或已过期") from exc
 
-    redis_client.delete(key, _user_key(user_id))
+    redis_client.delete(_user_key(user_id))
     return user_id
 
 

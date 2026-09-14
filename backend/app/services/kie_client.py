@@ -15,12 +15,16 @@ from app.config import get_settings
 from app.services import storage
 from app.services.ark import ImageResult, TaskResult
 from app.services.billing.pricing import kie_credits_to_cost_fen
-from app.services.kie_catalog import MediaModelSpec, get_media_model
+from app.services.kie_catalog import MediaModelSpec
 
 logger = logging.getLogger(__name__)
 
 KIE_DEFAULT_BASE = "https://api.kie.ai"
 KIE_CHANNEL_ID = "kie-default"
+
+
+class KiePollTransientError(RuntimeError):
+    """recordInfo 单次查询瞬时故障（429/5xx/网络异常/坏响应/业务错误码），轮询应退避重试。"""
 
 
 def resolve_kie_credentials() -> tuple[str, str]:
@@ -80,25 +84,6 @@ class KieClient:
                 "cost_fen": cost_fen,
             }
         return raw, cost_fen
-
-    async def get_account_credits(self) -> int:
-        """GET /api/v1/chat/credit — 查询 Kie 账户剩余 credit。"""
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.get(
-                f"{self.base_url}/api/v1/chat/credit",
-                headers=self._headers(),
-            )
-            data = resp.json() if resp.content else {}
-            if resp.status_code >= 400 or int(data.get("code") or 0) not in (0, 200):
-                raise RuntimeError(
-                    f"Kie credit error {resp.status_code}: "
-                    f"{(data.get('msg') or resp.text or '')[:500]}"
-                )
-            raw = data.get("data")
-            try:
-                return int(raw)
-            except (TypeError, ValueError) as exc:
-                raise RuntimeError(f"Kie credit 响应无法解析: {json.dumps(data)[:300]}") from exc
 
     async def create_job(self, model: str, input_payload: dict[str, Any]) -> str:
         """POST /api/v1/jobs/createTask，返回 taskId。"""
@@ -169,39 +154,53 @@ class KieClient:
                 raise RuntimeError(f"Kie veo missing taskId: {json.dumps(data)[:400]}")
             return str(task_id)
 
+    async def _get_record(self, path: str, task_id: str, label: str) -> dict[str, Any]:
+        """recordInfo 类轮询端点的统一处理。
+
+        - 429/5xx、网络异常、非 JSON、HTTP 200 但业务 code 非 0/200：KiePollTransientError（退避重试）；
+        - 其余 4xx（鉴权失败/任务不存在）：RuntimeError 终态；
+        - 空载荷返回 {}，由调用方按 running 处理。
+        """
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.get(
+                    f"{self.base_url}{path}",
+                    headers=self._headers(),
+                    params={"taskId": task_id},
+                )
+        except httpx.HTTPError as exc:
+            raise KiePollTransientError(f"{label} network error: {exc}") from exc
+        try:
+            data = resp.json() if resp.content else {}
+        except ValueError as exc:
+            raise KiePollTransientError(
+                f"{label} non-JSON HTTP {resp.status_code}: {resp.text[:200]}"
+            ) from exc
+        msg = str(data.get("msg") or "") if isinstance(data, dict) else ""
+        if resp.status_code == 429 or resp.status_code >= 500:
+            raise KiePollTransientError(
+                f"{label} HTTP {resp.status_code}: {(msg or resp.text or '')[:300]}"
+            )
+        if resp.status_code >= 400:
+            raise RuntimeError(f"{label} error {resp.status_code}: {(msg or resp.text or '')[:500]}")
+        # 网关可能以 HTTP 200 + code 报错（限流/内部错误）；无 code 字段时不误伤
+        if isinstance(data, dict) and data.get("code") is not None:
+            try:
+                code_int = int(data.get("code"))
+            except (TypeError, ValueError):
+                code_int = -1
+            if code_int not in (0, 200):
+                raise KiePollTransientError(f"{label} biz code={code_int}: {msg[:300]}")
+        payload = data.get("data") if isinstance(data, dict) and isinstance(data.get("data"), dict) else data
+        return payload if isinstance(payload, dict) else {}
+
     async def get_job(self, task_id: str) -> dict[str, Any]:
         """GET /api/v1/jobs/recordInfo?taskId=…"""
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.get(
-                f"{self.base_url}/api/v1/jobs/recordInfo",
-                headers=self._headers(),
-                params={"taskId": task_id},
-            )
-            data = resp.json() if resp.content else {}
-            if resp.status_code >= 400:
-                raise RuntimeError(
-                    f"Kie recordInfo error {resp.status_code}: "
-                    f"{(data.get('msg') or resp.text or '')[:500]}"
-                )
-            payload = data.get("data") if isinstance(data.get("data"), dict) else data
-            return payload if isinstance(payload, dict) else {}
+        return await self._get_record("/api/v1/jobs/recordInfo", task_id, "Kie recordInfo")
 
     async def get_veo(self, task_id: str) -> dict[str, Any]:
         """GET /api/v1/veo/record-info?taskId=…"""
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.get(
-                f"{self.base_url}/api/v1/veo/record-info",
-                headers=self._headers(),
-                params={"taskId": task_id},
-            )
-            data = resp.json() if resp.content else {}
-            if resp.status_code >= 400:
-                raise RuntimeError(
-                    f"Kie veo.record-info error {resp.status_code}: "
-                    f"{(data.get('msg') or resp.text or '')[:500]}"
-                )
-            payload = data.get("data") if isinstance(data.get("data"), dict) else data
-            return payload if isinstance(payload, dict) else {}
+        return await self._get_record("/api/v1/veo/record-info", task_id, "Kie veo.record-info")
 
     async def wait_job_success(
         self,
@@ -215,7 +214,12 @@ class KieClient:
         interval = float(poll_interval or getattr(s, "ark_video_poll_interval", 8) or 8)
         deadline = time.monotonic() + float(timeout or getattr(s, "ark_video_poll_timeout", 900) or 900)
         while time.monotonic() < deadline:
-            info = await self.get_job(task_id)
+            try:
+                info = await self.get_job(task_id)
+            except Exception as exc:  # 单次查询失败（429/5xx/4xx/网络）不杀任务，退避后由 deadline 收敛
+                logger.warning("Kie wait_job poll error task=%s: %s", task_id, exc)
+                await asyncio.sleep(max(2.0, interval))
+                continue
             state = str(info.get("state") or "").lower()
             if state == "success":
                 return info
@@ -238,7 +242,12 @@ class KieClient:
         interval = float(poll_interval or getattr(s, "ark_video_poll_interval", 8) or 8)
         deadline = time.monotonic() + float(timeout or getattr(s, "ark_video_poll_timeout", 900) or 900)
         while time.monotonic() < deadline:
-            info = await self.get_veo(task_id)
+            try:
+                info = await self.get_veo(task_id)
+            except Exception as exc:  # 单次查询失败不杀任务，退避后由 deadline 收敛
+                logger.warning("Kie wait_veo poll error task=%s: %s", task_id, exc)
+                await asyncio.sleep(max(2.0, interval))
+                continue
             flag = info.get("successFlag")
             if flag in (1, "1", True):
                 return info
@@ -415,16 +424,34 @@ class KieClient:
         return await self.create_job(spec.upstream_model, input_payload)
 
     async def fetch_video_once(self, task_id: str, *, api_kind: str = "jobs") -> TaskResult:
-        """单次查询视频任务状态（不下载）。"""
+        """单次查询视频任务状态（不下载）。
+
+        瞬时查询故障返回 running（由轮询方写退避，总超时兜底）；
+        终态 4xx（鉴权/任务不存在）返回 failed；
+        上游报成功但结果 URL 尚未落地时继续 running，避免下载方必炸空转。
+        """
+        try:
+            if api_kind == "veo":
+                info = await self.get_veo(task_id)
+            else:
+                info = await self.get_job(task_id)
+        except KiePollTransientError as exc:
+            logger.warning("Kie fetch transient task=%s: %s", task_id, exc)
+            return TaskResult(status="running", provider_task_id=task_id)
+        except RuntimeError as exc:
+            return TaskResult(status="failed", error=str(exc), provider_task_id=task_id)
+
         if api_kind == "veo":
-            info = await self.get_veo(task_id)
             flag = info.get("successFlag")
             if flag in (1, "1", True):
                 urls = self._veo_result_urls(info)
+                if not urls:
+                    logger.warning("Kie veo success without resultUrls task=%s; keep polling", task_id)
+                    return TaskResult(status="running", provider_task_id=task_id)
                 raw_usage, cost_fen = self._billing_from_credits(task_id, info.get("creditsConsumed"))
                 return TaskResult(
                     status="succeeded",
-                    url=urls[0] if urls else None,
+                    url=urls[0],
                     provider_task_id=task_id,
                     raw_usage=raw_usage,
                     upstream_cost_fen=cost_fen,
@@ -437,14 +464,16 @@ class KieClient:
                 )
             return TaskResult(status="running", provider_task_id=task_id)
 
-        info = await self.get_job(task_id)
         state = str(info.get("state") or "").lower()
         if state == "success":
             urls = self._job_result_urls(info)
+            if not urls:
+                logger.warning("Kie task success without resultUrls task=%s; keep polling", task_id)
+                return TaskResult(status="running", provider_task_id=task_id)
             raw_usage, cost_fen = self._billing_from_credits(task_id, info.get("creditsConsumed"))
             return TaskResult(
                 status="succeeded",
-                url=urls[0] if urls else None,
+                url=urls[0],
                 provider_task_id=task_id,
                 raw_usage=raw_usage,
                 upstream_cost_fen=cost_fen,
@@ -512,9 +541,3 @@ class KieClient:
 def get_kie() -> KieClient:
     """无状态工厂。"""
     return KieClient()
-
-
-def uses_kie(model_id: str | None) -> bool:
-    """项目所选模型是否走 Kie。"""
-    spec = get_media_model(model_id)
-    return bool(spec and spec.provider == "kie")

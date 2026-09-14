@@ -50,22 +50,23 @@ async def execute_task_run(task_id: int) -> None:
         try:
             await freeze_for_task(db, task)
         except ValueError as exc:
-            await _fail_drama_asset_generation_if_needed(db, task, str(exc))
-            task.status = "failed"
-            task.error_code = "insufficient_balance"
-            task.error_message = str(exc)[:500]
-            task.finished_at = datetime.now(UTC)
-            # 未预扣成功，保持 none（skipped 仅表示全局关闭计费）
-            task.billing_status = "none"
-            await append_task_event(
-                db,
-                task.id,
-                event_type="task.failed",
-                status=task.status,
-                phase=task.current_step_key,
-                message=task.error_message,
+            # 余额不足：可预期失败，专用错误码便于前端引导充值
+            await _fail_task_before_start(
+                db, task, step, error_code="insufficient_balance", message=str(exc)
             )
-            await db.commit()
+            return
+        except Exception as exc:  # noqa: BLE001
+            # DB 瞬断等非 ValueError 不能裸逃：否则任务永久卡 leased，只能等 watchdog 周期兜底
+            logger.exception("freeze_for_task failed task_id=%s", task.id)
+            from app.services.exc_format import format_exception_message
+
+            await _fail_task_before_start(
+                db,
+                task,
+                step,
+                error_code=type(exc).__name__,
+                message=format_exception_message(exc, fallback="预扣失败", limit=500),
+            )
             return
 
         now = datetime.now(UTC)
@@ -100,9 +101,6 @@ async def execute_task_run(task_id: int) -> None:
                     await db.commit()
                     return
                 if task.status == "awaiting_poll":
-                    await db.commit()
-                    return
-                if task.status == "pending" and isinstance(result, dict) and result.get("deferred"):
                     await db.commit()
                     return
                 if isinstance(result, dict) and result.get("cancelled"):
@@ -150,6 +148,35 @@ async def _complete_task(db, task, result: dict) -> None:
         message="任务执行完成" if task.status == "succeeded" else "任务已取消",
         payload=result,
     )
+    try:
+        await settle_task(db, task.id)
+    except Exception:  # noqa: BLE001
+        logger.exception("settle_task failed task_id=%s", task.id)
+    await db.commit()
+
+
+# 预扣阶段（handler 尚未执行）失败收敛：此时 _lock_task(populate_existing) 已卸掉
+# task.steps 关系，不能像 _fail_task 那样再访问 task.steps[0]，step 由调用方预读传入。
+async def _fail_task_before_start(db, task, step, *, error_code: str, message: str) -> None:
+    now = datetime.now(UTC)
+    set_task_step_state(task, step, status="failed", now=now)
+    task.status = "failed"
+    task.error_code = error_code
+    task.error_message = message[:500]
+    task.finished_at = now
+    # frozen 之后的异常（如落流水失败）保留 frozen 交 settle_task 对账；未预扣成功保持 none
+    if task.billing_status != "frozen":
+        task.billing_status = "none"
+    await append_task_event(
+        db,
+        task.id,
+        event_type="task.failed",
+        status=task.status,
+        phase=task.current_step_key,
+        message=task.error_message,
+    )
+    # 资产生图/视频：同步写回 asset.params.generation，避免前端只看到空的「生图失败」
+    await _fail_drama_asset_generation_if_needed(db, task, task.error_message)
     try:
         await settle_task(db, task.id)
     except Exception:  # noqa: BLE001
@@ -227,6 +254,17 @@ async def _fail_task(db, task, exc: Exception) -> None:
 
 # 把任务收敛到取消态。
 async def _mark_cancelled(db, task) -> None:
+    # finalizing 收尾窗口内让位：poller 协程可能正在下载成片并落真实用量，
+    # 此时全额退款会导致 usage_events 悬空、钱货两失；协程会按实结算或退回 polling。
+    # 任务保持 cancel_requested，scheduler 下轮重试，窗口 TTL（10 分钟）兜底。
+    from app.services.tasks.service import task_finalizing_window_open
+
+    if task_finalizing_window_open(task):
+        logger.info(
+            "cancel deferred: task %s inside finalizing window, poller will settle",
+            task.id,
+        )
+        return
     now = datetime.now(UTC)
     step = task.steps[0] if task.steps else None
     set_task_step_state(task, step, status="cancelled", now=now)

@@ -4,13 +4,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import User
-from app.services.auth import decode_token, get_user_by_id
-
-security = HTTPBearer(auto_error=False)
-
-
-from app.database import get_db
-from app.models import User
 from app.services.api_keys import API_KEY_PREFIX, user_from_api_key
 from app.services.auth import decode_token, get_user_by_id
 
@@ -18,12 +11,17 @@ security = HTTPBearer(auto_error=False)
 
 
 async def _user_from_bearer(db: AsyncSession, token: str) -> User | None:
+    """Bearer 令牌换用户：pf_ 前缀走 API Key，否则按 JWT 解析。"""
     if token.startswith(API_KEY_PREFIX):
         return await user_from_api_key(db, token)
     sub = decode_token(token)
     if not sub:
         return None
-    return await get_user_by_id(db, int(sub))
+    try:
+        user_id = int(sub)
+    except (TypeError, ValueError):
+        return None
+    return await get_user_by_id(db, user_id)
 
 
 async def get_current_user(

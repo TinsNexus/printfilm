@@ -173,8 +173,3 @@ def kie_upstream_catalog(*, capability: str = "all") -> list[dict[str, str]]:
             }
         )
     return out
-
-
-def default_kie_channel_models() -> list[str]:
-    """新建/引导 Kie 渠道时预填的主流模型 id。"""
-    return [m.id for m in (*IMAGE_MODELS, *VIDEO_MODELS) if m.provider == "kie"]

@@ -909,6 +909,6 @@ async def cancel_all_video_jobs(
 ) -> dict:
     """取消当前用户触发的全部漫剧分镜视频任务。"""
     await cancel_tasks_for_scope(db, user.id, domain="drama", task_type="fragment_video")
-    result = await cancel_all_episode_video_jobs()
+    result = await cancel_all_episode_video_jobs(user.id)
     logger.info("已取消全部视频任务 user_id=%s result=%s", user.id, result)
     return result

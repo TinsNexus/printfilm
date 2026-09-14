@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import logging
 from typing import Any
 from urllib.parse import urlencode
@@ -37,7 +38,7 @@ def verify(params: dict[str, Any]) -> bool:
     if not got:
         return False
     expect = sign({k: v for k, v in params.items() if k != "sign"})
-    return got == expect
+    return hmac.compare_digest(got, expect)
 
 
 def build_submit_fields(

@@ -391,13 +391,9 @@ async def close_order(
 
 
 def _notify_success(params: dict) -> bool:
-    status = str(params.get("trade_status") or params.get("status") or "")
-    if status.upper() in {"TRADE_SUCCESS", "SUCCESS", "1"}:
-        return True
-    # some epay variants use trade_status only when paid
-    if str(params.get("trade_status") or "") == "TRADE_SUCCESS":
-        return True
-    return status == "TRADE_SUCCESS"
+    """判断易支付回调是否支付成功（兼容 trade_status/status 两种字段）。"""
+    status = str(params.get("trade_status") or params.get("status") or "").strip().upper()
+    return status in {"TRADE_SUCCESS", "SUCCESS", "1"}
 
 
 @router.api_route("/epay/notify", methods=["GET", "POST"])
@@ -421,7 +417,11 @@ async def epay_notify(request: Request, db: AsyncSession = Depends(get_db)) -> P
     if not out_trade_no:
         return PlainTextResponse("fail", status_code=400)
 
-    result = await db.execute(select(Order).where(Order.out_trade_no == out_trade_no))
+    # 行锁串行化同一订单的并发回调：第二个回调在锁释放后读到 paid 即幂等返回，
+    # 避免重复入账（易支付会对同一笔支付重发多次 notify）。
+    result = await db.execute(
+        select(Order).where(Order.out_trade_no == out_trade_no).with_for_update()
+    )
     order = result.scalar_one_or_none()
     if not order:
         logger.warning("epay notify unknown order %s", out_trade_no)

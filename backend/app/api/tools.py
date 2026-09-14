@@ -143,14 +143,18 @@ async def get_tool_task(
         )
     ).scalar_one_or_none()
     billing_task_id: int | None = None
-    if row and isinstance(row.params, dict):
+    # 本地无归属记录即拒绝：上游 task_id 可被持有者之外的人猜测传递，
+    # 不能在没有归属凭据时代理查上游（视频 URL 会被拖走）。
+    if not row:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if isinstance(row.params, dict):
         raw_bid = row.params.get("billing_task_id")
         if raw_bid is not None:
             try:
                 billing_task_id = int(raw_bid)
             except (TypeError, ValueError):
                 billing_task_id = None
-    if row and row.kind == "image":
+    if row.kind == "image":
         data = await poll_image_tool_task(db, user, tid)
     else:
         data = await poll_video_task(user, tid)

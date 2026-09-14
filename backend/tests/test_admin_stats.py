@@ -389,8 +389,20 @@ async def test_dashboard_capability_derived_from_billing_key(db_session: AsyncSe
 @pytest.mark.asyncio
 async def test_aggregate_usage_summary_breakdown(db_session: AsyncSession) -> None:
     """单项目用量拆分图/视/LLM/TTS。"""
+    import uuid as _uuid
+
+    from app.models import Project, Template
+
     user = await make_user(db_session)
-    pid = 42
+    # usage_events.project_id 有真实 FK 约束，必须先建项目行
+    tpl = Template(id=f"tpl-agg-{_uuid.uuid4().hex[:8]}", name="聚合模板", style_prefix="x")
+    db_session.add(tpl)
+    project = Project(user_id=user.id, template_id=tpl.id, source_text="x", title="聚合项目")
+    other_project = Project(user_id=user.id, template_id=tpl.id, source_text="y", title="其他项目")
+    db_session.add_all([project, other_project])
+    await db_session.flush()
+    pid = project.id
+    other_pid = other_project.id
     await _add_usage(
         db_session, user_id=user.id, project_id=pid, charge_fen=10, billing_key="seedream", capability="image"
     )
@@ -410,7 +422,12 @@ async def test_aggregate_usage_summary_breakdown(db_session: AsyncSession) -> No
     )
     # 其他项目不应计入
     await _add_usage(
-        db_session, user_id=user.id, project_id=99, charge_fen=999, billing_key="seedream", capability="image"
+        db_session,
+        user_id=user.id,
+        project_id=other_pid,
+        charge_fen=999,
+        billing_key="seedream",
+        capability="image",
     )
     await db_session.commit()
 
@@ -422,12 +439,13 @@ async def test_aggregate_usage_summary_breakdown(db_session: AsyncSession) -> No
     assert summary["llm_calls"] == 1
     assert summary["tts_gens"] == 1
 
-    batch = await aggregate_usage_summary(db_session, project_ids=[pid, 99, 7])
+    missing_pid = 9_999_999
+    batch = await aggregate_usage_summary(db_session, project_ids=[pid, other_pid, missing_pid])
     assert batch[pid]["tts_gens"] == 1
-    assert batch[99]["image_gens"] == 1
-    assert batch[99]["charge_fen"] == 999
-    assert batch[7]["calls"] == 0
-    assert batch[7]["tts_gens"] == 0
+    assert batch[other_pid]["image_gens"] == 1
+    assert batch[other_pid]["charge_fen"] == 999
+    assert batch[missing_pid]["calls"] == 0
+    assert batch[missing_pid]["tts_gens"] == 0
 
 
 @pytest.mark.asyncio

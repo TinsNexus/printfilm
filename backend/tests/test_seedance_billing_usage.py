@@ -2,14 +2,26 @@
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import UsageEvent
+from app.models import Project, Template, UsageEvent
 from app.services.ark import TaskResult
 from app.services.drama.billing_util import record_seedance_video_usage
 from tests.conftest import make_user
+
+
+async def _make_project(db: AsyncSession, user_id: int) -> int:
+    """建真实项目并返回 id（usage_events.project_id 有 FK 约束）。"""
+    tpl = Template(id=f"tpl-sd-{uuid.uuid4().hex[:8]}", name="计费模板", style_prefix="x")
+    db.add(tpl)
+    project = Project(user_id=user_id, template_id=tpl.id, source_text="x", title="计费项目")
+    db.add(project)
+    await db.flush()
+    return int(project.id)
 
 
 @pytest.mark.asyncio
@@ -41,6 +53,7 @@ async def test_record_seedance_video_usage_real_tokens(db_session: AsyncSession)
 @pytest.mark.asyncio
 async def test_record_seedance_video_usage_fallback_estimate(db_session: AsyncSession) -> None:
     user = await make_user(db_session)
+    project_id = await _make_project(db_session, user.id)
     await record_seedance_video_usage(
         db_session,
         user_id=user.id,
@@ -49,7 +62,7 @@ async def test_record_seedance_video_usage_fallback_estimate(db_session: AsyncSe
         domain="kepu",
         task_result=None,
         fallback_duration_sec=5,
-        project_id=9,
+        project_id=project_id,
     )
     await db_session.commit()
     row = (await db_session.execute(select(UsageEvent).where(UsageEvent.user_id == user.id))).scalar_one()

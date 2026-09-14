@@ -166,6 +166,8 @@ class Shot(Base):
     video_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     last_frame_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     audio_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    # 跳过 AI 视频的原因（privacy=真人隐私拦截，静图合成）；NULL 表示正常出视频
+    video_skip_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default=ShotStatus.PENDING)
     version: Mapped[int] = mapped_column(Integer, default=1)
 

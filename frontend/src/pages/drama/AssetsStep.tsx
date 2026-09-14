@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Boxes, Sparkles } from 'lucide-react'
-import { dramaApi, resolveDramaAssetPreviewUrl, resolveDramaMediaUrl, type DramaAsset, type DramaProject } from '../../api/drama'
+import { dramaApi, resolveDramaAssetPreviewUrl, type DramaAsset, type DramaProject } from '../../api/drama'
 import { api, type BillingPreflight } from '../../api'
 import { useDramaImageGenQueue } from '../../hooks/useDramaImageGenQueue'
 import { enqueueDramaImageGen, resumeDramaImageGensFromAssets } from '../../lib/dramaImageGenQueue'

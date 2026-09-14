@@ -1,12 +1,11 @@
 /** 漫剧项目工作流：剧情大纲 → 分镜 → 生成视频；资产库为独立入口 */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { Boxes, ChevronLeft } from 'lucide-react'
 import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import AppShell from '../../components/layout/AppShell'
 import { dramaApi, type DramaProject } from '../../api/drama'
 import {
-  buildProjectSteps,
   getInitialProjectStep,
   isEpisodesRouteStep,
   isProjectStepKey,
@@ -52,24 +51,6 @@ function WorkspaceInner() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const locationApplied = useRef(false)
-
-  const hasScript = Boolean(project?.script)
-  const steps = useMemo(() => buildProjectSteps(hasScript), [hasScript])
-
-  // 切到步骤；分镜/生成视频直达首集编辑
-  async function goToStep(step: ProjectStepKey) {
-    if (isEpisodesRouteStep(step)) {
-      try {
-        const path = await resolveStoryboardPath(id)
-        navigate(path)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : '无法进入分镜')
-      }
-      return
-    }
-    setAssetsOpen(false)
-    setActiveStep(step)
-  }
 
   // 应用路由 state：assets / 分镜类步骤跳转
   function applyLocationState(state: WorkspaceLocationState | null) {

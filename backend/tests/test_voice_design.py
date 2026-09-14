@@ -36,5 +36,11 @@ def test_voice_design_enabled_requires_pool_and_auth(monkeypatch) -> None:
     )
     assert voice_design_enabled(cfg) is True
 
-    cfg2 = Settings(volc_tts_voice_design_speaker_ids="S_test")
+    # 显式清空三组凭证：构造参数可能被 .env/环境变量回填，不能依赖默认值
+    cfg2 = Settings(
+        volc_tts_voice_design_speaker_ids="S_test",
+        volc_tts_api_key="",
+        volc_tts_app_id="",
+        volc_tts_access_key="",
+    )
     assert voice_design_enabled(cfg2) is False

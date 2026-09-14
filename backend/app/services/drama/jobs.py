@@ -81,10 +81,18 @@ async def _reset_fragment_video_generation(
     db,
     *,
     episode_id: int | None = None,
+    user_id: int | None = None,
 ) -> int:
     q = select(DramaEpisodeFragment)
     if episode_id is not None:
         q = q.where(DramaEpisodeFragment.episode_id == int(episode_id))
+    if user_id is not None:
+        # 按项目归属收敛：禁止跨用户重置分镜
+        q = (
+            q.join(DramaEpisode, DramaEpisodeFragment.episode_id == DramaEpisode.id)
+            .join(DramaProject, DramaEpisode.project_id == DramaProject.id)
+            .where(DramaProject.user_id == int(user_id))
+        )
     frags = (await db.execute(q)).scalars().all()
     changed = 0
     for frag in frags:
@@ -121,11 +129,22 @@ async def cancel_episode_video_jobs(episode_id: int) -> dict[str, Any]:
     }
 
 
-async def cancel_all_episode_video_jobs() -> dict[str, Any]:
-    """取消全部漫剧分镜视频任务。"""
-    episode_ids = set(_video_cancelled_episodes)
+async def cancel_all_episode_video_jobs(user_id: int) -> dict[str, Any]:
+    """取消指定用户的全部漫剧分镜视频任务，严禁波及其他用户。"""
+    episode_ids: set[int] = set()
     async with AsyncSessionLocal() as db:
-        frags = (await db.execute(select(DramaEpisodeFragment))).scalars().all()
+        frags = (
+            (
+                await db.execute(
+                    select(DramaEpisodeFragment)
+                    .join(DramaEpisode, DramaEpisodeFragment.episode_id == DramaEpisode.id)
+                    .join(DramaProject, DramaEpisode.project_id == DramaProject.id)
+                    .where(DramaProject.user_id == int(user_id))
+                )
+            )
+            .scalars()
+            .all()
+        )
         for frag in frags:
             params = frag.params or {}
             gen = params.get("generation") if isinstance(params, dict) else None
@@ -136,9 +155,10 @@ async def cancel_all_episode_video_jobs() -> dict[str, Any]:
         _mark_episode_video_cancelled(ep_id)
 
     async with AsyncSessionLocal() as db:
-        fragments = await _reset_fragment_video_generation(db)
+        fragments = await _reset_fragment_video_generation(db, user_id=user_id)
     logger.info(
-        "取消全部视频任务 fragments=%s episodes=%s",
+        "取消用户全部视频任务 user_id=%s fragments=%s episodes=%s",
+        user_id,
         fragments,
         len(episode_ids),
     )
@@ -1305,6 +1325,42 @@ async def _recover_complete_fragment_video(
     return True
 
 
+async def _settle_cancelled_after_finalized(db: AsyncSession, task_id: int) -> bool:
+    """取消在 finalizing 窗口内生效、但成片已下载落盘：按实际用量结算，终态保持 cancelled。
+
+    若不收敛，usage_events 会永久 settled=False、冻结额被 _mark_cancelled 全额退回，
+    形成钱货两失。settle_task 对 frozen 任务按 events 多退少补，对已结算任务幂等。
+    不激活后续顺序任务（用户取消应阻断队列）。
+    """
+    from app.services.billing.settlement import _lock_task, settle_task
+    from app.services.tasks.service import append_task_event, clear_finalizing_window
+
+    locked = await _lock_task(db, task_id)
+    if not locked:
+        return False
+    locked.payload = clear_finalizing_window(locked.payload)
+    locked.status = "cancelled"
+    locked.cancel_requested = True
+    locked.current_step_status = "done"
+    locked.progress_percent = 100
+    locked.finished_at = datetime.now(UTC)
+    locked.next_action_at = None
+    locked.lease_token = None
+    locked.lease_until = None
+    # frozen：按已落账用量退差额；已 settled（竞态中先被结算）：幂等对齐
+    await settle_task(db, task_id)
+    await append_task_event(
+        db,
+        task_id,
+        event_type="task.cancelled",
+        status="cancelled",
+        phase="fragment_video",
+        message="取消在成片收尾窗口内生效，成片已交付，按实际用量结算",
+    )
+    await db.commit()
+    return True
+
+
 # 任务平台：轮询 awaiting_poll 的分镜视频任务。
 async def poll_fragment_video_task(task_id: int) -> None:
     from app.services.ark import get_ark
@@ -1399,6 +1455,10 @@ async def poll_fragment_video_task(task_id: int) -> None:
                 na = _aware_utc(locked.next_action_at)
                 if na is not None and na > now:
                     return
+            # 等锁期间用户可能已取消：放弃下载，交由 executor 按未交付全额退款
+            if locked.cancel_requested or _is_episode_video_cancelled(episode_id):
+                await _fail_task(db, locked, RuntimeError("任务已取消"))
+                return
             # 认领前后成片已在：行锁后只补完成（避免 apply 后异常释放认领再二次下载）
             if _fragment_video_already_applied(frag):
                 await _recover_complete_fragment_video(
@@ -1409,9 +1469,15 @@ async def poll_fragment_video_task(task_id: int) -> None:
                     batch_index=int(payload.get("batch_index", 0)),
                 )
                 return
+            # 置 finalizing 并写窗口截止：_mark_cancelled 在窗口内不做全额退款，
+            # 防止下载/落账与取消并发造成 usage 悬空、钱货两失
+            finalizing_until = now + _FRAGMENT_FINALIZE_CLAIM_TTL
+            final_payload = dict(locked.payload if isinstance(locked.payload, dict) else {})
+            final_payload["finalizing_until"] = finalizing_until.isoformat()
+            locked.payload = final_payload
             locked.current_step_status = "finalizing"
             locked.progress_percent = max(int(locked.progress_percent or 0), 90)
-            locked.next_action_at = now + _FRAGMENT_FINALIZE_CLAIM_TTL
+            locked.next_action_at = finalizing_until
             await db.commit()
 
             try:
@@ -1432,7 +1498,22 @@ async def poll_fragment_video_task(task_id: int) -> None:
                     task_result=result,
                     provider_task_id=task.provider_task_id,
                 )
-                # apply 已 commit：立刻把 next_action 拉回现在，complete 失败时也能马上被 Selector 捞到
+                # apply 已 commit：行锁复查。下载期间用户可能已取消（status=cancel_requested），
+                # 此时不能走常规 complete，也不能放任 frozen 全额退款，按实际用量结算为 cancelled。
+                async with AsyncSessionLocal() as recheck_db:
+                    rechecked = await _lock_task(recheck_db, int(task.id))
+                    was_cancelled = bool(
+                        rechecked
+                        and (
+                            rechecked.cancel_requested
+                            or rechecked.status in ("cancel_requested", "cancelled")
+                        )
+                    )
+                if was_cancelled:
+                    async with AsyncSessionLocal() as cancel_db:
+                        await _settle_cancelled_after_finalized(cancel_db, int(task.id))
+                    return
+                # 未取消：立刻把 next_action 拉回现在，complete 失败时也能马上被 Selector 捞到
                 async with AsyncSessionLocal() as nudge_db:
                     nudged = await nudge_db.get(TaskRun, int(task_id))
                     if nudged and nudged.status == "awaiting_poll":
@@ -1449,6 +1530,8 @@ async def poll_fragment_video_task(task_id: int) -> None:
                 )
             except BaseException:
                 # 含 CancelledError：poller wait_for 超时会取消协程，必须释放认领，否则 next_action 卡数小时
+                from app.services.tasks.service import clear_finalizing_window
+
                 async with AsyncSessionLocal() as release_db:
                     stalled = await _lock_task(release_db, int(task_id))
                     if (
@@ -1457,11 +1540,18 @@ async def poll_fragment_video_task(task_id: int) -> None:
                         and (stalled.current_step_status or "") == "finalizing"
                     ):
                         frag_done = await release_db.get(DramaEpisodeFragment, fragment_id)
-                        if _fragment_video_already_applied(frag_done):
+                        finalized = _fragment_video_already_applied(frag_done)
+                        if finalized and stalled.cancel_requested:
+                            # 成片已落盘且用户在窗口内取消：按实结算（与成功路径同一收敛）
+                            await _settle_cancelled_after_finalized(release_db, int(task.id))
+                        elif finalized:
                             # 成片已落盘：只补 complete，勿退回 polling 以免误伤
+                            stalled.payload = clear_finalizing_window(stalled.payload)
                             stalled.next_action_at = datetime.now(UTC)
                             await release_db.commit()
                         else:
+                            # 未交付：退回 polling 并清窗口标记，取消可立即走全额退款
+                            stalled.payload = clear_finalizing_window(stalled.payload)
                             stalled.current_step_status = "polling"
                             stalled.next_action_at = datetime.now(UTC) + timedelta(seconds=poll_interval)
                             await release_db.commit()

@@ -228,6 +228,24 @@ class TaskResult:
     upstream_cost_fen: int | None = None
 
 
+# 任务查询的瞬时 HTTP 状态：限流/网关故障，任务本身仍可能在跑，
+# 必须交给轮询退避（poller 有总超时兜底），单次命中绝不能判任务 failed。
+def _is_transient_http_status(status_code: int) -> bool:
+    """429 限流或 5xx 网关/上游故障视为可重试。"""
+    return status_code == 429 or status_code >= 500
+
+
+def _retry_after_seconds(resp: httpx.Response, default: float) -> float:
+    """尊重 Retry-After（delta-seconds）；缺失或 HTTP-date 形式时用默认间隔，上限 60s。"""
+    raw = resp.headers.get("Retry-After")
+    if raw:
+        try:
+            return max(0.0, min(60.0, float(raw.strip())))
+        except ValueError:
+            pass
+    return default
+
+
 # 从 Seedance / New API 任务查询响应解析状态、媒体 URL 与官方 usage
 def _build_task_result_from_payload(data: dict[str, Any]) -> TaskResult:
     payload = unwrap_video_task_payload(data)
@@ -1401,28 +1419,51 @@ class ArkGateway:
         last_err: Exception | None = None
         fallback_body = body
         audio_fallback_used = False
+
+        def _audio_fallback(exc: Exception, *, accepted: bool) -> bool:
+            """仅"参考音频下载失败"允许去掉参考音频重提一次；其他错误一律不重建任务。
+
+            上游接受任务后的重提会产生第二个计费任务，故必须严格白名单，
+            隐私拦截/失败/轮询超时等异常必须立即上抛，避免重复扣费。
+            """
+            nonlocal fallback_body, audio_fallback_used, last_err
+            last_err = exc
+            if audio_fallback_used or not _is_audio_download_error(exc):
+                return False
+            stripped = _strip_reference_audio(fallback_body)
+            if not stripped:
+                return False
+            logger.warning(
+                "Seedance reference_audio download failed (%s); retry once without audio refs project=%s shot=%s",
+                "after accept" if accepted else "at submit",
+                project_id,
+                shot_no,
+            )
+            fallback_body = stripped
+            audio_fallback_used = True
+            return True
+
         for _attempt in range(max_attempts):
+            # 提交阶段失败：除参考音频错误外立即上抛，绝不盲目重新建单
             try:
                 task_id = await self.gen_video_seedance_body(
                     fallback_body,
                     project_id=project_id,
                     content_labels=content_labels,
                 )
+            except Exception as exc:  # noqa: BLE001
+                if _audio_fallback(exc, accepted=False):
+                    continue
+                raise
+            # 等待阶段失败：隐私/任务失败/超时等立即上抛；仅参考音频下载失败重提一次
+            try:
                 return await self.wait_video_assets(
                     task_id, project_id=project_id, shot_no=shot_no
                 )
             except Exception as exc:  # noqa: BLE001
-                last_err = exc
-                if not audio_fallback_used and _is_audio_download_error(exc):
-                    stripped = _strip_reference_audio(fallback_body)
-                    if stripped:
-                        logger.warning(
-                            "Seedance reference_audio download failed; retry without audio refs project=%s shot=%s",
-                            project_id,
-                            shot_no,
-                        )
-                        fallback_body = stripped
-                        audio_fallback_used = True
+                if _audio_fallback(exc, accepted=True):
+                    continue
+                raise
         raise RuntimeError(str(last_err) if last_err else "Seedance multimodal failed")
 
     async def poll_task(self, task_id: str) -> TaskResult:
@@ -1436,11 +1477,33 @@ class ArkGateway:
         deadline = time.monotonic() + self.settings.ark_video_poll_timeout
         async with httpx.AsyncClient(timeout=60.0) as client:
             while time.monotonic() < deadline:
-                resp = await client.get(
-                    self._url(f"/contents/generations/tasks/{task_id}"),
-                    headers=self._headers(),
-                )
+                try:
+                    resp = await client.get(
+                        self._url(f"/contents/generations/tasks/{task_id}"),
+                        headers=self._headers(),
+                    )
+                except httpx.HTTPError as exc:
+                    # 单次网络抖动：退避后继续轮询，由 deadline 收敛，不直接判失败
+                    logger.warning(
+                        "Seedance poll network error task=%s: %s; backing off", task_id, exc
+                    )
+                    await asyncio.sleep(float(self.settings.ark_video_poll_interval))
+                    continue
                 if resp.status_code >= 400:
+                    # 429/5xx 是上游瞬时故障，任务状态未知，按轮询间隔退避继续，
+                    # 由 deadline 总超时收敛；400/401/403/404 等才是确定终态。
+                    if _is_transient_http_status(resp.status_code):
+                        logger.warning(
+                            "Seedance poll transient HTTP %s task=%s; backing off",
+                            resp.status_code,
+                            task_id,
+                        )
+                        await asyncio.sleep(
+                            _retry_after_seconds(
+                                resp, float(self.settings.ark_video_poll_interval)
+                            )
+                        )
+                        continue
                     return TaskResult(status="failed", error=resp.text[:500])
                 data = resp.json()
                 result = self._finalize_video_result(_build_task_result_from_payload(data), task_id)
@@ -1459,12 +1522,24 @@ class ArkGateway:
                 url=f"/static/mock/video_{task_id[-8:]}.mp4",
                 last_frame_url=f"/static/mock/last_{task_id[-8:]}.jpg",
             )
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.get(
-                self._url(f"/contents/generations/tasks/{task_id}"),
-                headers=self._headers(),
-            )
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.get(
+                    self._url(f"/contents/generations/tasks/{task_id}"),
+                    headers=self._headers(),
+                )
+        except httpx.HTTPError as exc:
+            # 网络抖动对 poller 是下轮重试、对同步端点是继续转圈，均优于 500/误判失败
+            logger.warning("Seedance fetch network error task=%s: %s", task_id, exc)
+            return TaskResult(status="running", provider_task_id=task_id)
         if resp.status_code >= 400:
+            if _is_transient_http_status(resp.status_code):
+                logger.warning(
+                    "Seedance fetch transient HTTP %s task=%s; treat as running",
+                    resp.status_code,
+                    task_id,
+                )
+                return TaskResult(status="running", provider_task_id=task_id)
             return TaskResult(status="failed", error=resp.text[:500], provider_task_id=task_id)
         return self._finalize_video_result(_build_task_result_from_payload(resp.json()), task_id)
 

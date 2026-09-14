@@ -1,17 +1,56 @@
-"""计费/管理端集成测试：PostgreSQL + 开启 billing。"""
+"""计费/管理端集成测试：PostgreSQL + 开启 billing。
+
+安全约定：集成测试永不直连业务库。db_session 自动把 DATABASE_URL 的库名
+派生为 ``<库名>_test``（如 printfilm → printfilm_test），不存在则自动创建；
+已指向含 "test" 的库时原样使用（CI 可直接注入测试库 URL）。
+每个用例仍跑在外层事务回滚里，测试数据不落库。
+"""
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import AsyncIterator
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import text
+from sqlalchemy.engine.url import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.config import get_settings
 from app.database import Base
 from app.models import User
 from app.models_tasks import TaskRun
+
+_DB_NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
+
+
+def _resolve_test_database_url(raw_url: str) -> tuple[str, str]:
+    """业务库 URL → (测试库 URL, 测试库名)；库名非法时直接拒绝。"""
+    parsed = make_url(raw_url)
+    name = parsed.database or "postgres"
+    if "test" in name:
+        return raw_url, name
+    test_name = f"{name}_test"
+    if not _DB_NAME_RE.fullmatch(test_name):
+        raise RuntimeError(f"拒绝在非法库名上创建测试库: {test_name!r}")
+    return parsed.set(database=test_name).render_as_string(hide_password=False), test_name
+
+
+async def _ensure_test_database(test_url: str, test_name: str) -> None:
+    """连维护库 postgres 检查并创建测试库（AUTOCOMMIT，CREATE DATABASE 不能入事务）。"""
+    maint_url = make_url(test_url).set(database="postgres").render_as_string(hide_password=False)
+    engine = create_async_engine(maint_url, isolation_level="AUTOCOMMIT")
+    try:
+        async with engine.connect() as conn:
+            exists = await conn.scalar(
+                text("SELECT 1 FROM pg_database WHERE datname = :name"),
+                {"name": test_name},
+            )
+            if not exists:
+                await conn.execute(text(f'CREATE DATABASE "{test_name}"'))
+    finally:
+        await engine.dispose()
 
 
 @pytest.fixture(autouse=True)
@@ -52,23 +91,24 @@ async def db_session(billing_enabled: None) -> AsyncIterator[AsyncSession]:
     if not url.startswith("postgresql"):
         raise RuntimeError("集成测试需要 PostgreSQL DATABASE_URL（postgresql+asyncpg://...）")
 
-    engine = create_async_engine(url, pool_pre_ping=True)
+    # 强制隔离到独立测试库，杜绝污染/损坏开发库真实数据
+    test_url, test_name = _resolve_test_database_url(url)
+    await _ensure_test_database(test_url, test_name)
+
+    engine = create_async_engine(test_url, pool_pre_ping=True)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        # 增量列（与 main._apply_schema_patches 保持一致）
-        from sqlalchemy import text
 
-        result = await conn.execute(
-            text(
-                "SELECT column_name FROM information_schema.columns "
-                "WHERE table_schema = 'public' AND table_name = 'users'"
-            )
-        )
-        ucols = {row[0] for row in result.fetchall()}
-        if "billing_alert_last_milestone_fen" not in ucols:
-            await conn.execute(
-                text("ALTER TABLE users ADD COLUMN billing_alert_last_milestone_fen INTEGER DEFAULT 0")
-            )
+    # 增量列直接复用 main._apply_schema_patches（权威清单，避免测试补丁与线上漂移）；
+    # 该函数闭包 app.main.engine，临时指向测试 engine 后再还原。
+    import app.main as main_module
+
+    original_engine = main_module.engine
+    main_module.engine = engine
+    try:
+        await main_module._apply_schema_patches()
+    finally:
+        main_module.engine = original_engine
 
     async with engine.connect() as conn:
         outer = await conn.begin()
