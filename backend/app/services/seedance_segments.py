@@ -24,9 +24,12 @@ LEGACY_NARRATION_PREFIX = "【旁白·慢速清晰·同步字幕】"
 DIALOGUE_PREFIX = "【对白·慢速清晰·同步字幕】"
 VISUAL_PREFIX = "【画面·无配音仅环境音】"
 EMPTY_SHOT_PREFIX = "【空镜·可仅环境音与 BGM】"
-SUBTITLE_CUE = "【字幕：全程简体中文字幕，旁白逐句同步烧录】"
+SUBTITLE_CUE = "【字幕：后期叠旁白字幕，简体中文逐句同步】"
 DRAMA_SUBTITLE_CUE = "【字幕：底部居中·简体中文·逐句轮换·与口播同步】"
 # 历史 cue，提交前统一替换为现行文案
+LEGACY_KEPU_SUBTITLE_CUES = (
+    "【字幕：全程简体中文字幕，旁白逐句同步烧录】",
+)
 LEGACY_DRAMA_SUBTITLE_CUES = (
     "【字幕：底部居中·简体中文·仅标记段落同步】",
     "【字幕：底部居中·简体中文】",
@@ -77,6 +80,15 @@ def is_visual_description_body(text: str) -> bool:
     if body.startswith("空镜") or body.startswith("△") or body.startswith("Δ"):
         return True
     return False
+
+
+def normalize_kepu_subtitle_cue(content: str) -> str:
+    """将科普历史字幕 cue 统一为「后期叠旁白字幕」。"""
+    text = content or ""
+    for old in LEGACY_KEPU_SUBTITLE_CUES:
+        if old in text:
+            text = text.replace(old, SUBTITLE_CUE)
+    return text
 
 
 def normalize_drama_subtitle_cue(content: str) -> str:
@@ -258,7 +270,7 @@ def build_production_cues(bgm_mood: str) -> list[str]:
     mood = (bgm_mood or "").strip() or DEFAULT_BGM_MOOD
     if "音量低于人声" not in mood:
         mood = f"{mood}，音量低于人声"
-    return [SUBTITLE_CUE, f"【BGM：{mood}】"]
+    return [SUBTITLE_CUE, f"【BGM：后期混音 · {mood}】"]
 
 
 # 后期字幕模式：提交前去掉烧录 cue /「同步字幕」前缀，避免模型仍按字烧屏。
@@ -752,23 +764,20 @@ def resolve_api_duration(
 
 def apply_segment_script_edit(script: str, *, bgm_mood: str | None = None) -> dict[str, Any]:
     """Normalize an edited script: ensure cues, recompute duration/narration/img."""
-    content = (script or "").strip()
+    content = normalize_kepu_subtitle_cue((script or "").strip())
     if not content:
         content = build_segment_script(
             [SegmentBeat(duration=4, kind="visual", text="画面轻微动态，保持主体稳定")],
             bgm_mood=bgm_mood or DEFAULT_BGM_MOOD,
         )
     else:
-        has_sub = any(line.strip().startswith("【字幕") for line in content.splitlines())
-        has_bgm = any(line.strip().startswith("【BGM") for line in content.splitlines())
-        if not has_sub or not has_bgm:
-            cues = build_production_cues(bgm_mood or infer_bgm_mood(content))
-            body_lines = [
-                ln
-                for ln in content.splitlines()
-                if not ln.strip().startswith("【字幕") and not ln.strip().startswith("【BGM")
-            ]
-            content = "\n".join(cues + body_lines).strip()
+        cues = build_production_cues(bgm_mood or infer_bgm_mood(content))
+        body_lines = [
+            ln
+            for ln in content.splitlines()
+            if not ln.strip().startswith("【字幕") and not ln.strip().startswith("【BGM")
+        ]
+        content = "\n".join(cues + body_lines).strip()
         if not extract_durations(content):
             body = "\n".join(
                 ln

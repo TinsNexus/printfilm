@@ -91,7 +91,6 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
                 items={[
                   { label: "昵称", value: user.nickname || "—" },
                   { label: "手机", value: user.phone || "—" },
-                  { label: "套餐", value: user.plan },
                   { label: "角色", value: user.role },
                   { label: "余额", value: `¥${fenToYuan(user.balance_fen)}` },
                   { label: "冻结", value: `¥${fenToYuan(user.frozen_fen)}` },

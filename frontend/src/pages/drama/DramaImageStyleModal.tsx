@@ -79,6 +79,10 @@ export function DramaImageStyleModal({
       )}
 
       <Modal open={open} onClose={() => setOpen(false)} title={title} size="md" className="drama-style-modal">
+        {/* 封面即画风参考图，避免用户以为只是缩略预览 */}
+        <p className="drama-style-modal-hint">
+          封面图会作为画风参考一并提交。模型只借色调、笔触和光影，不会照抄封面里的人物或构图。
+        </p>
         <DramaImageStyleCardGrid value={value} onChange={select} noneLabel="无风格" />
       </Modal>
     </>

@@ -9,21 +9,21 @@ import {
   SettingsSurface,
   SettingsTabShell,
 } from "@/components/settings/SettingsPanel";
+import {
+  canonicalChannelModelId,
+  canonicalizeChannelModels,
+  collapseCatalogModels,
+  mergeRecommendedSelection,
+  pickRecommendedDefaults,
+  pickRecommendedModelIds,
+  type UpstreamModelOption,
+} from "@/lib/tokenfreeRecommendedModels";
 import { cn } from "@/lib/utils";
 
 type Capability = "text" | "image" | "video" | "audio";
 type CapabilityFilter = Capability | "all";
-type UpstreamModelOption = { id: string; label: string; capability: string };
 
 const CAPABILITY_ORDER: Capability[] = ["text", "image", "video", "audio"];
-
-/** 拉取上游后优先勾选的模型（按能力各取首个命中） */
-const RECOMMENDED_PATTERNS: Record<Capability, RegExp[]> = {
-  text: [/^grok-4-6$/i, /^grok-4-5$/i, /grok-4/i, /^gpt-4/i],
-  image: [/gpt-image-2\.5/i, /seedream-5/i, /seedream/i, /gpt-image-2/i, /grok-imagine-image/i],
-  video: [/seedance-2-5/i, /seedance-2-0/i, /doubao-seedance-2-5/i, /seedance/i],
-  audio: [/seed-tts-2/i, /seed-tts/i, /tts-2/i],
-};
 
 const TOKENFREE_CHANNEL_ID = "tokenfree";
 const TOKENFREE_BASE_URL = "https://www.tokenfree.com/v1";
@@ -61,6 +61,7 @@ function inferCapability(model: string): Capability {
   return "text";
 }
 
+// 优先用上游声明的能力，否则按模型 id 推断
 function modelCapability(model: UpstreamModelOption): Capability {
   const cap = (model.capability || "").trim().toLowerCase();
   if (cap === "text" || cap === "image" || cap === "video" || cap === "audio") {
@@ -69,30 +70,16 @@ function modelCapability(model: UpstreamModelOption): Capability {
   return inferCapability(model.id);
 }
 
-function pickRecommendedByCapability(models: UpstreamModelOption[]): Record<Capability, string> {
-  const byCap: Record<Capability, UpstreamModelOption[]> = {
-    text: [],
-    image: [],
-    video: [],
-    audio: [],
+// 渠道已选模型收到规范 id，避免 Seedance 2.0 三档并存
+function canonicalizeRoutingSettings(settings: AdminRoutingSettings): AdminRoutingSettings {
+  return {
+    ...settings,
+    system_channels: settings.system_channels.map((item) =>
+      item.id === TOKENFREE_CHANNEL_ID
+        ? { ...item, models: canonicalizeChannelModels(item.models || []) }
+        : item,
+    ),
   };
-  for (const model of models) {
-    byCap[modelCapability(model)].push(model);
-  }
-  const out: Record<Capability, string> = { text: "", image: "", video: "", audio: "" };
-  for (const cap of CAPABILITY_ORDER) {
-    for (const pattern of RECOMMENDED_PATTERNS[cap]) {
-      const hit = byCap[cap].find((m) => pattern.test(m.id));
-      if (hit) {
-        out[cap] = hit.id;
-        break;
-      }
-    }
-    if (!out[cap] && byCap[cap][0]) {
-      out[cap] = byCap[cap][0].id;
-    }
-  }
-  return out;
 }
 
 function buildReadiness(data: AdminRoutingSettings | null, hasKey: boolean) {
@@ -126,7 +113,7 @@ export function RoutingSettingsPanel() {
     setLoading(true);
     try {
       const res = await api<AdminRoutingSettings>("/api/admin/settings/routing");
-      setData(res);
+      setData(canonicalizeRoutingSettings(res));
       setApiKeyInput("");
       setUpstreamModels([]);
     } catch (err) {
@@ -142,14 +129,19 @@ export function RoutingSettingsPanel() {
 
   const selectedModels = channel?.models ?? [];
   const catalogModels = useMemo(() => {
-    const map = new Map<string, UpstreamModelOption>();
-    for (const m of upstreamModels) map.set(m.id, m);
-    for (const id of selectedModels) {
-      if (!map.has(id)) {
-        map.set(id, { id, label: id, capability: inferCapability(id) });
-      }
+    const raw: UpstreamModelOption[] = [];
+    const seen = new Set<string>();
+    for (const model of upstreamModels) {
+      raw.push(model);
+      seen.add(canonicalChannelModelId(model.id));
     }
-    return Array.from(map.values()).sort((a, b) => a.id.localeCompare(b.id));
+    for (const id of selectedModels) {
+      const cid = canonicalChannelModelId(id);
+      if (!cid || seen.has(cid)) continue;
+      raw.push({ id: cid, label: cid, capability: inferCapability(cid) });
+      seen.add(cid);
+    }
+    return collapseCatalogModels(raw);
   }, [selectedModels, upstreamModels]);
 
   const capCounts = useMemo(() => {
@@ -181,17 +173,10 @@ export function RoutingSettingsPanel() {
 
   const readiness = buildReadiness(data, hasKey);
 
-  function applyRecommendedSelection(
-    models: UpstreamModelOption[],
-    opts: { mergeSelected: boolean },
-  ) {
-    const { mergeSelected } = opts;
-    const picks = pickRecommendedByCapability(models);
-    const pickIds = CAPABILITY_ORDER.map((cap) => picks[cap]).filter(Boolean);
-    const nextSelected = mergeSelected
-      ? [...new Set([...selectedModels, ...pickIds])]
-      : [...new Set([...pickIds])];
-    setSelectedModels(nextSelected);
+  // 勾选短名单，并把 Seedance 2.0 三档别名收成 2.5 / 2.0 Mini
+  function applyRecommendedSelection(models: UpstreamModelOption[]) {
+    const picks = pickRecommendedDefaults(models);
+    setSelectedModels(mergeRecommendedSelection(selectedModels, models));
     setData((prev) => {
       if (!prev) return prev;
       const nextDefaults = { ...prev.default_models };
@@ -207,11 +192,12 @@ export function RoutingSettingsPanel() {
   }
 
   function setSelectedModels(models: string[]) {
+    const nextModels = canonicalizeChannelModels(models);
     setData((prev) => {
       if (!prev) return prev;
       const channels = prev.system_channels.length
         ? prev.system_channels.map((item) =>
-            item.id === (channel?.id || TOKENFREE_CHANNEL_ID) ? { ...item, models } : item,
+            item.id === (channel?.id || TOKENFREE_CHANNEL_ID) ? { ...item, models: nextModels } : item,
           )
         : [
             {
@@ -222,7 +208,7 @@ export function RoutingSettingsPanel() {
               has_api_key: hasSavedKey,
               api_format: "openai" as const,
               protocol: "auto" as const,
-              models,
+              models: nextModels,
               enabled: true,
               sort_order: 0,
             },
@@ -248,9 +234,14 @@ export function RoutingSettingsPanel() {
           capability: "all",
         }),
       });
-      setUpstreamModels(res.models);
+      const catalog = collapseCatalogModels(res.models);
+      setUpstreamModels(catalog);
       const shouldAutoPick = selectedModels.length === 0;
-      applyRecommendedSelection(res.models, { mergeSelected: true });
+      if (shouldAutoPick) {
+        applyRecommendedSelection(catalog);
+      } else {
+        setSelectedModels([...selectedModels, ...pickRecommendedModelIds(catalog)]);
+      }
       toast.success(
         shouldAutoPick
           ? `已拉取 ${res.models.length} 个模型，并已勾选推荐默认项`
@@ -271,7 +262,7 @@ export function RoutingSettingsPanel() {
   }
 
   function addManualModel() {
-    const id = manualModel.trim();
+    const id = canonicalChannelModelId(manualModel.trim());
     if (!id) return;
     if (!selectedModels.includes(id)) setSelectedModels([...selectedModels, id]);
     setManualModel("");
@@ -300,7 +291,7 @@ export function RoutingSettingsPanel() {
           default_models: data.default_models,
         }),
       });
-      setData(res.settings);
+      setData(canonicalizeRoutingSettings(res.settings));
       setApiKeyInput("");
       toast.success("模型配置已保存");
     } catch (err) {
@@ -382,7 +373,7 @@ export function RoutingSettingsPanel() {
           <LabeledControl
             className="settings-field-span-full"
             label="可用模型"
-            hint="按类型筛选、搜索 ID；拉取后会自动勾选各能力推荐模型（未设置默认项时写入下方默认）"
+            hint="按类型筛选、搜索 ID。Seedance 2.0 的短名/方舟接入点会合并成一条；勾选推荐默认 2.5 与 2.0 Mini。"
           >
             <div className="settings-model-toolbar">
               <button
@@ -398,7 +389,7 @@ export function RoutingSettingsPanel() {
                 type="button"
                 className="admin-btn admin-btn-secondary settings-mini-btn"
                 disabled={upstreamModels.length === 0}
-                onClick={() => applyRecommendedSelection(upstreamModels, { mergeSelected: true })}
+                onClick={() => applyRecommendedSelection(upstreamModels)}
               >
                 勾选推荐
               </button>

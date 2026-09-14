@@ -17,7 +17,6 @@ from app.models import User
 from app.models_drama import (
     DramaEpisode,
     DramaEpisodeFragment,
-    DramaFragmentAssetRef,
     DramaProject,
 )
 from app.schemas_drama import (
@@ -43,6 +42,7 @@ from app.services.drama.access import (
     get_owned_drama_project,
     get_owned_episode,
     load_episode_fragments,
+    replace_fragment_asset_refs,
     match_fragments_for_generate,
 )
 from app.services.drama.generation import (
@@ -516,7 +516,9 @@ async def save_fragments(
         item_id = int(item.id) if item.id else 0
         frag = existing.get(item_id) if item_id > 0 else None
         if frag is None:
+            # 先挂上空集合，flush 后不要再 lazy load asset_references
             frag = DramaEpisodeFragment(episode_id=ep.id)
+            frag.asset_references = []
             ep.fragments.append(frag)
             await db.flush()
         frag.sort_order = item.sort_order
@@ -527,15 +529,12 @@ async def save_fragments(
         frag.params = item.params
         keep_ids.add(int(frag.id))
 
-        frag.asset_references.clear()
-        await db.flush()
         asset_ids = await filter_valid_project_asset_ids(
             db,
             ep.project_id,
             list(item.asset_ids or []),
         )
-        for aid in asset_ids:
-            db.add(DramaFragmentAssetRef(fragment_id=frag.id, asset_id=aid))
+        await replace_fragment_asset_refs(db, frag, asset_ids)
 
     stale_ids = [fid for fid in existing if fid not in keep_ids]
     if stale_ids:

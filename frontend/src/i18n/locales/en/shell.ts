@@ -200,8 +200,11 @@ export const enShell = {
     PENDING: 'Waiting',
     IMAGE_READY: 'Image ready',
     VIDEO_READY: 'Video ready',
-    AUDIO_READY: 'Done',
+    AUDIO_READY: 'Audio ready',
     DONE: 'Done',
     FAILED: 'Failed',
+    GENERATING: 'Generating',
+    WAIT_IMAGE: 'Need image',
+    WAIT_VIDEO: 'Need clip',
   },
 } as const

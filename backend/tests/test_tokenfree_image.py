@@ -1,0 +1,277 @@
+"""TokenFree 生图走 /v1/responses。"""
+
+from types import SimpleNamespace
+
+import pytest
+
+from app.services.tokenfree_image import (
+    build_tokenfree_image_body,
+    extract_tokenfree_image_url,
+    is_tokenfree_no_distributor,
+    is_tokenfree_protocol_error,
+    is_tokenfree_rate_limit,
+    is_tokenfree_retryable_image_error,
+    post_until_not_rate_limited,
+    tokenfree_image_channel_dead,
+    tokenfree_image_user_error,
+    tokenfree_working_image_model,
+    uses_tokenfree_image,
+)
+from app.services.tokenfree_gateway import TOKENFREE_BASE_URL, TOKENFREE_CHANNEL_ID
+
+
+def test_uses_tokenfree_image_on_tokenfree_host():
+    assert uses_tokenfree_image(base_url=TOKENFREE_BASE_URL) is True
+    assert uses_tokenfree_image(channel_id=TOKENFREE_CHANNEL_ID) is True
+    assert uses_tokenfree_image(base_url="https://ark.cn-beijing.volces.com/api/v3") is False
+
+
+def test_build_tokenfree_image_body_matches_live_success():
+    body = build_tokenfree_image_body(model="gpt-image-2-5", prompt="橘猫", size="2K")
+    assert body["model"] == "gpt-image-2-5"
+    assert "橘猫" in body["input"]
+    assert "size:" not in body["input"]
+    assert "prompt" not in body
+    assert "watermark" not in body
+
+
+def test_build_tokenfree_image_body_separates_style_and_subject_refs():
+    body = build_tokenfree_image_body(
+        model="gpt-image-2-5",
+        prompt="少女站在窗边",
+        ref_urls=["https://cdn.example.com/character.png"],
+        style_ref_urls=["https://cdn.example.com/ghibli.png"],
+    )
+    text = body["input"]
+    assert "画风参考图（只借色调、笔触、光影，禁止抄主体与构图）：https://cdn.example.com/ghibli.png" in text
+    assert "构图与主体参考：https://cdn.example.com/character.png" in text
+    assert text.index("画风参考图") < text.index("构图与主体参考")
+
+
+def test_tokenfree_working_image_model_remaps_seedream():
+    assert tokenfree_working_image_model("seedream-5-0-pro") == "gpt-image-2-5"
+    assert tokenfree_working_image_model("gpt-image-2-5") == "gpt-image-2-5"
+
+
+def test_extract_tokenfree_image_url_from_img_tag():
+    url = extract_tokenfree_image_url(
+        {
+            "output": [
+                {
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": '<img src="https://www.tokenfree.com/v1/tasks/t1/artifacts/image-0/content?access=x" />',
+                        }
+                    ]
+                }
+            ]
+        }
+    )
+    assert url and url.startswith("https://www.tokenfree.com/v1/tasks/")
+
+
+def test_is_tokenfree_rate_limit_detects_observations():
+    body = '{"error":{"code":"rate_limit_exceeded","message":"Too many active task observations"}}'
+    assert is_tokenfree_rate_limit(status_code=429, body="") is True
+    assert is_tokenfree_rate_limit(status_code=200, body=body) is True
+    assert is_tokenfree_rate_limit(status_code=200, body='{"usage":{"rate_limit":{"remaining":1}}}') is False
+    assert is_tokenfree_rate_limit(status_code=503, body="model_not_found") is False
+
+
+def test_is_tokenfree_protocol_error():
+    body = '{"error":{"code":"task_protocol_error","message":"Task protocol request failed"}}'
+    assert is_tokenfree_protocol_error(status_code=502, body=body) is True
+    assert is_tokenfree_protocol_error(status_code=200, body='{"id":"ok"}') is False
+    assert is_tokenfree_retryable_image_error(status_code=502, body=body) is False
+    assert tokenfree_image_channel_dead(status_code=502, body=body) is True
+
+
+def test_is_tokenfree_no_distributor():
+    """503 model_not_found 视为无线路，不再当限流重试。"""
+    body = '{"error":{"code":"model_not_found","message":"分组 default 下模型 gpt-image-2-5 无可用的渠道distributor"}}'
+    assert is_tokenfree_no_distributor(status_code=503, body=body) is True
+    assert tokenfree_image_channel_dead(status_code=503, body=body) is True
+    assert is_tokenfree_retryable_image_error(status_code=503, body=body) is False
+
+
+def test_tokenfree_image_user_error_does_not_nudge_switch_model():
+    """TokenFree 通道挂了不再提示改用 gpt-image-2-5。"""
+    protocol = '{"error":{"code":"task_protocol_error","message":"Task protocol request failed"}}'
+    for mid in ("gpt-image-2-5", "seedream-5-0-pro"):
+        msg = tokenfree_image_user_error(model=mid, status_code=502, body=protocol)
+        assert "请改用 gpt-image-2-5" not in msg
+        assert "暂时失败" in msg
+
+
+def test_raise_seedream_http_error_tokenfree_vs_ark():
+    """TokenFree 走友好文案，官方方舟保持 Seedream error。"""
+    from app.services.ark import _raise_seedream_http_error
+
+    protocol = '{"error":{"code":"task_protocol_error","message":"Task protocol request failed"}}'
+    with pytest.raises(RuntimeError, match="暂时失败"):
+        _raise_seedream_http_error(502, protocol, model="gpt-image-2-5", tokenfree=True)
+    with pytest.raises(RuntimeError, match="Seedream error 502"):
+        _raise_seedream_http_error(502, protocol, model="gpt-image-2-5", tokenfree=False)
+
+
+@pytest.mark.asyncio
+async def test_post_until_not_rate_limited_retries_then_ok():
+    calls = {"n": 0}
+    sleeps: list[float] = []
+
+    async def post():
+        calls["n"] += 1
+        if calls["n"] < 3:
+            return SimpleNamespace(status_code=429, text="Too many active task observations")
+        return SimpleNamespace(status_code=200, text="ok")
+
+    async def fake_sleep(sec: float):
+        sleeps.append(sec)
+
+    resp = await post_until_not_rate_limited(post, delays=(0.1, 0.2), sleep=fake_sleep)
+    assert resp.status_code == 200
+    assert calls["n"] == 3
+    assert sleeps == [0.1, 0.2]
+
+
+@pytest.mark.asyncio
+async def test_post_does_not_retry_protocol_error():
+    """协议失败立即返回，避免空等四轮。"""
+    calls = {"n": 0}
+
+    async def post():
+        calls["n"] += 1
+        return SimpleNamespace(
+            status_code=502,
+            text='{"error":{"code":"task_protocol_error","message":"Task protocol request failed"}}',
+        )
+
+    async def fake_sleep(_sec: float):
+        return None
+
+    resp = await post_until_not_rate_limited(post, delays=(0.01,), sleep=fake_sleep)
+    assert resp.status_code == 502
+    assert calls["n"] == 1
+
+
+@pytest.mark.asyncio
+async def test_kie_image_fallback_skips_without_key(monkeypatch):
+    """没有 Kie Key 时不回退。"""
+    from app.services.ark import ArkGateway
+
+    monkeypatch.setattr(
+        "app.services.kie_client.resolve_kie_credentials",
+        lambda: ("", "https://api.kie.ai"),
+    )
+    out = await ArkGateway()._kie_image_fallback(
+        "湖",
+        project_id=1,
+        shot_no=1,
+        size="2k",
+        aspect_ratio="16:9",
+        ref_urls=None,
+    )
+    assert out is None
+
+
+@pytest.mark.asyncio
+async def test_seedream_once_falls_back_to_kie_on_protocol_error(monkeypatch):
+    """TokenFree 协议失败且有回退时，返回 Kie 结果。"""
+    from app.config import Settings
+    from app.services.ark import ArkGateway, ImageResult
+
+    settings = Settings(
+        ark_mock=False,
+        ark_api_key="sk-test",
+        ark_base_url="https://www.tokenfree.com/v1",
+    )
+    gw = ArkGateway(settings=settings)
+
+    class _Resp:
+        status_code = 502
+        text = '{"error":{"code":"task_protocol_error","message":"Task protocol request failed"}}'
+
+        def json(self):
+            return {}
+
+    class _FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, *args, **kwargs):
+            return _Resp()
+
+    async def _fake_fallback(*args, **kwargs):
+        return ImageResult(local_url="/static/x.png")
+
+    monkeypatch.setattr("app.services.ark.httpx.AsyncClient", _FakeClient)
+    monkeypatch.setattr(gw, "_resolve_ark_route", lambda *args, **kwargs: None)
+    monkeypatch.setattr(gw, "_kie_image_fallback", _fake_fallback)
+    result = await gw._seedream_once(
+        "湖",
+        None,
+        project_id=1,
+        shot_no=1,
+        size="2k",
+        prompt_hash_src="湖",
+        model="gpt-image-2-5",
+    )
+    assert result.local_url == "/static/x.png"
+
+
+@pytest.mark.asyncio
+async def test_seedream_once_keeps_tokenfree_error_when_kie_fallback_raises(monkeypatch):
+    """Kie 回退抛错时仍返回 TokenFree 友好文案，不把 Kie 原文抛给用户。"""
+    from app.config import Settings
+    from app.services.ark import ArkGateway
+
+    settings = Settings(
+        ark_mock=False,
+        ark_api_key="sk-test",
+        ark_base_url="https://www.tokenfree.com/v1",
+    )
+    gw = ArkGateway(settings=settings)
+
+    class _Resp:
+        status_code = 502
+        text = '{"error":{"code":"task_protocol_error","message":"Task protocol request failed"}}'
+
+        def json(self):
+            return {}
+
+    class _FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, *args, **kwargs):
+            return _Resp()
+
+    async def _boom(*args, **kwargs):
+        raise RuntimeError("Kie 生图失败")
+
+    monkeypatch.setattr("app.services.ark.httpx.AsyncClient", _FakeClient)
+    monkeypatch.setattr(gw, "_resolve_ark_route", lambda *args, **kwargs: None)
+    monkeypatch.setattr(gw, "_kie_image_fallback", _boom)
+    with pytest.raises(RuntimeError, match="暂时失败"):
+        await gw._seedream_once(
+            "湖",
+            None,
+            project_id=1,
+            shot_no=1,
+            size="2k",
+            prompt_hash_src="湖",
+            model="gpt-image-2-5",
+        )

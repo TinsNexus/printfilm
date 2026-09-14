@@ -34,6 +34,11 @@ export function PaymentSettingsPanel() {
       basis: string;
       rate_label: string;
       markup: number;
+      recommended?: boolean;
+      note?: string;
+      official_cost_yuan?: number;
+      user_charge_yuan?: number;
+      verify_url?: string;
     }>
   >([]);
   const [modelRatesBusy, setModelRatesBusy] = useState(false);
@@ -63,7 +68,7 @@ export function PaymentSettingsPanel() {
         epay_notify_url: form.epay_notify_url,
         epay_return_url: form.epay_return_url,
         billing_enabled: form.billing_enabled,
-        billing_markup: form.billing_markup,
+        billing_markup: 1.0,
         billing_estimate_buffer: form.billing_estimate_buffer,
         billing_seedance_video0: form.billing_seedance_video0,
         billing_seedance_video1: form.billing_seedance_video1,
@@ -76,8 +81,6 @@ export function PaymentSettingsPanel() {
         billing_est_tts_tokens: form.billing_est_tts_tokens,
         billing_est_seedance_tokens_per_sec: form.billing_est_seedance_tokens_per_sec,
         billing_signup_grant_fen: form.billing_signup_grant_fen,
-        quota_enabled: form.quota_enabled,
-        new_user_quota: form.new_user_quota,
         billing_user_alert_enabled: form.billing_user_alert_enabled,
         billing_user_alert_interval_fen: form.billing_user_alert_interval_fen,
         billing_admin_cost_alert_enabled: form.billing_admin_cost_alert_enabled,
@@ -233,7 +236,7 @@ export function PaymentSettingsPanel() {
         <SettingsPanel
           className="settings-panel--compact"
           title="2. Token 计费"
-          description="按上游成本 × markup 扣费"
+          description="按 TokenFree 官方成本 1:1 扣费，不再加价"
         >
           <div className="settings-toggle-row">
             <div>
@@ -243,16 +246,6 @@ export function PaymentSettingsPanel() {
             <Switch checked={form.billing_enabled} onCheckedChange={(v) => patchField("billing_enabled", v)} />
           </div>
           <div className="settings-field-grid mt-3">
-            <LabeledControl label="加价系数 markup">
-              <input
-                className="settings-input"
-                type="number"
-                step="0.1"
-                min={1}
-                value={form.billing_markup}
-                onChange={(e) => patchField("billing_markup", Number(e.target.value))}
-              />
-            </LabeledControl>
             <LabeledControl label="预估缓冲系数">
               <input
                 className="settings-input"
@@ -341,7 +334,7 @@ export function PaymentSettingsPanel() {
               disabled={modelRatesBusy}
               onClick={() => void loadModelRates()}
             >
-              {modelRatesBusy ? "加载中…" : "查看各模型计费口径"}
+              {modelRatesBusy ? "加载中…" : "查看 TokenFree 官方价目"}
             </Button>
           </div>
           {tokenfreeInfo ? <p className="text-sm text-muted-foreground mt-2">{tokenfreeInfo}</p> : null}
@@ -351,23 +344,38 @@ export function PaymentSettingsPanel() {
                 <thead>
                   <tr className="border-b bg-muted/40 text-left">
                     <th className="p-2">模型</th>
-                    <th className="p-2">渠道</th>
-                    <th className="p-2">依据</th>
-                    <th className="p-2">费率</th>
-                    <th className="p-2">markup</th>
+                    <th className="p-2">能力</th>
+                    <th className="p-2">官方成本</th>
+                    <th className="p-2">用户价</th>
+                    <th className="p-2">口径</th>
                   </tr>
                 </thead>
                 <tbody>
                   {modelRates.map((row) => (
                     <tr key={row.id} className="border-b last:border-0">
                       <td className="p-2">
-                        <div className="font-medium">{row.label}</div>
+                        <div className="font-medium">
+                          {row.label}
+                          {row.recommended ? <span className="ml-1 text-xs text-[#409eff]">推荐</span> : null}
+                        </div>
                         <div className="text-xs text-muted-foreground font-mono">{row.id}</div>
+                        {row.note ? <div className="text-xs text-muted-foreground">{row.note}</div> : null}
                       </td>
-                      <td className="p-2">{row.provider}</td>
-                      <td className="p-2">{row.basis}</td>
-                      <td className="p-2">{row.rate_label}</td>
-                      <td className="p-2">{row.markup}</td>
+                      <td className="p-2">{row.capability}</td>
+                      <td className="p-2">
+                        {row.official_cost_yuan ? `¥${row.official_cost_yuan}` : "—"}
+                      </td>
+                      <td className="p-2">
+                        {row.user_charge_yuan ? `¥${row.user_charge_yuan}` : "—"}
+                      </td>
+                      <td className="p-2">
+                        <div>{row.rate_label}</div>
+                        {row.verify_url ? (
+                          <a className="text-xs text-[#409eff] hover:underline" href={row.verify_url} target="_blank" rel="noreferrer">
+                            去 TokenFree 核对
+                          </a>
+                        ) : null}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -407,25 +415,6 @@ export function PaymentSettingsPanel() {
                 type="number"
                 value={form.billing_est_seedance_tokens_per_sec}
                 onChange={(e) => patchField("billing_est_seedance_tokens_per_sec", Number(e.target.value))}
-              />
-            </LabeledControl>
-          </div>
-
-          <div className="settings-toggle-row mt-3">
-            <div>
-              <strong>旧版次数配额</strong>
-              <span>与 Token 计费并存时以 billing_enabled 为准</span>
-            </div>
-            <Switch checked={form.quota_enabled} onCheckedChange={(v) => patchField("quota_enabled", v)} />
-          </div>
-          <div className="settings-field-grid mt-2">
-            <LabeledControl label="新用户默认次数">
-              <input
-                className="settings-input"
-                type="number"
-                min={0}
-                value={form.new_user_quota}
-                onChange={(e) => patchField("new_user_quota", Number(e.target.value))}
               />
             </LabeledControl>
           </div>
@@ -558,16 +547,6 @@ export function PaymentSettingsPanel() {
               </div>
             </LabeledControl>
           </div>
-        </SettingsPanel>
-
-        <SettingsPanel
-          className="settings-panel--compact"
-          title="4. 上游成本监控"
-          description="TokenFree New API 用量，与「模型」页同一把 Key"
-        >
-          <p className="text-sm text-muted-foreground">
-            无需火山 Access Key。填写 TokenFree Key 后，仪表盘与财务列表可同步官方日消耗（quota，500000 ≈ 1 USD）。
-          </p>
         </SettingsPanel>
       </div>
     </SettingsTabShell>

@@ -15,14 +15,14 @@ export const SHOT_DURATION_MAX = 30
 /** 时长快捷选项（秒） */
 export const SEGMENT_DURATION_PRESETS = [4, 6, 8, 10, 12] as const
 
-/** 与后端一致的字幕 cue */
-export const SUBTITLE_CUE = '【字幕：全程简体中文字幕，旁白逐句同步烧录】'
+/** 与后端一致的字幕 cue（后期叠字，非模型烧录） */
+export const SUBTITLE_CUE = '【字幕：后期叠旁白字幕，简体中文逐句同步】'
 
 /** 与后端一致的旁白前缀（科普自然偏快；旧稿「慢速清晰」仍可识别） */
 export const NARRATION_PREFIX = '【旁白·自然语速·同步字幕】'
 
 /** 脚本编辑区 placeholder */
-export const SEGMENT_SCRIPT_PLACEHOLDER = `${SUBTITLE_CUE}\n【BGM：轻快专业，音量低于人声】\n@duration:4\n过肩工位操作画面…\n@duration:8\n${NARRATION_PREFIX}口播内容…`
+export const SEGMENT_SCRIPT_PLACEHOLDER = `${SUBTITLE_CUE}\n【BGM：后期混音 · 轻快专业，音量低于人声】\n@duration:4\n过肩工位操作画面…\n@duration:8\n${NARRATION_PREFIX}口播内容…`
 
 const DURATION_TOKEN_PATTERN = /@duration:(\d+)/g
 

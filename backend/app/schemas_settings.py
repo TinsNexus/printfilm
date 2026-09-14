@@ -98,7 +98,7 @@ class AdminModelSettingsOut(BaseModel):
 
     # Token 计费
     billing_enabled: bool = False
-    billing_markup: float = 1.5
+    billing_markup: float = 1.0
     billing_estimate_buffer: float = 1.2
     billing_seedance_video0: float = 46.0
     billing_seedance_video1: float = 28.0

@@ -6,6 +6,7 @@ import asyncio
 import logging
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -35,9 +36,15 @@ from app.services.style_lock import (
     template_consistency_mode,
     template_is_photoreal,
 )
+from app.services.kepu_continuity import (
+    image_refs_for_shot,
+    persist_last_frame_from_video,
+    previous_usable_shot,
+    video_extra_refs_for_shot,
+)
 from app.services.voices import resolve_speaker
 from app.services import seedance_segments as segplan
-from app.services.bgm import resolve_bgm_path
+from app.services.bgm import clip_shot_bgm, resolve_bgm_path
 
 logger = logging.getLogger(__name__)
 
@@ -316,6 +323,39 @@ def clamp_shot_duration(duration: float, *, pipeline_mode: str, tpl_min: int, tp
         hi = min(max(tpl_max, 1), settings.max_shot_duration, segplan.KEPU_FULL_SHOT_DURATION_MAX)
         lo = max(1, min(tpl_min, hi))
     return float(max(lo, min(float(duration), hi)))
+
+
+def _merge_subtitle_preset(sub_cfg: dict, preset: str) -> dict:
+    """科普字幕预设覆盖模板 subtitle_config。"""
+    out = dict(sub_cfg or {})
+    key = (preset or "").strip().lower()
+    if key == "large":
+        out["caption_scale"] = 1.55
+    elif key == "split":
+        out["position"] = "split"
+    elif key == "standard":
+        out["caption_scale"] = 1.25
+        out["position"] = "top"
+    return out
+
+
+def _kepu_video_prompt(
+    script: str,
+    *,
+    style_prefix: str,
+    motion_bias: str,
+    camera: str,
+    ambient_only: bool,
+) -> str:
+    """科普提交 Seedance：后期叠字，禁止模型烧录字幕。"""
+    return segplan.build_seedance_prompt(
+        segplan.normalize_kepu_subtitle_cue(script or ""),
+        style_prefix=style_prefix,
+        motion_bias=motion_bias,
+        camera=camera,
+        ambient_only=ambient_only,
+        burn_subtitles=False,
+    )
 
 
 async def _ensure_not_cancelled(project_id: int) -> None:
@@ -752,25 +792,25 @@ async def _script_stage(project_id: int) -> None:
             duration_max=d_max,
             max_shot_duration=d_max,
             pipeline_mode=mode,
-            # 用户角色限制在 diverse/style 下也必须进分镜，否则出镜人物会被模板默认成「过肩无脸」
+            # 仅用户显式覆盖才当强制人设；模板角色交给 llm_system_addon 与主题由 AI 决定
             character_hint=char_hint,
             extra_requirements=extra,
             consistency_mode=consist,
             output_ratio=_project_output_ratio(project),
         )
         plans = plans_result.shots
-        if consist == "character":
-            project.character_bible = _effective_character_bible(project, plans_result.character_bible)
-        elif char_hint:
-            # 多样人物：保留用户角色限制，不锁成同一张脸
-            project.character_bible = char_hint
-        else:
-            project.character_bible = "无固定人物，各镜独立场景"
+        project.character_bible = resolve_script_character_bible(
+            char_hint,
+            plans_result.character_bible,
+        )
         tpl_bgm = ""
         if tpl and isinstance(tpl.audio_config, dict):
             tpl_bgm = str(tpl.audio_config.get("bgm_mood") or "").strip()
+        # 风格页用户选曲优先，其次 LLM / 模板推断
+        user_bgm = (getattr(project, "bgm_lock", None) or "").strip()
         project.bgm_lock = (
-            (plans_result.bgm_lock or "").strip()
+            user_bgm
+            or (plans_result.bgm_lock or "").strip()
             or tpl_bgm
             or (plans[0].bgm if plans else "")
             or "轻快专业"
@@ -808,7 +848,7 @@ async def _script_stage(project_id: int) -> None:
                     video_prompt=segment_script or plan.video_prompt,
                     segment_script=segment_script,
                     camera=plan.camera,
-                    bgm_mood=project.bgm_lock or plan.bgm,
+                    bgm_mood=clip_shot_bgm(project.bgm_lock or plan.bgm),
                     status=ShotStatus.PENDING,
                 )
             )
@@ -843,18 +883,21 @@ def _template_seedream_field(project: Project, key: str) -> str:
 
 
 def _effective_character_prompt(project: Project) -> str:
-    user = (getattr(project, "character_prompt", None) or "").strip()
-    return user or _template_seedream_field(project, "character_prompt")
+    """仅用户在项目里写的角色覆盖；模板角色不当作用户强制约束。"""
+    return (getattr(project, "character_prompt", None) or "").strip()
+
+
+def resolve_script_character_bible(user_character_prompt: str, llm_bible: str = "") -> str:
+    """用户覆盖优先，否则用分镜 LLM 的 character_bible。"""
+    user = (user_character_prompt or "").strip()
+    if user:
+        return user
+    return (llm_bible or "").strip() or "无固定人物，各镜独立场景"
 
 
 def _effective_extra(project: Project) -> str:
     user = (getattr(project, "extra_prompt", None) or "").strip()
     return user or _template_seedream_field(project, "extra_prompt")
-
-
-def _effective_character_bible(project: Project, llm_bible: str = "") -> str:
-    user = _effective_character_prompt(project)
-    return user or (llm_bible or "").strip()
 
 
 def _image_size_for(project: Project) -> str | None:
@@ -891,18 +934,6 @@ def _locked_shot_prompt(project: Project, img_prompt: str) -> str:
     )
 
 
-def _consistency_ref_from_shots(shots: list) -> str | None:
-    """Prefer first finished shot's Ark CDN URL, else local static."""
-    ordered = sorted(shots, key=lambda s: s.shot_no)
-    for s in ordered:
-        if s.image_ark_url and str(s.image_ark_url).startswith("http"):
-            return s.image_ark_url
-    for s in ordered:
-        if s.image_url:
-            return s.image_url
-    return None
-
-
 _db_write_locks: dict[int, asyncio.Lock] = {}
 
 
@@ -918,7 +949,7 @@ def _db_write_lock() -> asyncio.Lock:
 
 
 async def _parallel_image_and_audio(project_id: int) -> None:
-    """Generate storyboard images and continuous TTS (full 再并行图生视频)。"""
+    """逐镜出图（后镜参考上一镜静帧），同时整片连贯配音。"""
     await _set_status(project_id, ProjectStatus.IMAGING, 18, "PARALLEL_ASSETS")
     cfg = get_settings()
     ark = get_ark()
@@ -942,6 +973,8 @@ async def _parallel_image_and_audio(project_id: int) -> None:
                 "img_prompt": s.img_prompt,
                 "narration": s.narration,
                 "duration": float(s.duration),
+                "image_url": s.image_url,
+                "image_ark_url": s.image_ark_url,
                 "has_image": bool(s.image_url or s.image_ark_url),
                 "has_audio": bool(
                     s.audio_url
@@ -958,8 +991,6 @@ async def _parallel_image_and_audio(project_id: int) -> None:
         consist = template_consistency_mode(tpl)
         lock_character = consist == "character"
         base_refs = _project_base_refs(project)
-        # Only character mode chains shot-to-shot refs; diverse/style keep scenes independent
-        existing_anchor = _consistency_ref_from_shots(shot_rows) if lock_character else None
         image_size = _image_size_for(project)
         negative = _project_image_negative(project)
         voice = _project_voice(project)
@@ -1026,8 +1057,8 @@ async def _parallel_image_and_audio(project_id: int) -> None:
                 await db.commit()
         await bump_images()
 
-    async def one_image(meta: dict, ref_urls: list[str]) -> str | None:
-        """Generate one shot; return remote/local URL for consistency chaining."""
+    async def one_image(meta: dict, ref_urls: list[str]) -> SimpleNamespace | None:
+        """生成一镜；返回静帧代理供下一镜参考。"""
         await _ensure_not_cancelled(project_id)
         if meta.get("has_image"):
             await bump_images()
@@ -1060,47 +1091,23 @@ async def _parallel_image_and_audio(project_id: int) -> None:
             shot_id=meta["id"],
         )
         await persist_image(meta, img)
-        return img.remote_url or img.local_url
+        return SimpleNamespace(image_ark_url=img.remote_url, image_url=img.local_url)
 
     async def run_images() -> None:
-        """Character mode: anchor first shot then parallelize. Diverse/style: all independent."""
-        need = [m for m in shot_meta if not m.get("has_image")]
-        already = [m for m in shot_meta if m.get("has_image")]
-        for _m in already:
-            await bump_images()
-
-        if not need:
-            return
-
-        if not lock_character:
-            # Content-driven: each shot uses only template base refs (if any)
-            results = await asyncio.gather(
-                *(one_image(m, list(base_refs)) for m in need),
-                return_exceptions=True,
-            )
-            for r in results:
-                if isinstance(r, Exception):
-                    raise r
-            return
-
-        anchor = existing_anchor
-        first, rest = need[0], need[1:]
-        first_refs = seedream_ref_urls(anchor, *base_refs) if anchor else list(base_refs)
-        first_url = await one_image(first, first_refs)
-        if first_url:
-            anchor = first_url
-
-        if not rest:
-            return
-        rest_refs = seedream_ref_urls(anchor, *base_refs) if anchor else list(base_refs)
-
-        results = await asyncio.gather(
-            *(one_image(m, rest_refs) for m in rest),
-            return_exceptions=True,
-        )
-        for r in results:
-            if isinstance(r, Exception):
-                raise r
+        """逐镜出图：后镜 Seedream 参考上一镜静帧。"""
+        prev_proxy = None
+        for meta in shot_meta:
+            if meta.get("has_image"):
+                prev_proxy = SimpleNamespace(
+                    image_ark_url=meta.get("image_ark_url"),
+                    image_url=meta.get("image_url"),
+                )
+                await bump_images()
+                continue
+            refs = image_refs_for_shot(prev_proxy, base_refs)
+            proxy = await one_image(meta, refs)
+            if proxy:
+                prev_proxy = proxy
 
     async def run_continuous_audio() -> None:
         await _ensure_not_cancelled(project_id)
@@ -1177,7 +1184,7 @@ async def _parallel_image_and_audio(project_id: int) -> None:
 
 
 async def _parallel_videos(project_id: int) -> None:
-    """Run Seedance i2v for all shots concurrently (after images exist)."""
+    """按镜序逐个出视频；后镜参考上一镜尾帧。"""
     await _set_status(project_id, ProjectStatus.VIDEOING, 55, "VIDEOING")
     cfg = get_settings()
     ark = get_ark()
@@ -1210,6 +1217,10 @@ async def _parallel_videos(project_id: int) -> None:
                 "segment_script": getattr(s, "segment_script", "") or s.video_prompt or "",
                 "camera": s.camera,
                 "image_ref": s.image_ark_url or s.image_url or "",
+                "image_ark_url": s.image_ark_url,
+                "image_url": s.image_url,
+                "last_frame_url": getattr(s, "last_frame_url", None),
+                "video_url": s.video_url,
                 "has_video": bool(s.video_url),
             }
             for s in sorted(project.shots, key=lambda s: s.shot_no)
@@ -1221,17 +1232,31 @@ async def _parallel_videos(project_id: int) -> None:
     if not shot_meta:
         return
 
-    sem = asyncio.Semaphore(max(1, cfg.pipeline_video_concurrency))
     done = 0
-    progress_lock = asyncio.Lock()
 
-    async def one_video(meta: dict) -> None:
+    async def one_video(meta: dict, extra_refs: list[str]) -> SimpleNamespace:
         nonlocal done
         await _ensure_not_cancelled(project_id)
+        proxy = SimpleNamespace(
+            image_ark_url=meta.get("image_ark_url"),
+            image_url=meta.get("image_url"),
+            last_frame_url=meta.get("last_frame_url"),
+        )
         if meta.get("has_video"):
-            async with progress_lock:
-                done += 1
-                pct = 55 + int(30 * done / max(total, 1))
+            done += 1
+            pct = 55 + int(30 * done / max(total, 1))
+            if not proxy.last_frame_url and meta.get("video_url"):
+                last = persist_last_frame_from_video(
+                    project_id, int(meta["shot_no"]), str(meta["video_url"])
+                )
+                if last:
+                    proxy.last_frame_url = last
+                    async with _db_write_lock():
+                        async with AsyncSessionLocal() as db:
+                            shot = await db.get(Shot, meta["id"])
+                            if shot:
+                                shot.last_frame_url = last
+                                await db.commit()
             await publish_progress(
                 project_id,
                 {
@@ -1242,72 +1267,78 @@ async def _parallel_videos(project_id: int) -> None:
                     "message": f"沿用已有视频 {done}/{total}",
                 },
             )
-            return
-        async with sem:
-            await _ensure_not_cancelled(project_id)
-            script = (meta.get("segment_script") or meta.get("video_prompt") or "").strip()
-            prompt = segplan.build_seedance_prompt(
-                script,
-                style_prefix=style_prefix,
-                motion_bias=motion,
-                camera=str(meta.get("camera") or ""),
-                ambient_only=ambient_only,
+            return proxy
+        await _ensure_not_cancelled(project_id)
+        script = (meta.get("segment_script") or meta.get("video_prompt") or "").strip()
+        prompt = _kepu_video_prompt(
+            script,
+            style_prefix=style_prefix,
+            motion_bias=motion,
+            camera=str(meta.get("camera") or ""),
+            ambient_only=ambient_only,
+        )
+        dur = segplan.resolve_api_duration(
+            script,
+            fallback=meta["duration"],
+            lo=cfg.seedance_duration_min,
+            hi=cfg.seedance_duration_max,
+        )
+        try:
+            local_video, task_result = await ark.gen_and_wait_video(
+                meta["image_ref"],
+                prompt,
+                int(dur),
+                project_id=project_id,
+                shot_no=meta["shot_no"],
+                character_consistency=consistency,
+                resolution=resolution,
+                ratio=ratio,
+                generate_audio=generate_audio,
+                model=video_model,
+                extra_image_urls=extra_refs or None,
             )
-            dur = segplan.resolve_api_duration(
-                script,
-                fallback=meta["duration"],
-                lo=cfg.seedance_duration_min,
-                hi=cfg.seedance_duration_max,
-            )
-            try:
-                local_video, task_result = await ark.gen_and_wait_video(
-                    meta["image_ref"],
-                    prompt,
-                    int(dur),
-                    project_id=project_id,
-                    shot_no=meta["shot_no"],
-                    character_consistency=consistency,
-                    resolution=resolution,
-                    ratio=ratio,
-                    generate_audio=generate_audio,
-                    model=video_model,
+        except Exception as exc:  # noqa: BLE001
+            msg = str(exc)
+            # Real-person privacy blocks — skip AI video; compose will use still image
+            if any(
+                k in msg
+                for k in (
+                    "PrivacyInformation",
+                    "InputImageSensitive",
+                    "SensitiveContentDetected",
                 )
-            except Exception as exc:  # noqa: BLE001
-                msg = str(exc)
-                # Real-person privacy blocks — skip AI video; compose will use still image
-                if any(
-                    k in msg
-                    for k in (
-                        "PrivacyInformation",
-                        "InputImageSensitive",
-                        "SensitiveContentDetected",
-                    )
-                ):
-                    logger.warning(
-                        "Seedance privacy skip project=%s shot=%s: %s",
-                        project_id,
-                        meta["shot_no"],
-                        msg[:240],
-                    )
-                    async with progress_lock:
-                        done += 1
-                        pct = 55 + int(30 * done / max(total, 1))
-                    await publish_progress(
-                        project_id,
-                        {
-                            "event": "progress",
-                            "stage": "VIDEOING",
-                            "shot": meta["shot_no"],
-                            "total": total,
-                            "percent": pct,
-                            "message": (
-                                f"镜头 {meta['shot_no']} 含真人已跳过 AI 视频"
-                                + ("（成片将缺该镜）" if generate_audio else "，将用静图合成")
-                            ),
-                        },
-                    )
-                    return
-                raise
+            ):
+                logger.warning(
+                    "Seedance privacy skip project=%s shot=%s: %s",
+                    project_id,
+                    meta["shot_no"],
+                    msg[:240],
+                )
+                done += 1
+                pct = 55 + int(30 * done / max(total, 1))
+                await publish_progress(
+                    project_id,
+                    {
+                        "event": "progress",
+                        "stage": "VIDEOING",
+                        "shot": meta["shot_no"],
+                        "total": total,
+                        "percent": pct,
+                        "message": (
+                            f"镜头 {meta['shot_no']} 含真人已跳过 AI 视频"
+                            + ("（成片将缺该镜）" if generate_audio else "，将用静图合成")
+                        ),
+                    },
+                )
+                return proxy
+            raise
+        last = persist_last_frame_from_video(
+            project_id,
+            int(meta["shot_no"]),
+            local_video,
+            preferred_url=getattr(task_result, "last_frame_url", None),
+        )
+        proxy.last_frame_url = last
         s = get_settings()
         dur = max(float(dur), 2.0)
         billing_key = "seedance2:video0" if generate_audio else "seedance2:video1"
@@ -1323,43 +1354,45 @@ async def _parallel_videos(project_id: int) -> None:
             async with AsyncSessionLocal() as db:
                 shot = await db.get(Shot, meta["id"])
                 if not shot:
-                    return
+                    return proxy
                 shot.video_url = local_video
+                shot.last_frame_url = last
                 shot.status = ShotStatus.VIDEO_READY
                 await db.commit()
-        async with progress_lock:
-            done += 1
-            pct = 55 + int(30 * done / max(total, 1))
-            async with _db_write_lock():
-                async with AsyncSessionLocal() as db:
-                    project = await db.get(Project, project_id)
-                    if project:
-                        project.progress = pct
-                        project.status = ProjectStatus.VIDEOING
-                        await db.commit()
-            await publish_progress(
-                project_id,
-                {
-                    "event": "progress",
-                    "stage": "VIDEOING",
-                    "shot": meta["shot_no"],
-                    "total": total,
-                    "percent": pct,
-                    "message": (
+        done += 1
+        pct = 55 + int(30 * done / max(total, 1))
+        async with _db_write_lock():
+            async with AsyncSessionLocal() as db:
+                project = await db.get(Project, project_id)
+                if project:
+                    project.progress = pct
+                    project.status = ProjectStatus.VIDEOING
+                    await db.commit()
+        await publish_progress(
+            project_id,
+            {
+                "event": "progress",
+                "stage": "VIDEOING",
+                "shot": meta["shot_no"],
+                "total": total,
+                "percent": pct,
+                "message": (
+                    f"逐镜 AI 视频 {done}/{total}（参考上一镜）"
+                    if extra_refs
+                    else (
                         f"AI 视频（含操作音效）{done}/{total}"
                         if generate_audio
                         else f"AI 视频 {done}/{total}"
-                    ),
-                },
-            )
+                    )
+                ),
+            },
+        )
+        return proxy
 
-    results = await asyncio.gather(*(one_video(m) for m in shot_meta), return_exceptions=True)
-    errors = [r for r in results if isinstance(r, Exception)]
-    if errors:
-        for err in errors:
-            if isinstance(err, (PipelineCancelled, asyncio.CancelledError)):
-                raise err
-        raise RuntimeError(str(errors[0]))
+    prev_proxy: SimpleNamespace | None = None
+    for meta in shot_meta:
+        extra = video_extra_refs_for_shot(prev_proxy)
+        prev_proxy = await one_video(meta, extra)
 
     async with _db_write_lock():
         async with AsyncSessionLocal() as db:
@@ -1375,6 +1408,7 @@ async def _parallel_videos(project_id: int) -> None:
 
 
 async def _image_stage(project_id: int) -> None:
+    """逐镜出图；后镜 Seedream 参考上一镜静帧。"""
     await _set_status(project_id, ProjectStatus.IMAGING, 20, "IMAGING")
     ark = get_ark()
     async with AsyncSessionLocal() as db:
@@ -1394,20 +1428,16 @@ async def _image_stage(project_id: int) -> None:
         photoreal = template_is_photoreal(tpl)
         consist = template_consistency_mode(tpl)
         lock_character = consist == "character"
-        anchor: str | None = None
+        prev_shot = None
         image_model = (getattr(project, "image_model", None) or "").strip()
         output_ratio = _project_output_ratio(project) or ""
 
         for idx, shot in enumerate(sorted(project.shots, key=lambda s: s.shot_no)):
             await _ensure_not_cancelled(project_id)
             if shot.image_url or shot.image_ark_url:
-                if lock_character and not anchor:
-                    anchor = shot.image_ark_url or shot.image_url
+                prev_shot = shot
                 continue
-            if lock_character:
-                refs = seedream_ref_urls(anchor, *ref_urls) if anchor else list(ref_urls)
-            else:
-                refs = list(ref_urls)
+            refs = image_refs_for_shot(prev_shot, ref_urls)
             prompt = build_locked_image_prompt(
                 style_prefix,
                 strip_lock_blocks(shot.img_prompt),
@@ -1429,8 +1459,7 @@ async def _image_stage(project_id: int) -> None:
             shot.image_url = img.local_url
             shot.image_ark_url = img.remote_url
             shot.status = ShotStatus.IMAGE_READY
-            if lock_character and not anchor:
-                anchor = img.remote_url or img.local_url
+            prev_shot = shot
             span = 55 if _is_image_text(project) else 25
             pct = 20 + int(span * (idx + 1) / max(total, 1))
             project.progress = pct
@@ -1453,6 +1482,7 @@ async def _image_stage(project_id: int) -> None:
 
 
 async def _video_stage(project_id: int) -> None:
+    """逐镜出视频；后镜参考上一镜尾帧（无尾帧则用静帧）。"""
     await _set_status(project_id, ProjectStatus.VIDEOING, 50, "VIDEOING")
     ark = get_ark()
     async with AsyncSessionLocal() as db:
@@ -1479,8 +1509,15 @@ async def _video_stage(project_id: int) -> None:
         video_model = (getattr(project, "video_model", None) or "").strip()
         for idx, shot in enumerate(sorted(project.shots, key=lambda s: s.shot_no)):
             await _ensure_not_cancelled(project_id)
+            if shot.video_url:
+                if not shot.last_frame_url:
+                    shot.last_frame_url = persist_last_frame_from_video(
+                        project_id, int(shot.shot_no), str(shot.video_url)
+                    )
+                    await db.commit()
+                continue
             script = (getattr(shot, "segment_script", "") or shot.video_prompt or "").strip()
-            prompt = segplan.build_seedance_prompt(
+            prompt = _kepu_video_prompt(
                 script,
                 style_prefix=style_prefix,
                 motion_bias=motion,
@@ -1494,6 +1531,7 @@ async def _video_stage(project_id: int) -> None:
                 hi=cfg.seedance_duration_max,
             )
             image_ref = shot.image_ark_url or shot.image_url or ""
+            extra_refs = video_extra_refs_for_shot(previous_usable_shot(list(project.shots), shot.shot_no))
             local_video, task_result = await ark.gen_and_wait_video(
                 image_ref,
                 prompt,
@@ -1505,8 +1543,15 @@ async def _video_stage(project_id: int) -> None:
                 ratio=ratio,
                 generate_audio=generate_audio,
                 model=video_model,
+                extra_image_urls=extra_refs or None,
             )
             shot.video_url = local_video
+            shot.last_frame_url = persist_last_frame_from_video(
+                project_id,
+                int(shot.shot_no),
+                local_video,
+                preferred_url=getattr(task_result, "last_frame_url", None),
+            )
             shot.status = ShotStatus.VIDEO_READY
             billing_key = "seedance2:video0" if generate_audio else "seedance2:video1"
             await _record_seedance_usage(
@@ -1644,7 +1689,10 @@ async def _compose_stage(project_id: int) -> None:
             if not full_audio.exists():
                 full_audio = None
 
-            sub_cfg = (project.template.subtitle_config if project.template else None) or {}
+            sub_cfg = _merge_subtitle_preset(
+                (project.template.subtitle_config if project.template else None) or {},
+                getattr(project, "subtitle_preset", "") or "",
+            )
             layout = str(sub_cfg.get("position") or "top")
             if layout not in {"top", "split", "bottom", "center"}:
                 layout = "top"
@@ -1662,8 +1710,7 @@ async def _compose_stage(project_id: int) -> None:
                 bgm_mood = (project.shots[0].bgm_mood or "").strip()
             if not bgm_mood and project.template and isinstance(project.template.audio_config, dict):
                 bgm_mood = str(project.template.audio_config.get("bgm_mood") or "").strip()
-            # 科普 full：不要后期 BGM；静图成片仍可叠配乐
-            bgm_path = None if mode != "image_text" else resolve_bgm_path(bgm_mood)
+            bgm_path = resolve_bgm_path(bgm_mood)
             keep_video_sfx = _kepu_seedance_sfx_audio(project)
 
             await _run_ffmpeg_compose_with_retry(
@@ -1765,28 +1812,33 @@ async def regen_shot_image(project_id: int, shot_id: int) -> None:
         shot = next((s for s in project.shots if s.id == shot_id), None)
         if not shot:
             raise ValueError("shot not found")
-        base_refs = _project_base_refs(project)
-        lock_character = template_consistency_mode(project.template) == "character"
-        if lock_character:
-            anchor = _consistency_ref_from_shots([s for s in project.shots if s.id != shot.id])
-            ref_urls = seedream_ref_urls(anchor, *base_refs) if anchor else list(base_refs)
-        else:
-            ref_urls = list(base_refs)
+        # 生成前先备好参考，避免长等待占着同一条 DB 连接
+        shot_no = shot.shot_no
+        ref_urls = image_refs_for_shot(previous_usable_shot(list(project.shots), shot_no), _project_base_refs(project))
         negative = _project_image_negative(project)
         prompt = _locked_shot_prompt(project, shot.img_prompt)
-        img = await ark.gen_image(
-            prompt,
-            negative,
-            ref_urls,
-            project_id=project_id,
-            shot_no=shot.shot_no,
-            size=_image_size_for(project),
-            model=(getattr(project, "image_model", None) or "").strip(),
-            aspect_ratio=_project_output_ratio(project) or None,
-        )
+        image_size = _image_size_for(project)
+        image_model = (getattr(project, "image_model", None) or "").strip()
+        aspect_ratio = _project_output_ratio(project) or None
+    img = await ark.gen_image(
+        prompt,
+        negative,
+        ref_urls,
+        project_id=project_id,
+        shot_no=shot_no,
+        size=image_size,
+        model=image_model,
+        aspect_ratio=aspect_ratio,
+    )
+    async with AsyncSessionLocal() as db:
+        shot = await db.get(Shot, shot_id)
+        project = await db.get(Project, project_id)
+        if not shot or not project:
+            raise ValueError("shot not found")
         shot.image_url = img.local_url
         shot.image_ark_url = img.remote_url
         shot.video_url = None
+        shot.last_frame_url = None
         shot.status = ShotStatus.IMAGE_READY
         shot.version += 1
         project.status = ProjectStatus.IMAGE_READY
@@ -1803,7 +1855,9 @@ async def regen_shot_image(project_id: int, shot_id: int) -> None:
 
 @storage.without_intermediate_oss
 async def regen_shot_video(project_id: int, shot_id: int) -> None:
+    """重绘单镜视频；后镜参考上一镜尾帧。"""
     ark = get_ark()
+    cfg = get_settings()
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(Project)
@@ -1821,12 +1875,11 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
         consistency = template_consistency_mode(project.template) == "character" and bool(
             project.template.seedance_config.get("character_consistency", True)
         )
-        cfg = get_settings()
         resolution = cfg.ark_video_resolution
         if project.resolution_mode == "hd" and resolution == "480p":
             resolution = "720p"
         script = (getattr(shot, "segment_script", "") or shot.video_prompt or "").strip()
-        prompt = segplan.build_seedance_prompt(
+        prompt = _kepu_video_prompt(
             script,
             style_prefix=_effective_style(project),
             motion_bias=motion,
@@ -1839,34 +1892,51 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
             lo=cfg.seedance_duration_min,
             hi=cfg.seedance_duration_max,
         )
+        shot_no = shot.shot_no
         image_ref = shot.image_ark_url or shot.image_url or ""
-        local_video, task_result = await ark.gen_and_wait_video(
-            image_ref,
-            prompt,
-            int(dur),
-            project_id=project_id,
-            shot_no=shot.shot_no,
-            character_consistency=consistency,
-            resolution=resolution,
-            ratio=_project_output_ratio(project) or cfg.ark_video_ratio,
-            generate_audio=generate_audio,
-            model=(getattr(project, "video_model", None) or "").strip(),
-        )
+        extra_refs = video_extra_refs_for_shot(previous_usable_shot(list(project.shots), shot_no))
+        video_model = (getattr(project, "video_model", None) or "").strip()
+        ratio = _project_output_ratio(project) or cfg.ark_video_ratio
+    local_video, task_result = await ark.gen_and_wait_video(
+        image_ref,
+        prompt,
+        int(dur),
+        project_id=project_id,
+        shot_no=shot_no,
+        character_consistency=consistency,
+        resolution=resolution,
+        ratio=ratio,
+        generate_audio=generate_audio,
+        model=video_model,
+        extra_image_urls=extra_refs or None,
+    )
+    last = persist_last_frame_from_video(
+        project_id,
+        int(shot_no),
+        local_video,
+        preferred_url=getattr(task_result, "last_frame_url", None),
+    )
+    async with AsyncSessionLocal() as db:
+        shot = await db.get(Shot, shot_id)
+        project = await db.get(Project, project_id)
+        if not shot or not project:
+            raise ValueError("shot not found")
         shot.video_url = local_video
+        shot.last_frame_url = last
         shot.status = ShotStatus.VIDEO_READY
         shot.version += 1
         project.final_video_url = None
         project.status = ProjectStatus.VIDEO_READY
-        billing_key = "seedance2:video0" if generate_audio else "seedance2:video1"
-        await _record_seedance_usage(
-            project_id,
-            billing_key=billing_key,
-            model=cfg.model_video,
-            task_result=task_result,
-            fallback_duration_sec=max(float(dur), 2.0),
-            shot_id=shot_id,
-        )
         await db.commit()
+    billing_key = "seedance2:video0" if generate_audio else "seedance2:video1"
+    await _record_seedance_usage(
+        project_id,
+        billing_key=billing_key,
+        model=cfg.model_video,
+        task_result=task_result,
+        fallback_duration_sec=max(float(dur), 2.0),
+        shot_id=shot_id,
+    )
 
 
 @storage.without_intermediate_oss

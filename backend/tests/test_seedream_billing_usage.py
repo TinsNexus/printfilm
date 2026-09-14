@@ -22,7 +22,7 @@ def test_parse_upstream_cost_fen_from_kie_credits():
     assert parse_upstream_cost_fen({"creditsConsumed": 10}, settings) == 35
 
 
-def test_charge_fen_for_usage_kie_credits_with_markup():
+def test_charge_fen_for_usage_kie_credits_no_markup():
     settings = get_settings()
     settings.billing_markup = 1.5
     settings.billing_kie_fen_per_credit = 3.5
@@ -34,7 +34,7 @@ def test_charge_fen_for_usage_kie_credits_with_markup():
     )
     assert used is True
     assert cost == 35
-    assert charge == 53  # ceil(35 * 1.5)
+    assert charge == 35
 
 
 def test_charge_fen_for_usage_prefers_upstream_cost():
@@ -48,7 +48,7 @@ def test_charge_fen_for_usage_prefers_upstream_cost():
     )
     assert used is True
     assert cost == 1000
-    assert charge == 1500
+    assert charge == 1000
 
 
 def test_charge_fen_for_usage_falls_back_to_tokens():
@@ -63,7 +63,7 @@ def test_charge_fen_for_usage_falls_back_to_tokens():
     )
     assert used is False
     assert cost == 800
-    assert charge == 1200
+    assert charge == 800
 
 
 def test_build_task_result_includes_usage():

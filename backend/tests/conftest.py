@@ -14,6 +14,21 @@ from app.models import User
 from app.models_tasks import TaskRun
 
 
+@pytest.fixture(autouse=True)
+def skip_tokenfree_pricing_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    """单测不打 TokenFree 公开价目，避免预估被外网拖慢或改数。"""
+
+    async def _empty(_settings=None):
+        """返回空价目，预估走本地回退。"""
+        return {}
+
+    monkeypatch.setattr("app.services.tokenfree_pricing.ensure_official_rates", _empty)
+    monkeypatch.setattr("app.services.billing.estimates.ensure_official_rates", _empty)
+    from app.services.tokenfree_pricing import set_cached_rates
+
+    set_cached_rates(None)
+
+
 @pytest.fixture
 def billing_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
     """测试环境强制开启计费，buffer=1 便于断言。"""

@@ -56,18 +56,25 @@ def kie_credits_to_cost_fen(
     return max(1, int(math.ceil(amount * kie_fen_per_credit(settings))))
 
 
+def user_charge_fen(cost_fen: int, settings: Settings | None = None) -> int:
+    """用户扣费 = TokenFree / 上游成本，不再乘 markup。"""
+    if cost_fen <= 0:
+        return 0
+    return max(1, int(cost_fen))
+
+
 def charge_fen_for_tokens(
     tokens: int,
     billing_key: str,
     *,
     settings: Settings | None = None,
 ) -> tuple[int, int]:
-    """Return (cost_fen, charge_fen) with markup."""
+    """Return (cost_fen, charge_fen)；charge 与成本相同。"""
     s = settings or get_settings()
     t = max(0, int(tokens))
     yuan_per_m = provider_yuan_per_m(billing_key, s)
     cost = math.ceil(t / 1_000_000 * yuan_per_m * 100) if t else 0
-    charge = math.ceil(cost * float(s.billing_markup)) if cost else 0
+    charge = user_charge_fen(cost, s)
     if t > 0 and charge < 1:
         charge = 1
         cost = max(cost, 1)
@@ -144,15 +151,13 @@ def charge_fen_for_usage(
 ) -> tuple[int, int, bool]:
     """按上游实际成本或 token 用量计算 (cost_fen, charge_fen, used_upstream_cost)。
 
-    有上游成本时：charge = ceil(cost × markup)（按比例加价）。
+    用户扣费与 TokenFree / 上游成本相同，不再加价。
     """
     s = settings or get_settings()
     upstream_cost = parse_upstream_cost_fen(raw_usage, settings=s)
     if upstream_cost is not None and upstream_cost > 0:
         cost = upstream_cost
-        charge = math.ceil(cost * float(s.billing_markup))
-        if charge < 1:
-            charge = 1
+        charge = user_charge_fen(cost, s)
         return cost, charge, True
     cost, charge = charge_fen_for_tokens(tokens, billing_key, settings=s)
     return cost, charge, False
@@ -195,50 +200,10 @@ def billing_key_label(billing_key: str) -> str:
 
 
 def billing_model_rate_rows(settings: Settings | None = None) -> list[dict[str, Any]]:
-    """管理端展示：TokenFree 上游优先按 New API quota，缺省回退 token 单价。"""
-    s = settings or get_settings()
-    markup = float(s.billing_markup)
-    return [
-        {
-            "id": "llm_chat",
-            "label": "LLM 对话",
-            "provider": "tokenfree",
-            "capability": "llm",
-            "basis": "quota/token",
-            "rate_label": f"New API quota 优先；缺省 {s.billing_llm_per_m} 元/百万 tokens",
-            "markup": markup,
-        },
-        {
-            "id": "seedream",
-            "label": "图片生成",
-            "provider": "tokenfree",
-            "capability": "image",
-            "basis": "quota/token",
-            "rate_label": f"New API quota 优先；缺省 {s.billing_seedream_per_m} 元/百万 tokens",
-            "markup": markup,
-        },
-        {
-            "id": "seedance",
-            "label": "视频生成",
-            "provider": "tokenfree",
-            "capability": "video",
-            "basis": "quota/token",
-            "rate_label": (
-                f"New API quota 优先；缺省 video0 {s.billing_seedance_video0} / "
-                f"video1 {s.billing_seedance_video1} 元/百万 tokens"
-            ),
-            "markup": markup,
-        },
-        {
-            "id": "tts",
-            "label": "TTS 语音",
-            "provider": "tokenfree",
-            "capability": "tts",
-            "basis": "quota/token",
-            "rate_label": f"New API quota 优先；缺省 {s.billing_tts_per_m} 元/百万 tokens",
-            "markup": markup,
-        },
-    ]
+    """管理端展示：推荐模型走 TokenFree /api/pricing；无缓存时仍列出短名单。"""
+    from app.services.tokenfree_pricing import build_official_rate_rows, cached_rates
+
+    return build_official_rate_rows(cached_rates(), settings)
 
 
 def sku_by_id(sku_id: str) -> dict[str, Any] | None:

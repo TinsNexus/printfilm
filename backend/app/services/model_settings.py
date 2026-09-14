@@ -118,12 +118,12 @@ def _refresh_routing_snapshot(
 # 从 env 构建默认渠道（开源版仅 TokenFree）
 def _bootstrap_channels_from_env(settings: Settings | None = None) -> list[SystemModelChannel]:
     from app.services.tokenfree_gateway import locked_tokenfree_channel
+    from app.services.tokenfree_pricing import canonicalize_channel_models
 
     src = settings or get_settings()
     key = (src.openai_api_key or src.ark_api_key or "").strip()
-    models = [
-        m
-        for m in [
+    models = canonicalize_channel_models(
+        [
             src.model_llm,
             src.model_image,
             src.model_image_45,
@@ -131,14 +131,15 @@ def _bootstrap_channels_from_env(settings: Settings | None = None) -> list[Syste
             src.model_video_2,
             src.model_audio,
         ]
-        if m
-    ]
+    )
     return [locked_tokenfree_channel(api_key=key, models=models, enabled=True)]
 
 
 def _seedance_logical_meta(upstream: str) -> tuple[str, str]:
-    """按接入点 ID 推断 Seedance 逻辑模型（2.0 vs 2.5）。"""
+    """按接入点 ID 推断 Seedance 逻辑模型（2.0 vs 2.5 vs Mini）。"""
     mid = (upstream or "").strip().lower()
+    if "mini" in mid:
+        return "seedance-2-0-mini", "Seedance 2.0 Mini"
     if any(token in mid for token in ("2-5", "2.5", "260628")):
         return "seedance-2.5", "Seedance 2.5"
     if any(token in mid for token in ("2-0", "2.0", "260128", "seedance-2")):
@@ -218,11 +219,15 @@ def _bootstrap_logical_from_channels(channels: list[SystemModelChannel]) -> tupl
 
     def _bindings_for_upstream(upstream: str) -> list:
         from app.schemas_routing import LogicalModelBinding
+        from app.services.tokenfree_pricing import canonicalize_channel_model_id
 
+        wanted = {(upstream or "").strip(), canonicalize_channel_model_id(upstream)}
+        wanted.discard("")
         result = []
         for model in logical_models:
             for binding in model.bindings:
-                if binding.upstream_model == upstream:
+                raw = (binding.upstream_model or "").strip()
+                if raw in wanted or canonicalize_channel_model_id(raw) in wanted:
                     result.append(binding.model_copy())
         return result
 
@@ -260,11 +265,12 @@ def _bootstrap_logical_from_channels(channels: list[SystemModelChannel]) -> tupl
             bindings_for_upstream=_bindings_for_upstream,
         )
     if settings.model_video_2:
+        logical_id_2, name_2 = _seedance_logical_meta(settings.model_video_2)
         _append_seedance_alias(
             alias_models,
             upstream=settings.model_video_2,
-            logical_id="seedance-2",
-            name="Seedance 2",
+            logical_id=logical_id_2,
+            name=name_2,
             bindings_for_upstream=_bindings_for_upstream,
         )
     default_video = ""
@@ -373,6 +379,7 @@ async def _ensure_tokenfree_channel(db: AsyncSession, existing: list[SystemModel
         TOKENFREE_CHANNEL_NAME,
         pick_migratable_api_key,
     )
+    from app.services.tokenfree_pricing import canonicalize_channel_models
 
     runtime = [_channel_row_to_runtime(row) for row in existing]
     migrated_key = pick_migratable_api_key(runtime)
@@ -392,9 +399,8 @@ async def _ensure_tokenfree_channel(db: AsyncSession, existing: list[SystemModel
         token_row.api_key_ciphertext = _encrypt_secret(migrated_key)
         current_key = migrated_key
     src = get_settings()
-    env_models = [
-        m
-        for m in [
+    env_models = canonicalize_channel_models(
+        [
             src.model_llm,
             src.model_image,
             src.model_image_45,
@@ -402,19 +408,13 @@ async def _ensure_tokenfree_channel(db: AsyncSession, existing: list[SystemModel
             src.model_video_2,
             src.model_audio,
         ]
-        if m
-    ]
+    )
     if not token_row.models:
         token_row.models = env_models
-    elif env_models:
-        # 已有 DB 配置时，把 .env 新增的接入点（如 MODEL_VIDEO_2）补进渠道 models
-        merged = list(token_row.models or [])
-        changed = False
-        for model in env_models:
-            if model not in merged:
-                merged.append(model)
-                changed = True
-        if changed:
+    else:
+        # 已有 DB 清单只折叠别名，不再把 .env 模型并回去
+        merged = canonicalize_channel_models(token_row.models)
+        if merged != list(token_row.models or []):
             token_row.models = merged
     for row in existing:
         if row.id != TOKENFREE_CHANNEL_ID:
@@ -679,6 +679,7 @@ async def patch_admin_routing_settings(
             TOKENFREE_CHANNEL_NAME,
             locked_tokenfree_channel,
         )
+        from app.services.tokenfree_pricing import canonicalize_channel_models
 
         incoming = next(
             (item for item in body.system_channels if (item.id or "").strip() == TOKENFREE_CHANNEL_ID),
@@ -692,7 +693,9 @@ async def patch_admin_routing_settings(
                 api_key = ""
             elif incoming.api_key is not None and str(incoming.api_key).strip():
                 api_key = str(incoming.api_key).strip()
-        models = list(incoming.models) if incoming is not None else (list(prev.models or []) if prev else [])
+        models = canonicalize_channel_models(
+            list(incoming.models) if incoming is not None else (list(prev.models or []) if prev else [])
+        )
         locked = locked_tokenfree_channel(api_key=api_key, models=models, enabled=True)
         row = prev or SystemModelChannelRow(id=TOKENFREE_CHANNEL_ID)
         row.name = TOKENFREE_CHANNEL_NAME

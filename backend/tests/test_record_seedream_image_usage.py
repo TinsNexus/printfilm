@@ -53,4 +53,4 @@ async def test_record_seedream_with_upstream_cost_fen(db_session: AsyncSession, 
     await db_session.commit()
     assert ev.estimated is False
     assert ev.cost_fen == 500
-    assert ev.charge_fen == 1000
+    assert ev.charge_fen == 500

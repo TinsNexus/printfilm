@@ -7,7 +7,7 @@ ai_movie 扩展：prop/material 增加静物/空镜前缀（manju 无此前缀�
 
 from __future__ import annotations
 
-from app.services.drama.image_styles import resolve_image_style_prompt
+from app.services.drama.image_styles import STYLE_BOARD_PROMPT_HINT, resolve_image_style_prompt
 
 # CHARACTER_PROMPT_PREFIX 角色设定板结构要求（无风格词）
 CHARACTER_PROMPT_PREFIX = (
@@ -64,21 +64,24 @@ MATERIAL_PROMPT_PREFIX = (
 
 
 # 将内置风格提示词追加到正文后；设定板类资产强调构图优先于风格场景
+# has_style_board 为真时补一句：只借画风板气质，禁止抄主体
 def append_style_prompt(
     prompt: str,
     style_id: str | None = None,
     *,
     structure_locked: bool = False,
+    has_style_board: bool = False,
 ) -> str:
     style_prompt = resolve_image_style_prompt(style_id)
     if not style_prompt:
         return prompt
+    board_hint = f"。{STYLE_BOARD_PROMPT_HINT}" if has_style_board else ""
     if structure_locked:
         return (
-            f"{prompt}。外观材质与画风参考：{style_prompt}"
+            f"{prompt}。外观材质与画风参考：{style_prompt}{board_hint}"
             "（须服从上文白底设定板构图与排版，禁止改成复杂场景或替换纯白背景）"
         )
-    return f"{prompt}。画面风格要求：{style_prompt}"
+    return f"{prompt}。画面风格要求：{style_prompt}{board_hint}"
 
 
 # 按资产类型与风格 ID 组装完整 Seedream 提示词
@@ -86,6 +89,8 @@ def build_generation_prompt(
     user_prompt: str,
     asset_type: str | None = None,
     style_id: str | None = None,
+    *,
+    has_style_board: bool = False,
 ) -> str:
     trimmed = (user_prompt or "").strip()
     prompt = trimmed
@@ -101,4 +106,6 @@ def build_generation_prompt(
         structure_locked = True
     elif kind in {"material", "none"}:
         prompt = f"{MATERIAL_PROMPT_PREFIX}{trimmed}"
-    return append_style_prompt(prompt, style_id, structure_locked=structure_locked)
+    return append_style_prompt(
+        prompt, style_id, structure_locked=structure_locked, has_style_board=has_style_board
+    )

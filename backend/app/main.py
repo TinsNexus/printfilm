@@ -140,6 +140,8 @@ async def _apply_schema_patches() -> None:
         scols = await _pg_columns(conn, "shots")
         if "segment_script" not in scols:
             await conn.execute(text("ALTER TABLE shots ADD COLUMN segment_script TEXT DEFAULT ''"))
+        if "last_frame_url" not in scols:
+            await conn.execute(text("ALTER TABLE shots ADD COLUMN last_frame_url VARCHAR(1024)"))
 
         pcols = await _pg_columns(conn, "projects")
         if "pipeline_mode" not in pcols:
@@ -152,6 +154,8 @@ async def _apply_schema_patches() -> None:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN character_bible TEXT DEFAULT ''"))
         if "bgm_lock" not in pcols:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN bgm_lock TEXT DEFAULT ''"))
+        if "subtitle_preset" not in pcols:
+            await conn.execute(text("ALTER TABLE projects ADD COLUMN subtitle_preset VARCHAR(32) DEFAULT ''"))
         if "style_prompt" not in pcols:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN style_prompt TEXT DEFAULT ''"))
         if "character_prompt" not in pcols:

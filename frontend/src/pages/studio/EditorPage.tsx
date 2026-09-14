@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../../api'
 import type { Project, Shot } from '../../api'
 import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import AppShell from '../../components/layout/AppShell'
 import ComingSoon from '../../components/ui/ComingSoon'
-import { STATUS_CN } from '../../lib/status'
+import { STATUS_CN, shotsByNo } from '../../lib/status'
+import { downloadSingleVideo } from '../../lib/clientDownload'
 
 const PANEL_TABS = ['文案', '画面', '配音', '转场'] as const
 
@@ -19,6 +20,7 @@ export default function EditorPage() {
   const [narration, setNarration] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const shotFileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!localStorage.getItem('token')) {
@@ -42,10 +44,12 @@ export default function EditorPage() {
       .catch((err) => setError(err instanceof Error ? err.message : '加载失败'))
   }, [nav, projectId])
 
+  const orderedShots = useMemo(() => shotsByNo(project?.shots), [project?.shots])
   const shot: Shot | undefined = useMemo(
-    () => project?.shots.find((s) => s.id === activeShotId),
-    [project, activeShotId],
+    () => orderedShots.find((s) => s.id === activeShotId),
+    [orderedShots, activeShotId],
   )
+  const shotIndex = shot ? orderedShots.findIndex((s) => s.id === shot.id) : -1
 
   const totalDuration = useMemo(
     () => (project?.shots || []).reduce((s, x) => s + (Number(x.duration) || 0), 0),
@@ -79,6 +83,77 @@ export default function EditorPage() {
       setProject(await api.getProject(project.id))
     } catch (err) {
       setError(err instanceof Error ? err.message : '重生成失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** 在片尾追加一镜，并选中新建镜头。 */
+  async function addShot() {
+    if (!project) return
+    setBusy(true)
+    setError('')
+    try {
+      const created = await api.createShot(project.id)
+      const next = await api.getProject(project.id)
+      setProject(next)
+      const s = next.shots.find((x) => x.id === created.id)
+      if (s) selectShot(s)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '添加镜头失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** 将当前镜与相邻镜对调顺序。 */
+  async function moveShot(delta: number) {
+    if (!project || !shot) return
+    const ordered = orderedShots
+    const i = ordered.findIndex((s) => s.id === shot.id)
+    const j = i + delta
+    if (i < 0 || j < 0 || j >= ordered.length) return
+    const ids = ordered.map((s) => s.id)
+    ;[ids[i], ids[j]] = [ids[j], ids[i]]
+    setBusy(true)
+    setError('')
+    try {
+      setProject(await api.reorderShots(project.id, ids))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '调序失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** 上传本镜静帧，替换后需重出视频。 */
+  async function onShotImageFile(file: File | null) {
+    if (!project || !shot || !file) return
+    setBusy(true)
+    setError('')
+    try {
+      setProject(await api.uploadShotImage(project.id, shot.id, file))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '上传画面失败')
+    } finally {
+      setBusy(false)
+      if (shotFileRef.current) shotFileRef.current.value = ''
+    }
+  }
+
+  /** 下载已合成的成片。 */
+  async function exportFilm() {
+    if (!project?.final_video_url) return
+    setBusy(true)
+    setError('')
+    try {
+      await downloadSingleVideo({
+        projectId: project.id,
+        title: project.title,
+        url: api.assetUrl(project.final_video_url, project.updated_at),
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '导出失败')
     } finally {
       setBusy(false)
     }
@@ -170,8 +245,13 @@ export default function EditorPage() {
           >
             预览播放
           </button>
-          <button type="button" className="pf-btn pf-btn-lime pf-btn-sm" disabled>
-            导出视频 <ComingSoon />
+          <button
+            type="button"
+            className="pf-btn pf-btn-lime pf-btn-sm"
+            disabled={busy || !project.final_video_url}
+            onClick={() => void exportFilm()}
+          >
+            导出视频
           </button>
         </div>
       </div>
@@ -184,11 +264,11 @@ export default function EditorPage() {
         <aside>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
             <strong>场景列表</strong>
-            <button type="button" className="pf-link" disabled>
-              + 添加镜头 <ComingSoon />
+            <button type="button" className="pf-link" disabled={busy} onClick={() => void addShot()}>
+              + 添加镜头
             </button>
           </div>
-          {project.shots.map((s) => (
+          {orderedShots.map((s) => (
             <button
               key={s.id}
               type="button"
@@ -220,9 +300,24 @@ export default function EditorPage() {
               .toString()
               .padStart(2, '0')}
           </p>
-          <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm pf-btn-block" disabled>
-            调整顺序 <ComingSoon />
-          </button>
+          <div style={{ display: 'flex', gap: 8, marginTop: '0.75rem' }}>
+            <button
+              type="button"
+              className="pf-btn pf-btn-ghost pf-btn-sm"
+              disabled={busy || !shot || shotIndex <= 0}
+              onClick={() => void moveShot(-1)}
+            >
+              上移
+            </button>
+            <button
+              type="button"
+              className="pf-btn pf-btn-ghost pf-btn-sm"
+              disabled={busy || !shot || shotIndex < 0 || shotIndex >= orderedShots.length - 1}
+              onClick={() => void moveShot(1)}
+            >
+              下移
+            </button>
+          </div>
         </aside>
 
         <section>
@@ -230,9 +325,26 @@ export default function EditorPage() {
             <strong>
               {shot ? `镜头 ${shot.shot_no}` : '预览'} · {isPortrait ? '9:16' : '16:9'}
             </strong>
-            <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" disabled={busy} onClick={regenImage}>
-              替换画面
-            </button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                ref={shotFileRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                hidden
+                onChange={(e) => void onShotImageFile(e.target.files?.[0] || null)}
+              />
+              <button
+                type="button"
+                className="pf-btn pf-btn-ghost pf-btn-sm"
+                disabled={busy || !shot}
+                onClick={() => shotFileRef.current?.click()}
+              >
+                上传画面
+              </button>
+              <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" disabled={busy} onClick={regenImage}>
+                AI 重绘
+              </button>
+            </div>
           </div>
           <div className={isPortrait ? 'pf-editor-preview portrait' : 'pf-editor-preview'}>
             {shotVideo ? (
@@ -267,7 +379,7 @@ export default function EditorPage() {
               paddingBottom: 4,
             }}
           >
-            {project.shots.map((s) => (
+            {orderedShots.map((s) => (
               <button
                 key={s.id}
                 type="button"
@@ -303,7 +415,7 @@ export default function EditorPage() {
               fontSize: '0.9rem',
             }}
           >
-            拖拽素材到此处替换当前镜头画面 <ComingSoon />
+            可用「上传画面」替换本镜图，或「AI 重绘」按提示词重生。
           </div>
 
           <div style={{ marginTop: '1rem' }}>
@@ -315,7 +427,7 @@ export default function EditorPage() {
               ))}
             </div>
             <p className="pf-muted" style={{ fontSize: '0.85rem' }}>
-              素材库与上传能力即将推出，当前可使用「替换画面」触发 AI 重绘。
+              素材库即将推出。当前可用上方「上传画面」或「AI 重绘」替换本镜图。
             </p>
           </div>
         </section>
@@ -382,7 +494,7 @@ export default function EditorPage() {
           {tab === '画面' ? (
             <>
               <p className="pf-muted" style={{ fontSize: '0.88rem' }}>
-                当前镜头画面可通过 AI 重绘替换。时间线精修即将推出。
+                可用预览区「上传画面」替换本镜图，或「AI 重绘」按提示词重生。
               </p>
               <button
                 type="button"

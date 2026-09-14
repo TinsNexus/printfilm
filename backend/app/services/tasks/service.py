@@ -423,7 +423,78 @@ async def reconcile_stale_pending_tasks(db: AsyncSession) -> int:
     return changed
 
 
+# 连续点各镜「生成」会各建一个 sequential batch，且 batch_index 都是 0。
+# 这种分镜视频不能按 batch 首镜激活，必须按分集镜序走 rebalance。
+def sequential_fragment_video_needs_episode_rebalance(
+    task_type: str | None,
+    payload: dict | None,
+) -> bool:
+    if str(task_type or "") != "fragment_video":
+        return False
+    data = payload if isinstance(payload, dict) else {}
+    return bool(data.get("sequential"))
+
+
+# 开启衔接时，每集只允许镜序最前的未完成任务占槽（在跑优先于排队）。
+def pick_sequential_episode_head(
+    ep_tasks: list[TaskRun],
+    sort_by_frag: dict[int, int],
+) -> TaskRun | None:
+    ordered = sorted(
+        [task for task in ep_tasks if task.fragment_id is not None],
+        key=lambda task: (
+            sort_by_frag.get(int(task.fragment_id or 0), 10**9),
+            int(getattr(task, "id", 0) or 0),
+        ),
+    )
+    for task in ordered:
+        if task.status in {"leased", "running", "awaiting_poll"}:
+            return task
+        if task.status == "pending":
+            return task
+    return None
+
+
+# 上一镜没有成片或尾帧时，后镜不能当队首（失败任务已离开队列）。
+def sequential_task_blocked_by_previous_fragment(
+    task: TaskRun,
+    episode_frags: list[DramaEpisodeFragment],
+) -> bool:
+    if task.fragment_id is None or not episode_frags:
+        return False
+    ordered = sorted(
+        [frag for frag in episode_frags if frag.id is not None],
+        key=lambda frag: (int(frag.sort_order or 0), int(frag.id or 0)),
+    )
+    idx = next(
+        (i for i, frag in enumerate(ordered) if int(frag.id) == int(task.fragment_id)),
+        None,
+    )
+    if idx is None or idx <= 0:
+        return False
+    prev = ordered[idx - 1]
+    if (prev.video or "").strip():
+        return False
+    from app.services.drama.generation import read_fragment_last_frame_url
+
+    return not bool(read_fragment_last_frame_url(prev))
+
+
+# 从任务列或 payload 取出漫剧项目 id，供衔接重排按项目收口。
+def _sequential_fragment_video_project_id(task: TaskRun, payload: dict) -> int | None:
+    raw = getattr(task, "drama_project_id", None)
+    if raw is None:
+        raw = payload.get("project_id")
+    if raw is None or raw == "":
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 # 修复串行 batch 中 next_action_at 为空导致永远排队的任务；并行 batch 按用户并发上限逐步激活。
+# 分镜视频开启尾帧衔接时，不把各点击的 batch_index=0 当成独立首镜。
 async def reconcile_sequential_batches(db: AsyncSession) -> int:
     from app.config import get_settings
     from app.services.drama.access import count_user_inflight_fragment_video_tasks
@@ -442,6 +513,8 @@ async def reconcile_sequential_batches(db: AsyncSession) -> int:
     limit = max(1, int(get_settings().drama_user_video_job_limit or 12))
     # 同一 tick 内跨 batch 共享用户空位，避免重复超发
     user_slots: dict[int, int] = {}
+    # 开启衔接的分镜视频：按项目收集后统一重排，避免连续点击并发开跑
+    frag_video_projects: dict[int, int] = {}
     for batch_key in batch_keys:
         tasks = list(
             (
@@ -488,6 +561,20 @@ async def reconcile_sequential_batches(db: AsyncSession) -> int:
             payload = task.payload if isinstance(task.payload, dict) else {}
             by_index[int(payload.get("batch_index", -1))] = task
 
+        uses_episode_rebalance = sequential_fragment_video_needs_episode_rebalance(
+            tasks[0].task_type,
+            sample,
+        )
+        pid = _sequential_fragment_video_project_id(tasks[0], sample)
+        if uses_episode_rebalance and pid:
+            frag_video_projects[pid] = int(tasks[0].requested_by)
+        elif uses_episode_rebalance:
+            logger.warning(
+                "sequential fragment_video missing project_id batch_key=%s task_id=%s",
+                batch_key,
+                tasks[0].id,
+            )
+
         failed_indices = [
             int((t.payload or {}).get("batch_index", -1))
             for t in tasks
@@ -512,6 +599,10 @@ async def reconcile_sequential_batches(db: AsyncSession) -> int:
             changed += 1
             continue
 
+        if uses_episode_rebalance:
+            # 无论能否登记项目，都不要把连续点击当成独立首镜点亮
+            continue
+
         first = by_index.get(0)
         if first and first.status == "pending" and first.next_action_at is None:
             user_id = int(first.requested_by)
@@ -531,6 +622,14 @@ async def reconcile_sequential_batches(db: AsyncSession) -> int:
                 message="串行批次首镜激活",
             )
             changed += 1
+    for pid, uid in frag_video_projects.items():
+        stats = await rebalance_project_fragment_video_queue(
+            db,
+            pid,
+            sequential=True,
+            user_id=uid,
+        )
+        changed += int(stats.get("activated") or 0) + int(stats.get("deferred") or 0)
     if changed:
         await db.commit()
     return changed
@@ -629,22 +728,34 @@ async def rebalance_project_fragment_video_queue(
         ep_id = episode_by_frag.get(int(task.fragment_id)) or int(task.episode_id or 0)
         by_episode.setdefault(ep_id, []).append(task)
 
+    # 补齐同集全部分镜：上一镜失败后任务已不在队列，仍需挡住后镜
+    siblings_by_ep: dict[int, list[DramaEpisodeFragment]] = {}
+    episode_ids = [eid for eid in by_episode.keys() if eid]
+    if episode_ids:
+        sibling_rows = list(
+            (
+                await db.execute(
+                    select(DramaEpisodeFragment).where(
+                        DramaEpisodeFragment.episode_id.in_(sorted(episode_ids))
+                    )
+                )
+            ).scalars().all()
+        )
+        for frag in sibling_rows:
+            siblings_by_ep.setdefault(int(frag.episode_id), []).append(frag)
+            sort_by_frag[int(frag.id)] = int(frag.sort_order or 0)
+
     heads_to_activate: list[TaskRun] = []
     for ep_id, ep_tasks in by_episode.items():
-        ep_tasks.sort(
-            key=lambda task: (
-                sort_by_frag.get(int(task.fragment_id or 0), 10**9),
-                int(task.id),
+        head = pick_sequential_episode_head(ep_tasks, sort_by_frag)
+        if (
+            head is not None
+            and head.status == "pending"
+            and sequential_task_blocked_by_previous_fragment(
+                head, siblings_by_ep.get(ep_id, [])
             )
-        )
-        head: TaskRun | None = None
-        for task in ep_tasks:
-            if task.status in {"leased", "running", "awaiting_poll"}:
-                head = task
-                break
-            if task.status == "pending":
-                head = task
-                break
+        ):
+            head = None
         for task in ep_tasks:
             if task.status != "pending":
                 continue

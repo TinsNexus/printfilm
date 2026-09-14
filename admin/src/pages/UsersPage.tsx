@@ -24,7 +24,6 @@ type ListRes = { items: AdminUserRow[]; meta: PageMeta };
 // 用户管理：搜索、筛选、只读明细与编辑
 export function UsersPage() {
   const [q, setQ] = useState("");
-  const [planFilter, setPlanFilter] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
@@ -34,7 +33,6 @@ export function UsersPage() {
   const [editing, setEditing] = useState<AdminUserRow | null>(null);
   const [detailUser, setDetailUser] = useState<AdminUserRow | null>(null);
   const [form, setForm] = useState({
-    plan: "free",
     role: "user",
     balance_yuan: "0",
     balance_note: "",
@@ -50,7 +48,6 @@ export function UsersPage() {
         page_size: String(nextSize),
       });
       if (nextQ.trim()) params.set("q", nextQ.trim());
-      if (planFilter) params.set("plan", planFilter);
       if (roleFilter) params.set("role", roleFilter);
       const res = await api<ListRes>(`/api/admin/users?${params}`);
       setData(res);
@@ -84,7 +81,6 @@ export function UsersPage() {
   function openEdit(user: AdminUserRow) {
     setEditing(user);
     setForm({
-      plan: user.plan || "free",
       role: user.role || "user",
       balance_yuan: fenToYuan(user.balance_fen),
       balance_note: "",
@@ -100,7 +96,6 @@ export function UsersPage() {
       await api(`/api/admin/users/${editing.id}`, {
         method: "PATCH",
         body: JSON.stringify({
-          plan: form.plan,
           role: form.role,
           balance_fen: balanceFen,
           balance_note: form.balance_note || undefined,
@@ -123,7 +118,7 @@ export function UsersPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader description="搜索用户，调整套餐与余额" />
+      <PageHeader description="搜索用户，调整角色与余额" />
 
       <AdminFilterBar>
         <AdminSearchInput
@@ -134,12 +129,6 @@ export function UsersPage() {
             if (e.key === "Enter") applyFilters();
           }}
         />
-        <Select value={planFilter} onChange={(e) => setPlanFilter(e.target.value)}>
-          <option value="">全部套餐</option>
-          <option value="free">free</option>
-          <option value="pro">pro</option>
-          <option value="team">team</option>
-        </Select>
         <Select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
           <option value="">全部角色</option>
           <option value="user">user</option>
@@ -173,7 +162,6 @@ export function UsersPage() {
               <TableHead>邮箱</TableHead>
               <TableHead>昵称</TableHead>
               <TableHead>手机</TableHead>
-              <TableHead>套餐</TableHead>
               <TableHead>余额</TableHead>
               <TableHead>冻结</TableHead>
               <TableHead>角色</TableHead>
@@ -188,9 +176,6 @@ export function UsersPage() {
                 <TableCell className="font-medium">{u.email}</TableCell>
                 <TableCell>{u.nickname || "—"}</TableCell>
                 <TableCell className="text-xs">{u.phone || "—"}</TableCell>
-                <TableCell>
-                  <Badge variant="info">{u.plan}</Badge>
-                </TableCell>
                 <TableCell className="tabular-nums">¥{fenToYuan(u.balance_fen)}</TableCell>
                 <TableCell className="tabular-nums">¥{fenToYuan(u.frozen_fen)}</TableCell>
                 <TableCell>
@@ -220,7 +205,7 @@ export function UsersPage() {
             ))}
             {!loading && (data?.items.length ?? 0) === 0 && (
               <TableRow>
-                <TableCell colSpan={10} className="p-0">
+                <TableCell colSpan={9} className="p-0">
                   <EmptyState title="暂无用户" description="试试换个关键词搜索" />
                 </TableCell>
               </TableRow>
@@ -264,13 +249,6 @@ export function UsersPage() {
         }
       >
         <div className="admin-form-grid admin-form-grid--2">
-          <AdminField label="套餐">
-            <Select value={form.plan} onChange={(e) => setForm((f) => ({ ...f, plan: e.target.value }))}>
-              <option value="free">free</option>
-              <option value="pro">pro</option>
-              <option value="team">team</option>
-            </Select>
-          </AdminField>
           <AdminField label="角色">
             <Select value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}>
               <option value="user">user</option>

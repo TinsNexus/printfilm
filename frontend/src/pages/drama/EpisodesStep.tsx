@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { Clapperboard, Film, Layers, Sparkles, Wand2 } from 'lucide-react'
 import { dramaApi, resolveDramaMediaUrl, type DramaEpisode } from '../../api/drama'
 import { dialog } from '../../lib/dialog'
+import { loadDramaEpisodes } from '../../lib/dramaStoryboardNav'
 import { readEpisodeSubtitleMode, subtitleModeUsesModelOutput } from '../../lib/dramaSubtitleBoard'
 import { FragmentPlanSkillModal } from '../../components/drama/FragmentPlanSkillModal'
 import { readFragmentGenerationStatus } from './dramaEpisodeEditUtils'
@@ -104,8 +105,9 @@ export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
     seeded.current = false
   }, [projectId])
 
+  // 进页只读已有分集；force 才按剧本重切
   async function loadEpisodes(force = false) {
-    const rows = await dramaApi.seedEpisodes(projectId, force)
+    const rows = await loadDramaEpisodes(projectId, force)
     setEpisodes(rows)
     return rows
   }

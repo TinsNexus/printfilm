@@ -12,6 +12,12 @@ from app.config import Settings, get_settings
 from app.models import Project
 from app.models_tasks import TaskRun
 from app.services.billing.pricing import charge_fen_for_tokens
+from app.services.tokenfree_pricing import (
+    charge_fen_official_image,
+    charge_fen_official_llm,
+    charge_fen_official_video,
+    ensure_official_rates,
+)
 from app.services.kepu_stages import (
     normalize_kepu_pipeline_phase,
     project_audio_ready,
@@ -38,8 +44,7 @@ def _estimate_assets_fen(project: Project, settings: Settings) -> int:
         return 1
     total = 0
     for _ in range(max(need_img, 0)):
-        _, c_img = charge_fen_for_tokens(settings.billing_est_seedream_tokens, "seedream", settings=settings)
-        total += c_img
+        total += charge_fen_official_image(settings)
     if need_tts > 0:
         n = max(len(shots), 1)
         _, c_tts = charge_fen_for_tokens(
@@ -60,9 +65,7 @@ def _estimate_videos_fen(project: Project, settings: Settings) -> int:
     total = 0
     for sh in shots:
         secs = max(float(sh.duration or 4), 2.0)
-        tok = int(secs * settings.billing_est_seedance_tokens_per_sec)
-        _, c_vid = charge_fen_for_tokens(tok, "seedance2:video0", settings=settings)
-        total += c_vid
+        total += charge_fen_official_video(secs, settings)
     return max(math.ceil(total * buf), 1)
 
 
@@ -73,7 +76,7 @@ def estimate_phase_fen(project: Project, phase: str, settings: Settings | None =
     raw = normalize_kepu_pipeline_phase(phase, project)
 
     if raw == "script":
-        _, charge = charge_fen_for_tokens(s.billing_est_llm_tokens, "llm_chat", settings=s)
+        charge = charge_fen_official_llm(s.billing_est_llm_tokens, s)
         return max(1, math.ceil(charge * buf))
 
     if raw == "assets":
@@ -91,6 +94,7 @@ def estimate_phase_fen(project: Project, phase: str, settings: Settings | None =
 async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings | None = None) -> int:
     """按 domain + task_type 估算单任务预扣（分）。"""
     s = settings or get_settings()
+    await ensure_official_rates(s)
     buf = float(s.billing_estimate_buffer or 1.2)
     domain = (task.domain or "").strip()
     task_type = (task.task_type or "").strip()
@@ -99,26 +103,25 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
     if domain == "kepu" and task_type == "project_pipeline":
         project_id = task.project_id or payload.get("project_id")
         if not project_id:
-            _, charge = charge_fen_for_tokens(s.billing_est_llm_tokens, "llm_chat", settings=s)
+            charge = charge_fen_official_llm(s.billing_est_llm_tokens, s)
             return max(1, math.ceil(charge * buf))
         result = await db.execute(
             select(Project).where(Project.id == int(project_id)).options(selectinload(Project.shots))
         )
         project = result.scalar_one_or_none()
         if not project:
-            _, charge = charge_fen_for_tokens(s.billing_est_llm_tokens, "llm_chat", settings=s)
+            charge = charge_fen_official_llm(s.billing_est_llm_tokens, s)
             return max(1, math.ceil(charge * buf))
         phase = str(payload.get("phase") or "script")
         return estimate_phase_fen(project, phase, settings=s)
 
     if domain == "kepu":
         if task_type in {"shot_regen_image"}:
-            _, c = charge_fen_for_tokens(s.billing_est_seedream_tokens, "seedream", settings=s)
+            c = charge_fen_official_image(s)
             return max(1, math.ceil(c * buf))
         if task_type in {"shot_regen_video"}:
             dur = float(payload.get("duration") or 5)
-            tok = int(max(dur, 2.0) * s.billing_est_seedance_tokens_per_sec)
-            _, c = charge_fen_for_tokens(tok, "seedance2:video0", settings=s)
+            c = charge_fen_official_video(max(dur, 2.0), s)
             return max(1, math.ceil(c * buf))
         if task_type in {"shot_regen_audio", "project_regen_audio"}:
             _, c = charge_fen_for_tokens(s.billing_est_tts_tokens * 3, "tts", settings=s)
@@ -128,17 +131,17 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
 
     if domain == "drama":
         if task_type in {"script_summary", "fragment_plan", "agent_chat"}:
-            _, c = charge_fen_for_tokens(s.billing_est_llm_tokens, "llm_chat", settings=s)
+            c = charge_fen_official_llm(s.billing_est_llm_tokens, s)
             return max(1, math.ceil(c * buf))
         if task_type == "episode_script":
             total_eps = int(payload.get("total") or payload.get("episode_count") or 1)
-            _, c = charge_fen_for_tokens(s.billing_est_llm_tokens * max(total_eps, 1), "llm_chat", settings=s)
+            c = charge_fen_official_llm(s.billing_est_llm_tokens * max(total_eps, 1), s)
             return max(1, math.ceil(c * buf))
         if task_type in {"asset_image", "seed_assets"}:
             if task_type == "seed_assets":
-                _, c = charge_fen_for_tokens(s.billing_est_llm_tokens * 3, "llm_chat", settings=s)
+                c = charge_fen_official_llm(s.billing_est_llm_tokens * 3, s)
                 return max(1, math.ceil(c * buf))
-            _, c = charge_fen_for_tokens(s.billing_est_seedream_tokens, "seedream", settings=s)
+            c = charge_fen_official_image(s)
             return max(1, math.ceil(c * buf))
         if task_type in {"asset_video", "fragment_video"}:
             dur = float(payload.get("duration_sec") or payload.get("duration") or 0)
@@ -166,32 +169,29 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
                         )
             if dur <= 0:
                 dur = 8.0
-            tok = int(max(dur, 2.0) * s.billing_est_seedance_tokens_per_sec)
-            _, c = charge_fen_for_tokens(tok, "seedance2:video0", settings=s)
+            c = charge_fen_official_video(max(dur, 2.0), s)
             if task_type == "fragment_video":
-                _, c_img = charge_fen_for_tokens(s.billing_est_seedream_tokens, "seedream", settings=s)
-                c += max(1, c_img // 2)
+                c += max(1, charge_fen_official_image(s) // 2)
             return max(1, math.ceil(c * buf))
         if task_type == "voice_synthesis":
             _, c = charge_fen_for_tokens(s.billing_est_tts_tokens, "tts", settings=s)
             return max(1, math.ceil(c * buf))
         if task_type in {"skill_optimize", "voice_prompt"}:
-            _, c = charge_fen_for_tokens(s.billing_est_llm_tokens, "llm_chat", settings=s)
+            c = charge_fen_official_llm(s.billing_est_llm_tokens, s)
             return max(1, math.ceil(c * buf))
 
     if domain == "kepu" and task_type == "content_expand":
-        _, c = charge_fen_for_tokens(s.billing_est_llm_tokens, "llm_chat", settings=s)
+        c = charge_fen_official_llm(s.billing_est_llm_tokens, s)
         return max(1, math.ceil(c * buf))
 
     if domain in {"api", "studio"}:
         if task_type in {"v1_image", "tool_image"}:
-            _, c = charge_fen_for_tokens(s.billing_est_seedream_tokens, "seedream", settings=s)
+            c = charge_fen_official_image(s)
             return max(1, math.ceil(c * buf))
         if task_type in {"v1_video", "v1_seedance", "tool_video"}:
             dur = float(payload.get("duration") or 5)
-            tok = int(max(dur, 2.0) * s.billing_est_seedance_tokens_per_sec)
-            _, c = charge_fen_for_tokens(tok, "seedance2:video0", settings=s)
+            c = charge_fen_official_video(max(dur, 2.0), s)
             return max(1, math.ceil(c * buf))
 
-    _, c = charge_fen_for_tokens(s.billing_est_llm_tokens, "llm_chat", settings=s)
+    c = charge_fen_official_llm(s.billing_est_llm_tokens, s)
     return max(1, math.ceil(c * buf))

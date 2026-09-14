@@ -471,9 +471,9 @@ export function OrdersPage() {
                         }
                         title={
                           row.billing_basis === "upstream_cost"
-                            ? "按火山返回的实际费用 × markup"
+                            ? "按 TokenFree 返回的实际费用扣费"
                             : row.billing_basis === "upstream_usage"
-                              ? "按火山返回的 usage token × 配置单价 × markup"
+                              ? "按 TokenFree usage token × 官方单价扣费"
                               : "上游未返回 usage，按配置估算 token 扣费"
                         }
                       >

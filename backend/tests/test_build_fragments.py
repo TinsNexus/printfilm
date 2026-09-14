@@ -9,8 +9,22 @@ from app.services.drama.build_fragments import (
     _resolve_character_intro_text,
     build_character_binding,
     build_fragments_from_episode_body,
+    is_raw_screenplay_fragment,
     plan_fragments_from_scene,
 )
+
+
+def test_is_raw_screenplay_fragment_detects_scene_heading():
+    assert is_raw_screenplay_fragment("") is True
+    assert is_raw_screenplay_fragment("### 场1-1\n日外 大河\n出场人物：无") is True
+    assert is_raw_screenplay_fragment("###场1-1") is True
+    assert is_raw_screenplay_fragment("出场人物：苏轼\n△ 抬头。") is True
+
+
+def test_is_raw_screenplay_fragment_keeps_cinematic_shots():
+    # 手写分镜常无【字幕：】/@duration:，不能当场记原文
+    shot = "【转入｜无｜片头直接黑起】\n【BGM｜低频太鼓】\n【场景】夜 · 内 · 大牢"
+    assert is_raw_screenplay_fragment(shot) is False
 
 
 def test_long_scene_splits_into_multiple_fragments():

@@ -10,7 +10,6 @@ import StatCard from '../components/ui/StatCard'
 import {
   IconClapper,
   IconClock,
-  IconCopy,
   IconDownload,
   IconEdit,
   IconEye,
@@ -321,9 +320,9 @@ export default function HistoryPage() {
           icon={<IconSend size={18} />}
         />
         <StatCard
-          label={t('history.statDuration')}
-          value="—"
-          trend={t('history.durationSoon')}
+          label={t('history.statPublished')}
+          value={stats.published}
+          trend="—"
           icon={<IconClock size={18} />}
         />
       </div>
@@ -465,10 +464,6 @@ export default function HistoryPage() {
                     >
                       <IconDownload size={14} />
                       {busyId === p.id ? t('common.downloading') : t('common.download')}
-                    </button>
-                    <button type="button" className="pf-btn-text" disabled title={t('common.comingSoon')}>
-                      <IconCopy size={14} />
-                      {t('common.copy')}
                     </button>
                     <button
                       type="button"

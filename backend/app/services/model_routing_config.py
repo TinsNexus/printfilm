@@ -69,10 +69,16 @@ def channel_connection_ready(channel: SystemModelChannel) -> bool:
 
 # 判断渠道是否包含指定上游模型
 def channel_supports_model(channel: SystemModelChannel, upstream_model: str) -> bool:
+    from app.services.tokenfree_pricing import canonicalize_channel_model_id
+
     target = normalize_model_name(upstream_model)
     if not target:
         return False
-    return any(normalize_model_name(item) == target for item in channel.models)
+    target_c = canonicalize_channel_model_id(target)
+    return any(
+        normalize_model_name(item) == target or canonicalize_channel_model_id(item) == target_c
+        for item in channel.models
+    )
 
 
 # 解析渠道下单模型的能力

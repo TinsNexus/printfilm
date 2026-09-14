@@ -35,7 +35,11 @@ from app.services.drama.build_seedance_generate_body import (
     resolve_episode_burn_subtitles,
     resolve_episode_character_intro,
 )
-from app.services.drama.generation_prompt import build_generation_prompt
+from app.services.drama.generation_prompt import append_style_prompt, build_generation_prompt
+from app.services.drama.image_styles import (
+    append_style_board_url,
+    resolve_image_style_board_url,
+)
 from app.services.drama.seedream_options import resolve_seedream_model_endpoint, resolve_seedream_size
 from app.services.drama.visual_prompt import resolve_visual_prompt_for_asset
 from app.services.drama.voice_synthesis import build_voice_sample_text, synthesize_voice_asset
@@ -1283,10 +1287,14 @@ async def generate_asset_image(
     res = (resolution or "").strip() or "2K"
     model = resolve_seedream_model_endpoint(model_id)
     size = resolve_seedream_size(aspect_ratio=ratio, resolution=res, model_id=model)
-    full_prompt = build_generation_prompt(prompt, asset_type=kind, style_id=style_id)
+    # board 风格封面的公网 URL；没有栅格图时仍只靠提示词
+    board = resolve_image_style_board_url(style_id)
+    full_prompt = build_generation_prompt(
+        prompt, asset_type=kind, style_id=style_id, has_style_board=bool(board)
+    )
 
     logger.info(
-        "调用 Seedream 生图 project_id=%s asset_id=%s kind=%s style=%s model=%s size=%s prompt_len=%s",
+        "调用 Seedream 生图 project_id=%s asset_id=%s kind=%s style=%s model=%s size=%s prompt_len=%s board=%s",
         project.id,
         asset.id if asset else None,
         kind,
@@ -1294,6 +1302,7 @@ async def generate_asset_image(
         model,
         size,
         len(full_prompt or ""),
+        bool(board),
     )
     result = await ark.gen_image(
         full_prompt.strip(),
@@ -1301,6 +1310,7 @@ async def generate_asset_image(
         size=size,
         model=model,
         aspect_ratio=ratio,
+        style_ref_urls=[board] if board else None,
     )
     # 生图结果实时同步 OSS（禁止异步排队），Seedance 参考图需要公网 https
     from datetime import datetime, timezone
@@ -1558,6 +1568,9 @@ async def prepare_fragment_video_for_submit(
     ref_payloads = build_fragment_ref_payloads(project, ref_assets)
     style_id = str((project.params or {}).get("image_style_id") or "").strip() or None
     catalog = build_seedance_reference_catalog(ref_payloads)
+    # board 始终可用于静帧；视频参考图只在已有角色/场景图时挂上，避免封面被当成主体
+    board_url = resolve_image_style_board_url(style_id)
+    video_board_url = board_url if catalog.images else ""
 
     continuity_url: str | None = None
     if project_link_last_frame_enabled(project):
@@ -1576,7 +1589,8 @@ async def prepare_fragment_video_for_submit(
         ark = get_ark()
         ref_image_urls: list[str] = []
         unsupported_images: list[str] = []
-        for item in catalog.images[:30]:
+        image_budget = 29 if video_board_url else 30
+        for item in catalog.images[:image_budget]:
             https_url = _publish_https_media_url(item.url)
             if not https_url.startswith("https://"):
                 continue
@@ -1597,8 +1611,13 @@ async def prepare_fragment_video_for_submit(
                 ref_audio_urls.append(https_url)
 
         if not ref_image_urls:
+            still_prompt = append_style_prompt(
+                (prompt or "").strip()[:500] or "短剧分镜",
+                style_id,
+                has_style_board=False,
+            )
             still = await ark.gen_image(
-                prompt[:500],
+                still_prompt,
                 project_id=project.id,
                 shot_no=fragment.id,
                 size=seedream_still_size_for_video_ratio(ratio),
@@ -1617,6 +1636,8 @@ async def prepare_fragment_video_for_submit(
             )
 
         # 多参考：把 @asset:id 改写成「参考图N」，与 reference_image_urls 顺序对齐
+        if video_board_url:
+            ref_image_urls = append_style_board_url(ref_image_urls, video_board_url)
         kie_prompt = build_seedance_prompt_text(
             prompt,
             ref_payloads,
@@ -1628,6 +1649,7 @@ async def prepare_fragment_video_for_submit(
             character_intro=resolve_episode_character_intro(
                 episode.params if episode else None
             ),
+            has_style_board=bool(video_board_url),
         )
         return FragmentVideoPrepared(
             submit_mode="kie",
@@ -1644,6 +1666,7 @@ async def prepare_fragment_video_for_submit(
                 ref_payloads,
                 None,
                 has_text=bool((prompt or "").strip()),
+                style_board_url=video_board_url or None,
             ),
             model_id=mid,
             kie_api_kind=kie_spec.api_kind if kie_spec else "jobs",
@@ -1660,6 +1683,7 @@ async def prepare_fragment_video_for_submit(
                 "resolution": resolution,
                 "duration_fallback": duration,
                 "continuity_first_frame_url": continuity_url,
+                "style_board_url": video_board_url or None,
                 "burn_subtitles": resolve_episode_burn_subtitles(
                     episode.params if episode else None
                 ),
@@ -1679,6 +1703,7 @@ async def prepare_fragment_video_for_submit(
                 ref_payloads,
                 continuity_url,
                 has_text=bool((prompt or "").strip()),
+                style_board_url=video_board_url or None,
             ),
             model_id=mid,
         )
@@ -1686,8 +1711,14 @@ async def prepare_fragment_video_for_submit(
     ark = get_ark()
     if not image_url:
         # Seedance i2v 禁止传 ratio，输出跟首帧；静帧必须先按目标画幅生成
+        # 无主体参考时不把画风板当唯一 image，只靠风格文案
+        still_prompt = append_style_prompt(
+            (prompt or "").strip()[:500] or "短剧分镜",
+            style_id,
+            has_style_board=False,
+        )
         still = await ark.gen_image(
-            prompt[:500],
+            still_prompt,
             project_id=project.id,
             shot_no=fragment.id,
             size=seedream_still_size_for_video_ratio(ratio),

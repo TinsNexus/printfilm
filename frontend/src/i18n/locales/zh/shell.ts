@@ -199,8 +199,11 @@ export const zhShell = {
     PENDING: '等待中',
     IMAGE_READY: '图已生成',
     VIDEO_READY: '视频已生成',
-    AUDIO_READY: '已完成',
+    AUDIO_READY: '配音已生成',
     DONE: '已完成',
     FAILED: '失败',
+    GENERATING: '生成中',
+    WAIT_IMAGE: '待出图',
+    WAIT_VIDEO: '待出视频',
   },
 } as const

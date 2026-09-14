@@ -16,7 +16,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.database import get_db
 from app.deps import get_current_user
-from app.models import Project, ProjectStatus, Shot, UsageEvent, User, Work
+from app.models import Project, ProjectStatus, Shot, ShotStatus, UsageEvent, User, Work
 from app.models_tasks import TaskRun
 from app.schemas import (
     ContentExpandOut,
@@ -30,6 +30,7 @@ from app.schemas import (
     ProjectOut,
     ProjectUpdate,
     ShotOut,
+    ShotReorderIn,
     ShotUpdate,
     VoicePreviewOut,
     VoicePreviewRequest,
@@ -37,18 +38,44 @@ from app.schemas import (
 )
 from app.schemas_tasks import TaskCreateRequest, TaskTargetBind
 from app.services import pipeline, storage
+from app.services.bgm import clip_shot_bgm
 from app.services.ark import get_ark
 from app.services.progress import redis_bridge, subscribe, unsubscribe
 from app.services.billing import record_llm_chat_line, run_billed_ephemeral
 from app.services.billing.http import http_exception_for_value_error
 from app.services.tasks.service import (
+    ACTIVE_TASK_STATUSES,
     cancel_tasks_for_scope,
     create_task,
     list_active_tasks_for_owner,
 )
 from app.services.voices import ensure_voice_preview, list_voices
+from app.services.kepu_stages import resolve_kepu_billing_phase
 
 router = APIRouter(tags=["projects"])
+
+
+def _demote_after_edit(project: Project) -> None:
+    """改镜头/配乐后作废成片，并按素材把终态打回 script/assets/videos/compose。"""
+    project.final_video_url = None
+    if project.status not in {
+        ProjectStatus.DONE,
+        ProjectStatus.AUDITING,
+        ProjectStatus.COMPOSING,
+        ProjectStatus.VIDEO_READY,
+        ProjectStatus.FAILED,
+        ProjectStatus.CANCELLED,
+    }:
+        return
+    phase = resolve_kepu_billing_phase(project)
+    if phase == "script":
+        project.status = ProjectStatus.SCRIPT_READY if project.shots else ProjectStatus.DRAFT
+    elif phase == "assets":
+        project.status = ProjectStatus.SCRIPT_READY
+    elif phase == "videos":
+        project.status = ProjectStatus.IMAGE_READY
+    else:
+        project.status = ProjectStatus.VIDEO_READY
 
 
 @router.get("/voices")
@@ -137,18 +164,35 @@ async def _get_owned_project(db: AsyncSession, project_id: int, user: User) -> P
     return project
 
 
+def _image_ext_from_magic(raw: bytes) -> str:
+    """按文件头识别图片后缀；无法识别则返回空。"""
+    if raw.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if raw.startswith(b"GIF87a") or raw.startswith(b"GIF89a"):
+        return ".gif"
+    if len(raw) >= 12 and raw.startswith(b"RIFF") and raw[8:12] == b"WEBP":
+        return ".webp"
+    return ""
+
+
+# 整片级任务占用项目时，禁止再开侧任务（含 cancel_requested，流水线可能仍在写）
+_PROJECT_WIDE_TASK_TYPES = {
+    "project_pipeline",
+    "project_compose_only",
+    "project_regen_audio",
+    "shot_regen_audio",
+}
+
+
 def _ensure_side_task_allowed(project: Project) -> None:
-    """重绘/重生/合成侧任务：流水线进行中时拒绝，避免与进行中任务冲突。"""
-    running = {
-        ProjectStatus.SCRIPTING,
-        ProjectStatus.IMAGING,
-        ProjectStatus.VIDEOING,
-        ProjectStatus.AUDIOING,
-        ProjectStatus.COMPOSING,
-        ProjectStatus.AUDITING,
-    }
-    if project.status in running:
-        raise HTTPException(status_code=409, detail="生成进行中，请稍后")
+    """整片任务未终态前拒绝侧任务；单镜重绘可并行，不因残留 IMAGING 卡住。"""
+    for task in getattr(project, "active_tasks", []) or []:
+        if str(getattr(task, "status", "") or "") not in ACTIVE_TASK_STATUSES:
+            continue
+        if str(getattr(task, "task_type", "") or "") in _PROJECT_WIDE_TASK_TYPES:
+            raise HTTPException(status_code=409, detail="整片生成进行中，请稍后")
 
 
 # COMPOSING 且无进行中任务时视为拼接已失败卡住，允许重新发起
@@ -567,6 +611,12 @@ async def update_project(
 
         if not is_valid_project_media_model(data["video_model"], "video"):
             raise HTTPException(status_code=400, detail="无效视频模型")
+    if "bgm_lock" in data:
+        data["bgm_lock"] = str(data["bgm_lock"] or "").strip()
+    if "subtitle_preset" in data:
+        data["subtitle_preset"] = str(data["subtitle_preset"] or "").strip()
+    if "bgm_lock" in data or "subtitle_preset" in data:
+        _demote_after_edit(project)
     for k, v in data.items():
         setattr(project, k, v)
     await db.commit()
@@ -792,6 +842,118 @@ async def project_events(
     return EventSourceResponse(event_generator())
 
 
+@router.post("/projects/{project_id}/shots", response_model=ShotOut)
+async def create_shot(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Shot:
+    """在片尾追加一镜空白分镜。"""
+    project = await _get_owned_project(db, project_id, user)
+    _ensure_side_task_allowed(project)
+    shots = sorted(project.shots, key=lambda s: s.shot_no)
+    next_no = (shots[-1].shot_no + 1) if shots else 1
+    from app.services.seedance_segments import SegmentBeat, build_segment_script
+
+    bgm = clip_shot_bgm(getattr(project, "bgm_lock", None))
+    visual = "画面轻微动态，保持主体稳定"
+    script = build_segment_script(
+        [SegmentBeat(duration=4, kind="visual", text=visual)],
+        bgm_mood=bgm,
+    )
+    shot = Shot(
+        project_id=project.id,
+        shot_no=next_no,
+        duration=4,
+        narration="",
+        overlay_title=f"场景 {next_no:02d}",
+        overlay_subtitle="",
+        img_prompt=visual,
+        video_prompt=script,
+        segment_script=script,
+        camera="slow pan",
+        bgm_mood=bgm,
+        status=ShotStatus.PENDING,
+    )
+    db.add(shot)
+    await db.flush()
+    await db.refresh(project, attribute_names=["shots"])
+    _demote_after_edit(project)
+    await db.commit()
+    await db.refresh(shot)
+    return shot
+
+
+@router.post("/projects/{project_id}/shots/reorder", response_model=ProjectOut)
+async def reorder_shots(
+    project_id: int,
+    body: ShotReorderIn,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Project:
+    """按 shot_ids 重排镜号。"""
+    project = await _get_owned_project(db, project_id, user)
+    _ensure_side_task_allowed(project)
+    existing = {s.id: s for s in project.shots}
+    if set(body.shot_ids) != set(existing.keys()):
+        raise HTTPException(status_code=400, detail="镜头列表不完整")
+    for i, sid in enumerate(body.shot_ids, start=1):
+        existing[sid].shot_no = i
+    _demote_after_edit(project)
+    await db.commit()
+    return await _get_owned_project(db, project_id, user)
+
+
+@router.post("/projects/{project_id}/shots/{shot_id}/image", response_model=ProjectOut)
+async def upload_shot_image(
+    project_id: int,
+    shot_id: int,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Project:
+    """上传替换本镜画面。"""
+    project = await _get_owned_project(db, project_id, user)
+    _ensure_side_task_allowed(project)
+    shot = next((s for s in project.shots if s.id == shot_id), None)
+    if not shot:
+        raise HTTPException(status_code=404, detail="分镜不存在")
+    content_type = (file.content_type or "").lower()
+    allowed = {
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+        "image/gif": ".gif",
+    }
+    ext = allowed.get(content_type)
+    if not ext:
+        suffix = Path(file.filename or "").suffix.lower()
+        ext = ".jpg" if suffix == ".jpeg" else suffix if suffix in {".jpg", ".png", ".webp", ".gif"} else ""
+    if not ext:
+        raise HTTPException(status_code=400, detail="仅支持 JPG / PNG / WebP / GIF")
+    raw = await file.read(8 * 1024 * 1024 + 1)
+    if not raw:
+        raise HTTPException(status_code=400, detail="空文件")
+    if len(raw) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="画面不能超过 8MB")
+    sniffed = _image_ext_from_magic(raw)
+    if not sniffed:
+        raise HTTPException(status_code=400, detail="文件不是有效图片")
+    ext = sniffed
+    dest = storage.project_dir(project_id) / f"shot_{shot.id}_upload{ext}"
+    dest.write_bytes(raw)
+    shot.image_url = storage.publish_local(dest)
+    shot.image_ark_url = None
+    shot.video_url = None
+    shot.last_frame_url = None
+    shot.status = ShotStatus.IMAGE_READY
+    shot.version += 1
+    _demote_after_edit(project)
+    await db.commit()
+    return await _get_owned_project(db, project_id, user)
+
+
 @router.patch("/projects/{project_id}/shots/{shot_id}", response_model=ShotOut)
 async def update_shot(
     project_id: int,
@@ -815,7 +977,7 @@ async def update_shot(
             replace_narration_in_script,
         )
 
-        bgm = (getattr(project, "bgm_lock", None) or shot.bgm_mood or "").strip()
+        bgm = clip_shot_bgm(getattr(project, "bgm_lock", None) or shot.bgm_mood)
         script = str(data["segment_script"])
         # 弹窗旁白/首帧优先写回脚本，避免保存时被旧脚本盖掉
         if "narration" in data and data["narration"] is not None:
@@ -838,12 +1000,15 @@ async def update_shot(
             tpl_min=tpl.shot_duration_min if tpl else 2,
             tpl_max=tpl.shot_duration_max if tpl else 8,
         )
+    if "bgm_mood" in data and data["bgm_mood"] is not None:
+        data["bgm_mood"] = clip_shot_bgm(str(data["bgm_mood"]))
     for k, v in data.items():
         setattr(shot, k, v)
     # Invalidate downstream if visual prompts changed
     if "img_prompt" in data:
         shot.image_url = None
         shot.video_url = None
+        shot.last_frame_url = None
         shot.status = "PENDING"
         project.final_video_url = None
     elif (
@@ -853,6 +1018,7 @@ async def update_shot(
         or "camera" in data
     ):
         shot.video_url = None
+        shot.last_frame_url = None
         project.final_video_url = None
     shot.version += 1
     await db.commit()

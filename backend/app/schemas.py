@@ -112,6 +112,12 @@ class ShotOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ShotReorderIn(BaseModel):
+    """按 id 顺序重排分镜号。"""
+
+    shot_ids: list[int] = Field(min_length=1)
+
+
 class ShotUpdate(BaseModel):
     narration: str | None = None
     overlay_title: str | None = None
@@ -163,6 +169,8 @@ class ProjectUpdate(BaseModel):
     extra_prompt: str | None = Field(default=None, max_length=2000)
     image_model: str | None = Field(default=None, max_length=64)
     video_model: str | None = Field(default=None, max_length=64)
+    bgm_lock: str | None = Field(default=None, max_length=200)
+    subtitle_preset: str | None = Field(default=None, max_length=32)
     ref_image_url: str | None = None
     cover_url: str | None = Field(default=None, max_length=1024)
 
@@ -184,6 +192,7 @@ class ProjectOut(BaseModel):
     voice_id: str = ""
     character_bible: str = ""
     bgm_lock: str = ""
+    subtitle_preset: str = ""
     style_prompt: str = ""
     character_prompt: str = ""
     extra_prompt: str = ""

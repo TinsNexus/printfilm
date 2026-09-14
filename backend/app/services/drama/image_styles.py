@@ -2,6 +2,23 @@
 
 from __future__ import annotations
 
+import logging
+import time
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+# 画风板只借鉴气质，禁止抄参考图里的人物与构图
+STYLE_BOARD_PROMPT_HINT = (
+    "另附画风参考图：只借鉴其色调、笔触、光影与整体气质，"
+    "禁止复制该图的人物、场景主体与构图。"
+)
+
+_STYLE_BOARD_EXTS = (".png", ".jpg", ".jpeg", ".webp")
+_board_url_cache: dict[tuple[str, int, int], str] = {}
+_board_fail_cache: dict[tuple[str, int, int], float] = {}
+_BOARD_FAIL_TTL_SEC = 60.0
+
 # IMAGE_STYLE_IDS 内置风格 ID（与前端 dramaImageStyles 对齐）
 IMAGE_STYLE_IDS = (
     "retro-sci-fi-atompunk",
@@ -20,6 +37,7 @@ IMAGE_STYLE_IDS = (
     "neon-cyberpunk-film",
     "90s-rural-china-film",
     "cgi-3d-animation",
+    "ghibli-handdrawn-anime",
     "tezuka-era-cartoon",
     "shanghai-animation",
     "pixel-art",
@@ -79,6 +97,12 @@ IMAGE_STYLE_PROMPTS: dict[str, str] = {
         "柔和体积光与次表面散射，干净材质与饱和配色，浅景深，"
         "非写实摄影、非日系赛璐璐平面、非剪纸扁平"
     ),
+    "ghibli-handdrawn-anime": (
+        "手绘二维动画电影气质，水彩与水粉背景，柔和自然光与金色黄昏，"
+        "写实人体比例与朴素五官（非大眼睛赛璐璐美少女），生活化服饰，"
+        "茂盛草木、风吹草地与流动云层，温暖土黄与青绿，空气透视与电影构图，"
+        "非写实摄影、非3D CGI、非像素风、非剪纸扁平"
+    ),
     "tezuka-era-cartoon": "手冢治虫时代经典日式卡通画风，简洁线条，复古动画平涂着色，怀旧动画质感",
     "shanghai-animation": (
         "上海美术电影制片厂经典动画画风，中国民族绘画韵味，水彩与工笔结合，诗意唯美，传统色彩"
@@ -107,6 +131,7 @@ IMAGE_STYLE_LABELS: dict[str, str] = {
     "neon-cyberpunk-film": "霓虹赛博电影",
     "90s-rural-china-film": "90年代中国农村电影",
     "cgi-3d-animation": "3D 动画",
+    "ghibli-handdrawn-anime": "宫崎骏气质手绘",
     "tezuka-era-cartoon": "手冢治虫时代卡通画风",
     "shanghai-animation": "上美画风",
     "pixel-art": "像素风",
@@ -124,3 +149,102 @@ def resolve_image_style_prompt(style_id: str | None = None) -> str:
     if not style_id:
         return ""
     return IMAGE_STYLE_PROMPTS.get(style_id, "")
+
+
+def _first_raster(directory: Path, style_id: str) -> Path | None:
+    """目录下按常见栅格后缀找风格板，跳过 svg 占位。"""
+    if not directory.is_dir():
+        return None
+    for ext in _STYLE_BOARD_EXTS:
+        path = directory / f"{style_id}{ext}"
+        if path.is_file() and path.stat().st_size > 1024:
+            return path
+    return None
+
+
+# 延迟导入，避免与 storage 循环依赖
+def _static_root() -> Path:
+    from app.services.storage import STATIC_ROOT
+
+    return STATIC_ROOT
+
+
+def _safe_image_style_id(style_id: str | None) -> str | None:
+    """只接受内置风格 ID，拒绝路径穿越。"""
+    sid = (style_id or "").strip()
+    if not sid or sid not in IMAGE_STYLE_IDS:
+        return None
+    if any(part in sid for part in ("/", "\\", "..")):
+        return None
+    return sid
+
+
+def style_board_local_path(style_id: str | None) -> Path | None:
+    """风格板本地文件：优先 backend/static，其次前端 public 封面。"""
+    sid = _safe_image_style_id(style_id)
+    if not sid:
+        return None
+    backend_dir = _static_root() / "drama" / "image-styles"
+    found = _first_raster(backend_dir, sid)
+    if found:
+        return found
+    repo_root = Path(__file__).resolve().parents[4]
+    return _first_raster(repo_root / "frontend" / "public" / "image-styles", sid)
+
+
+def resolve_image_style_board_url(style_id: str | None = None) -> str:
+    """把风格板发到公网 https，供 Seedream / Seedance 拉图；失败则空串（仍走提示词）。"""
+    path = style_board_local_path(style_id)
+    if path is None:
+        return ""
+    cache_key = (str(path.resolve()), int(path.stat().st_mtime_ns), int(path.stat().st_size))
+    cached = _board_url_cache.get(cache_key)
+    if cached:
+        return cached
+    failed_at = _board_fail_cache.get(cache_key)
+    if failed_at is not None and (time.monotonic() - failed_at) < _BOARD_FAIL_TTL_SEC:
+        return ""
+    from app.services import storage
+    from app.services.style_lock import seedream_ref_urls
+
+    dest = path
+    static_root = _static_root()
+    try:
+        resolved = path.resolve()
+        if static_root not in resolved.parents and static_root != resolved.parent:
+            dest_dir = static_root / "drama" / "image-styles"
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest = dest_dir / path.name
+            if not dest.exists() or dest.stat().st_mtime < path.stat().st_mtime:
+                dest.write_bytes(path.read_bytes())
+        published = storage.publish_local(dest, sync=True)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("风格板未能发布为公网 URL style=%s: %s", style_id, exc)
+        _board_fail_cache[cache_key] = time.monotonic()
+        return ""
+    urls = seedream_ref_urls(published, limit=1)
+    url = urls[0] if urls else ""
+    if not url:
+        logger.warning("风格板 URL 不是上游可拉取的 https style=%s published=%s", style_id, published)
+        _board_fail_cache[cache_key] = time.monotonic()
+        return ""
+    _board_fail_cache.pop(cache_key, None)
+    _board_url_cache[cache_key] = url
+    return url
+
+
+def append_style_board_url(
+    urls: list[str],
+    board_url: str | None,
+    *,
+    max_total: int = 30,
+) -> list[str]:
+    """画风板接到角色/场景图之后，去重，并为板子预留最后一个名额。"""
+    board = (board_url or "").strip()
+    out = [u.strip() for u in urls if (u or "").strip()]
+    cap = max(1, int(max_total))
+    if board:
+        out = [u for u in out if u != board][: cap - 1]
+        out.append(board)
+        return out
+    return out[:cap]

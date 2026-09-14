@@ -29,8 +29,8 @@ def test_build_segment_script_and_time_ranges():
         ],
         bgm_mood="轻快专业",
     )
-    assert "【字幕：" in script
-    assert "【BGM：" in script
+    assert "【字幕：后期叠旁白字幕" in script
+    assert "【BGM：后期混音" in script
     assert "@duration:4" in script
     assert "@duration:8" in script
     assert "【旁白·自然语速·同步字幕】" in script
@@ -240,3 +240,24 @@ def test_build_seedance_prompt_ambient_only_rewrites_narration():
     assert "一键接入即可开始监控" not in prompt
     assert "00:00-00:05" in prompt
     assert NARRATION_PREFIX not in prompt
+
+
+def test_normalize_kepu_subtitle_cue_rewrites_legacy_burn():
+    from app.services.seedance_segments import SUBTITLE_CUE, normalize_kepu_subtitle_cue
+
+    legacy = "【字幕：全程简体中文字幕，旁白逐句同步烧录】\n@duration:4\n过肩工位"
+    assert normalize_kepu_subtitle_cue(legacy).startswith(SUBTITLE_CUE)
+    assert "烧录" not in normalize_kepu_subtitle_cue(legacy)
+
+
+def test_apply_segment_script_edit_normalizes_legacy_kepu_cue():
+    edited = apply_segment_script_edit(
+        "【字幕：全程简体中文字幕，旁白逐句同步烧录】\n"
+        "【BGM：轻快专业，音量低于人声】\n"
+        "@duration:4\n过肩演示\n"
+        f"@duration:8\n{NARRATION_PREFIX}口播一句"
+    )
+    assert "后期叠旁白字幕" in edited["segment_script"]
+    assert "烧录" not in edited["segment_script"]
+    assert "后期混音" in edited["segment_script"]
+    assert edited["narration"]

@@ -69,6 +69,8 @@ class Settings(BaseSettings):
     ark_video_poll_timeout: float = 900.0
     # Parallel generation concurrency (per project)
     pipeline_image_concurrency: int = 3
+    # TokenFree / New API 同时观察的生图任务上限（超出会 429）
+    tokenfree_image_concurrency: int = 1
     # Seedance 2.5 官方并发上限约 10
     pipeline_video_concurrency: int = 10
     pipeline_audio_concurrency: int = 4
@@ -103,9 +105,9 @@ class Settings(BaseSettings):
     # Legacy flag; prefer billing_enabled
     quota_enabled: bool = False
 
-    # Token billing (charge = provider_cost * markup)
+    # Token 计费：用户扣费 = TokenFree 官方成本（billing_markup 保留兼容，不再乘）
     billing_enabled: bool = False
-    billing_markup: float = 1.5
+    billing_markup: float = 1.0
     billing_estimate_buffer: float = 1.2
     # Yuan per million tokens (provider cost)
     billing_seedance_video0: float = 46.0
@@ -113,7 +115,7 @@ class Settings(BaseSettings):
     billing_llm_per_m: float = 5.0
     billing_seedream_per_m: float = 8.0
     billing_tts_per_m: float = 2.0
-    # Kie：1 credit 折合人民币分（约 $0.005 ≈ ¥0.035 → 3.5）；用户扣费再 × markup
+    # Kie：1 credit 折合人民币分（约 $0.005 ≈ ¥0.035 → 3.5）
     billing_kie_fen_per_credit: float = 3.5
     # TokenFree / New API：quota→USD→人民币（500000 quota = 1 USD）
     billing_usd_cny: float = 7.0

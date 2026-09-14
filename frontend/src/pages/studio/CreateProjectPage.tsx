@@ -6,10 +6,9 @@ import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import AppShell from '../../components/layout/AppShell'
 import Stepper from '../../components/ui/Stepper'
 import PillTabs from '../../components/ui/PillTabs'
-import ComingSoon from '../../components/ui/ComingSoon'
 import { IconChevronLeft, IconRefresh, IconSparkles } from '../../components/ui/Icons'
 import { CATEGORY_ORDER } from '../../lib/categories'
-import { CREATE_STEPS } from '../../lib/status'
+import { kepuStepIndex, kepuSteps } from '../../lib/status'
 
 type Inspiration = {
   title: string
@@ -198,7 +197,6 @@ export default function CreateProjectPage() {
 
   const selected = templates.find((t) => t.id === templateId)
   const sourceType = inputTab === '粘贴完整文案' ? 'script' : 'theme'
-  const disabledInput = inputTab === '导入文章链接' || inputTab === '上传文档'
   const inspTotal = Math.ceil(INSPIRATION_POOL.length / PAGE_SIZE)
   const inspirations = INSPIRATION_POOL.slice(inspPage * PAGE_SIZE, inspPage * PAGE_SIZE + PAGE_SIZE)
 
@@ -220,10 +218,6 @@ export default function CreateProjectPage() {
   }
 
   async function aiExpand() {
-    if (disabledInput) {
-      setError('该输入方式即将推出，请使用一句话主题或粘贴文案')
-      return
-    }
     const seed = sourceText.trim() || title.trim() || '人工智能如何改变生活'
     setAiBusy(true)
     setError('')
@@ -244,10 +238,6 @@ export default function CreateProjectPage() {
   async function next() {
     if (!templateId || !sourceText.trim()) {
       setError('请选择模板并填写主题内容')
-      return
-    }
-    if (disabledInput) {
-      setError('该输入方式即将推出，请使用一句话主题或粘贴文案')
       return
     }
     setBusy(true)
@@ -289,7 +279,7 @@ export default function CreateProjectPage() {
             </button>
             <h1 className="pf-page-title">创建项目</h1>
           </div>
-          <Stepper steps={CREATE_STEPS} current={1} doneThrough={0} />
+          <Stepper steps={kepuSteps()} current={kepuStepIndex('create')} doneThrough={-1} />
         </div>
       </header>
 
@@ -318,15 +308,12 @@ export default function CreateProjectPage() {
               </button>
             ))}
           </div>
-          <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" style={{ marginTop: '0.75rem' }} disabled>
-            加载更多模板 <ComingSoon />
-          </button>
         </aside>
 
         <section className="pf-create-col">
           <h3>输入内容</h3>
           <div className="pf-input-tabs">
-            {['一句话主题', '粘贴完整文案', '导入文章链接', '上传文档'].map((tab) => (
+            {['一句话主题', '粘贴完整文案'].map((tab) => (
               <button
                 key={tab}
                 type="button"
@@ -334,12 +321,6 @@ export default function CreateProjectPage() {
                 onClick={() => setInputTab(tab)}
               >
                 {tab}
-                {(tab === '导入文章链接' || tab === '上传文档') && (
-                  <>
-                    {' '}
-                    <ComingSoon />
-                  </>
-                )}
               </button>
             ))}
           </div>
@@ -368,7 +349,7 @@ export default function CreateProjectPage() {
               <button
                 type="button"
                 className="pf-btn pf-btn-ai pf-btn-sm pf-btn-icon"
-                disabled={aiBusy || busy || disabledInput}
+                disabled={aiBusy || busy}
                 onClick={aiExpand}
               >
                 <IconSparkles size={14} />
@@ -387,13 +368,10 @@ export default function CreateProjectPage() {
                   setTitle(deriveTitle(next))
                 }
               }}
-              disabled={disabledInput}
               placeholder={
-                disabledInput
-                  ? '该方式即将推出'
-                  : sourceType === 'theme'
-                    ? '例如：黑洞是如何形成的？用通俗方式讲清引力与时空'
-                    : '粘贴或 AI 生成完整口播文案…'
+                sourceType === 'theme'
+                  ? '例如：黑洞是如何形成的？用通俗方式讲清引力与时空'
+                  : '粘贴或 AI 生成完整口播文案…'
               }
             />
             {sourceType === 'theme' ? (
@@ -486,14 +464,14 @@ export default function CreateProjectPage() {
             type="button"
             className="pf-btn pf-btn-ghost pf-btn-block pf-btn-sm pf-btn-icon"
             style={{ marginTop: '0.55rem' }}
-            disabled={aiBusy || busy || disabledInput}
+            disabled={aiBusy || busy}
             onClick={aiExpand}
           >
             <IconSparkles size={14} />
             {aiBusy ? 'AI 生成中…' : '不够完整？让 AI 帮你写'}
           </button>
           <p className="pf-muted" style={{ fontSize: '0.78rem', marginTop: '0.5rem' }}>
-            下一步可自定义风格、画面与配音。
+            画风已随模板带上。下一步确认配音、字幕与成片方式。
           </p>
         </aside>
       </div>

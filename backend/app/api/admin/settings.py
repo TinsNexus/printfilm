@@ -142,10 +142,11 @@ async def admin_list_upstream_models(
 async def admin_billing_model_rates(
     _admin: User = Depends(get_current_admin),
 ) -> dict:
-    """各模型计费口径一览（按比例 markup）。"""
-    from app.services.billing.pricing import billing_model_rate_rows
+    """拉取 TokenFree 官方价目，返回推荐文字/图/视频模型费率。"""
+    from app.services.tokenfree_pricing import billing_official_rate_rows, tokenfree_pricing_url
 
-    return {"items": billing_model_rate_rows()}
+    items = await billing_official_rate_rows()
+    return {"items": items, "source": tokenfree_pricing_url()}
 
 
 @router.get("/settings/tokenfree/quota")

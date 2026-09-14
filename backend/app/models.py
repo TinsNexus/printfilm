@@ -120,6 +120,8 @@ class Project(Base):
     character_bible: Mapped[str] = mapped_column(Text, default="")
     # Project-level BGM mood lock (same across shots)
     bgm_lock: Mapped[str] = mapped_column(Text, default="")
+    # 科普成片字幕预设：standard | large | split
+    subtitle_preset: Mapped[str] = mapped_column(String(32), default="")
     # User overrides from studio (optional)
     style_prompt: Mapped[str] = mapped_column(Text, default="")
     character_prompt: Mapped[str] = mapped_column(Text, default="")
@@ -135,7 +137,11 @@ class Project(Base):
 
     owner: Mapped["User"] = relationship(back_populates="projects")
     template: Mapped["Template"] = relationship()
-    shots: Mapped[list["Shot"]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    shots: Mapped[list["Shot"]] = relationship(
+        back_populates="project",
+        cascade="all, delete-orphan",
+        order_by="Shot.shot_no",
+    )
     jobs: Mapped[list["PipelineJob"]] = relationship(back_populates="project", cascade="all, delete-orphan")
 
 
@@ -158,6 +164,7 @@ class Shot(Base):
     image_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     image_ark_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     video_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    last_frame_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     audio_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default=ShotStatus.PENDING)
     version: Mapped[int] = mapped_column(Integer, default=1)

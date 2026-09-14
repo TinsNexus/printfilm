@@ -108,7 +108,8 @@ def test_videos_estimate_only_remaining_shots() -> None:
         settings=settings,
     )
     two = estimate_phase_fen(_project(shots), "videos", settings=settings)
-    assert two == one * 2
+    # 每镜 ceil 后再乘 buffer，两镜合计可能差 1 分
+    assert abs(two - one * 2) <= 1
 
 
 def test_normalize_produce_maps_to_current_phase(monkeypatch) -> None:

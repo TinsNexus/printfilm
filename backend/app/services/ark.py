@@ -25,6 +25,18 @@ from app.services.logical_model_router import (
     resolve_upstream_model,
 )
 from app.services.tokenfree_audio import uses_tokenfree_audio
+from app.services.tokenfree_image import (
+    build_tokenfree_image_body,
+    extract_tokenfree_image_url,
+    is_tokenfree_image_url,
+    is_tokenfree_retryable_image_error,
+    post_until_not_rate_limited,
+    tokenfree_image_channel_dead,
+    tokenfree_image_slot,
+    tokenfree_image_user_error,
+    tokenfree_working_image_model,
+    uses_tokenfree_image,
+)
 from app.services.voices import edge_tts_voice_for_speaker
 from app.services.tokenfree_video import (
     extract_video_result_url,
@@ -48,14 +60,29 @@ from app.services import seedance_segments as segplan
 logger = logging.getLogger(__name__)
 
 
-def _raise_seedream_http_error(status_code: int, body: str) -> None:
-    """将 Seedream HTTP 错误转为可读 RuntimeError（含上游账户欠费）。"""
+def _raise_seedream_http_error(
+    status_code: int,
+    body: str,
+    *,
+    model: str = "",
+    tokenfree: bool = False,
+) -> None:
+    """将出图 HTTP 错误转为可读 RuntimeError；TokenFree 文案与官方方舟分开。"""
     snippet = (body or "")[:800]
     if status_code == 403 and "AccountOverdueError" in snippet:
         logger.error("Seedream AccountOverdueError — upstream Ark account overdue: %s", snippet[:200])
         raise RuntimeError(
             "上游 Seedream 账户欠费（AccountOverdueError），生图暂不可用，请联系管理员充值火山方舟账户"
         )
+    logger.warning(
+        "出图上游失败 model=%s tokenfree=%s status=%s body=%s",
+        (model or "").strip() or "-",
+        tokenfree,
+        status_code,
+        snippet[:200],
+    )
+    if tokenfree:
+        raise RuntimeError(tokenfree_image_user_error(model=model, status_code=status_code, body=snippet))
     raise RuntimeError(f"Seedream error {status_code}: {snippet}")
 
 
@@ -470,8 +497,9 @@ class ArkGateway:
                 )
             else:
                 person_rule = (
-                    "character_bible：填「无固定人物，各镜为独立系统/场景界面」。"
-                    "每镜 img_prompt 必须写清该镜独特的界面类型、布局分区、主色与信息层级，不要粘贴人物锁定。"
+                    "character_bible：根据主题与模板系统规则决定是否出人物，不要默认全片必须有人或必须无人。"
+                    "模板要求人在场则写清操作者类型（可不锁同一张脸）；主题以界面/场景/示意图为主则可写「无固定人物」。"
+                    "img_prompt 写清本镜主体与构图，禁止与模板系统附加规则对着干。"
                 )
             consistency = (
                 "必须输出严格 JSON 对象（不要数组、不要 markdown、不要代码围栏）："
@@ -514,7 +542,8 @@ class ArkGateway:
         # segment_rules 科普逐段脚本生产约束（对齐漫剧 cue，无 @asset）
         segment_rules = (
             "【segments 生产规范】"
-            "segments 必填；系统会落成 @duration +【字幕】/【BGM】/【旁白·自然语速·同步字幕】生产脚本，"
+            "segments 必填；系统会落成 @duration +【字幕：后期叠旁白字幕】/【BGM：后期混音】/"
+            "【旁白·自然语速·同步字幕】生产脚本，成片字幕与配乐由后期合成，不由视频模型烧录。"
             "因此 kind/text/duration 必须可直接消费。"
             "段序优先「画面→旁白」交替，首段尽量 kind=visual（保证首帧有料）；"
             "visual/action 的 text 必须含景别+主体动作+场景/界面类型，禁止空镜与模糊氛围词堆砌；"
@@ -646,15 +675,18 @@ class ArkGateway:
         size: str | None = None,
         model: str | None = None,
         aspect_ratio: str | None = None,
+        style_ref_urls: list[str] | None = None,
     ) -> ImageResult:
         # Kie 主流图模型（前台 image_model=kie-*）；不走 ARK_MOCK
         from app.services.kie_catalog import get_media_model, resolve_image_model_id
         from app.services.kie_client import get_kie
+        from app.services.style_lock import split_seedream_subject_style_refs
 
         resolved = resolve_image_model_id(model)
         kie_spec = get_media_model(resolved)
         if kie_spec and kie_spec.provider == "kie" and kie_spec.capability == "image":
             full_prompt = f"{prompt}。避免：{negative}" if negative else prompt
+            subject_refs, style_refs = split_seedream_subject_style_refs(ref_urls, style_ref_urls)
             return await get_kie().gen_image(
                 full_prompt,
                 spec=kie_spec,
@@ -662,7 +694,7 @@ class ArkGateway:
                 shot_no=shot_no,
                 aspect_ratio=aspect_ratio,
                 size=size,
-                ref_urls=ref_urls,
+                ref_urls=[*subject_refs, *style_refs] or None,
             )
 
         if self.mock:
@@ -706,6 +738,8 @@ class ArkGateway:
                         size=size,
                         model=ark_model,
                         prompt_hash_src=prompt,
+                        aspect_ratio=aspect_ratio,
+                        style_ref_urls=style_ref_urls,
                     )
                 except Exception as exc:  # noqa: BLE001
                     last_err = exc
@@ -731,6 +765,37 @@ class ArkGateway:
                         )
         raise RuntimeError(str(last_err) if last_err else "Seedream failed")
 
+    async def _kie_image_fallback(
+        self,
+        prompt: str,
+        *,
+        project_id: int | None,
+        shot_no: int | None,
+        size: str | None,
+        aspect_ratio: str | None,
+        ref_urls: list[str] | None,
+    ) -> ImageResult | None:
+        """TokenFree 出图挂了且已配 Kie Key 时，改走已验证可用的 nano-banana-2。"""
+        from app.services.kie_catalog import get_media_model
+        from app.services.kie_client import get_kie, resolve_kie_credentials
+
+        key, _ = resolve_kie_credentials()
+        if not key:
+            return None
+        spec = get_media_model("kie-nano-banana-2")
+        if spec is None:
+            return None
+        logger.warning("TokenFree 生图不可用，回退 Kie %s shot=%s", spec.id, shot_no)
+        return await get_kie().gen_image(
+            prompt,
+            spec=spec,
+            project_id=project_id,
+            shot_no=shot_no,
+            aspect_ratio=aspect_ratio,
+            size=size,
+            ref_urls=ref_urls,
+        )
+
     async def _seedream_once(
         self,
         full_prompt: str,
@@ -741,6 +806,8 @@ class ArkGateway:
         size: str | None,
         prompt_hash_src: str,
         model: str | None = None,
+        aspect_ratio: str | None = None,
+        style_ref_urls: list[str] | None = None,
     ) -> ImageResult:
         route = self._resolve_ark_route("image", model)
         upstream_model = route.upstream_model if route else ((model or "").strip() or self.settings.model_image)
@@ -757,27 +824,77 @@ class ArkGateway:
                 resolved_size = "2K"
             else:
                 resolved_size = clamp_seedream_pixel_size(str(resolved_size))
-        body: dict[str, Any] = {
-            "model": upstream_model,
-            "prompt": full_prompt,
-            "size": resolved_size,
-            "response_format": "url",
-            "watermark": False,
-        }
-        from app.services.style_lock import seedream_ref_urls
+        from app.services.style_lock import split_seedream_subject_style_refs
 
-        refs = seedream_ref_urls(*(ref_urls or []))
-        if refs:
-            body["image"] = refs if len(refs) > 1 else refs[0]
+        subject_refs, style_refs = split_seedream_subject_style_refs(ref_urls, style_ref_urls)
+        refs = [*subject_refs, *style_refs]
+        channel_id = (route.channel_id if route else "") or ""
+        base = (route.base_url if route and route.base_url else self.settings.ark_base_url) or ""
+        on_tokenfree = uses_tokenfree_image(base_url=base, channel_id=channel_id)
+        chosen = tokenfree_working_image_model(upstream_model) if on_tokenfree else upstream_model
+        if on_tokenfree:
+            if chosen != (upstream_model or "").strip():
+                logger.warning("TokenFree 将 %s 改走 %s，避免 Seedream task_protocol_error", upstream_model, chosen)
+            path = "/responses"
+            body = build_tokenfree_image_body(
+                model=chosen,
+                prompt=full_prompt,
+                size=str(resolved_size or ""),
+                ref_urls=subject_refs,
+                style_ref_urls=style_refs,
+            )
+        else:
+            path = "/images/generations"
+            body = {
+                "model": upstream_model,
+                "prompt": full_prompt,
+                "size": resolved_size,
+                "response_format": "url",
+                "watermark": False,
+            }
+            if refs:
+                body["image"] = refs if len(refs) > 1 else refs[0]
 
         async with httpx.AsyncClient(timeout=180.0) as client:
-            resp = await client.post(
-                self._route_url("/images/generations", route),
-                headers=self._route_headers(route),
-                json=body,
-            )
-            if resp.status_code >= 400:
-                _raise_seedream_http_error(resp.status_code, resp.text)
+            async def _post():
+                # 单次上游 POST，限流重试由外层包住
+                return await client.post(
+                    self._route_url(path, route),
+                    headers=self._route_headers(route),
+                    json=body,
+                )
+
+            if on_tokenfree:
+                async with tokenfree_image_slot():
+                    resp = await post_until_not_rate_limited(_post)
+            else:
+                resp = await _post()
+            if resp.status_code >= 400 or is_tokenfree_retryable_image_error(
+                status_code=resp.status_code, body=resp.text
+            ):
+                if on_tokenfree and tokenfree_image_channel_dead(
+                    status_code=resp.status_code, body=resp.text
+                ):
+                    try:
+                        fallback = await self._kie_image_fallback(
+                            full_prompt,
+                            project_id=project_id,
+                            shot_no=shot_no,
+                            size=str(resolved_size or ""),
+                            aspect_ratio=aspect_ratio,
+                            ref_urls=refs,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("Kie 出图回退失败 shot=%s: %s", shot_no, exc)
+                        fallback = None
+                    if fallback is not None:
+                        return fallback
+                _raise_seedream_http_error(
+                    resp.status_code,
+                    resp.text,
+                    model=chosen,
+                    tokenfree=on_tokenfree,
+                )
             data = resp.json()
 
         usage_parsed = parse_usage_dict(data)
@@ -791,7 +908,9 @@ class ArkGateway:
         if upstream_cost_fen is None and raw_usage:
             upstream_cost_fen = parse_upstream_cost_fen({"usage": raw_usage})
 
-        remote = self._extract_image_url(data)
+        remote = extract_tokenfree_image_url(data) if on_tokenfree else self._extract_image_url(data)
+        if not remote:
+            remote = self._extract_image_url(data) or extract_tokenfree_image_url(data)
         if not remote:
             raise RuntimeError(f"Seedream missing url: {json.dumps(data)[:500]}")
 
@@ -803,7 +922,10 @@ class ArkGateway:
             f"{int(time.time() * 1000) % 10_000_000:07d}.png"
         )
         dest = dest_dir / name
-        await storage.download_to(remote, dest)
+        dl_headers = None
+        if is_tokenfree_image_url(remote) or is_tokenfree_content_url(remote):
+            dl_headers = {"Authorization": f"Bearer {self._ark_api_key()}"}
+        await storage.download_to(remote, dest, headers=dl_headers)
         return ImageResult(
             local_url=storage.publish_local(dest, sync=True),
             remote_url=remote,
@@ -998,6 +1120,7 @@ class ArkGateway:
         prompt_as_json: bool = True,
         return_last_frame: bool = True,
         generate_audio: bool = False,
+        extra_image_urls: list[str] | None = None,
     ) -> str:
         if self.mock:
             digest = hashlib.md5(f"{image_url}:{prompt}".encode()).hexdigest()[:10]
@@ -1015,6 +1138,20 @@ class ArkGateway:
         # 有目标画幅时用 reference_image + ratio（可强制 9:16）。
         # 纯 first_frame 禁止传 ratio，且实测即使静帧竖屏也可能吐横屏。
         image_role, target_ratio = resolve_seedance_i2v_image_role(ratio)
+        extra_refs: list[str] = []
+        for raw in extra_image_urls or []:
+            text_url = str(raw or "").strip()
+            if not text_url:
+                continue
+            try:
+                extra_refs.append(await self._resolve_image_ref(text_url, prefer_https=True))
+            except Exception:  # noqa: BLE001
+                logger.warning("Seedance extra ref resolve failed url=%s", text_url[:120])
+        if extra_refs:
+            # 多图只能走 reference_image，不能与 first_frame 混用
+            image_role = "reference_image"
+            if not target_ratio:
+                target_ratio = (ratio or "").strip() or "16:9"
         content: list[dict[str, Any]] = [
             {"type": "text", "text": text},
             {
@@ -1023,6 +1160,14 @@ class ArkGateway:
                 "role": image_role,
             },
         ]
+        for extra in extra_refs[:2]:
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": extra},
+                    "role": "reference_image",
+                }
+            )
         route = self._resolve_ark_route("video", self.settings.model_video)
         video_model = route.upstream_model if route else self.settings.model_video
         body: dict[str, Any] = {
@@ -1391,9 +1536,12 @@ class ArkGateway:
         project_id: int,
         shot_no: int,
     ) -> tuple[str, TaskResult]:
-        video_local, _last, result = await self.wait_video_assets(
+        """等待成片并优先把已落盘尾帧写回 result，供下一镜参考。"""
+        video_local, last_local, result = await self.wait_video_assets(
             task_id, project_id=project_id, shot_no=shot_no
         )
+        if last_local:
+            result.last_frame_url = last_local
         return video_local, result
 
     async def gen_and_wait_video(
@@ -1410,6 +1558,7 @@ class ArkGateway:
         max_attempts: int = 3,
         generate_audio: bool = False,
         model: str | None = None,
+        extra_image_urls: list[str] | None = None,
     ) -> tuple[str, TaskResult]:
         """Create i2v task and wait; Kie 或 Seedance；后者在 summary_caption / transient BodyFormat 时重试。"""
         from app.services.kie_catalog import get_media_model, resolve_video_model_id
@@ -1418,6 +1567,18 @@ class ArkGateway:
         resolved = resolve_video_model_id(model)
         kie_spec = get_media_model(resolved)
         if kie_spec and kie_spec.provider == "kie" and kie_spec.capability == "video":
+            kie_refs: list[str] | None = None
+            extras = [str(u).strip() for u in (extra_image_urls or []) if str(u).strip()]
+            if extras:
+                extra_resolved: list[str] = []
+                for raw in extras[:2]:
+                    try:
+                        extra_resolved.append(await self._resolve_image_ref(raw, prefer_https=True))
+                    except Exception:  # noqa: BLE001
+                        logger.warning("Kie extra ref resolve failed url=%s", raw[:120])
+                if extra_resolved:
+                    primary = await self._resolve_image_ref(image_url, prefer_https=True)
+                    kie_refs = [primary, *extra_resolved]
             return await get_kie().gen_and_wait_video(
                 image_url,
                 prompt,
@@ -1428,6 +1589,7 @@ class ArkGateway:
                 resolution=resolution,
                 ratio=ratio,
                 generate_audio=generate_audio,
+                reference_image_urls=kie_refs,
             )
 
         last_err: Exception | None = None
@@ -1443,6 +1605,7 @@ class ArkGateway:
                     ratio=ratio,
                     prompt_as_json=use_json,
                     generate_audio=generate_audio,
+                    extra_image_urls=extra_image_urls,
                 )
                 return await self.wait_video(
                     task_id,

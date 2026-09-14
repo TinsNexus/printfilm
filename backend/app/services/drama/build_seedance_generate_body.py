@@ -14,7 +14,10 @@ from app.services.drama.fragment_content_duration import (
     replace_duration_mentions_with_time_ranges,
     resolve_seedance_duration_from_content,
 )
-from app.services.drama.image_styles import resolve_image_style_prompt
+from app.services.drama.image_styles import (
+    STYLE_BOARD_PROMPT_HINT,
+    resolve_image_style_prompt,
+)
 from app.services.seedance_segments import (
     build_seedance_production_section,
     rewrite_misclassified_visual_voice_lines,
@@ -58,6 +61,8 @@ class BuildSeedanceGenerateBodyInput(TypedDict, total=False):
     duration_fallback: int | None
     # 上一镜尾帧公网/本地 URL；有参考媒体时作 reference_image（不可与 first_frame 混用）
     continuity_first_frame_url: str | None
+    # 画风板公网 URL（角色/场景图之后、衔接尾帧之前）
+    style_board_url: str | None
     # True=模型烧录字幕；False=后期叠字（禁止画面内字幕）
     burn_subtitles: bool
     # True=角色身旁人物介绍叠字；False=禁止人物介绍字卡
@@ -247,6 +252,7 @@ def describe_seedance_content_slots(
     continuity_first_frame_url: str | None = None,
     *,
     has_text: bool = True,
+    style_board_url: str | None = None,
 ) -> list[str]:
     catalog = build_seedance_reference_catalog(reference)
     asset_by_id = {
@@ -263,6 +269,9 @@ def describe_seedance_content_slots(
         kind_zh = _KIND_ZH.get(kind, "参考图")
         name = str(asset.get("name") or "").strip() or f"资产#{image.asset_id}"
         labels.append(f"{kind_zh}「{name}」")
+    board = (style_board_url or "").strip() if catalog.images else ""
+    if board:
+        labels.append("画风板")
     for audio in catalog.audios:
         asset = asset_by_id.get(audio.asset_id) or {}
         kind = str(asset.get("type") or "").lower()
@@ -300,12 +309,17 @@ def replace_asset_mention_token(
     return format_body_asset_mention(resolve_other_asset_prompt_name(asset), image_index)
 
 
-# 组装画面风格声明块
-def build_visual_style_section(video_style_id: str | None) -> str | None:
+# 组装画面风格声明块；有画风板时强调只借气质、禁止抄主体
+def build_visual_style_section(
+    video_style_id: str | None,
+    *,
+    has_style_board: bool = False,
+) -> str | None:
     style_prompt = resolve_image_style_prompt(video_style_id)
     if not style_prompt:
         return None
-    return f"{SEEDANCE_VISUAL_STYLE_SECTION_INTRO}\n{style_prompt}"
+    extra = f"\n{STYLE_BOARD_PROMPT_HINT}" if has_style_board else ""
+    return f"{SEEDANCE_VISUAL_STYLE_SECTION_INTRO}\n{style_prompt}{extra}"
 
 
 def build_reference_index_section(
@@ -368,6 +382,7 @@ def build_seedance_prompt_text(
     *,
     burn_subtitles: bool = True,
     character_intro: bool = True,
+    has_style_board: bool = False,
 ) -> str:
     # 提交前拆分对白舞台指示并纠正空镜误标，保证强制约束与正文一致
     normalized = rewrite_dialogue_action_lines(content or "")
@@ -379,7 +394,7 @@ def build_seedance_prompt_text(
         normalized = strip_character_intro_cues(normalized)
     resolved_catalog = catalog or build_seedance_reference_catalog(reference)
     sections = [
-        build_visual_style_section(video_style_id),
+        build_visual_style_section(video_style_id, has_style_board=has_style_board),
         build_seedance_production_section(
             normalized,
             burn_subtitles=burn_subtitles,
@@ -431,8 +446,11 @@ def build_seedance_content_items(
     *,
     burn_subtitles: bool = True,
     character_intro: bool = True,
+    style_board_url: str | None = None,
 ) -> list[dict[str, Any]]:
     catalog = build_seedance_reference_catalog(reference)
+    # 无角色/场景图时不挂画风板，避免板子变成唯一画面参考
+    board = (style_board_url or "").strip() if catalog.images else ""
     prompt_text = build_seedance_prompt_text(
         content,
         reference,
@@ -440,6 +458,7 @@ def build_seedance_content_items(
         video_style_id,
         burn_subtitles=burn_subtitles,
         character_intro=character_intro,
+        has_style_board=bool(board),
     )
     items: list[dict[str, Any]] = []
 
@@ -467,6 +486,11 @@ def build_seedance_content_items(
     for image in catalog.images:
         items.append(
             {"type": "image_url", "image_url": {"url": image.url}, "role": "reference_image"}
+        )
+
+    if board:
+        items.append(
+            {"type": "image_url", "image_url": {"url": board}, "role": "reference_image"}
         )
 
     for audio in catalog.audios:
@@ -530,6 +554,9 @@ def build_seedance_generate_body(input_params: BuildSeedanceGenerateBodyInput) -
     reference = input_params.get("reference")
     catalog = build_seedance_reference_catalog(reference)
     # 仅「纯首帧、无参考媒体」时省略 ratio；混用参考时必须保留 ratio、且尾帧用 reference_image
+    style_board_url = (input_params.get("style_board_url") or "").strip() or None
+    if not catalog.images:
+        style_board_url = None
     use_first_frame_mode = bool(continuity) and not (catalog.images or catalog.audios)
     burn_subtitles = input_params.get("burn_subtitles")
     if burn_subtitles is None:
@@ -547,6 +574,7 @@ def build_seedance_generate_body(input_params: BuildSeedanceGenerateBodyInput) -
             continuity_first_frame_url=continuity,
             burn_subtitles=bool(burn_subtitles),
             character_intro=bool(character_intro),
+            style_board_url=style_board_url,
         ),
         "duration": resolve_seedance_duration_from_content(content, fallback=fallback),
         "resolution": resolve_seedance_resolution(input_params.get("resolution")),

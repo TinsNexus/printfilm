@@ -20,12 +20,19 @@ import { dialog } from '../../lib/dialog'
 import { handleBillingError } from '../../lib/billingError'
 import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import {
-  BOARD_STEPS,
   effectiveStatus,
   formatMmSs,
   isRunning,
-  shotIsDone,
-  shotStatusLabel,
+  kepuBillingPhase,
+  kepuPhaseHint,
+  kepuStepIndex,
+  kepuSteps,
+  isProjectWideBusy,
+  isShotGenerating,
+  shotsByNo,
+  shotDisplayDone,
+  shotDisplayKind,
+  shotDisplayLabel,
   statusLabel,
 } from '../../lib/status'
 import {
@@ -56,7 +63,7 @@ function downloadStoryboardCsv(project: Project) {
         s.narration,
         scenePromptForDisplay(s.img_prompt || s.video_prompt || ''),
         s.duration,
-        shotStatusLabel(s.status),
+        shotDisplayLabel(shotDisplayKind(s, { pipelineMode: project.pipeline_mode })),
         s.overlay_title || '',
       ]
         .map(csvEscape)
@@ -94,23 +101,6 @@ function shotCaption(shot: Shot) {
   return shot.narration
 }
 
-function boardStepIndex(project: Project) {
-  const status = project.status
-  if (status === 'DRAFT') return 0
-  if (status === 'SCRIPTING') return 1
-  // 分镜已出，停留在「生成分镜」供确认修改
-  if (status === 'SCRIPT_READY') return 3
-  // 成片阶段：合成中 / 已完成；或素材已齐、等待合成
-  if (['COMPOSING', 'AUDITING', 'DONE'].includes(status)) return 4
-  if (status === 'VIDEO_READY') return 4
-  if (status === 'IMAGE_READY' && project.pipeline_mode === 'image_text') return 4
-  if (status === 'FAILED' || status === 'CANCELLED') {
-    return project.final_video_url ? 4 : 3
-  }
-  // IMAGING / VIDEOING / AUDIOING / IMAGE_READY(full) 等仍在分镜生成
-  return 3
-}
-
 function hasActiveUnifiedTasks(project: Project | null): boolean {
   const activeStatuses = ['pending', 'leased', 'running', 'awaiting_poll', 'awaiting_review']
   return Boolean(
@@ -137,6 +127,8 @@ export default function StoryboardPage() {
   const [project, setProject] = useState<Project | null>(null)
   const [template, setTemplate] = useState<Template | null>(null)
   const [busy, setBusy] = useState(false)
+  // busyShotIds 正在提交单镜图/视频的镜号，可并行，finally 只删自己
+  const [busyShotIds, setBusyShotIds] = useState<Set<number>>(() => new Set())
   const [error, setError] = useState('')
   const [editing, setEditing] = useState<Shot | null>(null)
   const [editFocus, setEditFocus] = useState<string>('')
@@ -199,7 +191,7 @@ export default function StoryboardPage() {
   }, [menuShotId])
 
   const running = isProjectBusy(project)
-  const step = project ? boardStepIndex(project) : 3
+  const step = project ? kepuStepIndex('board', project) : 2
   const totalDuration = useMemo(
     () => (project?.shots || []).reduce((s, x) => s + (Number(x.duration) || 0), 0),
     [project?.shots],
@@ -213,7 +205,7 @@ export default function StoryboardPage() {
     [editScriptText],
   )
 
-  const shots = project?.shots || []
+  const shots = useMemo(() => shotsByNo(project?.shots), [project?.shots])
   /** 项目字段为空时回显模板默认（与后端 _effective_* 一致） */
   const promptDefaults = useMemo(
     () => (template ? defaultsFromTemplate(template) : null),
@@ -231,34 +223,20 @@ export default function StoryboardPage() {
     }
   }, [project, promptDefaults])
   const isFullPipeline = project?.pipeline_mode !== 'image_text'
-  const imgDone = shots.filter((s) => s.image_url).length
-  const audDone = shots.filter((s) => s.audio_url).length
-  const vidDone = shots.filter((s) => s.video_url).length
-  const assetsReady =
-    shots.length > 0 &&
-    imgDone === shots.length &&
-    (isFullPipeline || audDone === shots.length)
   /**
    * Full pipeline: need AI videos before compose.
    * VIDEO_READY+ means video stage finished (incl. privacy skips without video_url).
    * image_text skips the video stage entirely.
    */
-  const videosReady =
-    !isFullPipeline ||
-    ['VIDEO_READY', 'COMPOSING', 'AUDITING', 'DONE', 'FAILED'].includes(project?.status || '') ||
-    (shots.length > 0 && vidDone === shots.length)
-  const readyToCompose = assetsReady && videosReady
-  const needsVideos = isFullPipeline && assetsReady && !videosReady
-  const needsScriptConfirm =
-    Boolean(project) &&
-    shots.length > 0 &&
-    !assetsReady &&
-    ['SCRIPT_READY', 'DRAFT', 'CANCELLED', 'FAILED'].includes(project!.status)
+  const phase = project ? kepuBillingPhase(project) : 'script'
+  const readyToCompose = phase === 'compose'
+  const needsVideos = phase === 'videos'
+  const needsScriptConfirm = phase === 'assets'
   const hasFinal = Boolean(project?.final_video_url)
   /** Primary CTA: confirm script → generate → (videos) → compose → preview */
   const primaryAction: 'generate' | 'compose' | 'preview' | 'busy' = running
     ? 'busy'
-    : hasFinal || project?.status === 'DONE'
+    : hasFinal
       ? 'preview'
       : readyToCompose
         ? 'compose'
@@ -266,11 +244,13 @@ export default function StoryboardPage() {
 
   const generateLabel = running
     ? '生成中…'
-    : needsScriptConfirm
-      ? '确认分镜，开始生成'
-      : needsVideos
-        ? '继续生成视频'
-        : '继续生成'
+    : shots.length === 0
+      ? '去风格页生成分镜'
+      : needsScriptConfirm
+        ? '确认分镜，逐镜出图与配音'
+        : needsVideos
+          ? '逐镜出视频'
+          : '继续生成'
 
   // 工作台进度：完整模式要镜头视频 + 外部 TTS，静图模式只配音合成
   const progressItems = useMemo(() => {
@@ -334,6 +314,15 @@ export default function StoryboardPage() {
       setProject(await api.generate(project.id))
     } catch (err) {
       const msg = err instanceof Error ? err.message : '继续生成失败'
+      if (msg.includes('合成成片')) {
+        try {
+          setError('')
+          setProject(await api.compose(project.id))
+        } catch (e2) {
+          setError(e2 instanceof Error ? e2.message : '合成失败')
+        }
+        return
+      }
       setError(msg)
       await handleBillingError(err, nav)
     } finally {
@@ -488,32 +477,47 @@ export default function StoryboardPage() {
     }
   }
 
+  // 标记本镜请求进行中，不覆盖其它镜
+  function markShotBusy(shotId: number) {
+    setBusyShotIds((ids) => new Set(ids).add(shotId))
+  }
+
+  // 只清自己，避免并行请求互相冲掉锁
+  function markShotIdle(shotId: number) {
+    setBusyShotIds((ids) => {
+      const next = new Set(ids)
+      next.delete(shotId)
+      return next
+    })
+  }
+
   async function regenImage(shot: Shot) {
     if (!project) return
-    setBusy(true)
+    markShotBusy(shot.id)
     try {
       setProject(await api.regenImage(project.id, shot.id))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '重绘失败')
+      setError(err instanceof Error ? err.message : '生成画面失败')
     } finally {
-      setBusy(false)
+      markShotIdle(shot.id)
     }
   }
 
   async function regenVideo(shot: Shot) {
     if (!project) return
-    setBusy(true)
+    markShotBusy(shot.id)
     try {
       setProject(await api.regenVideo(project.id, shot.id))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '重生视频失败')
+      setError(err instanceof Error ? err.message : '生成视频失败')
     } finally {
-      setBusy(false)
+      markShotIdle(shot.id)
     }
   }
 
   async function regenAudio(shot: Shot) {
     if (!project) return
+    // 重配音会重写整片口播，锁整表避免两路抢写
     setBusy(true)
     try {
       setProject(await api.regenAudio(project.id, shot.id))
@@ -708,7 +712,9 @@ export default function StoryboardPage() {
                 type="button"
                 className="pf-btn pf-btn-lime pf-btn-sm pf-btn-icon"
                 disabled={busy || running}
-                onClick={continueGenerate}
+                onClick={() =>
+                  shots.length === 0 ? nav(`/studio/${project.id}/style`) : void continueGenerate()
+                }
               >
                 <IconPlay size={14} />
                 {generateLabel}
@@ -769,7 +775,14 @@ title="用当前镜头重新拼接"
             </button>
           </div>
         </div>
-        <Stepper steps={BOARD_STEPS} current={step} doneThrough={Math.max(0, step - 1)} />
+        <Stepper
+          steps={kepuSteps(project.pipeline_mode)}
+          current={step}
+          doneThrough={Math.max(0, step - 1)}
+        />
+        <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0.55rem 0 0' }}>
+          {kepuPhaseHint(project)}
+        </p>
       </header>
 
       {error ? <BillingErrorNotice message={error} /> : null}
@@ -885,7 +898,7 @@ title="用当前镜头重新拼接"
           <div className="pf-prompt-panel">
             <h4>内置提示词</h4>
             <p className="pf-muted" style={{ fontSize: '0.72rem', margin: '0 0 0.45rem' }}>
-              默认来自管理后台模板。此处修改只覆盖本项目，后续重生成才生效。
+              画风来自模板。角色是否出镜由 AI 按模板与主题决定；只有这里改过才覆盖本项目。
             </p>
             {(
               [
@@ -982,7 +995,7 @@ title="用当前镜头重新拼接"
               </p>
             ) : needsScriptConfirm ? (
               <p className="pf-muted" style={{ margin: '0 0 1rem' }}>
-                分镜已就绪，请先检查旁白与画面描述。确认后先生成画面与配音，再按需生成镜头视频并合成成片（分阶段扣费）。
+                分镜已就绪。点表格「旁白」改口播（会同步脚本并影响整片配音），点「逐段分镜」改画面节奏与 @duration。确认后按阶段预扣：画面+配音 → 镜头视频 → 合成。
               </p>
             ) : null}
             {project.shots.length === 0 ? null : (
@@ -990,22 +1003,33 @@ title="用当前镜头重新拼接"
                 <table className="pf-shot-table">
                   <thead>
                     <tr>
-                      <th>场景</th>
-                      <th>画面</th>
-                      <th>旁白/台词</th>
-                      <th>逐段分镜</th>
-                      <th>时长</th>
-                      <th>状态</th>
-                      <th>操作</th>
+                      <th className="col-no">场景</th>
+                      <th className="col-thumb">画面</th>
+                      <th className="col-narr">旁白/台词</th>
+                      <th className="col-seg">逐段分镜</th>
+                      <th className="col-dur">时长</th>
+                      <th className="col-status">状态</th>
+                      <th className="col-ops">操作</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {project.shots.map((shot) => {
-                      // Full pipeline: shot is "done" only after AI video (or privacy skip left image-only while project advanced)
-                      const done = isFullPipeline
-                        ? Boolean(shot.video_url) || shot.status === 'VIDEO_READY'
-                        : shotIsDone(shot.status) || Boolean(shot.image_url)
-                      const failed = shot.status === 'FAILED'
+                    {shots.map((shot) => {
+                      /*
+                       * localBusy 本镜请求已发出、任务尚未回写
+                       * shotGenerating 本镜任务或本地提交中
+                       * pipelineLocked 整片流水线/配音占用
+                       * displayKind / done / failed 按素材完备度展示
+                       */
+                      const localBusy = busyShotIds.has(shot.id)
+                      const shotGenerating = isShotGenerating(project, shot.id) || localBusy
+                      const pipelineLocked = isProjectWideBusy(project)
+                      const rowBusy = busy || pipelineLocked || shotGenerating
+                      const displayKind = shotDisplayKind(shot, {
+                        pipelineMode: project.pipeline_mode,
+                        generating: shotGenerating,
+                      })
+                      const done = shotDisplayDone(displayKind)
+                      const failed = displayKind === 'failed'
                       const sceneTitle =
                         shot.overlay_title?.trim() || `场景 ${String(shot.shot_no).padStart(2, '0')}`
                       const narration = (shot.narration || '').trim()
@@ -1037,15 +1061,17 @@ title="用当前镜头重新拼接"
                                   alt=""
                                 />
                               ) : (
-                                <div className="pf-shot-thumb empty">生成中</div>
+                                <div className="pf-shot-thumb empty">
+                                  {shotGenerating ? '生成中' : '待出图'}
+                                </div>
                               )}
                             </button>
                           </td>
-                          <td>
+                          <td className="col-narr">
                             <button
                               type="button"
                               className="pf-shot-narration pf-shot-editable"
-                              disabled={busy || running}
+                              disabled={rowBusy}
                               title="点击编辑旁白与标题"
                               onClick={() => openShotEdit(shot, 'narration')}
                             >
@@ -1055,11 +1081,11 @@ title="用当前镜头重新拼接"
                               </span>
                             </button>
                           </td>
-                          <td>
+                          <td className="col-seg">
                             <button
                               type="button"
                               className="pf-shot-desc pf-shot-editable"
-                              disabled={busy || running}
+                              disabled={rowBusy}
                               title="点击编辑逐段分镜脚本"
                               onClick={() => openShotEdit(shot, 'segment_script')}
                               style={{ textAlign: 'left', width: '100%' }}
@@ -1117,7 +1143,7 @@ title="用当前镜头重新拼接"
                                 .join(' ')}
                             >
                               {done && !failed ? <span className="mark">✓</span> : null}
-                              {shotStatusLabel(shot.status)}
+                              {shotDisplayLabel(displayKind)}
                             </span>
                           </td>
                           <td className="col-ops">
@@ -1125,7 +1151,7 @@ title="用当前镜头重新拼接"
                               <button
                                 type="button"
                                 className="op"
-                                disabled={busy || running}
+                                disabled={rowBusy}
                                 onClick={() => openShotEdit(shot)}
                               >
                                 编辑
@@ -1133,24 +1159,27 @@ title="用当前镜头重新拼接"
                               <button
                                 type="button"
                                 className="op"
-                                disabled={busy || running}
+                                disabled={rowBusy}
                                 onClick={() => regenImage(shot)}
                               >
-                                重生成
+                                {shot.image_url ? '重绘画面' : '生成画面'}
                               </button>
-                              <button
-                                type="button"
-                                className="op"
-                                disabled={busy || running}
-                                onClick={() => regenImage(shot)}
-                              >
-                                替换画面
-                              </button>
+                              {isFullPipeline ? (
+                                <button
+                                  type="button"
+                                  className="op op-video"
+                                  disabled={rowBusy || !shot.image_url}
+                                  title={!shot.image_url ? '请先生成该镜画面' : undefined}
+                                  onClick={() => regenVideo(shot)}
+                                >
+                                  {shot.video_url ? '重生视频' : '出视频'}
+                                </button>
+                              ) : null}
                               <button
                                 type="button"
                                 className="more"
                                 aria-label="更多操作"
-                                disabled={busy || running}
+                                disabled={rowBusy}
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   setMenuShotId((id) => (id === shot.id ? null : shot.id))
@@ -1160,21 +1189,9 @@ title="用当前镜头重新拼接"
                               </button>
                               {menuShotId === shot.id ? (
                                 <div className="pf-shot-menu" onClick={(e) => e.stopPropagation()}>
-                                  {project.pipeline_mode !== 'image_text' ? (
-                                    <button
-                                      type="button"
-                                      disabled={busy || running}
-                                      onClick={() => {
-                                        setMenuShotId(null)
-                                        regenVideo(shot)
-                                      }}
-                                    >
-                                      重生视频
-                                    </button>
-                                  ) : null}
                                   <button
                                     type="button"
-                                    disabled={busy || running}
+                                    disabled={rowBusy}
                                     onClick={() => {
                                       setMenuShotId(null)
                                       regenAudio(shot)
@@ -1391,7 +1408,7 @@ title="用当前镜头重新拼接"
                       rows={editMode === 'narration' ? 6 : 3}
                     />
                     <span className="pf-muted pf-prompt-hint">
-                      会同步到脚本旁白段，配音与视频按脚本生成
+                      会同步到脚本旁白段，并影响整片配音（改完需重新生成配音/成片）
                     </span>
                   </label>
                 </>
@@ -1413,7 +1430,7 @@ title="用当前镜头重新拼接"
               {editMode === 'segment' || editMode === 'full' ? (
                 <>
                   <label>
-                    逐段分镜脚本（@duration + 字幕/BGM）
+                    逐段分镜脚本（画面节奏与 @duration；字幕/配乐由后期合成）
                     <textarea
                       className="pf-prompt-segment"
                       autoFocus={editFocus === 'segment_script' || editMode === 'segment'}

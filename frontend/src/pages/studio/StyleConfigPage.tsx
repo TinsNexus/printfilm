@@ -8,38 +8,7 @@ import ComingSoon from '../../components/ui/ComingSoon'
 import { IconChevronLeft, IconPlay } from '../../components/ui/Icons'
 import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import { handleBillingError } from '../../lib/billingError'
-import { CREATE_STEPS } from '../../lib/status'
-
-const CHAR_PRESETS = [
-  {
-    id: 'real',
-    label: '写实人物',
-    desc: '真实人物质感',
-    image: '/char-presets/real.jpg',
-    promptHint: '写实人物操作电脑或系统界面，侧脸或过肩视角，手部与屏幕清晰',
-  },
-  {
-    id: 'anime',
-    label: '动漫角色',
-    desc: '二次元形象',
-    image: '/char-presets/anime.jpg',
-    promptHint: '动漫风格角色在工位前操作系统，造型简洁统一',
-  },
-  {
-    id: 'sil',
-    label: '剪影',
-    desc: '抽象剪影表达',
-    image: '/char-presets/sil.jpg',
-    promptHint: '剪影人物操作系统界面，抽象轮廓，信息层级清晰',
-  },
-  {
-    id: 'none',
-    label: '无角色',
-    desc: '纯场景解说',
-    image: '/char-presets/none.jpg',
-    promptHint: '无人物角色，专注产品界面、文档与架构示意',
-  },
-]
+import { kepuStepIndex, kepuSteps } from '../../lib/status'
 
 const OUTPUT_MODES: { id: PipelineMode; label: string; desc: string; image: string }[] = [
   { id: 'full', label: 'AI 视频', desc: '图→视频→配音→合成', image: '/mode-presets/full.jpg' },
@@ -49,6 +18,18 @@ const OUTPUT_MODES: { id: PipelineMode; label: string; desc: string; image: stri
     desc: '静图+叠字+配音，不生成 AI 视频',
     image: '/mode-presets/image_text.jpg',
   },
+]
+
+const BGM_PRESETS = [
+  { id: '轻快专业，音量低于人声', label: '轻快' },
+  { id: '冷静纪实，音量低于人声', label: '冷静' },
+  { id: '温暖人文，音量低于人声', label: '温暖' },
+]
+
+const SUBTITLE_PRESETS = [
+  { id: 'standard', label: '标准', desc: '标题在上，旁白字幕底部' },
+  { id: 'large', label: '大字幕', desc: '旁白字幕加大' },
+  { id: 'split', label: '分栏', desc: '标题与说明分栏叠字' },
 ]
 
 const RATIOS: { id: string; label: string; w: number; h: number }[] = [
@@ -80,14 +61,14 @@ export default function StyleConfigPage() {
   const [templates, setTemplates] = useState<Template[]>([])
   const [voices, setVoices] = useState<VoicePreset[]>([])
   const [stylePrompt, setStylePrompt] = useState('')
-  const [characterPrompt, setCharacterPrompt] = useState('')
   const [extraPrompt, setExtraPrompt] = useState('')
   const [voiceId, setVoiceId] = useState('')
   const [pipelineMode, setPipelineMode] = useState<PipelineMode>('full')
   const [ratio, setRatio] = useState('16:9')
-  const [charPreset, setCharPreset] = useState('real')
   const [imageModel, setImageModel] = useState('')
   const [videoModel, setVideoModel] = useState('')
+  const [bgmLock, setBgmLock] = useState(BGM_PRESETS[0].id)
+  const [subtitlePreset, setSubtitlePreset] = useState('standard')
   const [mediaCatalog, setMediaCatalog] = useState<MediaModelsCatalog | null>(null)
   const [busy, setBusy] = useState(false)
   const [previewBusy, setPreviewBusy] = useState<string | null>(null)
@@ -118,9 +99,10 @@ export default function StyleConfigPage() {
       .then((p) => {
         setProject(p)
         setStylePrompt(p.style_prompt || '')
-        setCharacterPrompt(p.character_prompt || '')
         setExtraPrompt(p.extra_prompt || '')
         setVoiceId(p.voice_id || '')
+        if (p.bgm_lock) setBgmLock(p.bgm_lock)
+        if (p.subtitle_preset) setSubtitlePreset(p.subtitle_preset)
         setPipelineMode(p.pipeline_mode || 'full')
         setRatio(p.output_ratio || (p.pipeline_mode === 'image_text' ? '9:16' : '16:9'))
         if (p.image_model) setImageModel(p.image_model)
@@ -149,15 +131,13 @@ export default function StyleConfigPage() {
     [templates, project?.template_id],
   )
 
-  const styleOptions = useMemo(() => templates.slice(0, 8), [templates])
   const selectedVoice = voices.find((v) => voiceKey(v) === voiceId || v.id === voiceId)
 
   useEffect(() => {
     if (!project || !currentTpl) return
-    if (!stylePrompt && !characterPrompt) {
+    if (!stylePrompt) {
       const d = defaultsFromTemplate(currentTpl)
       setStylePrompt((v) => v || d.style_prompt)
-      setCharacterPrompt((v) => v || d.character_prompt)
       setExtraPrompt((v) => v || d.extra_prompt)
       setVoiceId((v) => v || d.voice_id)
     }
@@ -167,30 +147,6 @@ export default function StyleConfigPage() {
     if (!project || project.output_ratio || !currentTpl?.default_ratio) return
     setRatio(currentTpl.default_ratio)
   }, [project?.id, project?.output_ratio, currentTpl?.default_ratio])
-
-  function pickStyle(t: Template) {
-    const d = defaultsFromTemplate(t)
-    setStylePrompt(d.style_prompt)
-    setCharacterPrompt(d.character_prompt)
-    setExtraPrompt(d.extra_prompt)
-    setVoiceId(d.voice_id)
-    // 风格带默认画幅；用户仍可在下方「输出比例」改
-    if (d.output_ratio) setRatio(d.output_ratio)
-    if (/无人物|无角色/.test(d.character_prompt)) setCharPreset('none')
-    else if (/剪影/.test(d.character_prompt)) setCharPreset('sil')
-    else if (/动漫|二次元|3D|三维|CGI/.test(d.character_prompt + d.style_prompt)) setCharPreset('anime')
-    else setCharPreset('real')
-    if (project) {
-      api
-        .updateProject(project.id, {
-          template_id: t.id,
-          voice_id: d.voice_id,
-          output_ratio: d.output_ratio || undefined,
-        })
-        .then(setProject)
-        .catch((err) => setError(err instanceof Error ? err.message : '更新失败'))
-    }
-  }
 
   function pickRatio(r: (typeof RATIOS)[0]) {
     setRatio(r.id)
@@ -247,40 +203,41 @@ export default function StyleConfigPage() {
     setBusy(true)
     setError('')
     try {
-      const charNote =
-        charPreset === 'none'
-          ? '无人物角色，侧重场景与信息图表。'
-          : charPreset === 'anime'
-            ? '角色偏动漫造型。'
-            : charPreset === 'sil'
-              ? '角色以剪影呈现。'
-              : ''
       const d = currentTpl ? defaultsFromTemplate(currentTpl) : null
       /*
        * styleOut 风格提示词；与模板相同则留空，生成时读后台
        * extraOut 额外提示词
-       * charText 角色描述原文；与模板相同则不写入覆盖
        */
       const styleOut = stylePrompt.trim()
       const extraOut = extraPrompt.trim()
-      const charText = characterPrompt.trim()
       const sameStyle = Boolean(d) && styleOut === d!.style_prompt
-      const sameChar = Boolean(d) && charText === d!.character_prompt
       const sameExtra = Boolean(d) && extraOut === d!.extra_prompt
       await api.updateProject(project.id, {
         style_prompt: sameStyle ? '' : styleOut,
-        character_prompt: sameChar ? '' : [charText, charNote].filter(Boolean).join('\n'),
+        character_prompt: '',
         extra_prompt: sameExtra ? '' : extraOut,
         voice_id: voiceId,
         pipeline_mode: pipelineMode,
         output_ratio: ratio,
         image_model: imageModel,
         video_model: videoModel,
+        bgm_lock: bgmLock,
+        subtitle_preset: subtitlePreset,
       })
       const started = await api.generate(project.id)
       nav(`/studio/${started.id}`)
     } catch (err) {
       const msg = err instanceof Error ? err.message : '生成失败'
+      if (msg.includes('合成成片')) {
+        try {
+          const composed = await api.compose(project.id)
+          nav(`/studio/${composed.id}`)
+          return
+        } catch (e2) {
+          setError(e2 instanceof Error ? e2.message : '合成失败')
+          return
+        }
+      }
       setError(msg)
       await handleBillingError(err, nav)
     } finally {
@@ -307,7 +264,11 @@ export default function StyleConfigPage() {
             </button>
             <h1 className="pf-page-title">{project?.title || '风格配置'}</h1>
           </div>
-          <Stepper steps={CREATE_STEPS} current={2} doneThrough={1} />
+          <Stepper
+            steps={kepuSteps(pipelineMode)}
+            current={kepuStepIndex('style', { status: 'DRAFT', pipeline_mode: pipelineMode })}
+            doneThrough={0}
+          />
         </div>
       </header>
 
@@ -357,76 +318,38 @@ export default function StyleConfigPage() {
 
         <section className="pf-create-col">
           <div className="pf-style-block">
-            <h3>
-              画面风格
-              <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" disabled>
-                更多风格 <ComingSoon />
-              </button>
-            </h3>
-            <div className="pf-style-grid">
-              {styleOptions.map((t) => {
-                const portrait = isPortraitRatio(t.default_ratio)
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    className={[
-                      'pf-style-opt',
-                      portrait ? 'portrait' : '',
-                      project?.template_id === t.id ? 'selected' : '',
-                    ]
-                      .filter(Boolean)
-                      .join(' ')}
-                    onClick={() => pickStyle(t)}
-                  >
-                    <span className="pf-style-opt-media">
-                      <img src={api.assetUrl(t.preview_cover)} alt="" />
-                      {t.default_ratio ? (
-                        <span className="pf-style-opt-ratio">{t.default_ratio}</span>
-                      ) : null}
-                    </span>
-                    <div className="cap">{t.name}</div>
-                  </button>
-                )
-              })}
-            </div>
+            <h3>画面风格</h3>
+            <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0 0 0.65rem' }}>
+              已由选题时选择的模板锁定，出图与出视频会自动带上画风。是否出角色由模板规则和主题让 AI
+              决定，不必再选一套人设。
+            </p>
+            {currentTpl ? (
+              <div
+                className={[
+                  'pf-style-opt',
+                  'selected',
+                  isPortraitRatio(currentTpl.default_ratio) ? 'portrait' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+                style={{ maxWidth: 280, textAlign: 'left' }}
+              >
+                <span className="pf-style-opt-media">
+                  <img src={api.assetUrl(currentTpl.preview_cover)} alt="" />
+                  {currentTpl.default_ratio ? (
+                    <span className="pf-style-opt-ratio">{currentTpl.default_ratio}</span>
+                  ) : null}
+                </span>
+                <div className="cap">{currentTpl.name}</div>
+                <div className="cap-sub">模板画风</div>
+              </div>
+            ) : null}
             <label className="pf-field" style={{ marginTop: '0.75rem' }}>
-              <span className="pf-field-label">风格提示词</span>
+              <span className="pf-field-label">风格提示词（可选覆盖）</span>
               <textarea
                 className="pf-field-input"
                 value={stylePrompt}
                 onChange={(e) => setStylePrompt(e.target.value)}
-                rows={2}
-                style={{ resize: 'vertical', minHeight: 64 }}
-              />
-            </label>
-          </div>
-
-          <div className="pf-style-block">
-            <h3>角色设定</h3>
-            <div className="pf-style-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
-              {CHAR_PRESETS.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  className={charPreset === c.id ? 'pf-style-opt selected' : 'pf-style-opt'}
-                  onClick={() => {
-                    setCharPreset(c.id)
-                    setCharacterPrompt(c.promptHint)
-                  }}
-                >
-                  <img src={c.image} alt="" />
-                  <div className="cap">{c.label}</div>
-                  <div className="cap-sub">{c.desc}</div>
-                </button>
-              ))}
-            </div>
-            <label className="pf-field" style={{ marginTop: '0.75rem' }}>
-              <span className="pf-field-label">角色描述</span>
-              <textarea
-                className="pf-field-input"
-                value={characterPrompt}
-                onChange={(e) => setCharacterPrompt(e.target.value)}
                 rows={2}
                 style={{ resize: 'vertical', minHeight: 64 }}
               />
@@ -493,9 +416,52 @@ export default function StyleConfigPage() {
             </div>
             {selectedVoice ? (
               <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0.55rem 0 0' }}>
-                当前：{selectedVoice.label} · 点击「试听」可听约 5 秒样例
+                当前：{selectedVoice.label} · 成片用该音色整片配音；点击「试听」可听约 5 秒样例
               </p>
             ) : null}
+          </div>
+
+          <div className="pf-style-block">
+            <h3>后期配乐</h3>
+            <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0 0 0.65rem' }}>
+              合成时叠在旁白下方，音量低于人声。
+            </p>
+            <div className="pf-ratio-row">
+              {BGM_PRESETS.map((b) => (
+                <button
+                  key={b.id}
+                  type="button"
+                  className={
+                    bgmLock === b.id || (bgmLock && b.id.startsWith(bgmLock.slice(0, 2)))
+                      ? 'pf-ratio selected'
+                      : 'pf-ratio'
+                  }
+                  onClick={() => setBgmLock(b.id)}
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="pf-style-block">
+            <h3>字幕预设</h3>
+            <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0 0 0.65rem' }}>
+              成片由后期叠旁白字幕，不是视频模型烧录。
+            </p>
+            <div className="pf-ratio-row">
+              {SUBTITLE_PRESETS.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  className={subtitlePreset === s.id ? 'pf-ratio selected' : 'pf-ratio'}
+                  onClick={() => setSubtitlePreset(s.id)}
+                  title={s.desc}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="pf-style-block">
@@ -617,7 +583,7 @@ export default function StyleConfigPage() {
             </li>
             <li>
               <span>角色</span>
-              <span>{CHAR_PRESETS.find((c) => c.id === charPreset)?.label}</span>
+              <span>AI 按模板与主题决定</span>
             </li>
             <li>
               <span>配音</span>
@@ -654,7 +620,7 @@ export default function StyleConfigPage() {
             disabled={busy || Boolean(previewBusy)}
             onClick={generate}
           >
-            {busy ? '启动中…' : '生成故事板'}
+            {busy ? '启动中…' : project.shots?.length ? '保存并继续' : '生成故事板'}
             {!busy ? <span aria-hidden>→</span> : null}
           </button>
           <p className="pf-muted" style={{ fontSize: '0.78rem', marginTop: '0.5rem' }}>

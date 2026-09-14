@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from fastapi import HTTPException
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import delete, func, inspect, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import attributes, selectinload
 
 from app.models import User
 from app.models_drama import (
@@ -87,6 +87,47 @@ async def detach_task_fragment_refs(
     )
 
 
+async def replace_fragment_asset_refs(
+    db: AsyncSession,
+    fragment: DramaEpisodeFragment,
+    asset_ids: list[int],
+) -> None:
+    """按目标 id 对齐分镜资产引用：只删多余、只补缺失，避免同键先 INSERT 后 DELETE。"""
+    fragment_id = int(fragment.id)
+    unique_ids: list[int] = []
+    seen: set[int] = set()
+    for raw_id in asset_ids:
+        asset_id = int(raw_id)
+        if asset_id <= 0 or asset_id in seen:
+            continue
+        seen.add(asset_id)
+        unique_ids.append(asset_id)
+    desired = set(unique_ids)
+
+    if "asset_references" in inspect(fragment).unloaded:
+        # 未加载：SQL 清库后写入内存集合，避免 async lazy load
+        await db.execute(
+            delete(DramaFragmentAssetRef)
+            .where(DramaFragmentAssetRef.fragment_id == fragment_id)
+            .execution_options(synchronize_session=False)
+        )
+        await db.flush()
+        attributes.set_committed_value(fragment, "asset_references", [])
+    else:
+        for ref in list(fragment.asset_references):
+            if int(ref.asset_id) not in desired:
+                fragment.asset_references.remove(ref)
+
+    existing = {int(ref.asset_id) for ref in fragment.asset_references}
+    for asset_id in unique_ids:
+        if asset_id in existing:
+            continue
+        fragment.asset_references.append(
+            DramaFragmentAssetRef(fragment_id=fragment_id, asset_id=asset_id)
+        )
+    await db.flush()
+
+
 async def filter_valid_project_asset_ids(
     db: AsyncSession,
     project_id: int,
@@ -115,6 +156,7 @@ async def load_episode_fragments(
         select(DramaEpisodeFragment)
         .where(DramaEpisodeFragment.episode_id == episode_id)
         .options(selectinload(DramaEpisodeFragment.asset_references))
+        .execution_options(populate_existing=True)
         .order_by(DramaEpisodeFragment.sort_order.asc(), DramaEpisodeFragment.id.asc())
     )
     return list(result.scalars().all())

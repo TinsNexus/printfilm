@@ -7,7 +7,6 @@ from app.services.model_routing_config import (
     channel_connection_ready,
     channel_supports_model,
     infer_model_capability,
-    resolve_channel_model_capability,
 )
 from app.services.model_settings import get_routing_snapshot
 
@@ -76,6 +75,17 @@ def resolve_logical_model_candidates(
             if routes:
                 return routes
 
+    # 用户点名的上游模型在渠道清单里时，不要静默换成同能力的另一个逻辑模型
+    if requested:
+        direct = _direct_channel_routes(
+            capability,
+            requested,
+            snapshot.channels,
+            preferred_channel_id=preferred_channel_id,
+        )
+        if direct:
+            return direct
+
     # 默认/请求模型失效时，回落到同能力第一个可解析模型（DeepSeek / Kimi / 其它兼容均可）
     for model in snapshot.logical_models:
         if not model.enabled or model.capability != capability:
@@ -96,19 +106,36 @@ def resolve_logical_model_candidates(
 
     if not requested:
         return []
-    ordered = snapshot.channels
+    return _direct_channel_routes(
+        capability,
+        requested,
+        snapshot.channels,
+        preferred_channel_id=preferred_channel_id,
+    )
+
+
+def _direct_channel_routes(
+    capability: LogicalModelCapability,
+    requested: str,
+    channels: list[SystemModelChannel],
+    *,
+    preferred_channel_id: str = "",
+) -> list[ResolvedModelRoute]:
+    """按渠道 models 清单精确匹配用户点名的上游模型。"""
+    ordered = list(channels)
     if preferred_channel_id:
         ordered = [
-            *([item for item in snapshot.channels if item.id == preferred_channel_id]),
-            *[item for item in snapshot.channels if item.id != preferred_channel_id],
+            *([item for item in channels if item.id == preferred_channel_id]),
+            *[item for item in channels if item.id != preferred_channel_id],
         ]
-    routes = []
+    routes: list[ResolvedModelRoute] = []
     for channel in ordered:
         if not channel.enabled or not channel_connection_ready(channel):
             continue
         if not channel_supports_model(channel, requested):
             continue
-        if resolve_channel_model_capability(channel, requested) != capability:
+        # TokenFree 渠道 protocol=openai，resolve_channel_model_capability 会把所有模型判成 text
+        if infer_model_capability(requested) != capability:
             continue
         route = _build_route(capability, requested, requested, channel)
         if route:

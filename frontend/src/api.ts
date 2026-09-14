@@ -149,6 +149,7 @@ export type Project = {
   voice_id?: string
   character_bible?: string
   bgm_lock?: string
+  subtitle_preset?: string
   style_prompt?: string
   character_prompt?: string
   extra_prompt?: string
@@ -399,6 +400,8 @@ export const api = {
       extra_prompt?: string
       image_model?: string
       video_model?: string
+      bgm_lock?: string
+      subtitle_preset?: string
       cover_url?: string | null
     },
   ) {
@@ -517,6 +520,31 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(body),
     })
+  },
+  createShot(projectId: number) {
+    return request<Shot>(`/api/projects/${projectId}/shots`, { method: 'POST' })
+  },
+  reorderShots(projectId: number, shotIds: number[]) {
+    return request<Project>(`/api/projects/${projectId}/shots/reorder`, {
+      method: 'POST',
+      body: JSON.stringify({ shot_ids: shotIds }),
+    })
+  },
+  async uploadShotImage(projectId: number, shotId: number, file: File) {
+    const token = localStorage.getItem('token')
+    const form = new FormData()
+    form.append('file', file)
+    const res = await fetch(`${API_BASE}/api/projects/${projectId}/shots/${shotId}/image`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }))
+      const detail = err.detail
+      throw new Error(typeof detail === 'string' ? detail : '画面上传失败')
+    }
+    return res.json() as Promise<Project>
   },
   regenImage(projectId: number, shotId: number) {
     return request<Project>(`/api/projects/${projectId}/shots/${shotId}/regen-image`, {

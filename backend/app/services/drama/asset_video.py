@@ -15,11 +15,16 @@ from app.services.ark import get_ark
 from app.services.drama.billing_util import record_seedance_video_usage, seedance_billing_key
 from app.services.drama.build_seedance_generate_body import (
     build_seedance_generate_body,
+    build_seedance_reference_catalog,
     drama_asset_to_payload,
 )
 from app.services.drama.generation import (
     ensure_reference_assets_public_urls,
     extract_asset_ids_from_content,
+)
+from app.services.drama.image_styles import (
+    append_style_board_url,
+    resolve_image_style_board_url,
 )
 
 logger = logging.getLogger(__name__)
@@ -94,6 +99,10 @@ async def generate_asset_video(
     ref_assets = await load_reference_assets(db, project.id, ref_ids)
     ref_assets = await ensure_reference_assets_public_urls(db, ref_assets)
     ref_payloads = [drama_asset_to_payload(item) for item in ref_assets]
+    # catalog 参考资产；video_board_url 仅在已有角色/场景图时挂画风板
+    catalog = build_seedance_reference_catalog(ref_payloads)
+    board_url = resolve_image_style_board_url(style_id)
+    video_board_url = board_url if catalog.images else ""
 
     t0 = time.time()
     from app.services.kie_catalog import get_media_model
@@ -104,7 +113,6 @@ async def generate_asset_video(
         from app.services import storage as storage_svc
         from app.services.drama.build_seedance_generate_body import (
             build_seedance_prompt_text,
-            build_seedance_reference_catalog,
             resolve_reference_image_url,
         )
 
@@ -116,9 +124,9 @@ async def generate_asset_video(
             text = str(published).strip()
             return text if text.startswith("https://") else raw
 
-        catalog = build_seedance_reference_catalog(ref_payloads)
         ref_image_urls: list[str] = []
-        for item in catalog.images[:30]:
+        image_budget = 29 if video_board_url else 30
+        for item in catalog.images[:image_budget]:
             https_url = _https(item.url)
             if https_url.startswith("https://"):
                 ref_image_urls.append(https_url)
@@ -138,9 +146,17 @@ async def generate_asset_video(
                 image_url = resolve_reference_image_url(drama_asset_to_payload(asset)) or ""
             if not image_url:
                 raise RuntimeError("Kie 图生视频需要参考图或资产封面")
+        elif video_board_url:
+            ref_image_urls = append_style_board_url(ref_image_urls, video_board_url)
 
         kie_prompt = (
-            build_seedance_prompt_text(content, ref_payloads, catalog, style_id)
+            build_seedance_prompt_text(
+                content,
+                ref_payloads,
+                catalog,
+                style_id,
+                has_style_board=bool(video_board_url),
+            )
             if ref_image_urls
             else content
         )
@@ -172,6 +188,7 @@ async def generate_asset_video(
                 "aspect_ratio": ratio,
                 "resolution": res,
                 "duration_fallback": duration,
+                "style_board_url": video_board_url or None,
             }
         )
         local_video, local_last_frame, task_result = await ark.gen_and_wait_seedance_body(

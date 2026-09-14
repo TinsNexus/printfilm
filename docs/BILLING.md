@@ -2,8 +2,8 @@
 
 ## 原则
 
-- 按上游 **真实 token 用量**（或无法拿到 usage 时的保守估价）计费。
-- 用户支付价 = 上游成本 × **1.5**（`BILLING_MARKUP`）。
+- 按上游 **真实 TokenFree 成本**（或无法拿到 usage 时的保守估价）计费。
+- 用户支付价 = TokenFree 官方成本，**不再加价**。
 - 钱包单位：**分（fen）**。
 - 充值：易支付 [pay.gitcc.com](https://pay.gitcc.com/)，支付宝 `alipay` / 微信 `wxpay`。
 - **所有 AI 调用**均关联 `task_run_id`（单次聊天/API/工具调用创建轻量 TaskRun）。
@@ -13,13 +13,13 @@
 **有上游成本时（优先）**：
 
 ```
-charge_fen = ceil(cost_fen × markup)
+charge_fen = cost_fen
 ```
 
 **按 token 估价时**：
 
 ```
-charge_fen = ceil(tokens / 1e6 * provider_yuan_per_m * markup * 100)
+charge_fen = ceil(tokens / 1e6 * provider_yuan_per_m * 100)
 ```
 
 默认成本价（元/百万 tokens，可环境覆盖）：
@@ -38,10 +38,12 @@ charge_fen = ceil(tokens / 1e6 * provider_yuan_per_m * markup * 100)
 
 ```
 cost_fen = ceil(quota / 500000 × BILLING_USD_CNY × 100)   # 500000 quota = 1 USD
-charge_fen = ceil(cost_fen × markup)
+charge_fen = cost_fen
 ```
 
-未返回 quota 时回退 token 单价。管理端「支付与计费」可「查询 TokenFree 余额」（`GET /v1/dashboard/billing/subscription` + `usage`）。
+未返回 quota 时回退 token 单价。管理端「支付与计费」可「查询 TokenFree 余额」（`GET /v1/dashboard/billing/subscription` + `usage`），并拉取公开价目 `GET https://www.tokenfree.com/api/pricing` 展示推荐模型官方价。
+
+预扣：生图按 TokenFree 按张价（Seedream 实际走 `gpt-image-2-5`）；LLM 按官方 in/out（默认 kimi-k2.6，70/30 拆）；视频不用价目表占位 `model_ratio=37.5`，按火山 480P 秒价估。结算仍优先单次 `quota`。
 
 管理端「官方用量对照」复用模型页 TokenFree API Key，拉取 New API 日消耗（`/api/data/self` 或 billing usage，日期无效时按累计额度差分记到当天）并与本地成本对照。
 
@@ -135,7 +137,7 @@ api/studio 轻量视频：`awaiting_poll` 由 Selector 后台轮询；超过 `ar
 
 ```
 BILLING_ENABLED=true
-BILLING_MARKUP=1.5
+BILLING_MARKUP=1.0
 BILLING_KIE_FEN_PER_CREDIT=3.5
 EPAY_API_URL=https://pay.gitcc.com
 EPAY_PID=your-epay-pid
@@ -158,12 +160,12 @@ EPAY_RETURN_URL=https://your-site.example.com/pricing?paid=1
 | GET | `/api/admin/tasks/{id}` | 任务详情含 `usage_lines` 与计费字段 |
 | GET | `/api/admin/stats/upstream-usage` | 近 N 日官方/本地成本对照 |
 | POST | `/api/admin/stats/upstream-usage/sync` | 手动刷新官方用量快照 |
-| GET | `/api/admin/settings/billing/model-rates` | 各模型计费口径（TokenFree quota / token） |
+| GET | `/api/admin/settings/billing/model-rates` | 推荐模型 TokenFree 官方价（/api/pricing） |
 | GET | `/api/admin/settings/tokenfree/quota` | 查询 TokenFree 账户剩余额度 |
 
 ## 管理端
 
-- **设置 → 支付与计费**：各模型单价、markup；可查看模型费率表与查询 TokenFree 余额。
+- **设置 → 支付与计费**：按 TokenFree 官方成本 1:1 扣费；可查看模型费率表与查询 TokenFree 余额。
 - **订单与流水** → 「用量明细」Tab：按用户/任务/领域筛选 `usage_events`。
 - **任务队列** → 列表「费用」列显示 `billing_charged_fen`（冻结中显示预扣）。
 - **任务详情** → 「计费」Tab：预扣/实扣/退回 + 用量行列表。
@@ -177,4 +179,4 @@ EPAY_RETURN_URL=https://your-site.example.com/pricing?paid=1
 4. 管理端可按 `task_run_id` 或 `billing_key=llm_chat` 查到每条 LLM/图/视频/TTS 费用。
 5. Seedance 视频成功后 `usage_events.estimated=false` 且 `total_tokens` 与官方任务查询一致。
 6. 配置 TokenFree API Key 后，管理端可刷新并查看近 30 日官方/本地成本对照。
-7. 单次调用若带 New API `quota` / `quota_consumed`，按额度折人民币后再 × markup 扣费；管理端可查询 TokenFree 余额。
+7. 单次调用若带 New API `quota` / `quota_consumed`，按额度折人民币后按官方成本 1:1 扣费；管理端可查询 TokenFree 余额。

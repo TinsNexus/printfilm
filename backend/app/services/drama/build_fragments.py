@@ -1159,16 +1159,18 @@ def plan_fragment_content_from_scene(
 
 
 def is_raw_screenplay_fragment(content: str) -> bool:
-    # 仍为场记原文、需按新逻辑重切
+    # 仍是未切镜的场记原文（空、场次标题、出场人物表）；手写电影感分镜不要当原文
     trimmed = (content or "").strip()
     if not trimmed:
         return True
-    if "### 场" in trimmed or "### 场景" in trimmed:
-        return True
-    if re.search(r"^出场人物[：:]", trimmed, re.M):
-        return True
-    if "【字幕：" not in trimmed and "@duration:" not in trimmed:
-        return True
+    for raw in trimmed.replace("\r\n", "\n").split("\n"):
+        line = raw.strip()
+        if not line:
+            continue
+        if SCENE_HEADER_RE.match(line) or SCENE_HEADER_LOOSE_RE.match(line):
+            return True
+        if CAST_LINE_RE.match(line) or line.startswith("出场人物"):
+            return True
     return False
 
 

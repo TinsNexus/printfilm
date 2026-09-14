@@ -1369,8 +1369,8 @@ def _episode_should_replace_fragments(episode: DramaEpisode, script_body: str) -
         return True
     if _episode_has_protected_fragments(episode):
         return False
-    if any(is_raw_screenplay_fragment(f.content or "") for f in frags):
-        # 场记原文须重切，但已有成片/手改时不覆盖
+    if all(is_raw_screenplay_fragment(f.content or "") for f in frags):
+        # 整集仍是场记原文才重切；夹一手写镜或空镜不要整集覆盖
         return True
     params = episode.params if isinstance(episode.params, dict) else {}
     stored_fp = str(params.get("fragment_source_fp") or "")
