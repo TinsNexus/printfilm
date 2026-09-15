@@ -55,7 +55,7 @@ from app.services.drama.generation import (
     read_fragment_last_frame_url,
     reconcile_orphaned_fragment_generations,
 )
-from app.services.drama.build_fragments import repair_fragment_timed_layout
+from app.services.drama.build_fragments import prepare_fragment_content
 from app.services.drama.fragment_content_duration import resolve_seedance_duration_from_content
 from app.services.drama.billing_util import record_seed_assets_llm_usage
 from app.services.drama.jobs import (
@@ -85,9 +85,10 @@ logger = logging.getLogger("app.drama.episodes")
 
 def _fragment_out(frag: DramaEpisodeFragment) -> DramaFragmentOut:
     asset_ids = [r.asset_id for r in (frag.asset_references or [])]
-    content = repair_fragment_timed_layout(
+    content = prepare_fragment_content(
         frag.content or "",
         duration_sec=int(frag.duration_sec or 0) or None,
+        is_opening=int(frag.sort_order or 0) == 0,
     )
     return DramaFragmentOut(
         id=frag.id,
@@ -522,7 +523,11 @@ async def save_fragments(
             ep.fragments.append(frag)
             await db.flush()
         frag.sort_order = item.sort_order
-        frag.content = item.content or ""
+        frag.content = prepare_fragment_content(
+            item.content or "",
+            duration_sec=int(item.duration_sec or 0) or None,
+            is_opening=int(item.sort_order or 0) == 0,
+        )
         frag.cover = (item.cover or "")[:1024]
         frag.video = (item.video or "")[:1024]
         frag.duration_sec = item.duration_sec

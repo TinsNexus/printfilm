@@ -239,6 +239,8 @@ def _strip_screenplay_meta(body: str) -> tuple[str | None, list[str]]:
         if location_line is None and SCENE_LOCATION_RE.match(trimmed):
             location_line = trimmed
             continue
+        if is_production_meta_line(trimmed):
+            continue
         narrative.append(trimmed)
     return location_line, narrative
 
@@ -246,6 +248,128 @@ def _strip_screenplay_meta(body: str) -> tuple[str | None, list[str]]:
 def _strip_production_prefix(line: str) -> str:
     # 去掉已有【…】生产前缀，便于二次分类
     return re.sub(r"^【[^】]*】\s*", "", (line or "").strip()).strip()
+
+
+_OPENING_CUE_PREFIXES = ("【片头", "【背景介绍")
+_CONTINUATION_START = tuple("（(，,、；;…—-")
+
+
+def is_opening_cue_line(line: str) -> bool:
+    """整集片头/背景叠字：只应出现在开幕镜。"""
+    stripped = (line or "").strip()
+    return any(stripped.startswith(prefix) for prefix in _OPENING_CUE_PREFIXES)
+
+
+def is_wrapped_continuation_line(line: str) -> bool:
+    """括号/标点续写行：属于上一句换行，不应单独占一段 @duration。"""
+    body = _strip_production_prefix(line)
+    if not body or body.startswith("@") or is_production_meta_line(body):
+        return False
+    if VISUAL_SHOT_LABEL_RE.match(body):
+        return False
+    if re.match(r"^[^：:\n]{1,16}[：:]", body):
+        return False
+    return body[0] in _CONTINUATION_START
+
+
+def merge_wrapped_narrative_lines(lines: list[str]) -> list[str]:
+    """把「换行续写」合并回上一行，避免一行一个 3s。"""
+    out: list[str] = []
+    for raw in lines:
+        stripped = (raw or "").strip()
+        if not stripped:
+            continue
+        if out and is_wrapped_continuation_line(stripped):
+            out[-1] = f"{out[-1]} {stripped}"
+        else:
+            out.append(stripped)
+    return out
+
+
+def strip_repeat_opening_cues(content: str) -> str:
+    """非开幕镜去掉片头/背景叠字，保留字幕、BGM、人物介绍。"""
+    kept = [
+        raw
+        for raw in (content or "").replace("\r\n", "\n").split("\n")
+        if not is_opening_cue_line(raw)
+    ]
+    return "\n".join(kept).strip()
+
+
+def prepare_fragment_content(
+    content: str,
+    *,
+    duration_sec: int | None = None,
+    is_opening: bool = False,
+) -> str:
+    """读取/保存/生成前统一：去掉重复片头，并修正过碎的 @duration。"""
+    text = content or ""
+    if not is_opening:
+        text = strip_repeat_opening_cues(text)
+    return repair_fragment_timed_layout(text, duration_sec=duration_sec)
+
+
+def _duration_body_lines(rows: list[str]) -> list[str]:
+    return [
+        ln
+        for ln in rows
+        if ln.strip() and not ln.strip().startswith("@duration:")
+    ]
+
+
+def _join_header_and_blocks(
+    header: list[str],
+    blocks: list[tuple[int, list[str]]],
+) -> str:
+    lines = list(header)
+    for dur, rows in blocks:
+        lines.append(f"@duration:{dur}")
+        lines.extend(_duration_body_lines(rows))
+    return "\n".join(lines).strip()
+
+
+def _coalesce_continuation_blocks(
+    blocks: list[tuple[int, list[str]]],
+) -> list[tuple[int, list[str]]]:
+    """续写行并入上一拍，不新增时长标签。"""
+    packed: list[tuple[int, list[str]]] = []
+    for dur, rows in blocks:
+        body = _duration_body_lines(rows)
+        if packed and body and all(is_wrapped_continuation_line(ln) for ln in body):
+            prev_dur, prev_rows = packed[-1]
+            packed[-1] = (prev_dur, [*prev_rows, *body])
+            continue
+        packed.append((dur, [f"@duration:{dur}", *body]))
+    return packed
+
+
+def _coalesce_timed_blocks_to_budget(
+    blocks: list[tuple[int, list[str]]],
+    target: int,
+) -> list[tuple[int, list[str]]]:
+    """拍数过多导致合计超上限时，合并相邻拍并缩放到 target。"""
+    if not blocks:
+        return blocks
+    target = min(FRAGMENT_TOTAL_MAX, max(FRAGMENT_DURATION_MIN, int(target)))
+    max_beats = max(1, target // FRAGMENT_DURATION_MIN)
+    packed = list(blocks)
+    if len(packed) > max_beats:
+        group = (len(packed) + max_beats - 1) // max_beats
+        merged: list[tuple[int, list[str]]] = []
+        for i in range(0, len(packed), group):
+            chunk = packed[i : i + group]
+            body: list[str] = []
+            dur = 0
+            for block_dur, rows in chunk:
+                dur += block_dur
+                body.extend(_duration_body_lines(rows))
+            dur = min(FRAGMENT_DURATION_MAX, max(FRAGMENT_DURATION_MIN, dur))
+            merged.append((dur, [f"@duration:{dur}", *body]))
+        packed = merged
+    total = sum(d for d, _ in packed)
+    if total != target:
+        packed = _rescale_timed_blocks(packed, target)
+    return packed
 
 
 def _is_visual_description_line(line: str) -> bool:
@@ -857,6 +981,9 @@ def plan_fragments_from_scene(
             )
         )
 
+    narrative_lines = merge_wrapped_narrative_lines(
+        [ln for ln in narrative_lines if not is_production_meta_line(ln)]
+    )
     for line in narrative_lines:
         raw = _inject_character_mentions(line, character_bindings)
         for formatted in _expand_narrative_lines(raw):
@@ -1003,8 +1130,8 @@ def _sum_duration_tags(content: str) -> int:
 
 def repair_fragment_timed_layout(content: str, *, duration_sec: int | None = None) -> str:
     """
-    修正旧稿/合并稿中 @duration 仅在末尾或整镜共用一条的问题，
-    改为「@duration + 叙事行」逐段交替（与编辑器场记板位置一致）。
+    修正旧稿中 @duration 仅在末尾的问题。
+    现代场记（时长标签已在各段之前）保留段内换行，不把每一行拆成 3s。
     """
     text = (content or "").replace("\r\n", "\n").strip()
     if not text:
@@ -1012,43 +1139,35 @@ def repair_fragment_timed_layout(content: str, *, duration_sec: int | None = Non
 
     header, blocks = parse_fragment_timed_blocks(text)
     meta, header_narrative = _split_header_meta_and_narrative(header)
-    narrative: list[str] = list(header_narrative)
+    target = int(duration_sec or 0) or _sum_duration_tags(text) or FRAGMENT_DURATION_MIN
+    target = min(FRAGMENT_TOTAL_MAX, max(FRAGMENT_DURATION_MIN, target))
 
-    if len(blocks) == 1:
-        _, rows = blocks[0]
-        narrative.extend(
-            ln for ln in rows if ln.strip() and not ln.strip().startswith("@duration:")
-        )
-    elif blocks:
-        per_block_ok = True
+    # 现代布局：@duration 已在段前。换行续写并入上一拍；拍数过多再合并到预算内。
+    if blocks and not header_narrative:
+        packed = _coalesce_continuation_blocks(blocks)
+        tagged = sum(d for d, _ in packed)
+        if tagged > target:
+            packed = _coalesce_timed_blocks_to_budget(packed, target)
+        return _join_header_and_blocks(meta, packed)
+
+    narrative = merge_wrapped_narrative_lines(
+        [ln.strip() for ln in header_narrative if ln.strip() and not is_opening_cue_line(ln)]
+    )
+    if blocks:
+        extra: list[str] = []
         for _, rows in blocks:
-            body = [ln for ln in rows if ln.strip() and not ln.strip().startswith("@duration:")]
-            if len(body) != 1:
-                per_block_ok = False
-            narrative.extend(body)
-        if per_block_ok and not header_narrative:
-            return text
-
-    tag_count = len(re.findall(r"@duration:\d+", text))
-    if tag_count > 1 and len(blocks) > 1 and not header_narrative:
-        per_block_ok = all(
-            len([ln for ln in rows if ln.strip() and not ln.strip().startswith("@duration:")]) == 1
-            for _, rows in blocks
-        )
-        if per_block_ok:
-            return text
+            extra.extend(_duration_body_lines(rows))
+        narrative.extend(merge_wrapped_narrative_lines(extra))
 
     if len(narrative) <= 1:
         return text
 
-    tagged = _sum_duration_tags(text)
-    target = int(duration_sec or tagged or FRAGMENT_DURATION_MIN)
-    target = min(FRAGMENT_TOTAL_MAX, max(FRAGMENT_DURATION_MIN, target))
-
     timed: list[tuple[int, list[str]]] = []
     for ln in narrative:
         stripped = ln.strip()
-        formatted = ln if stripped.startswith("【") else _format_narrative_line(stripped)
+        if is_production_meta_line(stripped) or is_opening_cue_line(stripped):
+            continue
+        formatted = stripped if stripped.startswith("【") else _format_narrative_line(stripped)
         line_dur = _clamp_duration(_estimate_line_duration(formatted))
         if line_dur <= 0:
             continue
@@ -1059,10 +1178,11 @@ def repair_fragment_timed_layout(content: str, *, duration_sec: int | None = Non
 
     total = sum(d for d, _ in timed)
     if total != target:
-        timed = _rescale_timed_blocks(timed, target)
-
-    body_out = [ln for _, rows in timed for ln in rows]
-    return "\n".join([*meta, *body_out]).strip()
+        if len(timed) * FRAGMENT_DURATION_MIN > target:
+            timed = _coalesce_timed_blocks_to_budget(timed, target)
+        else:
+            timed = _rescale_timed_blocks(timed, target)
+    return _join_header_and_blocks(meta, timed)
 
 
 def _rescale_timed_blocks(
@@ -1088,7 +1208,19 @@ def _rescale_timed_blocks(
     return out
 
 
-# 将已有超长分镜正文按软/硬上限拆成多条 content（保留片头 cue）
+def _partition_header_cues(header: list[str]) -> tuple[list[str], list[str]]:
+    """片头/背景叠字只跟第一块；字幕、BGM 可随拆镜重复。"""
+    opening: list[str] = []
+    rest: list[str] = []
+    for raw in header:
+        if is_opening_cue_line(raw):
+            opening.append(raw)
+        else:
+            rest.append(raw)
+    return opening, rest
+
+
+# 将已有超长分镜正文按软/硬上限拆成多条 content（片头只留在第一块）
 def split_overlong_fragment_content(
     content: str,
     *,
@@ -1098,22 +1230,28 @@ def split_overlong_fragment_content(
     header, blocks = parse_fragment_timed_blocks(content)
     if not blocks:
         return []
+    opening_header, repeat_header = _partition_header_cues(header)
     total = sum(d for d, _ in blocks)
     if total <= hard_max:
         used = total
-        text = "\n".join([*header, *[ln for _, rows in blocks for ln in rows]]).strip()
+        text = "\n".join(
+            [*opening_header, *repeat_header, *[ln for _, rows in blocks for ln in rows]]
+        ).strip()
         return [(text, used)] if text else []
 
     chunks: list[tuple[str, int]] = []
     body: list[str] = []
     used = 0
+    first_chunk = True
 
     def flush() -> None:
-        nonlocal body, used
+        nonlocal body, used, first_chunk
         if not body:
             return
-        text = "\n".join([*header, *body]).strip()
+        cues = [*opening_header, *repeat_header] if first_chunk else list(repeat_header)
+        text = "\n".join([*cues, *body]).strip()
         chunks.append((text, used))
+        first_chunk = False
         body = []
         used = 0
 

@@ -51,19 +51,22 @@ def test_charge_fen_for_usage_prefers_upstream_cost():
     assert charge == 1000
 
 
-def test_charge_fen_for_usage_falls_back_to_tokens():
+def test_charge_fen_for_usage_falls_back_to_official_per_call():
     settings = get_settings()
     settings.billing_markup = 1.5
+    settings.billing_usd_cny = 7.0
     settings.billing_seedream_per_m = 8.0
     cost, charge, used = charge_fen_for_usage(
         1_000_000,
         "seedream",
         raw_usage={"usage": {"total_tokens": 1_000_000}},
         settings=settings,
+        model="gpt-image-2-5",
     )
     assert used is False
-    assert cost == 800
-    assert charge == 800
+    # $0.625 × 7 = ¥4.375 → 438 分，而不是 8 元/百万 token
+    assert cost == 438
+    assert charge == 438
 
 
 def test_build_task_result_includes_usage():

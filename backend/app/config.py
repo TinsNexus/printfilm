@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     # Seedance 2.5 官方范围约 4–30 秒
     seedance_duration_min: int = 4
     seedance_duration_max: int = 30
-    model_audio: str = "seed-tts-2.0"
+    model_audio: str = "qwen-tts-2025-05-22"
     # 豆包语音（openspeech）— 与方舟 ARK_API_KEY 不同产品线
     volc_tts_app_id: str = ""
     volc_tts_access_key: str = ""
@@ -118,7 +118,7 @@ class Settings(BaseSettings):
     billing_usd_cny: float = 7.0
     # Fallback tokens when API omits usage
     billing_est_llm_tokens: int = 80_000
-    # Seedream 单张实测约 3–3.5 万 tokens；预估略留余量，避免预扣远高于实扣
+    # Seedream / gpt-image 无 quota 时按张价结算，不再用 4.5 万 token × 8 元/百万
     billing_est_seedream_tokens: int = 45_000
     billing_est_tts_tokens: int = 5_000
     billing_est_seedance_tokens_per_sec: int = 32_000

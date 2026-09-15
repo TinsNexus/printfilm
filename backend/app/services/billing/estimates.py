@@ -60,7 +60,7 @@ def _estimate_assets_fen(project: Project, settings: Settings) -> int:
         return 1
     total = 0
     for _ in range(max(need_img, 0)):
-        total += charge_fen_official_image(settings)
+        total += charge_fen_official_image(settings, model=settings.model_image)
     if need_tts > 0:
         n = max(len(shots), 1)
         _, c_tts = charge_fen_for_tokens(
@@ -135,7 +135,7 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
 
     if domain == "kepu":
         if task_type in {"shot_regen_image"}:
-            c = charge_fen_official_image(s)
+            c = charge_fen_official_image(s, model=s.model_image)
             return max(1, math.ceil(c * buf))
         if task_type in {"shot_regen_video"}:
             dur = float(payload.get("duration") or 5)
@@ -163,7 +163,7 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
             if task_type == "seed_assets":
                 c = charge_fen_official_llm(s.billing_est_llm_tokens * 3, s)
                 return max(1, math.ceil(c * buf))
-            c = charge_fen_official_image(s)
+            c = charge_fen_official_image(s, model=s.model_image)
             return max(1, math.ceil(c * buf))
         if task_type in {"asset_video", "fragment_video"}:
             dur = float(payload.get("duration_sec") or payload.get("duration") or 0)
@@ -195,7 +195,7 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
                 max(dur, 2.0), s, resolution=_drama_video_resolution(payload)
             )
             if task_type == "fragment_video":
-                c += max(1, charge_fen_official_image(s) // 2)
+                c += max(1, charge_fen_official_image(s, model=s.model_image) // 2)
             return max(1, math.ceil(c * buf))
         if task_type == "voice_synthesis":
             _, c = charge_fen_for_tokens(s.billing_est_tts_tokens, "tts", settings=s)
@@ -210,7 +210,7 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
 
     if domain in {"api", "studio"}:
         if task_type in {"v1_image", "tool_image"}:
-            c = charge_fen_official_image(s)
+            c = charge_fen_official_image(s, model=s.model_image)
             return max(1, math.ceil(c * buf))
         if task_type in {"v1_video", "v1_seedance", "tool_video"}:
             dur = float(payload.get("duration") or 5)

@@ -25,7 +25,12 @@ from app.services.logical_model_router import (
     resolve_logical_model_id,
     resolve_upstream_model,
 )
-from app.services.tokenfree_audio import uses_tokenfree_audio
+from app.services.tokenfree_audio import (
+    TOKENFREE_DEFAULT_TTS_MODEL,
+    resolve_tokenfree_tts_model,
+    tokenfree_speech_voice,
+    uses_tokenfree_audio,
+)
 from app.services.tokenfree_image import (
     build_tokenfree_image_body,
     extract_tokenfree_image_url,
@@ -1608,7 +1613,10 @@ class ArkGateway:
 
     def _resolved_audio_model(self) -> str:
         routed = (resolve_upstream_model("audio", None) or "").strip()
-        return routed or (self.settings.model_audio or "").strip() or "seed-tts-2.0"
+        mid = routed or (self.settings.model_audio or "").strip() or TOKENFREE_DEFAULT_TTS_MODEL
+        if uses_tokenfree_audio(base_url=self.settings.ark_base_url or ""):
+            return resolve_tokenfree_tts_model(mid)
+        return mid
 
     async def _tts_openai_speech(
         self,
@@ -1624,6 +1632,9 @@ class ArkGateway:
         if not base or not key:
             return False
         model_id = (model or self._resolved_audio_model()).strip()
+        if uses_tokenfree_audio(base_url=base):
+            model_id = resolve_tokenfree_tts_model(model_id)
+            voice = tokenfree_speech_voice(voice)
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(
                 f"{base}/audio/speech",
@@ -1671,6 +1682,7 @@ class ArkGateway:
         duration_hint: float = 4.0,
         emotion_hint: str | None = None,
     ) -> str:
+        """整片/单镜配音：豆包 openspeech → TokenFree speech → edge-tts；失败则抛错，不写静音。"""
         voice_map = {
             "narrator_calm": "zh_female_cancan_uranus_bigtts",
             "warm_storyteller": "zh_female_tianmeixiaoyuan_uranus_bigtts",
@@ -1737,18 +1749,17 @@ class ArkGateway:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("tokenfree speech failed: %s", exc)
 
-        # edge-tts 兜底（本地无 Key 或上游失败时）
-        if not on_tokenfree:
-            try:
-                await self._tts_edge(clean, dest, voice_hint=speaker)
-                url = await _accept_if_audible("edge-tts")
-                if url:
-                    logger.info("TTS edge-tts ok shot=%s bytes=%s", shot_no, dest.stat().st_size)
-                    return url
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("edge-tts failed: %s", exc)
+        # edge-tts 兜底：TokenFree 常无 seed-tts 渠道，豆包未授权时必须仍能出声
+        try:
+            await self._tts_edge(clean, dest, voice_hint=speaker)
+            url = await _accept_if_audible("edge-tts")
+            if url:
+                logger.info("TTS edge-tts ok shot=%s bytes=%s", shot_no, dest.stat().st_size)
+                return url
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("edge-tts failed: %s", exc)
 
-        # 非 TokenFree 或未配置时，再试 /audio/speech
+        # 非 TokenFree 时再试 /audio/speech（方舟等）
         if not on_tokenfree:
             try:
                 ok = await self._tts_openai_speech(clean, speaker, dest, model=audio_model)
@@ -1759,10 +1770,8 @@ class ArkGateway:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Ark TTS failed: %s", exc)
 
-        # 最后才静音（保证合成不中断）
-        logger.error("TTS all providers failed; writing silence shot=%s", shot_no)
-        await asyncio.to_thread(self._write_silence_mp3, dest, duration_hint)
-        return storage.publish_local(dest)
+        logger.error("TTS all providers failed shot=%s", shot_no)
+        raise RuntimeError("配音失败：语音服务暂不可用，请稍后重试")
 
     def _tts_resource_id(self, speaker: str) -> str:
         if speaker.startswith("S_"):

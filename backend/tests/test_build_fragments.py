@@ -211,6 +211,77 @@ def test_repair_fragment_timed_layout_splits_trailing_duration_tag():
     assert fixed.rfind("@duration:") < fixed.index("小宇和米米击掌")
 
 
+def test_repair_keeps_wrapped_line_in_same_duration_beat():
+    from app.services.drama.build_fragments import repair_fragment_timed_layout
+
+    modern = "\n".join(
+        [
+            "【字幕：底部居中·简体中文·逐句轮换·与口播同步】",
+            "【BGM：轻】",
+            "@duration:8",
+            "【画面·无配音仅环境音】站在账房里贴着账，眼睛亮晶晶。",
+            "（探花分科），",
+        ]
+    )
+    fixed = repair_fragment_timed_layout(modern, duration_sec=8)
+    assert fixed.count("@duration:") == 1
+    assert "探花分科" in fixed
+    assert "@duration:3" not in fixed
+
+
+def test_repair_packs_exploded_three_second_beats_to_budget():
+    from app.services.drama.build_fragments import repair_fragment_timed_layout
+    import re
+
+    rows = [
+        "【字幕：底部居中·简体中文】",
+        "【BGM：轻】",
+    ]
+    for i in range(19):
+        rows.extend([f"@duration:3", f"【画面·无配音仅环境音】第{i}句画面。"])
+    fixed = repair_fragment_timed_layout("\n".join(rows), duration_sec=15)
+    total = sum(int(m) for m in re.findall(r"@duration:(\d+)", fixed))
+    assert total <= 15
+    assert fixed.count("@duration:") <= 5
+
+
+def test_strip_repeat_opening_cues_keeps_bgm():
+    from app.services.drama.build_fragments import strip_repeat_opening_cues
+
+    content = "\n".join(
+        [
+            "【BGM：轻柔开阔】",
+            "【片头·集号叠字】第1集｜乌龙伯乐压奇才",
+            "【片头·词条特写】史上最难高考",
+            "@duration:4",
+            "【对白·慢速清晰·同步字幕】说书人：大宋嘉祐二年。",
+        ]
+    )
+    out = strip_repeat_opening_cues(content)
+    assert "【片头" not in out
+    assert "【BGM：轻柔开阔】" in out
+    assert "说书人" in out
+
+
+def test_prepare_fragment_content_strips_opening_on_later_shots():
+    from app.services.drama.build_fragments import prepare_fragment_content
+
+    content = "\n".join(
+        [
+            "【BGM：轻】",
+            "【片头·集号叠字】第1集｜试集",
+            "@duration:8",
+            "【画面·无配音仅环境音】学堂门口。",
+            "（匾额特写），",
+        ]
+    )
+    later = prepare_fragment_content(content, duration_sec=8, is_opening=False)
+    assert "【片头" not in later
+    assert later.count("@duration:") == 1
+    first = prepare_fragment_content(content, duration_sec=8, is_opening=True)
+    assert "【片头·集号叠字】" in first
+
+
 def test_vo_os_dialogue_not_split_by_action_expander():
     from app.services.drama.build_fragments import _expand_narrative_lines
 

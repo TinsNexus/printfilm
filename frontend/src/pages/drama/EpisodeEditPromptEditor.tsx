@@ -8,10 +8,12 @@ import {
   insertDurationChipAtRange,
   insertMentionChipAtRange,
   insertPlainTextAtRange,
+  nextDurationPresetSeconds,
   renderPromptEditorContent,
   resolveChipFromAsset,
   serializePromptEditorContent,
   sumContentDurationSeconds,
+  updateDurationChipElement,
   type MentionCaretRect,
 } from '../../lib/dramaEpisodePromptEditor'
 import type { AssetScope } from './dramaEpisodeEditUtils'
@@ -201,6 +203,15 @@ export function EpisodeEditPromptEditor({
           if (!editing) {
             const chip = (e.target as HTMLElement).closest<HTMLElement>('[data-asset-id]')
             if (chip?.dataset.assetId) onOpenAsset?.(Number(chip.dataset.assetId))
+            return
+          }
+          const durationChip = (e.target as HTMLElement).closest<HTMLElement>('[data-duration-sec]')
+          if (durationChip && editorRef.current?.contains(durationChip)) {
+            e.preventDefault()
+            const current = Number(durationChip.dataset.durationSec)
+            updateDurationChipElement(durationChip, nextDurationPresetSeconds(current))
+            emitContent()
+            closeMentionPopover()
             return
           }
           syncMentionTrigger()

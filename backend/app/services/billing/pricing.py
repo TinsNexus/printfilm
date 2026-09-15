@@ -156,10 +156,12 @@ def charge_fen_for_usage(
     *,
     raw_usage: dict[str, Any] | None = None,
     settings: Settings | None = None,
+    model: str = "",
 ) -> tuple[int, int, bool]:
     """按上游实际成本或 token 用量计算 (cost_fen, charge_fen, used_upstream_cost)。
 
     用户扣费与 TokenFree / 上游成本相同，不再加价。
+    生图无 quota 时：按张官方价，避免 8 元/百万 token 低估约十倍。
     """
     s = settings or get_settings()
     upstream_cost = parse_upstream_cost_fen(raw_usage, settings=s)
@@ -167,8 +169,30 @@ def charge_fen_for_usage(
         cost = upstream_cost
         charge = user_charge_fen(cost, s)
         return cost, charge, True
+    if (billing_key or "").strip() == "seedream":
+        catalog = _catalog_image_fen_if_per_call(s, model)
+        if catalog is not None:
+            charge = user_charge_fen(catalog, s)
+            return catalog, charge, False
     cost, charge = charge_fen_for_tokens(tokens, billing_key, settings=s)
     return cost, charge, False
+
+
+def _catalog_image_fen_if_per_call(settings: Settings, model: str) -> int | None:
+    """gpt-image / Seedream（TokenFree 上改走 gpt-image）按张价；token 计价模型返回 None。"""
+    from app.services.tokenfree_image import is_seedream_family, tokenfree_working_image_model
+    from app.services.tokenfree_pricing import charge_fen_official_image, lookup_rate
+
+    raw = (model or getattr(settings, "model_image", "") or "").strip()
+    mid = tokenfree_working_image_model(raw or "gpt-image-2-5")
+    rate = lookup_rate(mid)
+    if rate and rate.billing == "token":
+        return None
+    if rate and rate.billing == "per_call" and rate.cny_per_call > 0:
+        return charge_fen_official_image(settings, model=mid)
+    if is_seedream_family(raw) or "gpt-image" in mid.lower():
+        return charge_fen_official_image(settings, model=mid)
+    return None
 
 
 def parse_usage_dict(data: dict[str, Any] | None) -> dict[str, int]:

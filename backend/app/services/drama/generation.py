@@ -35,6 +35,7 @@ from app.services.drama.build_seedance_generate_body import (
     resolve_episode_character_intro,
 )
 from app.services.drama.fragment_asset_limit import cap_fragment_asset_ids
+from app.services.drama.build_fragments import prepare_fragment_content
 from app.services.drama.generation_prompt import append_style_prompt, build_generation_prompt
 from app.services.drama.image_styles import resolve_image_style_board_url
 from app.services.drama.seedream_options import resolve_seedream_model_endpoint, resolve_seedream_size
@@ -1482,7 +1483,11 @@ async def prepare_fragment_video_for_submit(
     model_id: str | None = None,
 ) -> FragmentVideoPrepared:
     settings = get_settings()
-    prompt = (fragment.content or "").strip() or "短剧分镜"
+    prompt = prepare_fragment_content(
+        fragment.content or "",
+        duration_sec=int(fragment.duration_sec or 0) or None,
+        is_opening=int(fragment.sort_order or 0) == 0,
+    ).strip() or "短剧分镜"
     duration = int(fragment.duration_sec or 8)
     duration = max(settings.seedance_duration_min, min(duration, settings.seedance_duration_max))
     episode = await db.get(DramaEpisode, fragment.episode_id)

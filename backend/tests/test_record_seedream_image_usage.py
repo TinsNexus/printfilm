@@ -29,7 +29,33 @@ async def test_record_seedream_with_upstream_tokens(db_session: AsyncSession) ->
     await db_session.commit()
     assert ev.estimated is False
     assert ev.total_tokens == 120000
-    assert ev.charge_fen >= 1
+    # Seedream 在 TokenFree 上按 gpt-image 张价，不用 12 万 token × 8 元/百万
+    assert ev.charge_fen == 438
+
+
+@pytest.mark.asyncio
+async def test_record_seedream_empty_usage_uses_per_call_catalog(db_session: AsyncSession) -> None:
+    user = await make_user(db_session)
+    image = ImageResult(
+        local_url="/static/x.png",
+        total_tokens=0,
+        raw_usage={
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+        },
+    )
+    ev = await record_seedream_image_usage(
+        db_session,
+        user_id=user.id,
+        model="gpt-image-2-5",
+        domain="drama",
+        image_result=image,
+    )
+    await db_session.commit()
+    assert ev.estimated is True
+    assert ev.charge_fen == 438
+    assert ev.cost_fen == 438
 
 
 @pytest.mark.asyncio

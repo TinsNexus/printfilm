@@ -19,11 +19,14 @@ from app.services.drama.build_fragments import (
     _expand_narrative_lines,
     _inject_character_mentions,
     _rescale_timed_blocks,
+    is_opening_cue_line,
+    merge_wrapped_narrative_lines,
     repair_fragment_timed_layout,
     build_character_binding,
     build_summary_character_lookup,
     _bindings_mentioned_in_text,
 )
+from app.services.seedance_segments import is_production_meta_line
 from app.services.drama.fragment_asset_limit import (
     FRAGMENT_MAX_CHARACTERS,
     FRAGMENT_MAX_PROPS,
@@ -314,9 +317,12 @@ def normalize_llm_fragment_items(
     for index, item in enumerate(items):
         if not isinstance(item, dict):
             continue
-        lines = _coerce_lines(item.get("lines") or item.get("content"))
+        lines = merge_wrapped_narrative_lines(
+            _coerce_lines(item.get("lines") or item.get("content"))
+        )
         if not lines:
             continue
+        llm_opening_extra: list[str] = []
         scene_name = str(item.get("scene_name") or item.get("sceneName") or "").strip() or None
         character_names = _coerce_name_list(
             item.get("character_names") or item.get("characterNames") or []
@@ -381,6 +387,11 @@ def normalize_llm_fragment_items(
         timed_blocks: list[tuple[int, list[str]]] = []
         inject_bindings = [*bindings, *prop_bindings]
         for line in lines:
+            stripped = line.strip()
+            if is_production_meta_line(stripped) or is_opening_cue_line(stripped):
+                if is_opening_cue_line(stripped):
+                    llm_opening_extra.append(stripped)
+                continue
             raw = _inject_character_mentions(line, inject_bindings)
             for formatted in _expand_narrative_lines(raw):
                 if not include_subtitles:
@@ -478,7 +489,14 @@ def normalize_llm_fragment_items(
                     introduced.add(name)
 
             intro_lines = _build_character_intro_lines(to_intro)
-            opening_lines = opening_cues if is_opening else []
+            opening_lines: list[str] = []
+            if is_opening:
+                seen_cues = set(opening_cues)
+                opening_lines = list(opening_cues)
+                for extra in llm_opening_extra:
+                    if extra not in seen_cues:
+                        opening_lines.append(extra)
+                        seen_cues.add(extra)
             cues = _build_production_cues(
                 None,
                 body_lines[:3],

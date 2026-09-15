@@ -139,7 +139,7 @@ ARK_API_KEY=你的 TokenFree 密钥
 ARK_BASE_URL=https://www.tokenfree.com/v1
 MODEL_IMAGE=doubao-seedream-5-0-260128
 MODEL_VIDEO=doubao-seedance-2-5-260628
-MODEL_AUDIO=seed-tts-2.0
+MODEL_AUDIO=qwen-tts-2025-05-22
 ```
 
 | 变量 | 说明 |

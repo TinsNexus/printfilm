@@ -82,6 +82,51 @@ def test_normalize_llm_injects_intro_once_for_important_cast():
     assert "【人物介绍·画面叠字·角色身旁】行刑兵" not in joined
 
 
+def test_normalize_llm_opening_cues_only_on_first_fragment():
+    assets = [
+        SimpleNamespace(id=1, type="character", name="苏轼", params={"title": "才子", "roleType": "主角"}),
+        SimpleNamespace(id=10, type="scene", name="汴京街市", params={}),
+    ]
+    opening_block = [
+        "【BGM：轻柔开阔，希望感】",
+        "【片头·集号叠字】第1集｜乌龙伯乐压奇才",
+        "【片头·词条特写】史上最难高考",
+        "【片头·标语特写】两风历史",
+        "空镜：汴京晨雾中的学堂门匾。",
+    ]
+    items = [
+        {
+            "duration_sec": 10,
+            "scene_name": "汴京街市",
+            "character_names": [],
+            "is_opening": True,
+            "lines": opening_block,
+        },
+        {
+            "duration_sec": 12,
+            "scene_name": "汴京街市",
+            "character_names": ["苏轼"],
+            "lines": [
+                *opening_block,
+                "苏轼：大宋嘉祐二年。",
+            ],
+        },
+    ]
+    drafts = normalize_llm_fragment_items(
+        items,
+        assets,
+        episode_number=1,
+        episode_name="乌龙伯乐压奇才",
+        project_title="乌龙伯乐压奇才",
+    )
+    assert len(drafts) >= 2
+    assert "【片头·集号叠字】" in drafts[0]["content"]
+    assert "【片头·词条特写】" in drafts[0]["content"]
+    for draft in drafts[1:]:
+        assert "【片头" not in draft["content"]
+        assert "苏轼" in draft["content"]
+
+
 def test_normalize_llm_links_prop_and_material():
     assets = [
         SimpleNamespace(id=1, type="character", name="禹", params={"title": "治水", "roleType": "主角"}),

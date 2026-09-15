@@ -39,7 +39,7 @@ async def record_line(
             total = s.billing_est_llm_tokens
             estimated = True
         elif billing_key == "seedream":
-            total = s.billing_est_seedream_tokens
+            # TokenFree /responses 常回 0 token；按张价在 charge_fen_for_usage 计算
             estimated = True
         elif billing_key == "tts":
             total = s.billing_est_tts_tokens
@@ -48,7 +48,7 @@ async def record_line(
             total = s.billing_est_seedance_tokens_per_sec * 5
             estimated = True
     cost, charge, from_upstream = charge_fen_for_usage(
-        total, billing_key, raw_usage=raw, settings=s
+        total, billing_key, raw_usage=raw, settings=s, model=model
     )
     if from_upstream:
         estimated = False

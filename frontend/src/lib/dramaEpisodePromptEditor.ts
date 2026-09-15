@@ -8,7 +8,7 @@ export type DramaMentionChipData = {
 export const DURATION_CHIP_SELECTOR = '[data-duration-sec]'
 export const MENTION_CHIP_SELECTOR = "[data-mention='true']"
 export const CONTENT_TOKEN_PATTERN = /@(asset:\d+|duration:\d+)/g
-export const DURATION_PRESET_OPTIONS = [4, 5, 8, 10, 12, 15] as const
+export const DURATION_PRESET_OPTIONS = [3, 4, 5, 8, 10, 12, 15] as const
 /** 新分镜建议：镜内 @duration 合计上限（秒） */
 export const FRAGMENT_CONTENT_DURATION_MAX = 15
 /** Seedance 单镜/API 硬上限（秒）；旧稿可高于建议值 */
@@ -233,6 +233,7 @@ export function createDurationChipElement(seconds: number) {
   chipEl.contentEditable = 'false'
   chipEl.dataset.mention = 'true'
   chipEl.dataset.durationSec = String(seconds)
+  chipEl.title = `时长 ${seconds}s，编辑时点击切换`
 
   const labelEl = document.createElement('span')
   labelEl.dataset.durationLabel = 'true'
@@ -246,8 +247,20 @@ export function createDurationChipElement(seconds: number) {
 // 更新已有时长标签秒数
 export function updateDurationChipElement(chipEl: HTMLElement, seconds: number) {
   chipEl.dataset.durationSec = String(seconds)
+  chipEl.title = `时长 ${seconds}s，编辑时点击切换`
   const labelEl = chipEl.querySelector<HTMLElement>('[data-duration-label]')
   if (labelEl) labelEl.textContent = `${seconds}s`
+}
+
+// 点击场记板时长标签时，在预设秒数间循环
+export function nextDurationPresetSeconds(current: number) {
+  const presets = DURATION_PRESET_OPTIONS
+  const idx = presets.findIndex((sec) => sec === current)
+  if (idx < 0) {
+    const next = presets.find((sec) => sec > current)
+    return next ?? presets[presets.length - 1]
+  }
+  return presets[(idx + 1) % presets.length]
 }
 
 // 在 Range 处插入时长标签
