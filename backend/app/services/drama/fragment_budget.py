@@ -15,6 +15,10 @@ from app.services.drama.build_fragments import (
     repair_fragment_timed_layout,
     split_overlong_fragment_content,
 )
+from app.services.drama.fragment_asset_limit import (
+    FRAGMENT_MAX_CHARACTERS,
+    cap_asset_id_list,
+)
 from app.services.drama.fragment_content_duration import sum_fragment_content_duration_seconds
 
 _DURATION_LINE = re.compile(r"^@duration:\d+\s*$")
@@ -162,15 +166,17 @@ def merge_fragment_drafts(
     return {
         "content": content,
         "duration_sec": duration,
-        "asset_ids": _merge_unique_ids(
-            list(a.get("asset_ids") or []),
-            list(b.get("asset_ids") or []),
+        "asset_ids": cap_asset_id_list(
+            _merge_unique_ids(
+                list(a.get("asset_ids") or []),
+                list(b.get("asset_ids") or []),
+            )
         ),
         "scene_name": a.get("scene_name") or b.get("scene_name"),
         "character_names": _merge_unique_names(
             list(a.get("character_names") or []),
             list(b.get("character_names") or []),
-        ),
+        )[:FRAGMENT_MAX_CHARACTERS],
         "is_opening": bool(a.get("is_opening")),
     }
 
@@ -249,9 +255,14 @@ def trim_episode_fragment_drafts(
                     **draft,
                     "content": chunk,
                     "duration_sec": dur,
+                    "asset_ids": cap_asset_id_list(list(draft.get("asset_ids") or [])),
+                    "character_names": list(draft.get("character_names") or [])[:FRAGMENT_MAX_CHARACTERS],
                     "is_opening": bool(draft.get("is_opening")) and not expanded,
                 }
             )
+    for item in expanded:
+        item["asset_ids"] = cap_asset_id_list(list(item.get("asset_ids") or []))
+        item["character_names"] = list(item.get("character_names") or [])[:FRAGMENT_MAX_CHARACTERS]
     return expanded
 
 

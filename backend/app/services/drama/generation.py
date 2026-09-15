@@ -27,7 +27,6 @@ from app.services.billing import record_line
 from app.services.drama.build_seedance_generate_body import (
     ASSET_MENTION_TOKEN_PATTERN,
     build_seedance_generate_body,
-    build_seedance_prompt_text,
     build_seedance_reference_catalog,
     describe_seedance_content_slots,
     drama_asset_to_payload,
@@ -35,11 +34,9 @@ from app.services.drama.build_seedance_generate_body import (
     resolve_episode_burn_subtitles,
     resolve_episode_character_intro,
 )
+from app.services.drama.fragment_asset_limit import cap_fragment_asset_ids
 from app.services.drama.generation_prompt import append_style_prompt, build_generation_prompt
-from app.services.drama.image_styles import (
-    append_style_board_url,
-    resolve_image_style_board_url,
-)
+from app.services.drama.image_styles import resolve_image_style_board_url
 from app.services.drama.seedream_options import resolve_seedream_model_endpoint, resolve_seedream_size
 from app.services.drama.visual_prompt import resolve_visual_prompt_for_asset
 from app.services.drama.voice_synthesis import build_voice_sample_text, synthesize_voice_asset
@@ -778,18 +775,18 @@ def extract_asset_ids_from_content(content: str) -> list[int]:
     return ids
 
 
-# Kie / Seedance 参考图仅接受常见位图；SVG 占位图会触发 File type not supported
-_KIE_IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")
+# Seedance / TokenFree 参考图仅接受常见位图；SVG 占位图会被上游拒绝
+_REF_IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")
 
 
-def _is_kie_supported_image_url(url: str | None) -> bool:
+def _is_bitmap_image_url(url: str | None) -> bool:
     path = (url or "").strip().split("?", 1)[0].lower()
     if not path:
         return False
-    return any(path.endswith(suffix) for suffix in _KIE_IMAGE_SUFFIXES)
+    return any(path.endswith(suffix) for suffix in _REF_IMAGE_SUFFIXES)
 
 
-# 判断资产是否缺参考图（SVG/非位图占位视为仍缺，避免视频提交才被 Kie 拒）
+# 判断资产是否缺参考图（SVG/非位图占位视为仍缺，避免视频提交才被上游拒）
 def asset_needs_reference_image(asset: DramaAsset) -> bool:
     kind = (asset.type or "").strip().lower()
     if kind not in IMAGE_REF_ASSET_TYPES:
@@ -799,7 +796,7 @@ def asset_needs_reference_image(asset: DramaAsset) -> bool:
     candidate = cover or url
     if not candidate:
         return True
-    return not _is_kie_supported_image_url(candidate)
+    return not _is_bitmap_image_url(candidate)
 
 
 # 读取资产生图提示词（缺省时用名称兜底）
@@ -876,6 +873,10 @@ async def ensure_fragment_reference_images(
         if asset and asset.project_id == project.id:
             assets_by_id[asset_id] = asset
 
+    collected_ids = cap_fragment_asset_ids(
+        collected_ids,
+        [assets_by_id[i] for i in collected_ids if i in assets_by_id],
+    )
     ordered = [assets_by_id[i] for i in collected_ids if i in assets_by_id]
     missing = [a for a in ordered if asset_needs_reference_image(a)]
     if not missing:
@@ -1457,7 +1458,7 @@ class FragmentVideoPrepared:
     submit_mode: str
     seedance_body: dict[str, Any] | None = None
     image_url: str | None = None
-    # Kie 多参考模式（与 first_frame 互斥）
+    # 多参考图（与 first_frame 互斥）
     reference_image_urls: list[str] | None = None
     reference_audio_urls: list[str] | None = None
     prompt: str = ""
@@ -1467,32 +1468,8 @@ class FragmentVideoPrepared:
     generate_audio: bool = True
     content_labels: list[str] | None = None
     model_id: str | None = None
+    # 旧 payload 字段，反序列化仍读取；新任务不再写入
     kie_api_kind: str | None = None
-
-
-# 将本地/CDN 参考地址尽量变成公网 https，供 Kie 拉取
-def _publish_https_media_url(url: str | None) -> str:
-    from app.services import storage as storage_svc
-
-    raw = (url or "").strip()
-    if not raw:
-        return ""
-    published = storage_svc.republish_url(raw, sync=True) or raw
-    text = str(published).strip()
-    return text if text.startswith("https://") else raw
-
-
-def _asset_label_by_id(ref_payloads: list[dict[str, Any]], asset_id: int) -> str:
-    for item in ref_payloads:
-        try:
-            if int(item.get("id") or 0) != asset_id:
-                continue
-        except (TypeError, ValueError):
-            continue
-        name = str(item.get("name") or "").strip()
-        kind = str(item.get("type") or "").strip() or "资产"
-        return f"{kind}「{name or asset_id}」#{asset_id}"
-    return f"资产#{asset_id}"
 
 
 # Worker 准备阶段：参考图 / 衔接帧 / 请求体（可耗时，但不等待上游成片）。
@@ -1504,8 +1481,6 @@ async def prepare_fragment_video_for_submit(
     *,
     model_id: str | None = None,
 ) -> FragmentVideoPrepared:
-    from app.services.kie_catalog import get_media_model
-
     settings = get_settings()
     prompt = (fragment.content or "").strip() or "短剧分镜"
     duration = int(fragment.duration_sec or 8)
@@ -1529,8 +1504,6 @@ async def prepare_fragment_video_for_submit(
             episode.params = ep_params
 
     mid = (model_id or "").strip() or None
-    kie_spec = get_media_model(mid)
-    use_kie = bool(kie_spec and kie_spec.provider == "kie" and kie_spec.capability == "video")
 
     refs = (
         await db.execute(
@@ -1557,7 +1530,7 @@ async def prepare_fragment_video_for_submit(
         ref_assets=ref_assets,
     )
     ref_assets = await ensure_reference_assets_public_urls(db, ref_assets)
-    # 方舟多参考 / Kie 多参考都需要音色音频；纯 Kie 首帧模式可跳过
+    # 多参考视频需要音色音频
     ref_assets = await ensure_fragment_reference_audios(
         db,
         user,
@@ -1583,94 +1556,6 @@ async def prepare_fragment_video_for_submit(
     for item in catalog.images:
         image_url = item.url
         break
-
-    # Kie：有角色/场景参考图时走 reference_* 多模态；否则才用单首帧
-    if use_kie:
-        ark = get_ark()
-        ref_image_urls: list[str] = []
-        unsupported_images: list[str] = []
-        image_budget = 29 if video_board_url else 30
-        for item in catalog.images[:image_budget]:
-            https_url = _publish_https_media_url(item.url)
-            if not https_url.startswith("https://"):
-                continue
-            if not _is_kie_supported_image_url(https_url):
-                unsupported_images.append(_asset_label_by_id(ref_payloads, item.asset_id))
-                continue
-            ref_image_urls.append(https_url)
-        if unsupported_images:
-            raise RuntimeError(
-                "Kie 参考图格式不支持（仅 PNG/JPG/WEBP 等位图，不支持 SVG/占位图）："
-                + "、".join(unsupported_images)
-                + "。请重新生成或上传对应资产图片后再试。"
-            )
-        ref_audio_urls: list[str] = []
-        for item in catalog.audios[:10]:
-            https_url = _publish_https_media_url(item.url)
-            if https_url.startswith("https://"):
-                ref_audio_urls.append(https_url)
-
-        if not ref_image_urls:
-            still_prompt = append_style_prompt(
-                (prompt or "").strip()[:500] or "短剧分镜",
-                style_id,
-                has_style_board=False,
-            )
-            still = await ark.gen_image(
-                still_prompt,
-                project_id=project.id,
-                shot_no=fragment.id,
-                size=seedream_still_size_for_video_ratio(ratio),
-            )
-            image_url = _publish_https_media_url(still.local_url or still.remote_url or "")
-            return FragmentVideoPrepared(
-                submit_mode="kie",
-                image_url=image_url,
-                prompt=prompt,
-                duration=duration,
-                ratio="adaptive",
-                resolution=resolution,
-                generate_audio=True,
-                model_id=mid,
-                kie_api_kind=kie_spec.api_kind if kie_spec else "jobs",
-            )
-
-        # 多参考：把 @asset:id 改写成「参考图N」，与 reference_image_urls 顺序对齐
-        if video_board_url:
-            ref_image_urls = append_style_board_url(ref_image_urls, video_board_url)
-        kie_prompt = build_seedance_prompt_text(
-            prompt,
-            ref_payloads,
-            catalog,
-            style_id,
-            burn_subtitles=resolve_episode_burn_subtitles(
-                episode.params if episode else None
-            ),
-            character_intro=resolve_episode_character_intro(
-                episode.params if episode else None
-            ),
-            has_style_board=bool(video_board_url),
-        )
-        return FragmentVideoPrepared(
-            submit_mode="kie",
-            image_url=None,
-            reference_image_urls=ref_image_urls,
-            reference_audio_urls=ref_audio_urls or None,
-            prompt=kie_prompt,
-            duration=duration,
-            # 多参考模式可用固定画幅；首帧模式才必须 adaptive
-            ratio=ratio if ratio in {"9:16", "16:9", "1:1", "4:3", "3:4", "21:9"} else "16:9",
-            resolution=resolution,
-            generate_audio=True,
-            content_labels=describe_seedance_content_slots(
-                ref_payloads,
-                None,
-                has_text=bool((prompt or "").strip()),
-                style_board_url=video_board_url or None,
-            ),
-            model_id=mid,
-            kie_api_kind=kie_spec.api_kind if kie_spec else "jobs",
-        )
 
     if ref_payloads and (catalog.images or catalog.audios):
         body = build_seedance_generate_body(
@@ -1745,23 +1630,7 @@ async def submit_prepared_fragment_video(
 ) -> str:
     ark = get_ark()
     if prepared.submit_mode == "kie":
-        from app.services.kie_catalog import get_media_model
-        from app.services.kie_client import get_kie
-
-        spec = get_media_model(prepared.model_id)
-        if not spec or spec.provider != "kie":
-            raise RuntimeError(f"无效 Kie 视频模型: {prepared.model_id}")
-        return await get_kie().create_video_task(
-            prepared.image_url or "",
-            prepared.prompt,
-            prepared.duration,
-            spec=spec,
-            resolution=prepared.resolution,
-            ratio=prepared.ratio,
-            generate_audio=prepared.generate_audio,
-            reference_image_urls=prepared.reference_image_urls,
-            reference_audio_urls=prepared.reference_audio_urls,
-        )
+        raise RuntimeError("已改为 TokenFree 通道，请重新生成本镜视频")
     if prepared.submit_mode == "seedance_body" and prepared.seedance_body:
         return await ark.gen_video_seedance_body(
             prepared.seedance_body,

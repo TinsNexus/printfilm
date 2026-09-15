@@ -156,7 +156,7 @@ async def forward_seedance(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(_resolve_api_user),
 ) -> V1GenerationOut:
-    """转发 Seedance 多模态 body 到火山方舟。"""
+    """转发 Seedance 多模态 body 到 TokenFree。"""
     if not body.content:
         raise HTTPException(status_code=400, detail="content 不能为空")
     settings = get_settings()

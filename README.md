@@ -14,7 +14,7 @@ Open-source AI studio for short videos and episodic comics: theme → storyboard
 | 后端 | Python 3.12 · FastAPI · SQLAlchemy · PostgreSQL |
 | 用户端 | React 19 · TypeScript · Vite 8 |
 | 管理端 | React 19 · Tailwind · shadcn/ui（开发端口 5174） |
-| AI | 文字：OpenAI 兼容（Kimi / DeepSeek 等）；生图/生视频：火山方舟 Seedream / Seedance；配音：豆包 TTS 或 edge-tts |
+| AI | 文字/生图/生视频：TokenFree New API（Seedream / Seedance）；配音：豆包 TTS 或 edge-tts |
 | 任务 | 应用内 scheduler + executor + poller（随 FastAPI 进程启动） |
 | 部署 | Docker 仅跑 Postgres / Redis；应用用本机或服务器进程 |
 
@@ -119,7 +119,7 @@ docs/            规范、发布、计费与产品细则
 
 ## AI 服务配置
 
-本项目拆成两条上游：**文字**走任意 OpenAI 兼容接口；**生图 / 生视频**走火山方舟。配音优先豆包 openspeech，未配置时回退 `edge-tts`。
+本项目图/视频与文字统一走 **TokenFree New API**。配音优先豆包 openspeech，未配置时回退 `edge-tts`。
 
 也可在管理后台 **系统设置 → 模型路由** 填写渠道（Base URL / Key / 模型），默认文本模型会随渠道同步。`.env` 可作为首次导入。
 
@@ -133,9 +133,10 @@ OPENAI_API_KEY=sk-你的密钥
 OPENAI_BASE_URL=https://api.moonshot.cn/v1
 MODEL_LLM=kimi-k2.6
 
-# 生图 / 生视频（火山方舟）
+# 生图 / 生视频（TokenFree，ARK_* 为历史字段名）
 ARK_MOCK=false
-ARK_API_KEY=你的方舟密钥
+ARK_API_KEY=你的 TokenFree 密钥
+ARK_BASE_URL=https://www.tokenfree.com/v1
 MODEL_IMAGE=doubao-seedream-5-0-260128
 MODEL_VIDEO=doubao-seedance-2-5-260628
 MODEL_AUDIO=seed-tts-2.0
@@ -217,7 +218,7 @@ PRINTFILM 面向创作者与运营：输入主题或剧本，按模板生成分�
         ├── 任务运行时（scheduler / executor / poller）
         ├── PostgreSQL :15432
         ├── Redis :16379（找回密码、缓存等）
-        ├── 火山方舟（图 / 视频）+ OpenAI 兼容（文本）
+        ├── TokenFree（图 / 视频 / 文本）+ 豆包 TTS（配音）
         └── 本地 static/generated + 可选阿里云 OSS
                     │
                     ▼

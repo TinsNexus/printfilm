@@ -86,9 +86,7 @@ def resolve_channel_model_capability(channel: SystemModelChannel, upstream_model
     protocol = (channel.protocol or "auto").lower()
     if protocol == "openai":
         return "text"
-    if protocol == "ark":
-        return infer_model_capability(upstream_model)
-    if protocol == "kie":
+    if protocol in {"ark", "kie"}:
         return infer_model_capability(upstream_model)
     if protocol == "volc_tts":
         return "audio"

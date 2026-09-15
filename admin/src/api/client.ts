@@ -651,12 +651,6 @@ export type AdminModelSettings = {
   smtp_from: string;
   smtp_use_tls: boolean;
   has_smtp_password: boolean;
-  volc_access_key_id: string;
-  volc_secret_access_key: string;
-  volc_ark_region: string;
-  volc_ark_usage_enabled: boolean;
-  has_volc_access_key_id: boolean;
-  has_volc_secret_access_key: boolean;
   public_base_url: string;
   ffmpeg_path: string;
   ffprobe_path: string;

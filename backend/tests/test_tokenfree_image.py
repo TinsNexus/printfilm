@@ -175,78 +175,8 @@ async def test_post_does_not_retry_protocol_error():
 
 
 @pytest.mark.asyncio
-async def test_kie_image_fallback_skips_without_key(monkeypatch):
-    """没有 Kie Key 时不回退。"""
-    from app.services.ark import ArkGateway
-
-    monkeypatch.setattr(
-        "app.services.kie_client.resolve_kie_credentials",
-        lambda: ("", "https://api.kie.ai"),
-    )
-    out = await ArkGateway()._kie_image_fallback(
-        "湖",
-        project_id=1,
-        shot_no=1,
-        size="2k",
-        aspect_ratio="16:9",
-        ref_urls=None,
-    )
-    assert out is None
-
-
-@pytest.mark.asyncio
-async def test_seedream_once_falls_back_to_kie_on_protocol_error(monkeypatch):
-    """TokenFree 协议失败且有回退时，返回 Kie 结果。"""
-    from app.config import Settings
-    from app.services.ark import ArkGateway, ImageResult
-
-    settings = Settings(
-        ark_mock=False,
-        ark_api_key="sk-test",
-        ark_base_url="https://www.tokenfree.com/v1",
-    )
-    gw = ArkGateway(settings=settings)
-
-    class _Resp:
-        status_code = 502
-        text = '{"error":{"code":"task_protocol_error","message":"Task protocol request failed"}}'
-
-        def json(self):
-            return {}
-
-    class _FakeClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return False
-
-        async def post(self, *args, **kwargs):
-            return _Resp()
-
-    async def _fake_fallback(*args, **kwargs):
-        return ImageResult(local_url="/static/x.png")
-
-    monkeypatch.setattr("app.services.ark.httpx.AsyncClient", _FakeClient)
-    monkeypatch.setattr(gw, "_resolve_ark_route", lambda *args, **kwargs: None)
-    monkeypatch.setattr(gw, "_kie_image_fallback", _fake_fallback)
-    result = await gw._seedream_once(
-        "湖",
-        None,
-        project_id=1,
-        shot_no=1,
-        size="2k",
-        model="gpt-image-2-5",
-    )
-    assert result.local_url == "/static/x.png"
-
-
-@pytest.mark.asyncio
-async def test_seedream_once_keeps_tokenfree_error_when_kie_fallback_raises(monkeypatch):
-    """Kie 回退抛错时仍返回 TokenFree 友好文案，不把 Kie 原文抛给用户。"""
+async def test_seedream_once_does_not_fall_back_to_kie(monkeypatch):
+    """TokenFree 协议失败时不再回退 api.kie.ai。"""
     from app.config import Settings
     from app.services.ark import ArkGateway
 
@@ -277,12 +207,8 @@ async def test_seedream_once_keeps_tokenfree_error_when_kie_fallback_raises(monk
         async def post(self, *args, **kwargs):
             return _Resp()
 
-    async def _boom(*args, **kwargs):
-        raise RuntimeError("Kie 生图失败")
-
     monkeypatch.setattr("app.services.ark.httpx.AsyncClient", _FakeClient)
     monkeypatch.setattr(gw, "_resolve_ark_route", lambda *args, **kwargs: None)
-    monkeypatch.setattr(gw, "_kie_image_fallback", _boom)
     with pytest.raises(RuntimeError, match="暂时失败"):
         await gw._seedream_once(
             "湖",

@@ -377,7 +377,7 @@ export function OrdersPage() {
             <Select value={usageBasis} onChange={(e) => setUsageBasis(e.target.value)}>
               <option value="">全部计费依据</option>
               <option value="estimate">估算</option>
-              <option value="upstream">实测（火山）</option>
+              <option value="upstream">实测（上游）</option>
               <option value="upstream_usage">实测(token)</option>
               <option value="upstream_cost">实测(费用)</option>
             </Select>

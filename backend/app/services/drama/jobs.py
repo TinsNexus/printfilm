@@ -1139,9 +1139,6 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
             next_payload["generation_attempts"] = attempts
             next_payload["attempt_limit"] = max_attempts
             next_payload["prepared"] = serialize_fragment_video_prepared(prepared)
-            if prepared.submit_mode == "kie":
-                next_payload["video_provider"] = "kie"
-                next_payload["kie_api_kind"] = prepared.kie_api_kind or "jobs"
             task_row.status = "pending"
             task_row.progress_percent = 25
             task_row.current_step_status = "prepared"
@@ -1213,9 +1210,6 @@ async def submit_fragment_video_task(task: TaskRun) -> dict[str, Any]:
         next_payload["nio_phase"] = "poll"
         next_payload["generation_attempts"] = attempts
         next_payload["attempt_limit"] = max_attempts
-        if prepared.submit_mode == "kie":
-            next_payload["video_provider"] = "kie"
-            next_payload["kie_api_kind"] = prepared.kie_api_kind or "jobs"
         task_row.payload = next_payload
         step = task_row.steps[0] if task_row.steps else None
         set_task_step_state(task_row, step, status="polling", now=now)
@@ -1411,14 +1405,10 @@ async def poll_fragment_video_task(task_id: int) -> None:
                 return
 
             if str(payload.get("video_provider") or "") == "kie":
-                from app.services.kie_client import get_kie
+                await _fail_task(db, task, RuntimeError("已改为 TokenFree 通道，请重新生成本镜视频"))
+                return
 
-                result = await get_kie().fetch_video_once(
-                    task.provider_task_id,
-                    api_kind=str(payload.get("kie_api_kind") or "jobs"),
-                )
-            else:
-                result = await get_ark().fetch_task_once(task.provider_task_id)
+            result = await get_ark().fetch_task_once(task.provider_task_id)
             if result.status == "running":
                 task.next_action_at = now + timedelta(seconds=poll_interval)
                 task.progress_percent = min(95, int(task.progress_percent or 40) + 3)

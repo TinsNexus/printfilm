@@ -32,9 +32,6 @@ class Settings(BaseSettings):
 
     ark_api_key: str = ""
     ark_base_url: str = "https://www.tokenfree.com/v1"
-    # Kie.ai（开源版不再作为可切换上游，保留字段以免旧配置报错）
-    kie_api_key: str = ""
-    kie_base_url: str = "https://api.kie.ai"
     # 文字模型：开源版固定 TokenFree New API，后台选模型
     openai_api_key: str = ""
     openai_base_url: str = "https://www.tokenfree.com/v1"
@@ -148,12 +145,6 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from: str = ""
     smtp_use_tls: bool = True
-
-    # 火山方舟管控面用量查询（GetInferenceUsage，与 ARK_API_KEY 分离）
-    volc_access_key_id: str = ""
-    volc_secret_access_key: str = ""
-    volc_ark_region: str = "cn-beijing"
-    volc_ark_usage_enabled: bool = True
 
     # Epay (pay.gitcc.com)
     epay_api_url: str = "https://pay.gitcc.com"

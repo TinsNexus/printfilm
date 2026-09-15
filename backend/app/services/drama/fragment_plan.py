@@ -22,6 +22,13 @@ from app.services.drama.build_fragments import (
     repair_fragment_timed_layout,
     build_character_binding,
     build_summary_character_lookup,
+    _bindings_mentioned_in_text,
+)
+from app.services.drama.fragment_asset_limit import (
+    FRAGMENT_MAX_CHARACTERS,
+    FRAGMENT_MAX_PROPS,
+    cap_fragment_asset_ids,
+    strip_unlisted_asset_mentions,
 )
 from app.services.drama.fragment_budget import cap_llm_fragment_items, trim_episode_fragment_drafts
 from app.services.drama.fragment_content_duration import sum_fragment_content_duration_seconds
@@ -402,14 +409,14 @@ def normalize_llm_fragment_items(
 
         def flush_chunk(*, is_last: bool) -> None:
             # 落盘当前块：注入介绍 / 开幕 cue，并保证 duration_sec 与 @duration 合计一致
-            nonlocal body_lines, used, bindings, matched_ids, character_names, chunk_index
+            nonlocal body_lines, used, chunk_index
             if not body_lines:
                 return
 
             body_text = "\n".join(body_lines)
-            bindings = _merge_bindings_for_fragment_body(
+            chunk_bindings = _merge_bindings_for_fragment_body(
                 bindings,
-                lines,
+                body_lines,
                 body_text,
                 character_assets,
                 summary_lookup=summary_lookup,
@@ -417,19 +424,26 @@ def normalize_llm_fragment_items(
                 episode_bodies=episode_bodies,
                 intro_overrides=intro_overrides,
             )
-            for b in bindings:
+            mentioned = _bindings_mentioned_in_text(body_text, chunk_bindings)
+            chunk_bindings = (mentioned or chunk_bindings)[:FRAGMENT_MAX_CHARACTERS]
+            chunk_ids: list[int] = []
+            if scene_asset_id:
+                chunk_ids.append(int(scene_asset_id))
+            for b in chunk_bindings:
                 aid = int(b["assetId"])
-                if aid not in matched_ids:
-                    matched_ids.append(aid)
+                if aid not in chunk_ids:
+                    chunk_ids.append(aid)
 
-            for pb in _match_prop_material_bindings(
-                [],
-                prop_material_assets,
-                body_blob=body_text,
-            ):
+            chunk_props = [
+                pb
+                for pb in prop_bindings
+                if str(pb.get("name") or "") in body_text
+                or f"@asset:{int(pb['assetId'])}" in body_text
+            ][:FRAGMENT_MAX_PROPS]
+            for pb in chunk_props:
                 aid = int(pb["assetId"])
-                if aid not in matched_ids:
-                    matched_ids.append(aid)
+                if aid not in chunk_ids:
+                    chunk_ids.append(aid)
                 # 已写入 body 的行若仍是裸名，在最终 content 里再注一次
                 body_text = _inject_character_mentions(body_text, [pb])
                 body_lines = body_text.split("\n") if body_text else body_lines
@@ -442,7 +456,7 @@ def normalize_llm_fragment_items(
             pending = (
                 [
                     b
-                    for b in bindings
+                    for b in chunk_bindings
                     if b.get("important")
                     and b.get("introText")
                     and str(b.get("name") or "") not in introduced
@@ -479,13 +493,19 @@ def normalize_llm_fragment_items(
                 FRAGMENT_TOTAL_MAX,
                 max(sum_fragment_content_duration_seconds(content) or used, FRAGMENT_DURATION_MIN),
             )
+            picked_ids = cap_fragment_asset_ids(chunk_ids, assets)
+            content = strip_unlisted_asset_mentions(content, picked_ids)
             drafts.append(
                 {
                     "content": content,
                     "duration_sec": duration,
-                    "asset_ids": list(matched_ids),
+                    "asset_ids": picked_ids,
                     "scene_name": scene_name,
-                    "character_names": character_names,
+                    "character_names": [
+                        str(b["name"])
+                        for b in chunk_bindings
+                        if int(b["assetId"]) in set(picked_ids)
+                    ],
                     "is_opening": is_opening,
                 }
             )

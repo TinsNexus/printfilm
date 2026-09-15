@@ -1,4 +1,4 @@
-"""Seedream 前端选项 → 方舟 model / size 解析。"""
+"""Seedream 前端选项 → TokenFree model / size 解析。"""
 
 from __future__ import annotations
 
@@ -118,15 +118,9 @@ def clamp_seedream_pixel_size(
     return f"{new_w}x{new_h}"
 
 
-# 将前端模型 ID 解析为方舟推理接入点；Kie catalog id 原样返回供 ark.gen_image 分发
+# 将前端模型 ID 解析为 TokenFree 上游模型名
 def resolve_seedream_model_endpoint(model_id: str | None) -> str:
-    from app.services.kie_catalog import get_media_model
-
     raw = (model_id or "").strip()
-    kie_spec = get_media_model(raw)
-    if kie_spec and kie_spec.provider == "kie" and kie_spec.capability == "image":
-        return kie_spec.id
-
     settings = get_settings()
     mid = raw.lower()
     logical_id = resolve_logical_model_id("image", model_id)

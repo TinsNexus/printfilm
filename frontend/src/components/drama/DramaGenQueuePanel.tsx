@@ -240,7 +240,7 @@ export function DramaGenQueuePanel() {
                             ) : null}
                             {errView.upstreamAccountBlocked ? (
                               <p className="drama-gen-fab-error-tip drama-gen-fab-upstream-tip">
-                                需管理员充值火山方舟 Seedream 账户，用户端充值无法解决。
+                                需管理员充值 TokenFree Seedream 账户，用户端充值无法解决。
                               </p>
                             ) : null}
                             <span className="drama-gen-fab-open-hint">查看原因</span>

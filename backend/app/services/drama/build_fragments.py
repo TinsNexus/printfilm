@@ -11,6 +11,12 @@ from app.services.seedance_segments import (
     VISUAL_PREFIX,
     is_production_meta_line,
 )
+from app.services.drama.fragment_asset_limit import (
+    FRAGMENT_MAX_CHARACTERS,
+    FRAGMENT_MAX_PROPS,
+    cap_fragment_asset_ids,
+    strip_unlisted_asset_mentions,
+)
 
 # 场次标题：### 场1-2 / ### 场景1-2
 SCENE_HEADER_RE = re.compile(r"^###\s*场(?:景)?\s*\d+\s*[-－—]\s*\d+\s*$")
@@ -1220,7 +1226,6 @@ def build_fragments_from_episode_body(
     fragments: list[dict[str, Any]] = []
     for scene in scenes:
         meta = extract_scene_meta(scene["body"])
-        matched_ids: list[int] = []
         scene_asset_id: int | None = None
         character_bindings: list[dict[str, Any]] = []
 
@@ -1228,7 +1233,6 @@ def build_fragments_from_episode_body(
             scene_asset = _find_asset_by_name(scene_assets, str(meta["sceneName"]))
             if scene_asset is not None:
                 scene_asset_id = int(scene_asset.id)
-                matched_ids.append(scene_asset_id)
 
         for character_name in meta.get("characterNames") or []:
             character_asset = _find_asset_by_name(character_assets, str(character_name))
@@ -1244,8 +1248,6 @@ def build_fragments_from_episode_body(
                     intro_overrides=intro_overrides,
                 )
             )
-            if character_asset.id not in matched_ids:
-                matched_ids.append(int(character_asset.id))
 
         # 一场可拆多条分镜（按时长软/硬上限）；介绍落在首次出场镜
         for planned, duration in plan_fragments_from_scene(
@@ -1257,7 +1259,22 @@ def build_fragments_from_episode_body(
             include_subtitles=include_subtitles,
             include_character_intro=include_character_intro,
         ):
-            # 规则切分：正文里出现的道具/素材名注入 @asset 并写入 asset_ids
+            # 本条正文里真正出现的角色/道具，不把整场出场人物挂到每一镜
+            fragment_ids: list[int] = []
+            if scene_asset_id:
+                fragment_ids.append(int(scene_asset_id))
+            mentioned_names: list[str] = []
+            for binding in character_bindings:
+                name = str(binding.get("name") or "").strip()
+                aid = int(binding.get("assetId") or 0)
+                if not name or aid <= 0:
+                    continue
+                if name not in planned and f"@asset:{aid}" not in planned:
+                    continue
+                if aid not in fragment_ids:
+                    fragment_ids.append(aid)
+                if name not in mentioned_names:
+                    mentioned_names.append(name)
             prop_bindings: list[dict[str, Any]] = []
             for asset in prop_material_assets:
                 name = str(getattr(asset, "name", "") or "").strip()
@@ -1265,17 +1282,30 @@ def build_fragments_from_episode_body(
                     continue
                 aid = int(asset.id)
                 prop_bindings.append({"name": name, "assetId": aid})
-                if aid not in matched_ids:
-                    matched_ids.append(aid)
+                if aid not in fragment_ids:
+                    fragment_ids.append(aid)
+                if len(prop_bindings) >= FRAGMENT_MAX_PROPS:
+                    break
             if prop_bindings:
                 planned = _inject_character_mentions(planned, prop_bindings)
+            picked_ids = cap_fragment_asset_ids(fragment_ids, assets)
+            allowed = set(picked_ids)
+            planned = strip_unlisted_asset_mentions(planned, picked_ids)
+            kept_names = [
+                name
+                for name in mentioned_names
+                if any(
+                    str(b.get("name") or "") == name and int(b.get("assetId") or 0) in allowed
+                    for b in character_bindings
+                )
+            ]
             fragments.append(
                 {
                     "content": planned,
                     "duration_sec": duration or 8,
-                    "asset_ids": list(matched_ids),
+                    "asset_ids": picked_ids,
                     "scene_name": meta.get("sceneName"),
-                    "character_names": meta.get("characterNames") or [],
+                    "character_names": kept_names[:FRAGMENT_MAX_CHARACTERS],
                 }
             )
 

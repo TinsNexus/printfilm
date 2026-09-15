@@ -126,16 +126,12 @@ def catalog_payload() -> dict[str, Any]:
 
 
 def is_valid_project_media_model(model_id: str | None, capability: LogicalModelCapability) -> bool:
-    """科普项目 image_model / video_model：与 /api/media-models 及路由一致，兼容 Kie catalog id。"""
+    """科普项目 image_model / video_model：与 /api/media-models 及 TokenFree 路由一致。"""
     mid = (model_id or "").strip()
     if not mid:
         return True
-    from app.services.kie_catalog import get_media_model
     from app.services.logical_model_router import resolve_logical_model_candidates
 
-    spec = get_media_model(mid)
-    if spec and spec.capability == capability:
-        return True
     cat = catalog_payload()
     list_key = "image_models" if capability == "image" else "video_models"
     norm_mid = normalize_model_name(mid)

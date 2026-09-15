@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""从上游渠道拉取可用模型目录（OpenAI 兼容 / 方舟）。"""
+"""从上游渠道拉取可用模型目录（TokenFree / OpenAI 兼容）。"""
 from __future__ import annotations
 
 import logging
@@ -8,13 +8,10 @@ from typing import Any
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.ark_model_catalog import ARK_DEFAULT_BASE, list_ark_models
-from app.services.kie_catalog import kie_upstream_catalog
 from app.services.model_routing_config import infer_model_capability, normalize_model_name
+from app.services.tokenfree_gateway import TOKENFREE_BASE_URL
 
 logger = logging.getLogger(__name__)
-
-KIE_DEFAULT_BASE = "https://api.kie.ai"
 
 
 def _model_id(item: dict[str, Any]) -> str:
@@ -52,9 +49,9 @@ async def _resolve_channel_credentials(
                 proto = (channel.protocol or "auto").strip().lower() or "auto"
 
     if proto == "ark" and not base:
-        base = ARK_DEFAULT_BASE.rstrip("/")
+        base = TOKENFREE_BASE_URL.rstrip("/")
     if proto == "kie" and not base:
-        base = KIE_DEFAULT_BASE.rstrip("/")
+        base = TOKENFREE_BASE_URL.rstrip("/")
     return proto, base, key
 
 
@@ -125,17 +122,15 @@ async def list_upstream_models(
     if proto == "volc_tts":
         raise RuntimeError("豆包 TTS 暂不支持从上游拉取模型目录，请手动填写 speaker / 音色 ID")
 
-    if proto == "kie":
-        if not key:
-            raise RuntimeError("请先填写 Kie API Key，或使用已保存密钥的渠道")
-        rows = kie_upstream_catalog(capability=capability if capability not in {"", "all"} else "all")
-        return [{"id": r["id"], "label": r["label"], "capability": r["capability"]} for r in rows]
+    if proto == "kie" or proto == "ark" or "volces.com" in base.lower() or "kie.ai" in base.lower():
+        from app.services.tokenfree_gateway import TOKENFREE_BASE_URL, resolve_tokenfree_api_key
 
-    if proto == "ark" or "volces.com" in base.lower():
-        return await list_ark_models(
-            db,
-            capability=capability if capability not in {"", "all"} else "all",
-            api_key_override=key or api_key_override,
+        base = TOKENFREE_BASE_URL
+        key = key or resolve_tokenfree_api_key()
+        return await _list_openai_compatible_models(
+            base_url=base,
+            api_key=key,
+            capability=capability,
         )
 
     if not base:

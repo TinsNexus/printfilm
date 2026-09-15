@@ -7,9 +7,9 @@ from typing import Any
 # DEFAULT_APPEARANCE_NAME 从剧本抽取角色时的默认形象名
 DEFAULT_APPEARANCE_NAME = "基础形象"
 
-# DEFAULT_IMAGE_GENERATION 默认生图参数（与前端 Seedream 默认对齐）
+# DEFAULT_IMAGE_GENERATION 默认生图参数（空 modelId 走后台 TokenFree 默认）
 DEFAULT_IMAGE_GENERATION = {
-    "modelId": "kie-seedream-5",
+    "modelId": "",
     "aspectRatio": "3:4",
     "resolution": "3K",
 }

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.media_ref_limits import MAX_REFERENCE_IMAGES
 from app.services.tokenfree_gateway import TOKENFREE_CHANNEL_ID
 
 # 方舟原生异步视频任务前缀
@@ -69,9 +70,9 @@ def _media_url_from_item(item: dict[str, Any], key: str) -> str | None:
 def wrap_seedance_payload_for_newapi(payload: dict[str, Any]) -> dict[str, Any]:
     """把方舟 Seedance body 转成 TokenFree POST /v1/videos 请求体。
 
-    TokenFree 会把 metadata.input 转成 Kie 风格 `{model, input}`。
-    Kie Seedance 只认 reference_image_urls / first_frame_url，不认 content/images。
-    多参考时禁止再写顶层 image，否则网关会只留下第 1 张设定图。
+    TokenFree 会把 metadata.input 转成下游插件 `{model, input}`。
+    下游 Seedance 只认 reference_image_urls / first_frame_url，不认 content/images。
+    多参考时禁止再写顶层 image / images，也不要把同一批图塞进 content，否则会按张数重复计数并触发参考图上限。
     """
     src = dict(payload)
     content = src.get("content")
@@ -106,6 +107,20 @@ def wrap_seedance_payload_for_newapi(payload: dict[str, Any]) -> dict[str, Any]:
         except (TypeError, ValueError):
             duration_text = str(duration).strip()
     ratio = str(src.get("ratio") or "").strip()
+    uses_reference_images = any(role == "reference_image" for role in image_roles)
+    capped_images: list[str] = []
+    capped_roles: list[str] = []
+    seen_urls: set[str] = set()
+    for url, role in zip(images, image_roles):
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+        capped_images.append(url)
+        capped_roles.append(role)
+        if len(capped_images) >= MAX_REFERENCE_IMAGES:
+            break
+    images = capped_images
+    image_roles = capped_roles
     meta_input: dict[str, Any] = {}
     if duration_text:
         meta_input["duration"] = duration_text
@@ -121,17 +136,26 @@ def wrap_seedance_payload_for_newapi(payload: dict[str, Any]) -> dict[str, Any]:
     if "return_last_frame" in src:
         meta_input["return_last_frame"] = bool(src.get("return_last_frame"))
     if isinstance(content, list) and content:
-        meta_input["content"] = content
-    uses_reference_images = any(role == "reference_image" for role in image_roles)
+        if uses_reference_images:
+            # 下游会把 content 里的图也算进参考图上限，多参考只留文案/音频
+            text_audio = [
+                item
+                for item in content
+                if not (isinstance(item, dict) and item.get("type") == "image_url")
+            ]
+            if text_audio:
+                meta_input["content"] = text_audio
+        else:
+            meta_input["content"] = content
     first_frame_url: str | None = None
     last_frame_url: str | None = None
     if images:
-        meta_input["images"] = images
         if uses_reference_images:
-            # Kie / TokenFree 多参考：全部图走 reference_image_urls（含衔接尾帧）
-            meta_input["reference_image_urls"] = images[:30]
+            # 多参考：全部图只走 reference_image_urls（含衔接尾帧）
+            meta_input["reference_image_urls"] = images
         else:
             # 纯首/尾帧：与 reference_* 互斥，按 role 填
+            meta_input["images"] = images
             for url, role in zip(images, image_roles):
                 if role == "first_frame" and not first_frame_url:
                     first_frame_url = url
@@ -150,11 +174,9 @@ def wrap_seedance_payload_for_newapi(payload: dict[str, Any]) -> dict[str, Any]:
     }
     if duration_text:
         out["seconds"] = duration_text
-    if uses_reference_images and images:
-        out["images"] = images
-    elif first_frame_url:
+    if first_frame_url:
         out["image"] = first_frame_url
-    elif images:
+    elif images and not uses_reference_images:
         out["image"] = images[0]
     return out
 

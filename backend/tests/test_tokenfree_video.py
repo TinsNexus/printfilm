@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.services.ark import ArkGateway, _build_task_result_from_payload
+from app.services.media_ref_limits import MAX_REFERENCE_IMAGES
 from app.services.tokenfree_gateway import TOKENFREE_BASE_URL, TOKENFREE_CHANNEL_ID
 from app.services.tokenfree_video import (
     extract_video_task_id,
@@ -69,7 +70,7 @@ def test_wrap_seedance_payload_uses_videos_metadata_input():
     assert "content" not in wrapped
 
 
-def test_wrap_seedance_payload_keeps_all_reference_images_for_kie():
+def test_wrap_seedance_payload_keeps_all_reference_images():
     """多参考必须写成 reference_image_urls，不能只留顶层第一张图。"""
     payload = {
         "model": "seedance-2-5",
@@ -111,9 +112,13 @@ def test_wrap_seedance_payload_keeps_all_reference_images_for_kie():
         "https://cdn.example.com/last.jpg",
     ]
     assert "image" not in wrapped
-    assert wrapped["images"] == refs
+    assert "images" not in wrapped
     assert meta_input["reference_image_urls"] == refs
-    assert meta_input["images"] == refs
+    assert "images" not in meta_input
+    assert all(
+        not (isinstance(item, dict) and item.get("type") == "image_url")
+        for item in meta_input.get("content") or []
+    )
     assert meta_input["reference_audio_urls"] == ["https://cdn.example.com/voice.mp3"]
     assert "first_frame_url" not in meta_input
     assert "image" not in meta_input
@@ -137,9 +142,10 @@ def test_wrap_seedance_payload_single_reference_image_keeps_ratio_mode():
     }
     wrapped = wrap_seedance_payload_for_newapi(payload)
     meta_input = wrapped["metadata"]["input"]
-    assert wrapped["images"] == ["https://cdn.example.com/a.jpg"]
+    assert "images" not in wrapped
     assert "image" not in wrapped
     assert meta_input["reference_image_urls"] == ["https://cdn.example.com/a.jpg"]
+    assert "images" not in meta_input
     assert meta_input["aspect_ratio"] == "9:16"
     assert "first_frame_url" not in meta_input
 
@@ -172,7 +178,33 @@ def test_wrap_seedance_payload_from_generate_body_includes_continuity():
     assert refs[0] == "https://cdn.example.com/yu.jpg"
     assert refs[-1] == "https://cdn.example.com/prev_last.jpg"
     assert "image" not in wrapped
+    assert "images" not in wrapped
+    assert "images" not in wrapped["metadata"]["input"]
     assert "first_frame_url" not in wrapped["metadata"]["input"]
+
+
+def test_wrap_seedance_payload_caps_reference_images():
+    """下游最多 9 张；同一批图不得在 content / images 里再写一份。"""
+    content = [{"type": "text", "text": "群戏"}]
+    for i in range(12):
+        content.append(
+            {
+                "type": "image_url",
+                "image_url": {"url": f"https://cdn.example.com/{i}.png"},
+                "role": "reference_image",
+            }
+        )
+    wrapped = wrap_seedance_payload_for_newapi(
+        {"model": "seedance-2-5", "content": content, "duration": 8}
+    )
+    refs = wrapped["metadata"]["input"]["reference_image_urls"]
+    assert len(refs) == MAX_REFERENCE_IMAGES
+    assert "images" not in wrapped
+    assert "images" not in wrapped["metadata"]["input"]
+    assert all(
+        not (isinstance(item, dict) and item.get("type") == "image_url")
+        for item in wrapped["metadata"]["input"].get("content") or []
+    )
 
 
 def test_prepare_video_create_body_only_wraps_tokenfree():

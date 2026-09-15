@@ -237,7 +237,7 @@ def append_style_board_url(
     urls: list[str],
     board_url: str | None,
     *,
-    max_total: int = 30,
+    max_total: int = 9,
 ) -> list[str]:
     """画风板接到角色/场景图之后，去重，并为板子预留最后一个名额。"""
     board = (board_url or "").strip()

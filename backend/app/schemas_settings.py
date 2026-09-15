@@ -133,14 +133,6 @@ class AdminModelSettingsOut(BaseModel):
     smtp_use_tls: bool = True
     has_smtp_password: bool = False
 
-    # 火山管控面用量查询（GetInferenceUsage，后台配置，不入 .env）
-    volc_access_key_id: str = ""
-    volc_secret_access_key: str = ""
-    volc_ark_region: str = "cn-beijing"
-    volc_ark_usage_enabled: bool = True
-    has_volc_access_key_id: bool = False
-    has_volc_secret_access_key: bool = False
-
     # 站点与工具
     public_base_url: str = ""
     ffmpeg_path: str = "ffmpeg"
@@ -259,13 +251,6 @@ class AdminModelSettingsPatch(BaseModel):
     smtp_use_tls: bool | None = None
     clear_smtp_password: bool = False
 
-    volc_access_key_id: str | None = None
-    volc_secret_access_key: str | None = None
-    volc_ark_region: str | None = None
-    volc_ark_usage_enabled: bool | None = None
-    clear_volc_access_key_id: bool = False
-    clear_volc_secret_access_key: bool = False
-
     public_base_url: str | None = None
     ffmpeg_path: str | None = None
     ffprobe_path: str | None = None
@@ -376,10 +361,6 @@ def model_config_field_names() -> tuple[str, ...]:
         "smtp_password",
         "smtp_from",
         "smtp_use_tls",
-        "volc_access_key_id",
-        "volc_secret_access_key",
-        "volc_ark_region",
-        "volc_ark_usage_enabled",
         "public_base_url",
         "ffmpeg_path",
         "ffprobe_path",
@@ -396,8 +377,6 @@ SECRET_FIELD_FLAGS: dict[str, str] = {
     "tos_access_key": "has_tos_access_key",
     "tos_secret_key": "has_tos_secret_key",
     "epay_key": "has_epay_key",
-    "volc_access_key_id": "has_volc_access_key_id",
-    "volc_secret_access_key": "has_volc_secret_access_key",
     "smtp_password": "has_smtp_password",
 }
 

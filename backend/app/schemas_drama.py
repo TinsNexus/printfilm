@@ -272,7 +272,7 @@ class DramaSaveFragmentsRequest(BaseModel):
 
 class DramaGenerateRequest(BaseModel):
     fragment_ids: list[int] | None = None
-    # 视频模型：seedance-*（方舟）或 kie-*（Kie）
+    # 视频模型：后台 TokenFree 目录 id
     model_id: str | None = Field(default=None, max_length=64)
 
 

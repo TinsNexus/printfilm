@@ -16,7 +16,7 @@ export type DramaGenErrorView = {
   upstreamAccountBlocked?: boolean
 }
 
-/** 是否为火山方舟 / Seedream 上游账户欠费 */
+/** 是否为上游 Seedream 账户欠费 */
 export function isUpstreamAccountError(message: string): boolean {
   return /AccountOverdueError|上游 Seedream 账户欠费|上游.*账户欠费/i.test(message)
 }
@@ -66,16 +66,16 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
     return {
       title: '生成失败',
       message: '任务未能完成，且未记录具体错误信息。',
-      suggestion: '请稍后重试；若反复失败，检查网络/代理是否能访问 Kie（api.kie.ai）或方舟，以及模型渠道密钥。',
+      suggestion: '请稍后重试；若反复失败，检查网络/代理是否能访问 TokenFree，以及后台模型渠道密钥。',
     }
   }
 
-  if (/网络错误|ConnectError|ConnectTimeout|ReadTimeout|无法连接上游|api\.kie\.ai/i.test(text)) {
+  if (/网络错误|ConnectError|ConnectTimeout|ReadTimeout|无法连接上游|tokenfree\.com|api\.kie\.ai/i.test(text)) {
     return {
       title: '无法连接图片/视频服务',
       message: text.length > 200 ? `${text.slice(0, 200)}…` : text,
       suggestion:
-        '本机当前连不上上游（常见于代理未放行或网络中断）。请检查网络/代理后重试；若用 Kie，确认能访问 api.kie.ai 且后台渠道密钥有效。',
+        '本机当前连不上上游（常见于代理未放行或网络中断）。请检查网络/代理后重试，并确认后台 TokenFree 渠道密钥有效。',
     }
   }
 
@@ -84,7 +84,7 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
       title: '生图失败',
       message: '生图未成功，但旧任务未保存具体原因（多为上游连接失败且错误文案为空）。',
       suggestion:
-        '请重新生成一次；新版本会写出明确错误。仍失败时检查 Kie/方舟网络与密钥。',
+        '请重新生成一次；新版本会写出明确错误。仍失败时检查 TokenFree 网络与密钥。',
     }
   }
 
@@ -92,8 +92,8 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
     return {
       title: '平台上游账户欠费',
       message:
-        '火山方舟 Seedream 模型账户余额不足，生图请求被拒绝。这是站点上游模型账户欠费，不是您个人钱包余额问题。',
-      suggestion: '请联系站点管理员在火山引擎 / 方舟控制台充值；充值完成后请重试生图。',
+        '上游 Seedream 模型账户余额不足，生图请求被拒绝。这是站点上游模型账户欠费，不是您个人钱包余额问题。',
+      suggestion: '请联系站点管理员在 TokenFree 控制台充值；充值完成后请重试生图。',
       upstreamAccountBlocked: true,
     }
   }
@@ -192,16 +192,16 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
   if (/only support adaptive aspect ratio|adaptive aspect ratio/i.test(text)) {
     return {
       title: '画幅参数不兼容',
-      message: 'Kie Seedance 2.5 图生视频（首帧/首尾帧）只支持自适应画幅（adaptive），固定比例会被拒绝。',
-      suggestion: '请重新生成该分镜；服务端已改为自动使用 adaptive，画幅会跟参考图一致。',
+      message: '当前视频通道的图生视频若走单首帧，固定比例可能被拒绝。',
+      suggestion: '请重新生成该分镜；服务端会按参考图自适应画幅。',
     }
   }
 
   if (/Credits insufficient|积分不足|余额不足.*[Kk]ie|Kie.*积分/i.test(text)) {
     return {
       title: '视频渠道积分不足',
-      message: 'Kie 上游账户积分不足，无法创建视频生成任务（不是参考图或音频时长问题）。',
-      suggestion: '请联系管理员在 Kie 控制台充值后再重试；充值后重新生成该分镜即可。',
+      message: '上游账户积分不足，无法创建视频生成任务（不是参考图或音频时长问题）。',
+      suggestion: '请联系管理员在 TokenFree 控制台充值后再重试；充值后重新生成该分镜即可。',
       upstreamAccountBlocked: true,
     }
   }

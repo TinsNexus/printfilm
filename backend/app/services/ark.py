@@ -33,7 +33,6 @@ from app.services.tokenfree_image import (
     is_tokenfree_input_text_sensitive,
     is_tokenfree_retryable_image_error,
     post_until_not_rate_limited,
-    tokenfree_image_channel_dead,
     tokenfree_image_slot,
     tokenfree_image_user_error,
     tokenfree_working_image_model,
@@ -74,7 +73,7 @@ def _raise_seedream_http_error(
     if status_code == 403 and "AccountOverdueError" in snippet:
         logger.error("Seedream AccountOverdueError — upstream Ark account overdue: %s", snippet[:200])
         raise RuntimeError(
-            "上游 Seedream 账户欠费（AccountOverdueError），生图暂不可用，请联系管理员充值火山方舟账户"
+            "上游 Seedream 账户欠费（AccountOverdueError），生图暂不可用，请联系管理员充值 TokenFree 账户"
         )
     logger.warning(
         "出图上游失败 model=%s tokenfree=%s status=%s body=%s",
@@ -388,16 +387,7 @@ class ArkGateway:
         enabled = [ch for ch in channels if ch.enabled and (ch.api_key or "").strip()]
         preferred = next((ch for ch in enabled if ch.id == TOKENFREE_CHANNEL_ID), None)
         if preferred is None:
-            preferred = next(
-                (
-                    ch
-                    for ch in enabled
-                    if ch.protocol == "ark"
-                    or ch.api_format == "ark"
-                    or "ark.cn-beijing.volces.com" in (ch.base_url or "")
-                ),
-                enabled[0] if enabled else None,
-            )
+            preferred = enabled[0] if enabled else None
         if preferred is not None:
             return (preferred.api_key or "").strip()
         return (self.settings.ark_api_key or "").strip()
@@ -704,29 +694,16 @@ class ArkGateway:
         aspect_ratio: str | None = None,
         style_ref_urls: list[str] | None = None,
     ) -> ImageResult:
-        """调用 Seedream 生图。
+        """调用 TokenFree 生图（Seedream 家族在网关侧重映射）。
 
         只软化用户正文并保留设定板前缀；InputTextSensitive 时仍用简化三视图重试，
         最后一档才缩成「三视图+服装风格」。不做空主体 / CG 厚涂兜底。
         """
-        from app.services.kie_catalog import get_media_model, resolve_image_model_id
-        from app.services.kie_client import get_kie
-        from app.services.style_lock import split_seedream_subject_style_refs
-
-        resolved = resolve_image_model_id(model)
-        kie_spec = get_media_model(resolved)
-        if kie_spec and kie_spec.provider == "kie" and kie_spec.capability == "image":
-            full_prompt = f"{prompt}。避免：{negative}" if negative else prompt
-            subject_refs, style_refs = split_seedream_subject_style_refs(ref_urls, style_ref_urls)
-            return await get_kie().gen_image(
-                full_prompt,
-                spec=kie_spec,
-                project_id=project_id,
-                shot_no=shot_no,
-                aspect_ratio=aspect_ratio,
-                size=size,
-                ref_urls=[*subject_refs, *style_refs] or None,
-            )
+        resolved = (model or "").strip()
+        if not resolved or resolved in {"ark-seedream"} or resolved.startswith("kie-"):
+            ark_model = None
+        else:
+            ark_model = resolved
 
         if self.mock:
             local = await asyncio.to_thread(self._write_mock_image, prompt, size)
@@ -735,7 +712,6 @@ class ArkGateway:
             url = storage.publish_local(path) if path and path.exists() else local
             return ImageResult(local_url=url, remote_url=None)
 
-        ark_model = None if resolved in {"", "ark-seedream"} else (model or resolved)
         from app.services.seedream_text_soften import (
             compact_seedream_prompt_for_retry,
             soften_seedream_input_text,
@@ -802,37 +778,6 @@ class ArkGateway:
                 )
                 raise
         raise RuntimeError(str(last_err) if last_err else "Seedream failed")
-
-    async def _kie_image_fallback(
-        self,
-        prompt: str,
-        *,
-        project_id: int | None,
-        shot_no: int | None,
-        size: str | None,
-        aspect_ratio: str | None,
-        ref_urls: list[str] | None,
-    ) -> ImageResult | None:
-        """TokenFree 出图挂了且已配 Kie Key 时，改走已验证可用的 nano-banana-2。"""
-        from app.services.kie_catalog import get_media_model
-        from app.services.kie_client import get_kie, resolve_kie_credentials
-
-        key, _ = resolve_kie_credentials()
-        if not key:
-            return None
-        spec = get_media_model("kie-nano-banana-2")
-        if spec is None:
-            return None
-        logger.warning("TokenFree 生图不可用，回退 Kie %s shot=%s", spec.id, shot_no)
-        return await get_kie().gen_image(
-            prompt,
-            spec=spec,
-            project_id=project_id,
-            shot_no=shot_no,
-            aspect_ratio=aspect_ratio,
-            size=size,
-            ref_urls=ref_urls,
-        )
 
     async def _seedream_once(
         self,
@@ -910,23 +855,6 @@ class ArkGateway:
             if resp.status_code >= 400 or is_tokenfree_retryable_image_error(
                 status_code=resp.status_code, body=resp.text
             ):
-                if on_tokenfree and tokenfree_image_channel_dead(
-                    status_code=resp.status_code, body=resp.text
-                ):
-                    try:
-                        fallback = await self._kie_image_fallback(
-                            full_prompt,
-                            project_id=project_id,
-                            shot_no=shot_no,
-                            size=str(resolved_size or ""),
-                            aspect_ratio=aspect_ratio,
-                            ref_urls=refs,
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning("Kie 出图回退失败 shot=%s: %s", shot_no, exc)
-                        fallback = None
-                    if fallback is not None:
-                        return fallback
                 _raise_seedream_http_error(
                     resp.status_code,
                     resp.text,
@@ -1627,38 +1555,7 @@ class ArkGateway:
         model: str | None = None,
         extra_image_urls: list[str] | None = None,
     ) -> tuple[str, TaskResult]:
-        """Create i2v task and wait; Kie 或 Seedance；后者在 summary_caption / transient BodyFormat 时重试。"""
-        from app.services.kie_catalog import get_media_model, resolve_video_model_id
-        from app.services.kie_client import get_kie
-
-        resolved = resolve_video_model_id(model)
-        kie_spec = get_media_model(resolved)
-        if kie_spec and kie_spec.provider == "kie" and kie_spec.capability == "video":
-            kie_refs: list[str] | None = None
-            extras = [str(u).strip() for u in (extra_image_urls or []) if str(u).strip()]
-            if extras:
-                extra_resolved: list[str] = []
-                for raw in extras[:2]:
-                    try:
-                        extra_resolved.append(await self._resolve_image_ref(raw, prefer_https=True))
-                    except Exception:  # noqa: BLE001
-                        logger.warning("Kie extra ref resolve failed url=%s", raw[:120])
-                if extra_resolved:
-                    primary = await self._resolve_image_ref(image_url, prefer_https=True)
-                    kie_refs = [primary, *extra_resolved]
-            return await get_kie().gen_and_wait_video(
-                image_url,
-                prompt,
-                duration,
-                spec=kie_spec,
-                project_id=project_id,
-                shot_no=shot_no,
-                resolution=resolution,
-                ratio=ratio,
-                generate_audio=generate_audio,
-                reference_image_urls=kie_refs,
-            )
-
+        """Create i2v task and wait；开源版只走 TokenFree（不直连 Kie / 火山）。"""
         last_err: Exception | None = None
         for attempt in range(max_attempts):
             use_json = attempt != 1  # attempt0 json, attempt1 plain, attempt2 json again

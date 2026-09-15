@@ -10,7 +10,6 @@ from app.deps import get_current_admin
 from app.models import User
 from app.schemas_routing import AdminRoutingSettingsOut, AdminRoutingSettingsPatch, AdminRoutingSettingsSaveOut
 from app.schemas_settings import AdminModelSettingsOut, AdminModelSettingsPatch, AdminModelSettingsSaveOut, AdminModelSettingsImportEnvOut
-from app.services.ark_model_catalog import list_ark_models
 from app.services.model_settings import (
     get_admin_model_settings,
     get_admin_routing_settings,
@@ -22,11 +21,6 @@ from app.services.upstream_model_catalog import list_upstream_models
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-
-class AdminArkModelsRequest(BaseModel):
-    capability: str = "all"
-    api_key: str | None = Field(default=None, max_length=512)
 
 
 class AdminUpstreamModelsRequest(BaseModel):
@@ -99,31 +93,13 @@ async def admin_import_model_settings_from_env(
     )
 
 
-@router.post("/settings/ark/models")
-async def admin_list_ark_models(
-    body: AdminArkModelsRequest,
-    _admin: User = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    """拉取火山方舟模型目录（临时 Key 仅走 POST body，避免进入 URL 日志）。"""
-    try:
-        models = await list_ark_models(
-            db,
-            capability=body.capability,
-            api_key_override=body.api_key,
-        )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"models": models}
-
-
 @router.post("/settings/upstream/models")
 async def admin_list_upstream_models(
     body: AdminUpstreamModelsRequest,
     _admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """按渠道协议拉取上游可用模型（OpenAI / 方舟 / Kie）。"""
+    """按渠道协议拉取上游可用模型（TokenFree / OpenAI 兼容）。"""
     try:
         models = await list_upstream_models(
             db,

@@ -27,7 +27,7 @@ def format_exception_message(
     name = type(exc).__name__
     detail = str(exc).strip()
     if name in _NETWORK_EXC_NAMES:
-        tip = detail or "无法连接上游服务（请检查网络、代理或 api.kie.ai / 方舟是否可达）"
+        tip = detail or "无法连接上游服务（请检查网络、代理或 TokenFree 是否可达）"
         return f"网络错误（{name}）：{tip}"[:limit]
     if not detail:
         return f"{name}：{fallback}"[:limit]
