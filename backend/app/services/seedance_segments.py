@@ -48,10 +48,26 @@ VISUAL_SHOT_LABEL_RE = re.compile(
 VOICE_CUE_PREFIX_RE = re.compile(
     r"^【(?:对白|旁白|内心独白)[^】]*】\s*"
 )
+# 角色（vo，低落）。——只有舞台指示、没有台词
+STAGE_ONLY_SPEAKER_RE = re.compile(
+    r"^(?P<speaker>[^：:\n（(\s]{1,16})"
+    r"[（(](?P<paren>[^）)]+)[）)]\s*[。．.…]?\s*$"
+)
+# 角色：台词 / 角色（vo）：台词
+SPEAKER_DIALOGUE_RE = re.compile(
+    r"^(?P<speaker>[^：:\n（(\s]{1,16})"
+    r"(?P<paren>[（(][^）)]+[）)])?"
+    r"\s*[：:]\s*(?P<text>.+)$"
+)
+GENERIC_NARRATOR_NAMES = frozenset({"旁白", "解说", "narrator", "旁白a", "旁白b", "vo", "os"})
+_TIME_OR_DURATION_PREFIX_RE = re.compile(
+    r"^(?:@duration:\d+|\d{2}:\d{2}-\d{2}:\d{2})\s*"
+)
 
 PRODUCTION_META_PREFIXES = (
     "【字幕",
     "【BGM",
+    "【配乐",
     "【人物介绍",
     "【片头",
     "【背景介绍",
@@ -110,6 +126,89 @@ def normalize_character_intro_cue(content: str) -> str:
     )
 
 
+def is_generic_narrator_name(name: str) -> bool:
+    """旁白/解说等第三人称声部名，不是出镜角色。"""
+    return (name or "").strip().lower() in GENERIC_NARRATOR_NAMES
+
+
+def paren_voice_kind(paren: str) -> str:
+    """括号里的口播类型：os / vo / other。按逗号分词，避免 close-up 命中 os。"""
+    for part in re.split(r"[,，、/\s]+", (paren or "").strip()):
+        token = part.strip().strip("（）()").lower()
+        if token in {"os"}:
+            return "os"
+        if token in {"vo", "旁白"}:
+            return "vo"
+    return "other"
+
+
+def classify_voice_body(body: str) -> str:
+    """口播正文分类：visual / dialogue / inner / narration / keep。"""
+    text = (body or "").strip()
+    if not text:
+        return "keep"
+    if VISUAL_SHOT_LABEL_RE.match(text) or text.startswith("空镜") or text.startswith("△"):
+        return "visual"
+    stage = STAGE_ONLY_SPEAKER_RE.match(text)
+    if stage and not is_generic_narrator_name(stage.group("speaker")):
+        if paren_voice_kind(stage.group("paren")) == "os":
+            return "inner"
+        return "visual"
+    spoken = SPEAKER_DIALOGUE_RE.match(text)
+    if spoken:
+        speaker = spoken.group("speaker").strip()
+        if VISUAL_SHOT_LABEL_RE.match(f"{speaker}："):
+            return "visual"
+        if is_generic_narrator_name(speaker):
+            return "narration"
+        if paren_voice_kind(spoken.group("paren") or "") == "os":
+            return "inner"
+        return "dialogue"
+    return "keep"
+
+
+def _dialogue_prefix_like(src_prefix: str) -> str:
+    """按原前缀是否含「同步字幕」生成对白 cue。"""
+    if "同步字幕" in (src_prefix or ""):
+        return DIALOGUE_PREFIX
+    return "【对白·慢速清晰】"
+
+
+def rewrite_character_vo_voice_lines(content: str) -> str:
+    """角色 VO 误标成旁白时改对白；纯（vo，情绪）舞台指示改画面；未打标台词补前缀。"""
+    out: list[str] = []
+    for raw in (content or "").replace("\r\n", "\n").split("\n"):
+        line = raw.strip()
+        if not line or line.startswith("@duration:") or is_production_meta_line(line):
+            out.append(raw)
+            continue
+        if line.startswith("【画面") or line.startswith("【空镜"):
+            out.append(raw)
+            continue
+        match = VOICE_CUE_PREFIX_RE.match(line)
+        prefix = match.group(0) if match else ""
+        body = line[len(prefix) :].strip() if match else line
+        kind = classify_voice_body(body)
+        if kind == "visual":
+            if prefix.startswith("【画面"):
+                out.append(raw)
+            else:
+                out.append(f"{VISUAL_PREFIX}{body}")
+            continue
+        if kind == "dialogue" and not prefix.startswith("【对白"):
+            out.append(f"{_dialogue_prefix_like(prefix)}{body}")
+            continue
+        if kind == "inner" and not prefix.startswith("【内心独白"):
+            inner = "【内心独白·同步字幕】" if "同步字幕" in prefix else "【内心独白】"
+            out.append(f"{inner}{body}")
+            continue
+        if kind == "narration" and not prefix.startswith("【旁白"):
+            out.append(f"【旁白·慢速清晰】{body}")
+            continue
+        out.append(raw)
+    return "\n".join(out)
+
+
 def rewrite_misclassified_visual_voice_lines(content: str) -> str:
     """
     纠正「空镜：…」等被误打成对白/旁白前缀的行。
@@ -130,7 +229,7 @@ def rewrite_misclassified_visual_voice_lines(content: str) -> str:
             out.append(f"{VISUAL_PREFIX}{body}")
             continue
         out.append(raw)
-    return "\n".join(out)
+    return rewrite_character_vo_voice_lines("\n".join(out))
 
 
 def script_has_narration_cue(content: str) -> bool:
@@ -266,6 +365,38 @@ def infer_bgm_mood(*hints: str) -> str:
     return DEFAULT_BGM_MOOD
 
 
+def _strip_time_or_duration_prefix(line: str) -> str:
+    """去掉行首 @duration:N 或 00:00-00:07，便于识别【配乐】。"""
+    return _TIME_OR_DURATION_PREFIX_RE.sub("", (line or "").strip()).strip()
+
+
+def parse_peiyue_mood(line: str) -> str:
+    """解析【配乐】｜木吉他… 或【配乐：…】。"""
+    text = _strip_time_or_duration_prefix(line)
+    if not text.startswith("【配乐"):
+        return ""
+    if text.startswith("【配乐：") or text.startswith("【配乐:"):
+        inner = text.split("】", 1)[0]
+        sep = "：" if "：" in inner else ":"
+        return inner.split(sep, 1)[-1].strip()
+    rest = text.split("】", 1)[-1].lstrip(" |｜:：").strip()
+    return rest.removesuffix("】").strip()
+
+
+def script_bgm_mood(segment_script: str) -> str:
+    """从【BGM：】或【配乐】取配乐；没有则从正文推断。"""
+    for raw in (segment_script or "").replace("\r\n", "\n").split("\n"):
+        line = _strip_time_or_duration_prefix(raw)
+        if line.startswith("【BGM："):
+            mood = line.removeprefix("【BGM：").removesuffix("】").strip()
+            if mood:
+                return mood
+        peiyue = parse_peiyue_mood(raw)
+        if peiyue:
+            return peiyue
+    return infer_bgm_mood(segment_script)
+
+
 def build_production_cues(bgm_mood: str) -> list[str]:
     mood = (bgm_mood or "").strip() or DEFAULT_BGM_MOOD
     if "音量低于人声" not in mood:
@@ -338,17 +469,7 @@ def build_seedance_production_section(
     has_vo = script_has_narration_cue(segment_script)
     has_dialogue = script_has_dialogue_cue(segment_script)
     drama_mixed = script_is_drama_mixed(segment_script)
-    # bgm_mood 从脚本 BGM cue 或正文推断
-    bgm_mood = DEFAULT_BGM_MOOD
-    for raw in (segment_script or "").replace("\r\n", "\n").split("\n"):
-        line = raw.strip()
-        if line.startswith("【BGM："):
-            mood = line.removeprefix("【BGM：").removesuffix("】").strip()
-            if mood:
-                bgm_mood = mood
-            break
-    else:
-        bgm_mood = infer_bgm_mood(segment_script)
+    bgm_mood = script_bgm_mood(segment_script)
 
     if "音量低于人声" not in bgm_mood:
         bgm_mood = f"{bgm_mood}，音量低于人声"

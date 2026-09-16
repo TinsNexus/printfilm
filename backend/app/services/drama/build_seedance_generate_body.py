@@ -19,8 +19,12 @@ from app.services.drama.image_styles import (
     resolve_image_style_prompt,
 )
 from app.services.seedance_segments import (
+    VOICE_CUE_PREFIX_RE,
     build_seedance_production_section,
+    classify_voice_body,
+    is_production_meta_line,
     rewrite_misclassified_visual_voice_lines,
+    script_has_narration_cue,
     strip_character_intro_cues,
     strip_model_burn_subtitle_cues,
 )
@@ -48,6 +52,10 @@ SEEDANCE_CHARACTER_APPEARANCE_SECTION_HEADER = (
 SEEDANCE_SCENE_SECTION_HEADER = (
     "【强制约束：场景】以下场景的空间结构、环境陈设、光影氛围必须与对应参考图严格一致，"
     "严禁替换为其他场景或大幅偏离参考画面："
+)
+SEEDANCE_PROP_SECTION_HEADER = (
+    "【强制约束：道具】以下道具的外形、材质与关键细节必须与对应参考图严格一致，"
+    "严禁替换为其他物品或丢失标志性特征："
 )
 
 
@@ -207,13 +215,85 @@ def resolve_other_asset_prompt_name(asset: dict[str, Any]) -> str:
     return resolve_asset_prompt_name(asset, f"资产#{asset.get('id')}")
 
 
+def _prepare_voice_script(content: str | None) -> str:
+    """提交前脚本：拆舞台指示、纠正空镜误标、角色 VO 改对白。"""
+    normalized = rewrite_dialogue_action_lines(content or "")
+    return rewrite_misclassified_visual_voice_lines(normalized)
+
+
+def collect_speaking_character_names(
+    script: str,
+    reference: list[dict[str, Any]] | None,
+) -> set[str]:
+    """从对白/旁白/独白行收集本镜开口的角色名（含 @asset 引用）。"""
+    names_by_id: dict[int, str] = {}
+    aliases: list[str] = []
+    for asset in reference or []:
+        if asset.get("type") != "character":
+            continue
+        prompt_name = resolve_character_prompt_name(asset)
+        names_by_id[int(asset["id"])] = prompt_name
+        aliases.append(prompt_name)
+        raw_name = str(asset.get("name") or "").strip()
+        if raw_name:
+            aliases.append(raw_name)
+    aliases = sorted({name for name in aliases if name}, key=len, reverse=True)
+    spoken: set[str] = set()
+    for raw in (script or "").replace("\r\n", "\n").split("\n"):
+        line = raw.strip()
+        if not line or line.startswith("@duration:") or is_production_meta_line(line):
+            continue
+        if line.startswith("【画面") or line.startswith("【空镜"):
+            continue
+        body = VOICE_CUE_PREFIX_RE.sub("", line).strip()
+        kind = classify_voice_body(body)
+        if kind not in {"dialogue", "inner"}:
+            continue
+        for token in ASSET_MENTION_TOKEN_PATTERN.findall(body):
+            mapped = names_by_id.get(int(token))
+            if mapped:
+                spoken.add(mapped)
+        for name in aliases:
+            if _name_is_token_prefix(body, name):
+                spoken.add(name)
+                break
+    return spoken
+
+
+def _should_attach_reference_audio(
+    asset: dict[str, Any],
+    *,
+    filter_audio: bool,
+    speaking: set[str],
+    has_narration: bool,
+) -> bool:
+    """未开口角色不挂音色；无第三人称旁白则不挂旁白音色。"""
+    if not filter_audio:
+        return True
+    kind = asset.get("type")
+    if kind == "character":
+        prompt_name = resolve_character_prompt_name(asset)
+        raw_name = str(asset.get("name") or "").strip()
+        return prompt_name in speaking or raw_name in speaking
+    if kind == "narration":
+        return has_narration
+    return True
+
+
 # 从引用资产构建参考图/音频目录
 def build_seedance_reference_catalog(
     reference: list[dict[str, Any]] | None,
+    script: str | None = None,
 ) -> SeedanceReferenceCatalog:
     catalog = SeedanceReferenceCatalog()
     seen_image_asset_ids: set[int] = set()
     seen_audio_asset_ids: set[int] = set()
+    filter_audio = script is not None
+    voice_script = _prepare_voice_script(script) if filter_audio else ""
+    speaking = (
+        collect_speaking_character_names(voice_script, reference) if filter_audio else set()
+    )
+    has_narration = script_has_narration_cue(voice_script) if filter_audio else True
 
     for asset in reference or []:
         asset_id = int(asset["id"])
@@ -224,6 +304,13 @@ def build_seedance_reference_catalog(
             catalog.images.append(SeedanceReferenceFile(asset_id=asset_id, url=image_url))
 
         if asset.get("type") in {"character", "narration"}:
+            if not _should_attach_reference_audio(
+                asset,
+                filter_audio=filter_audio,
+                speaking=speaking,
+                has_narration=has_narration,
+            ):
+                continue
             voice_audio_url = read_asset_voice_audio_url(asset.get("params"))
             if voice_audio_url and asset_id not in seen_audio_asset_ids:
                 seen_audio_asset_ids.add(asset_id)
@@ -253,8 +340,9 @@ def describe_seedance_content_slots(
     *,
     has_text: bool = True,
     style_board_url: str | None = None,
+    content: str | None = None,
 ) -> list[str]:
-    catalog = build_seedance_reference_catalog(reference)
+    catalog = build_seedance_reference_catalog(reference, script=content)
     asset_by_id = {
         int(asset["id"]): asset
         for asset in (reference or [])
@@ -290,6 +378,37 @@ def format_body_asset_mention(name: str, image_index: int | None) -> str:
     return name
 
 
+def _asset_prompt_name_for_mention(asset: dict[str, Any] | None) -> str:
+    """按资产类型解析写入提示词的显示名。"""
+    if not asset:
+        return ""
+    category = asset.get("type")
+    if category == "character":
+        return resolve_character_prompt_name(asset)
+    if category == "scene":
+        return resolve_scene_prompt_name(asset)
+    return resolve_other_asset_prompt_name(asset)
+
+
+_NAME_TOKEN_BOUNDARIES = frozenset(" \t，,、；;：:。．.!！?？）)]】」』\"'（([【「『“”和与跟及同在到向对把被让给的地得了着过也又再就都还从带")
+
+
+def _name_is_token_suffix(text: str, name: str) -> bool:
+    """text 是否以独立的 name 结尾（避免 大禹 吃掉 禹）。"""
+    if not name or not text.endswith(name):
+        return False
+    prefix = text[: -len(name)]
+    return (not prefix) or prefix[-1] in _NAME_TOKEN_BOUNDARIES
+
+
+def _name_is_token_prefix(text: str, name: str) -> bool:
+    """text 是否以独立的 name 开头（避免 禹王 被当成 禹）。"""
+    if not name or not text.startswith(name):
+        return False
+    rest = text[len(name) :]
+    return (not rest) or rest[0] in _NAME_TOKEN_BOUNDARIES
+
+
 # 将单个 @asset 占位符替换为正文描述
 def replace_asset_mention_token(
     asset_id: int,
@@ -299,14 +418,40 @@ def replace_asset_mention_token(
     asset = asset_by_id.get(asset_id)
     if not asset:
         return ""
+    index_map = getattr(catalog, "image_index_by_asset_id", {}) or {}
+    image_index = index_map.get(int(asset["id"]))
+    return format_body_asset_mention(_asset_prompt_name_for_mention(asset), image_index)
 
-    image_index = catalog.image_index_by_asset_id.get(int(asset["id"]))
-    category = asset.get("type")
-    if category == "character":
-        return format_body_asset_mention(resolve_character_prompt_name(asset), image_index)
-    if category == "scene":
-        return format_body_asset_mention(resolve_scene_prompt_name(asset), image_index)
-    return format_body_asset_mention(resolve_other_asset_prompt_name(asset), image_index)
+
+def replace_asset_mentions_without_duplicate_names(
+    text: str,
+    asset_by_id: dict[int, dict[str, Any]],
+    catalog: SeedanceReferenceCatalog,
+) -> str:
+    """把 @asset:id 换成「名称（参考图N）」，吞掉前后已经写过的同名。"""
+    pieces: list[str] = []
+    pos = 0
+    for match in ASSET_MENTION_TOKEN_PATTERN.finditer(text):
+        pieces.append(text[pos : match.start()])
+        asset_id = int(match.group(1))
+        token = replace_asset_mention_token(asset_id, asset_by_id, catalog)
+        name = _asset_prompt_name_for_mention(asset_by_id.get(asset_id))
+        index_map = getattr(catalog, "image_index_by_asset_id", {}) or {}
+        image_index = index_map.get(asset_id)
+        if name and _name_is_token_suffix("".join(pieces).rstrip(), name):
+            token = f"（参考图{image_index}）" if image_index is not None else ""
+        end = match.end()
+        skip = 0
+        if name:
+            rest = text[end:]
+            stripped = rest.lstrip()
+            ws = len(rest) - len(stripped)
+            if _name_is_token_prefix(stripped, name):
+                skip = ws + len(name)
+        pieces.append(token)
+        pos = end + skip
+    pieces.append(text[pos:])
+    return "".join(pieces)
 
 
 # 组装画面风格声明块；有画风板时强调只借气质、禁止抄主体
@@ -367,10 +512,7 @@ def build_seedance_body_text(
     normalized = rewrite_misclassified_visual_voice_lines(normalized)
     asset_by_id = {int(asset["id"]): asset for asset in (reference or [])}
     replaced = replace_duration_mentions_with_time_ranges(normalized)
-    replaced = ASSET_MENTION_TOKEN_PATTERN.sub(
-        lambda match: replace_asset_mention_token(int(match.group(1)), asset_by_id, catalog),
-        replaced,
-    )
+    replaced = replace_asset_mentions_without_duplicate_names(replaced, asset_by_id, catalog)
     return _normalize_body_whitespace(replaced)
 
 
@@ -392,7 +534,7 @@ def build_seedance_prompt_text(
         normalized = strip_model_burn_subtitle_cues(normalized)
     if not character_intro:
         normalized = strip_character_intro_cues(normalized)
-    resolved_catalog = catalog or build_seedance_reference_catalog(reference)
+    resolved_catalog = catalog or build_seedance_reference_catalog(reference, script=normalized)
     sections = [
         build_visual_style_section(video_style_id, has_style_board=has_style_board),
         build_seedance_production_section(
@@ -432,6 +574,14 @@ def build_seedance_prompt_text(
             "参考图",
             resolve_scene_prompt_name,
         ),
+        build_reference_index_section(
+            reference,
+            "prop",
+            resolved_catalog.image_index_by_asset_id,
+            SEEDANCE_PROP_SECTION_HEADER,
+            "参考图",
+            resolve_other_asset_prompt_name,
+        ),
         build_seedance_body_text(normalized, reference, resolved_catalog),
     ]
     return "\n\n".join(section for section in sections if section)
@@ -448,7 +598,7 @@ def build_seedance_content_items(
     character_intro: bool = True,
     style_board_url: str | None = None,
 ) -> list[dict[str, Any]]:
-    catalog = build_seedance_reference_catalog(reference)
+    catalog = build_seedance_reference_catalog(reference, script=content)
     # 无角色/场景图时不挂画风板，避免板子变成唯一画面参考
     board = (style_board_url or "").strip() if catalog.images else ""
     prompt_text = build_seedance_prompt_text(
@@ -552,7 +702,7 @@ def build_seedance_generate_body(input_params: BuildSeedanceGenerateBodyInput) -
     fallback = int(input_params.get("duration_fallback") or 8)
     continuity = (input_params.get("continuity_first_frame_url") or "").strip() or None
     reference = input_params.get("reference")
-    catalog = build_seedance_reference_catalog(reference)
+    catalog = build_seedance_reference_catalog(reference, script=content)
     # 仅「纯首帧、无参考媒体」时省略 ratio；混用参考时必须保留 ratio、且尾帧用 reference_image
     style_board_url = (input_params.get("style_board_url") or "").strip() or None
     if not catalog.images:

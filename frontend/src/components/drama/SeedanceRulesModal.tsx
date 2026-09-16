@@ -117,6 +117,7 @@ export function SeedanceRulesModal({ open, onClose }: Props) {
               <li>【强制约束：旁白音色】— 旁白 → 参考音频序号</li>
               <li>【强制约束：角色形象】— 角色名 → 参考图序号</li>
               <li>【强制约束：场景】— 场景名 → 参考图序号</li>
+              <li>【强制约束：道具】— 道具名 → 参考图序号</li>
               <li>
                 正文：将 <code>@asset:ID</code> 替换为「名称（参考图 N）」；将{' '}
                 <code>@duration:N</code> 替换为时间区间（如 00:00-00:04）

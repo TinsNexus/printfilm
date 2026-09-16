@@ -29,7 +29,7 @@ def test_uses_tokenfree_image_on_tokenfree_host():
 
 def test_build_tokenfree_image_body_matches_live_success():
     body = build_tokenfree_image_body(model="gpt-image-2-5", prompt="橘猫", size="2K")
-    assert body["model"] == "gpt-image-2-5-sunburst"
+    assert body["model"] == "gpt-image-2-5"
     assert "橘猫" in body["input"]
     assert "size:" not in body["input"]
     assert "prompt" not in body
@@ -50,9 +50,10 @@ def test_build_tokenfree_image_body_separates_style_and_subject_refs():
 
 
 def test_tokenfree_working_image_model_remaps_seedream():
-    assert tokenfree_working_image_model("seedream-5-0-pro") == "gpt-image-2-5-sunburst"
-    assert tokenfree_working_image_model("gpt-image-2-5") == "gpt-image-2-5-sunburst"
-    assert tokenfree_working_image_model("gpt-image-2-5-sunburst") == "gpt-image-2-5-sunburst"
+    assert tokenfree_working_image_model("seedream-5-0-pro") == "gpt-image-2-5"
+    assert tokenfree_working_image_model("gpt-image-2-5") == "gpt-image-2-5"
+    assert tokenfree_working_image_model("gpt-image-2-5-sunburst") == "gpt-image-2-5"
+    assert tokenfree_working_image_model("doubao-seedream-5-0-260128") == "gpt-image-2-5"
 
 
 def test_extract_tokenfree_image_url_from_img_tag():
@@ -87,6 +88,18 @@ def test_is_tokenfree_protocol_error():
     assert is_tokenfree_protocol_error(status_code=200, body='{"id":"ok"}') is False
     assert is_tokenfree_retryable_image_error(status_code=502, body=body) is False
     assert tokenfree_image_channel_dead(status_code=502, body=body) is True
+
+
+def test_sunburst_model_not_found_is_channel_dead():
+    """default 组没有 sunburst distributor 时，应判定通道不可用而不是限流。"""
+    body = (
+        '{"error":{"code":"model_not_found",'
+        '"message":"分组 default 下模型 gpt-image-2-5-sunburst 无可用的渠道distributor"}}'
+    )
+    assert is_tokenfree_no_distributor(status_code=503, body=body) is True
+    assert "暂时失败" in tokenfree_image_user_error(
+        model="gpt-image-2-5-sunburst", status_code=503, body=body
+    )
 
 
 def test_is_tokenfree_no_distributor():

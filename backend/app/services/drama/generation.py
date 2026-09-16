@@ -1594,6 +1594,7 @@ async def prepare_fragment_video_for_submit(
                 continuity_url,
                 has_text=bool((prompt or "").strip()),
                 style_board_url=video_board_url or None,
+                content=prompt,
             ),
             model_id=mid,
         )

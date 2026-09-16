@@ -72,10 +72,10 @@ RECOMMENDED_MODELS: tuple[dict[str, Any], ...] = (
         "recommended": False,
     },
     {
-        "id": "gpt-image-2-5-sunburst",
+        "id": "gpt-image-2-5",
         "capability": "image",
-        "label": "GPT Image 2.5 Sunburst",
-        "note": "TokenFree Kie 渠道；2K 约 $0.05/张。Seedream 会改走此模型",
+        "label": "GPT Image 2.5",
+        "note": "TokenFree 实测可通；计费按 Kie 2K 约 $0.05/张。Seedream 会改走此模型",
         "recommended": True,
     },
     {
@@ -331,7 +331,11 @@ def resolve_billing_image_size(settings: Settings, *, model: str = "", size: str
     raw = (size or "").strip() or str(getattr(settings, "ark_image_size", "") or "2K")
     upstream = (model or getattr(settings, "model_image", "") or "").strip()
     working = tokenfree_working_image_model(upstream)
-    if is_seedream_pro_model(upstream) or "sunburst" in working.lower():
+    if (
+        is_seedream_pro_model(upstream)
+        or "sunburst" in working.lower()
+        or "gpt-image" in working.lower()
+    ):
         if raw.strip().upper() in {"3K", "4K"}:
             return "2K"
     return raw
@@ -432,7 +436,9 @@ def build_official_rate_rows(
                     f"预估按火山 480P 约 {vendor:.3f} 元/秒"
                     f"（{VIDEO_RATE_SAMPLE_SECONDS:g}秒 ¥{official_yuan:.2f}；720P×2 / 1080P×4）{listed}"
                 )
-        elif spec["capability"] == "image" and "sunburst" in str(spec["id"]).lower():
+        elif spec["capability"] == "image" and (
+            "sunburst" in str(spec["id"]).lower() or "gpt-image-2-5" in str(spec["id"]).lower()
+        ):
             from app.services.billing.pricing import kie_fen_per_credit
 
             credits = kie_sunburst_credits_for_size("2K")

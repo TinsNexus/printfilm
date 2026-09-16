@@ -66,7 +66,7 @@ def test_recommended_models_cover_text_image_video() -> None:
     caps = {row["capability"] for row in RECOMMENDED_MODELS}
     assert caps == {"text", "image", "video"}
     ids = {row["id"] for row in RECOMMENDED_MODELS}
-    assert {"kimi-k2.6", "gpt-image-2-5-sunburst", "seedance-2-5", "seedance-2-0"} <= ids
+    assert {"kimi-k2.6", "gpt-image-2-5", "seedance-2-5", "seedance-2-0"} <= ids
     assert "seedream-5-0-pro" not in ids
     assert any(row["recommended"] and row["id"] == "kimi-k2.6" for row in RECOMMENDED_MODELS)
 
@@ -175,10 +175,10 @@ def test_build_official_rate_rows_marks_video_vendor() -> None:
     rates = parse_pricing_payload(_sample_payload(), settings)
     rows = build_official_rate_rows(rates, settings)
     by_id = {row["id"]: row for row in rows}
-    assert by_id["gpt-image-2-5-sunburst"]["official_cost_yuan"] == 0.35
-    assert by_id["gpt-image-2-5-sunburst"]["user_charge_yuan"] == 0.35
-    assert by_id["gpt-image-2-5-sunburst"]["basis"] == "kie_sunburst"
-    assert "积分" in by_id["gpt-image-2-5-sunburst"]["rate_label"]
+    assert by_id["gpt-image-2-5"]["official_cost_yuan"] == 0.35
+    assert by_id["gpt-image-2-5"]["user_charge_yuan"] == 0.35
+    assert by_id["gpt-image-2-5"]["basis"] == "kie_sunburst"
+    assert "积分" in by_id["gpt-image-2-5"]["rate_label"]
     assert by_id["seedance-2-5"]["basis"] == "vendor_sec"
     assert by_id["seedance-2-5"]["placeholder"] is True
 

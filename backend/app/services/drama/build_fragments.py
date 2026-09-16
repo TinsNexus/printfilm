@@ -9,6 +9,7 @@ from app.services.seedance_segments import (
     DRAMA_SUBTITLE_CUE,
     DIALOGUE_PREFIX,
     VISUAL_PREFIX,
+    classify_voice_body,
     is_production_meta_line,
 )
 from app.services.drama.fragment_asset_limit import (
@@ -460,10 +461,17 @@ def _format_narrative_line(line: str) -> str:
         return trimmed
     if trimmed.startswith("【画面") or trimmed.startswith("【旁白") or trimmed.startswith("【对白"):
         # 已打标但仍可能是误判的「对白·空镜：…」→ 纠正为画面
-        if trimmed.startswith("【对白") and _is_visual_description_line(trimmed):
-            return f"{VISUAL_PREFIX}{_strip_production_prefix(trimmed)}"
-        if trimmed.startswith("【旁白") and _is_visual_description_line(trimmed):
-            return f"{VISUAL_PREFIX}{_strip_production_prefix(trimmed)}"
+        body = _strip_production_prefix(trimmed)
+        kind = classify_voice_body(body)
+        if kind == "visual" or (
+            (trimmed.startswith("【对白") or trimmed.startswith("【旁白"))
+            and _is_visual_description_line(trimmed)
+        ):
+            return f"{VISUAL_PREFIX}{body}"
+        if kind == "dialogue" and trimmed.startswith("【旁白"):
+            return f"{DIALOGUE_PREFIX}{body}"
+        if kind == "inner" and not trimmed.startswith("【内心独白"):
+            return f"【内心独白·同步字幕】{body}"
         return trimmed
     if trimmed.startswith("【空镜"):
         return f"【空镜·可仅环境音与 BGM】{trimmed}"
@@ -472,10 +480,15 @@ def _format_narrative_line(line: str) -> str:
             body = trimmed.replace("Δ", "△", 1) if trimmed.startswith("Δ") else trimmed
             return f"{VISUAL_PREFIX}{body}"
         return f"{VISUAL_PREFIX}{trimmed}"
-    if re.search(r"[（(](?:vo|VO|旁白)[）)]", trimmed):
-        return f"【旁白·慢速清晰·同步字幕】{trimmed}"
-    if re.search(r"[（(](?:os|OS)[）)]", trimmed):
+    kind = classify_voice_body(trimmed)
+    if kind == "visual":
+        return f"{VISUAL_PREFIX}{trimmed}"
+    if kind == "dialogue":
+        return f"{DIALOGUE_PREFIX}{trimmed}"
+    if kind == "inner":
         return f"【内心独白·同步字幕】{trimmed}"
+    if kind == "narration":
+        return f"【旁白·慢速清晰·同步字幕】{trimmed}"
     # 角色对白：排除空镜/景别等冒号标签，避免「空镜：…」被当成「角色名：台词」
     if re.match(r"^[^（(:：\n]{1,16}[（(][^）)]*[）)]\s*[：:].+", trimmed):
         return f"{DIALOGUE_PREFIX}{trimmed}"
