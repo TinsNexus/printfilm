@@ -278,7 +278,7 @@ PRINTFILM 面向创作者与运营：输入主题或剧本，按模板生成分�
 | 找回密码 | 依赖 Redis；未配好 Redis 时该流程不可用 |
 | 管理员 | `User.role=admin`；用 `ADMIN_BOOTSTRAP_EMAILS` 提升**已有**用户 |
 
-计费开启时，新用户可获赠 `BILLING_SIGNUP_GRANT_FEN`（示例默认 500 分 = ¥5.00）。本地默认 `BILLING_ENABLED=false`。
+计费开启时，新用户可获赠 `BILLING_SIGNUP_GRANT_FEN`（示例默认 500 分 = ¥5.00），应能预扣并完成多张生图（2K 约 35 分/张）。本地默认 `BILLING_ENABLED=false`。
 
 ---
 

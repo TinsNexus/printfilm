@@ -29,7 +29,7 @@ def test_uses_tokenfree_image_on_tokenfree_host():
 
 def test_build_tokenfree_image_body_matches_live_success():
     body = build_tokenfree_image_body(model="gpt-image-2-5", prompt="橘猫", size="2K")
-    assert body["model"] == "gpt-image-2-5"
+    assert body["model"] == "gpt-image-2-5-sunburst"
     assert "橘猫" in body["input"]
     assert "size:" not in body["input"]
     assert "prompt" not in body
@@ -50,8 +50,9 @@ def test_build_tokenfree_image_body_separates_style_and_subject_refs():
 
 
 def test_tokenfree_working_image_model_remaps_seedream():
-    assert tokenfree_working_image_model("seedream-5-0-pro") == "gpt-image-2-5"
-    assert tokenfree_working_image_model("gpt-image-2-5") == "gpt-image-2-5"
+    assert tokenfree_working_image_model("seedream-5-0-pro") == "gpt-image-2-5-sunburst"
+    assert tokenfree_working_image_model("gpt-image-2-5") == "gpt-image-2-5-sunburst"
+    assert tokenfree_working_image_model("gpt-image-2-5-sunburst") == "gpt-image-2-5-sunburst"
 
 
 def test_extract_tokenfree_image_url_from_img_tag():

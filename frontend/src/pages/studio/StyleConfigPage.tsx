@@ -20,18 +20,6 @@ const OUTPUT_MODES: { id: PipelineMode; label: string; desc: string; image: stri
   },
 ]
 
-const BGM_PRESETS = [
-  { id: '轻快专业，音量低于人声', label: '轻快' },
-  { id: '冷静纪实，音量低于人声', label: '冷静' },
-  { id: '温暖人文，音量低于人声', label: '温暖' },
-]
-
-const SUBTITLE_PRESETS = [
-  { id: 'standard', label: '标准', desc: '标题在上，旁白字幕底部' },
-  { id: 'large', label: '大字幕', desc: '旁白字幕加大' },
-  { id: 'split', label: '分栏', desc: '标题与说明分栏叠字' },
-]
-
 const RATIOS: { id: string; label: string; w: number; h: number }[] = [
   { id: '16:9', label: '16:9', w: 36, h: 20 },
   { id: '9:16', label: '9:16', w: 18, h: 32 },
@@ -67,8 +55,6 @@ export default function StyleConfigPage() {
   const [ratio, setRatio] = useState('16:9')
   const [imageModel, setImageModel] = useState('')
   const [videoModel, setVideoModel] = useState('')
-  const [bgmLock, setBgmLock] = useState(BGM_PRESETS[0].id)
-  const [subtitlePreset, setSubtitlePreset] = useState('standard')
   const [mediaCatalog, setMediaCatalog] = useState<MediaModelsCatalog | null>(null)
   const [busy, setBusy] = useState(false)
   const [previewBusy, setPreviewBusy] = useState<string | null>(null)
@@ -101,8 +87,6 @@ export default function StyleConfigPage() {
         setStylePrompt(p.style_prompt || '')
         setExtraPrompt(p.extra_prompt || '')
         setVoiceId(p.voice_id || '')
-        if (p.bgm_lock) setBgmLock(p.bgm_lock)
-        if (p.subtitle_preset) setSubtitlePreset(p.subtitle_preset)
         setPipelineMode(p.pipeline_mode || 'full')
         setRatio(p.output_ratio || (p.pipeline_mode === 'image_text' ? '9:16' : '16:9'))
         if (p.image_model) setImageModel(p.image_model)
@@ -221,8 +205,6 @@ export default function StyleConfigPage() {
         output_ratio: ratio,
         image_model: imageModel,
         video_model: videoModel,
-        bgm_lock: bgmLock,
-        subtitle_preset: subtitlePreset,
       })
       const started = await api.generate(project.id)
       nav(`/studio/${started.id}`)
@@ -420,49 +402,6 @@ export default function StyleConfigPage() {
                 当前：{selectedVoice.label} · 成片用该音色整片配音；点击「试听」可听约 5 秒样例
               </p>
             ) : null}
-          </div>
-
-          <div className="pf-style-block">
-            <h3>后期配乐</h3>
-            <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0 0 0.65rem' }}>
-              合成时叠在旁白下方，音量低于人声。
-            </p>
-            <div className="pf-ratio-row">
-              {BGM_PRESETS.map((b) => (
-                <button
-                  key={b.id}
-                  type="button"
-                  className={
-                    bgmLock === b.id || (bgmLock && b.id.startsWith(bgmLock.slice(0, 2)))
-                      ? 'pf-ratio selected'
-                      : 'pf-ratio'
-                  }
-                  onClick={() => setBgmLock(b.id)}
-                >
-                  {b.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="pf-style-block">
-            <h3>字幕预设</h3>
-            <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0 0 0.65rem' }}>
-              成片由后期叠旁白字幕，不是视频模型烧录。
-            </p>
-            <div className="pf-ratio-row">
-              {SUBTITLE_PRESETS.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  className={subtitlePreset === s.id ? 'pf-ratio selected' : 'pf-ratio'}
-                  onClick={() => setSubtitlePreset(s.id)}
-                  title={s.desc}
-                >
-                  {s.label}
-                </button>
-              ))}
-            </div>
           </div>
 
           <div className="pf-style-block">

@@ -40,8 +40,13 @@ VIDEO_RESOLUTION_MULT = {
     "720p": 2.0,
     "1080p": 4.0,
 }
-# 价目失败时按 gpt-image-2-5 现价保底，避免退回 8 元/百万 token 低估约 10 倍
-GPT_IMAGE_USD_PER_CALL_FLOOR = 0.625
+# Kie sunburst 控制台档（USD / credits）；公开 /api/pricing 往往只有笼统 gpt-image-2-5
+KIE_SUNBURST_USD_1K = 0.03
+KIE_SUNBURST_USD_2K = 0.05
+KIE_SUNBURST_USD_4K = 0.08
+KIE_SUNBURST_CREDITS_1K = 6
+KIE_SUNBURST_CREDITS_2K = 10
+KIE_SUNBURST_CREDITS_4K = 16
 
 # 产品里好用、目录有、方便去 TokenFree 核对的短名单
 RECOMMENDED_MODELS: tuple[dict[str, Any], ...] = (
@@ -67,10 +72,10 @@ RECOMMENDED_MODELS: tuple[dict[str, Any], ...] = (
         "recommended": False,
     },
     {
-        "id": "gpt-image-2-5",
+        "id": "gpt-image-2-5-sunburst",
         "capability": "image",
-        "label": "GPT Image 2.5",
-        "note": "TokenFree 实测可通；Seedream 在此上游会改走此模型，按张计价",
+        "label": "GPT Image 2.5 Sunburst",
+        "note": "TokenFree Kie 渠道；2K 约 $0.05/张。Seedream 会改走此模型",
         "recommended": True,
     },
     {
@@ -276,16 +281,84 @@ def _markup_charge(cost_fen: int, settings: Settings) -> int:
     return user_charge_fen(cost_fen, settings)
 
 
-def charge_fen_official_image(settings: Settings, *, model: str = "") -> int:
-    """生图预估：按 TokenFree 按张价；Seedream 按实际工作模型；无价目时用 gpt-image 保底。"""
+def _kie_sunburst_tier(size: str | None = "") -> str:
+    """Kie sunburst 清晰度档：1k / 2k / 4k。"""
+    raw = (size or "").strip().upper().replace(" ", "")
+    if raw.startswith("1K"):
+        return "1k"
+    if raw.startswith("3K") or raw.startswith("4K"):
+        return "4k"
+    if raw.startswith("2K"):
+        return "2k"
+    for sep in ("X", "×"):
+        if sep not in raw:
+            continue
+        left, right = raw.split(sep, 1)
+        if left.isdigit() and right.isdigit():
+            pixels = int(left) * int(right)
+            if pixels <= 1_200_000:
+                return "1k"
+            if pixels >= 8_000_000:
+                return "4k"
+            return "2k"
+        break
+    return "2k"
+
+
+def kie_sunburst_usd_for_size(size: str | None = "") -> float:
+    """Kie sunburst 按清晰度：1K $0.03 / 2K $0.05 / 3K·4K $0.08。"""
+    return {
+        "1k": KIE_SUNBURST_USD_1K,
+        "2k": KIE_SUNBURST_USD_2K,
+        "4k": KIE_SUNBURST_USD_4K,
+    }[_kie_sunburst_tier(size)]
+
+
+def kie_sunburst_credits_for_size(size: str | None = "") -> int:
+    """Kie sunburst 积分：1K 6 / 2K 10 / 4K 16。"""
+    return {
+        "1k": KIE_SUNBURST_CREDITS_1K,
+        "2k": KIE_SUNBURST_CREDITS_2K,
+        "4k": KIE_SUNBURST_CREDITS_4K,
+    }[_kie_sunburst_tier(size)]
+
+
+def resolve_billing_image_size(settings: Settings, *, model: str = "", size: str = "") -> str:
+    """计费用清晰度：与 ark 生成侧一致，Pro / sunburst 把 3K·4K 钳到 2K。"""
+    from app.services.drama.seedream_options import is_seedream_pro_model
     from app.services.tokenfree_image import tokenfree_working_image_model
 
-    mid = tokenfree_working_image_model(model or "gpt-image-2-5")
+    raw = (size or "").strip() or str(getattr(settings, "ark_image_size", "") or "2K")
+    upstream = (model or getattr(settings, "model_image", "") or "").strip()
+    working = tokenfree_working_image_model(upstream)
+    if is_seedream_pro_model(upstream) or "sunburst" in working.lower():
+        if raw.strip().upper() in {"3K", "4K"}:
+            return "2K"
+    return raw
+
+
+def charge_fen_official_image(settings: Settings, *, model: str = "", size: str = "") -> int:
+    """生图预估：sunburst / Seedream / gpt-image 按 Kie 积分档；其它按张走价目。"""
+    from app.services.billing.pricing import kie_credits_to_cost_fen
+    from app.services.tokenfree_image import is_seedream_family, tokenfree_working_image_model
+
+    raw_model = model or getattr(settings, "model_image", "") or ""
+    mid = tokenfree_working_image_model(raw_model)
     rate = lookup_rate(mid)
+    use_kie_table = (
+        "sunburst" in mid.lower()
+        or is_seedream_family(raw_model)
+        or "gpt-image" in mid.lower()
+    )
+    if use_kie_table:
+        credits = kie_sunburst_credits_for_size(size or getattr(settings, "ark_image_size", "") or "2K")
+        fen = kie_credits_to_cost_fen(credits, settings) or 1
+        return _markup_charge(fen, settings)
     if rate and rate.billing == "per_call" and rate.cny_per_call > 0:
         return _markup_charge(max(1, int(math.ceil(rate.cny_per_call * 100))), settings)
-    yuan = GPT_IMAGE_USD_PER_CALL_FLOOR * usd_cny_rate(settings)
-    return _markup_charge(max(1, int(math.ceil(yuan * 100))), settings)
+    credits = kie_sunburst_credits_for_size("2K")
+    fen = kie_credits_to_cost_fen(credits, settings) or 1
+    return _markup_charge(fen, settings)
 
 
 def charge_fen_official_llm(tokens: int, settings: Settings, *, model: str = "") -> int:
@@ -359,6 +432,17 @@ def build_official_rate_rows(
                     f"预估按火山 480P 约 {vendor:.3f} 元/秒"
                     f"（{VIDEO_RATE_SAMPLE_SECONDS:g}秒 ¥{official_yuan:.2f}；720P×2 / 1080P×4）{listed}"
                 )
+        elif spec["capability"] == "image" and "sunburst" in str(spec["id"]).lower():
+            from app.services.billing.pricing import kie_fen_per_credit
+
+            credits = kie_sunburst_credits_for_size("2K")
+            fen = max(1, int(round(credits * kie_fen_per_credit(s))))
+            official_yuan = round(fen / 100.0, 4)
+            basis = "kie_sunburst"
+            rate_label = (
+                f"Kie sunburst 2K {credits} 积分 ≈ ¥{official_yuan:.2f}"
+                f"（1K {KIE_SUNBURST_CREDITS_1K} / 4K {KIE_SUNBURST_CREDITS_4K} 积分）"
+            )
         elif rate and rate.billing == "per_call":
             official_yuan = rate.cny_per_call
             basis = "per_call"

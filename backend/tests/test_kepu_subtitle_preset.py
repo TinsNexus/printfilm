@@ -52,8 +52,7 @@ def test_kepu_video_prompt_forbids_burn_when_sfx_off():
     assert "后期叠旁白字幕" in prompt or "后期完成" in prompt
 
 
-def test_resolve_bgm_path_uses_temp_fallback():
+def test_resolve_bgm_path_skips_without_library():
+    """仓库没有配乐文件时不生成正弦波垫乐。"""
     path = resolve_bgm_path("轻快专业")
-    assert path is not None
-    assert path.is_file()
-    assert "printfilm_bgm" in str(path)
+    assert path is None

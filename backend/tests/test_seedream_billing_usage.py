@@ -64,9 +64,27 @@ def test_charge_fen_for_usage_falls_back_to_official_per_call():
         model="gpt-image-2-5",
     )
     assert used is False
-    # $0.625 × 7 = ¥4.375 → 438 分，而不是 8 元/百万 token
-    assert cost == 438
-    assert charge == 438
+    # 2K sunburst 10 积分 × 3.5 分 = 35 分，而不是 8 元/百万 token
+    assert cost == 35
+    assert charge == 35
+
+
+def test_charge_fen_for_usage_uses_raw_image_size():
+    """无 quota 时按用量里的 size 分档。"""
+    settings = get_settings()
+    settings.billing_markup = 1.0
+    settings.billing_usd_cny = 7.0
+    settings.billing_kie_fen_per_credit = 3.5
+    cost, charge, used = charge_fen_for_usage(
+        0,
+        "seedream",
+        raw_usage={"size": "1K"},
+        settings=settings,
+        model="gpt-image-2-5-sunburst",
+    )
+    assert used is False
+    assert cost == 21
+    assert charge == 21
 
 
 def test_build_task_result_includes_usage():

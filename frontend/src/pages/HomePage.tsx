@@ -91,7 +91,10 @@ export default function HomePage() {
             <KepuIcon size={26} strokeWidth={1.6} />
           </span>
           <span className="pf-land-product-body">
-            <strong>{t('home.kepuTitle')}</strong>
+            <strong className="pf-land-product-heading">
+              {t('home.kepuTitle')}
+              <span className="pf-land-product-tag">{t('home.kepuTag')}</span>
+            </strong>
             <em>{t('home.kepuFor')}</em>
             <span>{t('home.kepuDesc')}</span>
             <span className="pf-land-chips">

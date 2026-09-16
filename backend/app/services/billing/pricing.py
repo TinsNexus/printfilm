@@ -150,6 +150,24 @@ def parse_upstream_cost_fen(
     return None
 
 
+def _image_size_from_raw(raw_usage: dict[str, Any] | None) -> str:
+    """用量里的生图清晰度；忽略 480p 等视频档。"""
+    if not isinstance(raw_usage, dict):
+        return ""
+    usage = raw_usage.get("usage") if isinstance(raw_usage.get("usage"), dict) else {}
+    for block in (raw_usage, usage):
+        if not isinstance(block, dict):
+            continue
+        for key in ("size", "image_size"):
+            text = str(block.get(key) or "").strip()
+            if text:
+                return text
+        res = str(block.get("resolution") or "").strip()
+        if res and res.lower() not in {"480p", "720p", "1080p"}:
+            return res
+    return ""
+
+
 def charge_fen_for_usage(
     tokens: int,
     billing_key: str,
@@ -157,6 +175,7 @@ def charge_fen_for_usage(
     raw_usage: dict[str, Any] | None = None,
     settings: Settings | None = None,
     model: str = "",
+    size: str = "",
 ) -> tuple[int, int, bool]:
     """按上游实际成本或 token 用量计算 (cost_fen, charge_fen, used_upstream_cost)。
 
@@ -170,7 +189,9 @@ def charge_fen_for_usage(
         charge = user_charge_fen(cost, s)
         return cost, charge, True
     if (billing_key or "").strip() == "seedream":
-        catalog = _catalog_image_fen_if_per_call(s, model)
+        catalog = _catalog_image_fen_if_per_call(
+            s, model, size=size or _image_size_from_raw(raw_usage)
+        )
         if catalog is not None:
             charge = user_charge_fen(catalog, s)
             return catalog, charge, False
@@ -178,20 +199,21 @@ def charge_fen_for_usage(
     return cost, charge, False
 
 
-def _catalog_image_fen_if_per_call(settings: Settings, model: str) -> int | None:
+def _catalog_image_fen_if_per_call(settings: Settings, model: str, *, size: str = "") -> int | None:
     """gpt-image / Seedream（TokenFree 上改走 gpt-image）按张价；token 计价模型返回 None。"""
     from app.services.tokenfree_image import is_seedream_family, tokenfree_working_image_model
-    from app.services.tokenfree_pricing import charge_fen_official_image, lookup_rate
+    from app.services.tokenfree_pricing import charge_fen_official_image, lookup_rate, resolve_billing_image_size
 
     raw = (model or getattr(settings, "model_image", "") or "").strip()
     mid = tokenfree_working_image_model(raw or "gpt-image-2-5")
     rate = lookup_rate(mid)
     if rate and rate.billing == "token":
         return None
+    resolved = resolve_billing_image_size(settings, model=raw, size=size)
     if rate and rate.billing == "per_call" and rate.cny_per_call > 0:
-        return charge_fen_official_image(settings, model=mid)
+        return charge_fen_official_image(settings, model=mid, size=resolved)
     if is_seedream_family(raw) or "gpt-image" in mid.lower():
-        return charge_fen_official_image(settings, model=mid)
+        return charge_fen_official_image(settings, model=mid, size=resolved)
     return None
 
 

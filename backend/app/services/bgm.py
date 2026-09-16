@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import logging
-import os
 import re
-import tempfile
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -30,47 +28,8 @@ def clip_shot_bgm(mood: str | None) -> str:
     return (text[:SHOT_BGM_MAX] if text else "neutral") or "neutral"
 
 
-def _ensure_default_bed() -> Path | None:
-    """无曲库时在系统临时目录生成轻垫乐；失败则跳过 BGM，不成片失败。"""
-    dest = Path(tempfile.gettempdir()) / "printfilm_bgm" / "default.wav"
-    try:
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        if dest.is_file() and dest.stat().st_size > 1000:
-            return dest
-        import math
-        import struct
-        import wave
-
-        fd, tmp_name = tempfile.mkstemp(suffix=".wav", dir=str(dest.parent))
-        os.close(fd)
-        tmp = Path(tmp_name)
-        rate = 22050
-        seconds = 8
-        amp = 1800
-        with wave.open(str(tmp), "w") as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(rate)
-            frames = bytearray()
-            for i in range(rate * seconds):
-                t = i / rate
-                fade = min(1.0, t * 4, (seconds - t) * 4)
-                sample = int(
-                    amp
-                    * fade
-                    * (0.55 * math.sin(2 * math.pi * 196 * t) + 0.45 * math.sin(2 * math.pi * 247 * t))
-                )
-                frames.extend(struct.pack("<h", max(-32767, min(32767, sample))))
-            wf.writeframes(bytes(frames))
-        os.replace(tmp, dest)
-        return dest if dest.is_file() else None
-    except OSError:
-        logger.warning("Failed to write fallback BGM bed; compose will skip BGM", exc_info=True)
-        return None
-
-
 def resolve_bgm_path(mood: str | None) -> Path | None:
-    """Return a local BGM file if present; otherwise a generated quiet bed."""
+    """有本地曲库才叠 BGM；没有真实音频文件就跳过，避免正弦波垫乐当杂音。"""
     root = _STATIC_ROOT / "bgm"
     blob = (mood or "").strip()
     stem = "default"
@@ -92,5 +51,5 @@ def resolve_bgm_path(mood: str | None) -> Path | None:
         found = sorted(root.glob(ext))
         if found:
             return found[0]
-    logger.debug("No BGM file under %s for mood=%s; using generated bed", root, mood)
-    return _ensure_default_bed()
+    logger.debug("No BGM file under %s for mood=%s; skip BGM", root, mood)
+    return None

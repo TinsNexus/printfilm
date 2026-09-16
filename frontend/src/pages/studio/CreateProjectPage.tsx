@@ -471,7 +471,7 @@ export default function CreateProjectPage() {
             {aiBusy ? 'AI 生成中…' : '不够完整？让 AI 帮你写'}
           </button>
           <p className="pf-muted" style={{ fontSize: '0.78rem', marginTop: '0.5rem' }}>
-            画风已随模板带上。下一步确认配音、字幕与成片方式。
+            画风已随模板带上。下一步确认配音与成片方式。
           </p>
         </aside>
       </div>

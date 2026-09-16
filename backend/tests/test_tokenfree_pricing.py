@@ -66,7 +66,7 @@ def test_recommended_models_cover_text_image_video() -> None:
     caps = {row["capability"] for row in RECOMMENDED_MODELS}
     assert caps == {"text", "image", "video"}
     ids = {row["id"] for row in RECOMMENDED_MODELS}
-    assert {"kimi-k2.6", "gpt-image-2-5", "seedance-2-5", "seedance-2-0"} <= ids
+    assert {"kimi-k2.6", "gpt-image-2-5-sunburst", "seedance-2-5", "seedance-2-0"} <= ids
     assert "seedream-5-0-pro" not in ids
     assert any(row["recommended"] and row["id"] == "kimi-k2.6" for row in RECOMMENDED_MODELS)
 
@@ -82,22 +82,48 @@ def test_charge_official_image_uses_per_call() -> None:
     set_cached_rates(rates)
     try:
         charge = charge_fen_official_image(settings, model="seedream-5-0-pro")
-        # ¥4.375 → 438 分
-        assert charge == 438
+        # 2K sunburst 10 积分 × 3.5 分 = 35 分（$0.05）
+        assert charge == 35
     finally:
         set_cached_rates(None)
 
 
 def test_charge_official_image_falls_back_without_cache() -> None:
-    """无价目缓存时按 gpt-image 保底，不再退回 8 元/百万 token。"""
+    """无价目缓存时按 2K sunburst 积分档保底，不再退回 8 元/百万 token。"""
     settings = get_settings()
     settings.billing_markup = 1.5
     settings.billing_usd_cny = 7.0
     settings.billing_seedream_per_m = 8.0
     settings.billing_est_seedream_tokens = 45_000
     set_cached_rates(None)
-    # $0.625 × 7 = ¥4.375 → 438 分
-    assert charge_fen_official_image(settings) == 438
+    # 2K sunburst 10 积分 × 3.5 分 = 35 分（$0.05）
+    assert charge_fen_official_image(settings) == 35
+
+
+def test_charge_official_image_uses_sunburst_size_tiers() -> None:
+    """Kie sunburst 1K/2K/4K 分档，不误用 OpenAI $0.625。"""
+    from app.services.tokenfree_pricing import (
+        kie_sunburst_credits_for_size,
+        kie_sunburst_usd_for_size,
+        resolve_billing_image_size,
+    )
+
+    settings = get_settings()
+    settings.billing_markup = 1.0
+    settings.billing_usd_cny = 7.0
+    settings.billing_kie_fen_per_credit = 3.5
+    set_cached_rates(None)
+    assert kie_sunburst_usd_for_size("1K") == 0.03
+    assert kie_sunburst_usd_for_size("2K") == 0.05
+    assert kie_sunburst_usd_for_size("3K") == 0.08
+    assert kie_sunburst_credits_for_size("1K") == 6
+    assert kie_sunburst_credits_for_size("2K") == 10
+    assert kie_sunburst_credits_for_size("4K") == 16
+    assert charge_fen_official_image(settings, size="1K") == 21
+    assert charge_fen_official_image(settings, size="2K") == 35
+    assert charge_fen_official_image(settings, size="4K") == 56
+    assert resolve_billing_image_size(settings, model="seedream-5-0-pro", size="3K") == "2K"
+    assert resolve_billing_image_size(settings, model="gpt-image-2-5-sunburst", size="4K") == "2K"
 
 
 def test_charge_official_video_720p_is_double_480p() -> None:
@@ -149,8 +175,10 @@ def test_build_official_rate_rows_marks_video_vendor() -> None:
     rates = parse_pricing_payload(_sample_payload(), settings)
     rows = build_official_rate_rows(rates, settings)
     by_id = {row["id"]: row for row in rows}
-    assert by_id["gpt-image-2-5"]["official_cost_yuan"] == 4.375
-    assert by_id["gpt-image-2-5"]["user_charge_yuan"] == 4.375
+    assert by_id["gpt-image-2-5-sunburst"]["official_cost_yuan"] == 0.35
+    assert by_id["gpt-image-2-5-sunburst"]["user_charge_yuan"] == 0.35
+    assert by_id["gpt-image-2-5-sunburst"]["basis"] == "kie_sunburst"
+    assert "积分" in by_id["gpt-image-2-5-sunburst"]["rate_label"]
     assert by_id["seedance-2-5"]["basis"] == "vendor_sec"
     assert by_id["seedance-2-5"]["placeholder"] is True
 

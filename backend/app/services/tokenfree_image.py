@@ -34,11 +34,16 @@ def is_seedream_family(model: str) -> bool:
     return "seedream" in mid
 
 
+# TokenFree 上 Kie 渠道的 GPT Image 2.5（按清晰度积分，远低于 OpenAI 目录价）
+TOKENFREE_KIE_IMAGE_MODEL = "gpt-image-2-5-sunburst"
+
+
 def tokenfree_working_image_model(model: str) -> str:
-    """Seedream 在 TokenFree KIE 上不可用，改走实测成功的 gpt-image-2-5。"""
+    """Seedream / 裸 gpt-image-2-5 改走 Kie sunburst，避免按 OpenAI $0.625 目录价计费。"""
     raw = (model or "").strip()
-    if is_seedream_family(raw):
-        return "gpt-image-2-5"
+    low = raw.lower()
+    if not raw or is_seedream_family(raw) or low in {"gpt-image-2-5", "gpt-image-2.5"}:
+        return TOKENFREE_KIE_IMAGE_MODEL
     return raw
 
 

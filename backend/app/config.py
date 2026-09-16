@@ -105,6 +105,7 @@ class Settings(BaseSettings):
     # Token 计费：用户扣费 = TokenFree 官方成本（billing_markup 保留兼容，不再乘）
     billing_enabled: bool = False
     billing_markup: float = 1.0
+    # token / 视频时长估价缓冲；按张生图官价不再乘此系数（否则 5 元赠金冻不住一张图）
     billing_estimate_buffer: float = 1.2
     # Yuan per million tokens (provider cost)
     billing_seedance_video0: float = 46.0

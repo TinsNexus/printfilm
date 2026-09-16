@@ -892,13 +892,16 @@ class ArkGateway:
         if is_tokenfree_image_url(remote) or is_tokenfree_content_url(remote):
             dl_headers = {"Authorization": f"Bearer {self._ark_api_key()}"}
         await storage.download_to(remote, dest, headers=dl_headers)
+        merged_usage = dict(raw_usage or {})
+        if resolved_size:
+            merged_usage.setdefault("size", str(resolved_size))
         return ImageResult(
             local_url=storage.publish_local(dest, sync=True),
             remote_url=remote,
             total_tokens=int(usage_parsed.get("total_tokens") or 0),
             prompt_tokens=int(usage_parsed.get("prompt_tokens") or 0),
             completion_tokens=int(usage_parsed.get("completion_tokens") or 0),
-            raw_usage=raw_usage,
+            raw_usage=merged_usage or None,
             upstream_cost_fen=upstream_cost_fen,
         )
 

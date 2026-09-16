@@ -12,6 +12,7 @@ export const enPages = {
     dramaFor: 'For short-drama makers',
     dramaDesc: 'Generate a script from one line, lock characters and scenes, then board each episode.',
     kepuTitle: 'AI Short Video',
+    kepuTag: 'Lead-gen shorts',
     kepuFor: 'For knowledge creators',
     kepuDesc: 'Pick a look, write narration boards, and run the pipeline to a short explainer.',
     howKicker: 'How it works',

@@ -12,6 +12,7 @@ export const zhPages = {
     dramaFor: '给短剧创作者',
     dramaDesc: '从一句话生成剧本，沉淀角色与场景，再按集分镜成片。',
     kepuTitle: 'AI短视频',
+    kepuTag: '获客短视频',
     kepuFor: '给知识创作者',
     kepuDesc: '选定画面风格，写好分镜旁白，沿流水线出讲解短片。',
     howKicker: 'How it works',

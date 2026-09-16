@@ -29,8 +29,8 @@ async def test_record_seedream_with_upstream_tokens(db_session: AsyncSession) ->
     await db_session.commit()
     assert ev.estimated is False
     assert ev.total_tokens == 120000
-    # Seedream 在 TokenFree 上按 gpt-image 张价，不用 12 万 token × 8 元/百万
-    assert ev.charge_fen == 438
+    # Seedream 在 TokenFree 上按 Kie sunburst 张价，不用 12 万 token × 8 元/百万
+    assert ev.charge_fen == 35
 
 
 @pytest.mark.asyncio
@@ -54,8 +54,8 @@ async def test_record_seedream_empty_usage_uses_per_call_catalog(db_session: Asy
     )
     await db_session.commit()
     assert ev.estimated is True
-    assert ev.charge_fen == 438
-    assert ev.cost_fen == 438
+    assert ev.charge_fen == 35
+    assert ev.cost_fen == 35
 
 
 @pytest.mark.asyncio

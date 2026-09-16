@@ -1430,7 +1430,7 @@ title="用当前镜头重新拼接"
               {editMode === 'segment' || editMode === 'full' ? (
                 <>
                   <label>
-                    逐段分镜脚本（画面节奏与 @duration；字幕/配乐由后期合成）
+                    逐段分镜脚本（画面节奏与 @duration）
                     <textarea
                       className="pf-prompt-segment"
                       autoFocus={editFocus === 'segment_script' || editMode === 'segment'}
