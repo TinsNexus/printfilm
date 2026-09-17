@@ -11,6 +11,8 @@ Thumbs.db
 .tmp/
 .tmp/**
 agent-tools/
+# IDE 粘贴截图默认落仓库根 images/；文档截图请放到 docs/images/
+/images/
 
 # Python
 __pycache__/
@@ -37,6 +39,11 @@ venv/
 deploy/scripts/deploy_kepu.py
 deploy/scripts/deploy_kepu_8136.py
 deploy/scripts/deploy_kepu*.py
+
+# 现网发布记录、内部报表、杭州部署手册（不上开源仓库）
+docs/releases/
+docs/reports/
+docs/DEPLOY.md
 
 # Never commit tokens / credentials dumps / private keys
 **/token.txt

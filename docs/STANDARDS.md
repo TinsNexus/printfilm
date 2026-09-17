@@ -145,14 +145,14 @@ docs/            产品与工程文档（本规范所在处）
 ### 5.4 计费 / 易支付
 
 - SKU、扣费逻辑以 `services/billing.py` 为准。
-- 生产 `EPAY_NOTIFY_URL` **禁止含 `/api/`**（易支付 WAF）；使用 `/epay/notify` + nginx 反代。详见 [BILLING.md](./BILLING.md)、[DEPLOY.md](./DEPLOY.md)。
+- 生产 `EPAY_NOTIFY_URL` **禁止含 `/api/`**（易支付 WAF）；使用 `/epay/notify` + nginx 反代。详见 [BILLING.md](./BILLING.md)。
 
 ---
 
 ## 6. Git 与协作
 
 - 提交信息：说明**为什么**，1–2 句；不要纯堆文件列表。
-- 不提交：`.env`、密钥、`deploy/scripts/deploy_kepu.py`、`frontend/dist`、`node_modules`、`.venv`。
+- 不提交：`.env`、密钥、`deploy/scripts/deploy_kepu.py`、`docs/releases/`、`docs/reports/`、`docs/DEPLOY.md`、`frontend/dist`、`node_modules`、`.venv`。
 - 大功能可拆 commit；与发布相关的文档（规范、发布记录）尽量同批可追溯。
 
 ---
@@ -162,15 +162,14 @@ docs/            产品与工程文档（本规范所在处）
 | 文档 | 何时更新 |
 |------|----------|
 | [PLACEHOLDER_BACKLOG.md](./PLACEHOLDER_BACKLOG.md) | 新增/下线 ComingSoon、disabled 入口 |
-| [DEPLOY.md](./DEPLOY.md) | 发布方式、域名、回调、systemd 变更 |
-| [releases/](./releases/) | **每次**线上全量或热修后追加一条 |
+| `DEPLOY.md` / `releases/`（本机，不上库） | 现网发布方式与每次发版记录 |
 | [BILLING.md](./BILLING.md) | SKU、计费公式、支付配置变更 |
 | **本文 STANDARDS.md** | 全局约定变更时 |
 
 发布原则：
 
 - 线上站点 = 机器 nginx + systemd，**不是**把 SPA 丢 OSS 当发布。
-- 流程与检查清单见 [DEPLOY.md](./DEPLOY.md)。
+- 现网流程与检查清单写在本机 `docs/DEPLOY.md`（不上开源仓库）。
 
 ---
 
@@ -190,14 +189,14 @@ docs/            产品与工程文档（本规范所在处）
 - [ ] 无密钥、无本机绝对路径写入仓库
 - [ ] 用户可见错误为中文
 - [ ] 若动了占位入口 / 发布方式 / 计费，已更新对应 docs
-- [ ] 若已上线，已写 [releases](./releases/) 记录
+- [ ] 若已上线，已在本机 `docs/releases/` 追加记录（该目录不上库）
 
 ---
 
 ## 10. 相关文档
 
 - [README.md](../README.md) — 仓库总览与本地启动  
-- [DEPLOY.md](./DEPLOY.md) — 线上发布  
 - [BILLING.md](./BILLING.md) — 计费  
 - [PRINTFILM_UI_ROADMAP.md](./PRINTFILM_UI_ROADMAP.md) — UI 路由与视觉  
 - [PLACEHOLDER_BACKLOG.md](./PLACEHOLDER_BACKLOG.md) — 占位功能表  
+- 本机 `DEPLOY.md` / `releases/` — 现网发布（不上库）  

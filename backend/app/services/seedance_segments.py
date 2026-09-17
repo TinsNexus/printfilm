@@ -453,7 +453,7 @@ def build_seedance_production_section(
     """组装 Seedance 音频/字幕/BGM 强制约束（科普旁白 / 漫剧画面+对白混排）。
 
     ambient_only：科普后期 TTS 模式——模型只出操作环境音，禁止口播与 BGM。
-    burn_subtitles=False：对齐后期叠字（如 VOZEB 成片后再烧 SRT）——保留口播，禁止画面内字幕。
+    burn_subtitles=False：成片后再烧 SRT——保留口播，禁止画面内字幕。
     character_intro=False：禁止人物介绍叠字/字卡（与字幕开关独立）。
     """
     if ambient_only:

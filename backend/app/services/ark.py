@@ -66,8 +66,8 @@ from app.services import seedance_segments as segplan
 
 logger = logging.getLogger(__name__)
 
-# TokenFree /v1/responses 同步等图，常见 2–8 分钟；连接短、读体长
-IMAGE_GEN_READ_SEC = 600.0
+# TokenFree /v1/responses 同步等图；Kie sunburst 偶发超过 10 分钟才回
+IMAGE_GEN_READ_SEC = 1200.0
 # 创建视频任务应返回 task_id；TokenFree 拉参考图时可能拖到一两分钟
 VIDEO_CREATE_READ_SEC = 180.0
 # 轮询/单次查询只要状态 JSON

@@ -1,11 +1,9 @@
 # PRINTFILM
 
-**开源项目**：PRINTFILM
-**版本**：0.2.0 | **更新**：2026-09-10
+**开源项目**：PRINTFILM  
+**版本**：0.2.0 | **更新**：2026-09-17
 
-Open-source AI studio for short videos and episodic comics: theme → storyboard → image → video → voice → final cut.
-
-模板驱动的 AI 短视频与漫剧创作平台。同一条生成流水线，多套视觉风格；支持注册登录、按量计费、管理后台与对外开放 API。
+模板驱动的 AI 短视频与漫剧创作平台：主题 / 剧本 → 分镜 → 生图 → 生视频 → 成片。口播由 Seedance 在出片时一并生成，无需单独配音。同一条生成能力，多套视觉风格；支持注册登录、按量计费、管理后台与开放 API。
 
 ![工作台](docs/images/image-20260910-home.png)
 
@@ -13,16 +11,17 @@ Open-source AI studio for short videos and episodic comics: theme → storyboard
 |------|----------|
 | 后端 | Python 3.12 · FastAPI · SQLAlchemy · PostgreSQL |
 | 用户端 | React 19 · TypeScript · Vite 8 |
-| 管理端 | React 19 · Tailwind · shadcn/ui（开发端口 5174） |
-| AI | 文字/生图/生视频：TokenFree New API（Seedream / Seedance）；配音：豆包 TTS 或 edge-tts |
+| 管理端 | React 19 · Tailwind · shadcn/ui |
+| AI | 文字 / 生图 / 生视频：TokenFree New API（Seedance 视频自带口播） |
 | 任务 | 应用内 scheduler + executor + poller（随 FastAPI 进程启动） |
-| 部署 | Docker 仅跑 Postgres / Redis；应用用本机或服务器进程 |
+| 部署 | Docker 全栈镜像，或本机三个进程 + Postgres/Redis 容器 |
 
 ---
 
 ## 目录
 
 - [快速开始](#快速开始)
+- [Docker 部署](#docker-部署)
 - [AI 服务配置](#ai-服务配置)
 - [操作手册](#操作手册)
   - [1. 系统概述](#1-系统概述)
@@ -43,62 +42,40 @@ Open-source AI studio for short videos and episodic comics: theme → storyboard
 
 ## 快速开始
 
-仓库不含密钥。先复制示例配置，再启动中间件与三个进程。
+推荐用预构建镜像，本机只需 Docker。`gcc` 命名空间公开，**拉取无需登录**。
 
 ```bash
 git clone https://github.com/yi1108/printfilm.git
 cd printfilm
 
-# 中间件（Postgres 15432 + Redis 16379）
-cp deploy/.env.prod.example deploy/.env.prod
-# 请把 POSTGRES_PASSWORD 改成自己的强密码
-docker compose -f deploy/docker-compose.yml --env-file deploy/.env.prod up -d
+cp deploy/.env.docker.example deploy/.env.docker
+# 请把 POSTGRES_PASSWORD、SECRET_KEY 改成自己的值
+# 填入 TokenFree API Key（OPENAI_API_KEY 与 ARK_API_KEY 可用同一把）
 
-# 后端
-cd backend
-python -m venv .venv
-# Windows: .\.venv\Scripts\activate
-# Linux / macOS: source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-# 编辑 .env：DATABASE_URL 密码与 deploy/.env.prod 一致；填入模型 Key
-uvicorn app.main:app --reload --port 8000
-```
-
-另开两个终端：
-
-```bash
-# 用户端（默认 http://localhost:5173，API 默认走同主机 :8000）
-cd frontend
-npm install
-npm run dev
-```
-
-```bash
-# 管理后台（http://localhost:5174，已代理 /api → 8000）
-cd admin
-npm install
-npm run dev
+docker compose --env-file deploy/.env.docker up -d
 ```
 
 | 服务 | 地址 |
 |------|------|
-| 用户端 | http://localhost:5173 |
-| 管理后台 | http://localhost:5174 |
-| API | http://127.0.0.1:8000 |
-| OpenAPI | http://127.0.0.1:8000/docs |
-| 健康检查 | http://127.0.0.1:8000/api/health |
+| 用户端 | http://localhost:8080 |
+| 管理后台 | http://localhost:8081 |
+| API | http://localhost:8000 |
+| OpenAPI | http://localhost:8000/docs |
+| 健康检查 | http://localhost:8000/api/health |
 
 | 角色 | 如何获得 |
 |------|----------|
-| 普通用户 | 打开 `/auth` 自行注册（邮箱 + 密码） |
-| 管理员 | 先注册，再在 `backend/.env` 写 `ADMIN_BOOTSTRAP_EMAILS=你的邮箱`，重启后端提权。**不会造号** |
+| 普通用户 | 打开用户端 `/auth` 自行注册（邮箱 + 密码） |
+| 管理员 | 先注册，再在 `deploy/.env.docker` 写 `ADMIN_BOOTSTRAP_EMAILS=你的邮箱`，执行 `docker compose --env-file deploy/.env.docker up -d --force-recreate api`。**不会造号** |
 
-> 仓库没有内置演示账号。生产环境请立即改掉 `SECRET_KEY`、数据库密码与所有 API Key。
+> 仓库没有内置演示账号。生产环境请立即改掉 `SECRET_KEY`、数据库密码与所有 API Key。无 Key 想先看界面时设 `ARK_MOCK=true`。
 
-**中间件镜像**
+**预构建镜像**
 
 ```
+gcc-registry.cn-hangzhou.cr.aliyuncs.com/gcc/printfilm-api:latest
+gcc-registry.cn-hangzhou.cr.aliyuncs.com/gcc/printfilm-web:latest
+gcc-registry.cn-hangzhou.cr.aliyuncs.com/gcc/printfilm-admin-web:latest
 postgres:16-alpine
 redis:7-alpine
 ```
@@ -106,67 +83,165 @@ redis:7-alpine
 **项目结构**
 
 ```
-backend/app/     API、模型、流水线、方舟 / OSS / 计费
-frontend/src/    用户端：工作台、漫剧、科普工作室、工具
-admin/src/       运营后台：用户 / 订单 / 项目 / 模板 / 设置
-deploy/          仅 Postgres + Redis 的 compose
-docs/            规范、发布、计费与产品细则
+backend/         FastAPI、流水线、计费、任务运行时
+frontend/        用户端（工作台 / 漫剧 / 科普 / 工具）
+admin/           运营后台
+deploy/          环境变量示例、仅中间件 compose、发布说明
+docs/            规范、计费、发布记录
+docker-compose.yml        拉取公开镜像一键启动
+docker-compose.full.yml   从源码构建（开发 / 自建镜像）
 ```
 
 **源码地址**：https://github.com/yi1108/printfilm
 
 ---
 
+## Docker 部署
+
+适用于 GitHub 克隆后的自托管。业务镜像已推到阿里云 ACR 公开仓库；Postgres / Redis 用 Docker Hub 官方镜像。
+
+```
+浏览器 :8080 / :8081
+        │  /api  ·  /static
+        ▼
+   nginx（web / admin-web 镜像）
+        │
+        ▼
+   FastAPI :8000（api 镜像，内含 FFmpeg 与中文字体）
+        ├── PostgreSQL :15432
+        └── Redis :16379
+```
+
+### 方式一：拉取镜像（推荐）
+
+1. 安装 [Docker Desktop](https://www.docker.com/products/docker-desktop/) 或 Docker Engine 20.10+（含 Compose v2）。
+2. 复制环境文件并修改密码与 Key：
+
+```bash
+cp deploy/.env.docker.example deploy/.env.docker
+```
+
+3. 启动：
+
+```bash
+docker compose --env-file deploy/.env.docker pull
+docker compose --env-file deploy/.env.docker up -d
+docker compose --env-file deploy/.env.docker ps
+```
+
+4. 打开 http://localhost:8080 注册；健康检查：
+
+```bash
+curl http://localhost:8000/api/health
+```
+
+`ok` 为 true 表示任务运行时与数据库可用。首次 `up` 会 `create_all` 并写入缺失模板，约需数十秒。
+
+### 方式二：从源码构建
+
+改过前端或后端、或无法拉取 ACR 时：
+
+```bash
+cp deploy/.env.docker.example deploy/.env.docker
+docker compose --env-file deploy/.env.docker -f docker-compose.full.yml up -d --build
+```
+
+用户端镜像构建时强制 `VITE_API_BASE=`（空字符串），由 nginx 同源反代 `/api` 与 `/static`，不要把本机 `http://127.0.0.1:8000` 打进 dist。
+
+### 端口
+
+| 容器 | 宿主机 | 说明 |
+|------|--------|------|
+| web | 8080 | 用户端 SPA + 反代 API |
+| admin-web | 8081 | 管理端 SPA + 反代 API |
+| api | 8000 | FastAPI / OpenAPI |
+| postgres | 15432 | 仅调试用；应用走容器网络 `postgres:5432` |
+| redis | 16379 | 仅调试用；应用走 `redis:6379` |
+
+若端口冲突，改 `docker-compose.yml` 左侧宿主机端口，并同步 `CORS_ORIGINS`、`PUBLIC_BASE_URL`。
+
+### 必改配置
+
+编辑 `deploy/.env.docker`：
+
+| 变量 | 说明 |
+|------|------|
+| `POSTGRES_PASSWORD` | 数据库密码；compose 会用它拼 `DATABASE_URL` |
+| `SECRET_KEY` | JWT 签名，生产必须换成长随机串 |
+| `OPENAI_API_KEY` / `ARK_API_KEY` | TokenFree Key（可填同一把） |
+| `PUBLIC_BASE_URL` | 用户访问的站点根，默认 `http://localhost:8080` |
+| `CORS_ORIGINS` | 浏览器来源，逗号分隔 |
+| `ADMIN_BOOTSTRAP_EMAILS` | 已注册用户提权邮箱 |
+| `ARK_MOCK` | `true` 时用本地 mock 素材，不调上游 |
+
+密钥也可以启动后再到管理后台 **系统设置 → 模型** 填写，不必写进环境文件。
+
+### 常用命令
+
+```bash
+# 日志
+docker compose --env-file deploy/.env.docker logs -f api
+
+# 只重启 API（改环境变量后）
+docker compose --env-file deploy/.env.docker up -d --force-recreate api
+
+# 更新到最新镜像
+docker compose --env-file deploy/.env.docker pull
+docker compose --env-file deploy/.env.docker up -d
+
+# 停止（保留数据库与成片卷）
+docker compose --env-file deploy/.env.docker down
+
+# 停止并删除数据卷（清库）
+docker compose --env-file deploy/.env.docker down -v
+```
+
+数据卷：`printfilm_pgdata`、`printfilm_redisdata`、`printfilm_media`（成片与分镜落盘，FFmpeg 只读本地）。
+
+### 生产注意
+
+- 反向代理到 8080 / 8081 时，把 `PUBLIC_BASE_URL` 和 `CORS_ORIGINS` 改成真实域名。
+- 易支付回调 URL **不要**包含 `/api/`（部分网关 WAF 会拦截）。用户端 nginx 已将 `/epay/notify` 转到 `/api/billing/epay/notify`。
+- API 容器建议保持 `--workers 1`（镜像默认），避免多进程抢任务租约。
+- 本仓库开源路径以 Docker 全栈为准；现网机器部署手册不在公开仓库。
+
+---
+
 ## AI 服务配置
 
-本项目图/视频与文字统一走 **TokenFree New API**。配音优先豆包 openspeech，未配置时回退 `edge-tts`。
+开源版图 / 视频 / 文字统一走 **TokenFree New API**（`https://www.tokenfree.com/v1`）。视频口播交给 Seedance 自行发挥，不必再配 TTS / 音色。
 
-也可在管理后台 **系统设置 → 模型路由** 填写渠道（Base URL / Key / 模型），默认文本模型会随渠道同步。`.env` 可作为首次导入。
+可在管理后台 **系统设置 → 模型** 填写渠道 Key 并拉取模型；`deploy/.env.docker` 或 `backend/.env` 仅作首次导入。
 
 ### 环境变量
 
-编辑 `backend/.env`（变量名以 `.env.example` 为准）：
-
 ```env
-# 文字模型（OpenAI 兼容）
 OPENAI_API_KEY=sk-你的密钥
-OPENAI_BASE_URL=https://api.moonshot.cn/v1
+OPENAI_BASE_URL=https://www.tokenfree.com/v1
 MODEL_LLM=kimi-k2.6
 
-# 生图 / 生视频（TokenFree，ARK_* 为历史字段名）
 ARK_MOCK=false
-ARK_API_KEY=你的 TokenFree 密钥
-ARK_BASE_URL=https://www.tokenfree.com/v1
+ARK_API_KEY=sk-你的密钥
 MODEL_IMAGE=doubao-seedream-5-0-260128
 MODEL_VIDEO=doubao-seedance-2-5-260628
-MODEL_AUDIO=qwen-tts-2025-05-22
 ```
 
 | 变量 | 说明 |
 |------|------|
 | `OPENAI_API_KEY` | 文字模型 Key，勿提交到 Git |
-| `OPENAI_BASE_URL` | 兼容接口根地址（示例为 Kimi；也可换 DeepSeek 等） |
+| `OPENAI_BASE_URL` | OpenAI 兼容根地址；开源版固定 TokenFree |
 | `MODEL_LLM` | 对话 / 分镜脚本模型 |
-| `ARK_API_KEY` | 方舟 Key，用于 Seedream / Seedance |
-| `ARK_MOCK` | `true` 时走本地 mock 素材，便于无 Key 联调界面 |
-| `MODEL_IMAGE` / `MODEL_VIDEO` / `MODEL_AUDIO` | 控制台模型或接入点 ID |
-| `VOLC_TTS_API_KEY` | 豆包语音（与方舟 Key 不同）；不配则 edge-tts |
-
-DeepSeek 示例：
-
-```env
-OPENAI_API_KEY=sk-xxx
-OPENAI_BASE_URL=https://api.deepseek.com
-MODEL_LLM=deepseek-chat
-```
+| `ARK_API_KEY` | 生图 / 生视频 Key（与文字可用同一把 TokenFree Key） |
+| `ARK_MOCK` | `true` 时走本地 mock 素材，便于无 Key 联调 |
+| `MODEL_IMAGE` / `MODEL_VIDEO` | 生图 / 生视频模型 ID |
 
 ### 验证
 
 ```bash
-curl http://127.0.0.1:8000/api/health
+curl http://localhost:8000/api/health
 ```
 
-返回 JSON 中 `ok` 表示任务运行时健康；`models` 为当前 LLM / 图像 / 视频 / 音频模型；`ark_mock` 为是否 mock。
+返回 JSON 中 `ok` 表示任务运行时健康；`models` 为当前 LLM / 图像 / 视频模型；`ark_mock` 为是否 mock。
 
 ### 常见问题
 
@@ -185,7 +260,7 @@ curl http://127.0.0.1:8000/api/health
 
 #### 1.1 产品简介
 
-PRINTFILM 面向创作者与运营：输入主题或剧本，按模板生成分镜、画面、旁白与成片。两条主产品线：
+PRINTFILM 面向创作者与运营：输入主题或剧本，按模板生成分镜、画面与成片。两条主产品线：
 
 - **AI 漫剧**：大纲 → 资产 → 分集分镜 → 画布，强调角色与场景一致性。
 - **AI 短视频（科普）**：选模板 → 输入文案 → 风格 → 分镜流水线 → FFmpeg 合成。
@@ -197,11 +272,11 @@ PRINTFILM 面向创作者与运营：输入主题或剧本，按模板生成分�
 | 模块 | 说明 |
 |------|------|
 | 工作台 | 首页选择漫剧 / 短视频 / 工具入口 |
-| AI 短视频 | 20+ 内置模板；`full`（含视频）或 `image_text`（静图+旁白） |
+| AI 短视频 | 20+ 内置模板；`full`（含视频）或 `image_text`（静图+字幕） |
 | 分镜工作台 | 单张重绘、单镜重生视频、编辑后继续生成 |
 | 漫剧 | 剧本摘要、资产库、分集、画布（React Flow） |
 | 工具 | 文生图 / 图生图 / 图生产品 / 文生视频 / 视频生视频 / 电商拼图 |
-| 资产库 | 角色、场景、道具、音色 |
+| 资产库 | 角色、场景、道具 |
 | 定价与钱包 | 可选；关闭计费时本地可免费试用 |
 | 个人中心 | 账号、项目、工具记录、API Key |
 | 管理后台 | 用户、订单、财务、项目、模板、任务、模型路由 |
@@ -210,15 +285,15 @@ PRINTFILM 面向创作者与运营：输入主题或剧本，按模板生成分�
 #### 1.3 技术架构
 
 ```
-浏览器 (5173 用户端 / 5174 管理端)
+浏览器 (8080 用户端 / 8081 管理端；开发时 5173 / 5174)
         │  /api  ·  /static
         ▼
    FastAPI :8000
         │
         ├── 任务运行时（scheduler / executor / poller）
-        ├── PostgreSQL :15432
-        ├── Redis :16379（找回密码、缓存等）
-        ├── TokenFree（图 / 视频 / 文本）+ 豆包 TTS（配音）
+        ├── PostgreSQL
+        ├── Redis（找回密码、缓存等）
+        ├── TokenFree（图 / 视频 / 文本；Seedance 出片自带口播）
         └── 本地 static/generated + 可选阿里云 OSS
                     │
                     ▼
@@ -233,43 +308,74 @@ PRINTFILM 面向创作者与运营：输入主题或剧本，按模板生成分�
 
 | 项 | 要求 |
 |----|------|
-| Python | 3.12 |
-| Node.js | 建议 20+（Vite 8 / React 19） |
-| Docker | 20.10+（只跑 Postgres / Redis） |
-| FFmpeg | 已加入 PATH（`ffmpeg` / `ffprobe`） |
+| Docker 部署 | Docker 20.10+、Compose v2、磁盘数 GB（成片） |
+| 本机开发 | Python 3.12、Node.js 20+、FFmpeg 在 PATH |
+| 字体（本机 Linux 成片） | 如 `fonts-wqy-zenhei`；API 镜像已内置 |
 | 磁盘 | 建议预留数 GB（分镜图、视频片段、成片） |
-| 字体（Linux 成片字幕） | 如 `fonts-wqy-zenhei`，否则中文叠字可能变成方框 |
 
 ---
 
 ### 3. 安装与启动
 
-#### 3.1 本机开发
+#### 3.1 Docker（推荐）
 
-按 [快速开始](#快速开始) 启动三个进程即可。注意：
+见上文 [Docker 部署](#docker-部署)。
+
+#### 3.2 本机开发
+
+只把 Postgres / Redis 跑在容器里，API 与两个前端在宿主机：
+
+```bash
+cp deploy/.env.prod.example deploy/.env.prod
+# 修改 POSTGRES_PASSWORD
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env.prod up -d
+
+cd backend
+python -m venv .venv
+# Windows: .\.venv\Scripts\activate
+# Linux / macOS: source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+# DATABASE_URL 密码与 deploy/.env.prod 一致；填入模型 Key
+uvicorn app.main:app --reload --port 8000
+```
+
+另开两个终端：
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+```bash
+cd admin
+npm install
+npm run dev
+```
+
+| 服务 | 地址 |
+|------|------|
+| 用户端 | http://localhost:5173 |
+| 管理后台 | http://localhost:5174 |
+| API | http://127.0.0.1:8000 |
+
+注意：
 
 1. `deploy/.env.prod` 的数据库密码必须与 `backend/.env` 的 `DATABASE_URL` / `DATABASE_URL_SYNC` 一致。
-2. 用户端开发时 **不要** 设置 `VITE_API_BASE`（未设置则访问 `当前主机:8000`）。生产构建必须 `VITE_API_BASE=` 空字符串，走 nginx 同源反代。
+2. 用户端开发时 **不要** 设置 `VITE_API_BASE`（未设置则访问当前主机 `:8000`）。生产 / Docker 构建必须 `VITE_API_BASE=` 空字符串。
 3. CORS 默认允许 `localhost:5173` 与 `localhost:5174`，以及局域网私有 IP。
+4. 本机需安装 FFmpeg；Linux 成片字幕需中文字体。
 
-#### 3.2 生产自托管（概要）
+#### 3.3 生产自托管（非 Docker 镜像）
 
-线上站点应由 nginx + 进程管理器托管前后端静态资源与 API，**不要**把 SPA 丢到 OSS 当唯一发布方式。OSS 只用于成片 / 分镜等媒体。
-
-要点：
-
-- API：`uvicorn app.main:app --host 0.0.0.0 --port 8000`（建议 `--workers 1`）
-- 用户端 / 管理端：`npm ci && npm run build`，静态根分别指向 `frontend/dist`、`admin/dist`
-- 生产 `CORS_ORIGINS` 只写真实域名
-- 易支付回调 **禁止** 含 `/api/`（部分支付网关 WAF 会拦截），使用 `/epay/notify` 再反代到 `/api/billing/epay/notify`
-
-完整清单见 [docs/DEPLOY.md](docs/DEPLOY.md)、[deploy/README.md](deploy/README.md)。
+线上站点也可由 nginx + 进程管理器托管前后端静态资源与 API。OSS 只用于成片 / 分镜等媒体，不要把 SPA 丢到 OSS 当唯一发布方式。中间件与本机进程说明见 [deploy/README.md](deploy/README.md)。
 
 ---
 
 ### 4. 登录与账号
 
-**路径**：`/auth`
+**路径**：`/auth`（管理端为 `/login`）
 
 | 元素 | 说明 |
 |------|------|
@@ -278,7 +384,7 @@ PRINTFILM 面向创作者与运营：输入主题或剧本，按模板生成分�
 | 找回密码 | 依赖 Redis；未配好 Redis 时该流程不可用 |
 | 管理员 | `User.role=admin`；用 `ADMIN_BOOTSTRAP_EMAILS` 提升**已有**用户 |
 
-计费开启时，新用户可获赠 `BILLING_SIGNUP_GRANT_FEN`（示例默认 500 分 = ¥5.00），应能预扣并完成多张生图（2K 约 35 分/张）。本地默认 `BILLING_ENABLED=false`。
+计费开启时，新用户可获赠 `BILLING_SIGNUP_GRANT_FEN`（示例默认 500 分 = ¥5.00）。Docker 与本机默认 `BILLING_ENABLED=false`。
 
 ---
 
@@ -297,7 +403,7 @@ PRINTFILM 面向创作者与运营：输入主题或剧本，按模板生成分�
 | 帮助 | `/help` | 上手步骤与 FAQ |
 | 个人中心 | `/settings` | 账号、项目、API Key |
 
-管理端侧栏：仪表盘、用户、订单、财务、科普项目、作品、漫剧（项目 / 资产 / 分集 / 分镜）、模板、任务中心、系统设置。
+管理端侧栏：仪表盘、用户管理、订单流水、财务列表、科普项目、作品审核、漫剧（项目 / 资产 / 分集 / 分镜）、模板管理、任务中心、系统设置。
 
 ---
 
@@ -318,15 +424,15 @@ PRINTFILM 面向创作者与运营：输入主题或剧本，按模板生成分�
 
 **路径**：`/studio/new` → `/studio/:id/style` → `/studio/:id` → `/studio/:id/editor`；列表在 `/history`
 
-**功能概述**：主题 / 口播文案经模板拆镜后，生成分镜图、视频（可选）、配音，再 FFmpeg 合成。
+**功能概述**：主题 / 口播文案经模板拆镜后，生成分镜图与视频（可选），再 FFmpeg 合成。口播由 Seedance 出片时生成，不再单独配音。
 
 | 元素 | 说明 |
 |------|------|
 | 模板 | 启动时写入库；含剪纸、绘本、粉笔、拼贴、像素、水墨，以及开源展示、真人、电影感等 |
-| 管线模式 | `full`：图 + 视频 + 合成；`image_text`：静图 + 旁白，更快更省 |
-| 进度 | 服务端状态机：`SCRIPTING` → `IMAGING` → `VIDEOING` / `AUDIOING` → `COMPOSING` → `DONE` |
+| 管线模式 | `full`：图 + 视频 + 合成；`image_text`：静图 + 字幕，更快更省 |
+| 进度 | 服务端状态机：`SCRIPTING` → `IMAGING` → `VIDEOING` → `COMPOSING` → `DONE` |
 | 离开页面 | 任务继续跑；回历史页看进度 |
-| 成片位置 | 本地 `backend/static/generated/p{id}/`；开启 OSS 后 DB 存公网 URL |
+| 成片位置 | 本地 `backend/static/generated/p{id}/`（Docker 卷 `printfilm_media`）；开启 OSS 后 DB 存公网 URL |
 
 ![科普历史](docs/images/image-20260910-history.png)
 
@@ -342,17 +448,22 @@ PRINTFILM 面向创作者与运营：输入主题或剧本，按模板生成分�
 
 | 元素 | 说明 |
 |------|------|
-| 剧情大纲 | 自动摘要 + 分集剧本 |
-| 资产库 | 角色 / 场景 / 道具 / 音色绑定 |
-| 分集视频 | 分镜编辑、单镜重绘或重生 |
-| 画布 | 节点式编排（React Flow），自动保存 |
+| 项目列表 | 封面卡片、状态筛选、搜索；可进资产库或自由画布 |
+| 分集工作台 | 原始创意 / 剧情摘要 / 剧本内容；解析成镜后进入分镜 |
+| 剧本解析 | 对白、画面、配乐定调拆到镜（口播由 Seedance 出片时生成） |
+| 分镜编辑 | 时间轴、角色/场景/道具引用、预览与整片合成 |
+| 资产库 | 角色 / 场景 / 道具；可选生图模型，不绑音色 |
 | 后端 | `/api/drama/*`（项目、剧本、资产、分集、生成、画布、Skill） |
 
-![剧情大纲](docs/images/image-20260910-drama.png)
+![漫剧项目列表](docs/images/image-20260917-drama-list.png)
 
-![资产库](docs/images/image-20260910-drama-assets.png)
+![分集工作台](docs/images/image-20260917-drama-episode.png)
 
-![漫剧画布](docs/images/image-20260910-drama-canvas.png)
+![剧本解析](docs/images/image-20260917-drama-script.png)
+
+![分镜编辑](docs/images/image-20260917-drama-storyboard.png)
+
+![漫剧资产库](docs/images/image-20260917-drama-assets.png)
 
 细则见 [docs/EPISODE_RULES.md](docs/EPISODE_RULES.md)、[docs/SHOT_SPLITTING.md](docs/SHOT_SPLITTING.md)。
 
@@ -377,13 +488,13 @@ PRINTFILM 面向创作者与运营：输入主题或剧本，按模板生成分�
 
 **路径**：`/pricing`
 
-**功能概述**：按上游 token（或估价）× 加价倍率扣费；充值走易支付。
+**功能概述**：按上游真实用量（或估价）计费；开源默认按 TokenFree 官方成本、不再加价。充值走易支付。
 
-本地默认关闭。开启后详见 [docs/BILLING.md](docs/BILLING.md)。
+本地与 Docker 默认关闭。开启后详见 [docs/BILLING.md](docs/BILLING.md)。
 
 ```env
 BILLING_ENABLED=true
-BILLING_MARKUP=1.5
+BILLING_MARKUP=1.0
 EPAY_API_URL=https://pay.gitcc.com
 EPAY_PID=
 EPAY_KEY=
@@ -412,7 +523,7 @@ EPAY_KEY=
 
 ```
 注册登录 → 工作台选 AI 短视频 → 选模板与管线
-  → 填写主题 / 口播 → 风格配置 → 开始生成
+  → 填写主题 / 文案 → 风格配置 → 开始生成
   → 分镜页审阅（可单镜重绘 / 重生）
   → 合成完成后在历史页下载
 ```
@@ -420,10 +531,9 @@ EPAY_KEY=
 #### 7.2 做一部漫剧
 
 ```
-/drama 新建项目 → 大纲（摘要 + 分集）
-  → 资产（角色外形 / 场景 / 音色）
-  → 进入分集编辑或画布
-  → 分镜出图 / 出视频 → 工作台查看成片
+/drama 新建项目 → 分集工作台（创意 / 摘要 / 剧本）
+  → 资产库（角色 / 场景 / 道具）
+  → 解析成镜 → 分镜编辑出片
 ```
 
 #### 7.3 只要一张图或一段视频
@@ -437,7 +547,7 @@ EPAY_KEY=
 
 ### 8. 系统管理
 
-独立前端，开发端口 **5174**。管理员与用户共用登录接口，需 `role=admin`。
+独立前端。Docker 端口 **8081**，本机开发 **5174**。管理员与用户共用登录接口，需 `role=admin`。
 
 | 路径 | 功能 |
 |------|------|
@@ -461,23 +571,24 @@ EPAY_KEY=
 #### 9.1 健康检查
 
 ```bash
-curl http://127.0.0.1:8000/api/health
+curl http://localhost:8000/api/health
 ```
 
 关注 `ok`、`task_runtime`、`db_pool`、`models`。
 
 #### 9.2 日志与重启
 
+- Docker：`docker compose --env-file deploy/.env.docker logs -f api`
 - 开发：看 uvicorn / Vite 终端
-- 中间件：`docker compose -f deploy/docker-compose.yml --env-file deploy/.env.prod logs -f`
-- 重启 API 即可重载大部分 `.env`；管理员提权必须重启一次
+- 仅中间件：`docker compose -f deploy/docker-compose.yml --env-file deploy/.env.prod logs -f`
+- 重启 API 即可重载大部分环境变量；管理员提权必须重建 / 重启一次 API 容器或进程
 
 #### 9.3 备份
 
-- Postgres 数据卷：`ai_movie_pgdata`
-- Redis 卷：`ai_movie_redisdata`
-- 本地媒体：`backend/static/generated/`
-- 停中间件不删数据：`docker compose ... down`；清库才加 `-v`
+- Postgres 卷：`printfilm_pgdata`（本机开发中间件为 `ai_movie_pgdata`）
+- Redis 卷：`printfilm_redisdata`
+- 成片：`printfilm_media` 或 `backend/static/generated/`
+- `down` 不删数据；清库才加 `-v`
 
 #### 9.4 并发与存储
 
@@ -490,7 +601,8 @@ curl http://127.0.0.1:8000/api/health
 
 #### 9.5 更新
 
-拉代码 → `pip install -r requirements.txt` → 两端 `npm install`（如有依赖变更）→ 重启 API。启动时会跑 schema 补丁、模板 seed 与管理员 bootstrap。线上发布记录见 [docs/releases/](docs/releases/)。
+- Docker：`docker compose --env-file deploy/.env.docker pull && docker compose --env-file deploy/.env.docker up -d`
+- 源码：拉代码 → `pip install` / `npm install` → 重启 API。启动时会跑 schema 补丁、模板 seed 与管理员 bootstrap。
 
 ---
 
@@ -498,13 +610,15 @@ curl http://127.0.0.1:8000/api/health
 
 | 类别 | 现象 | 处理 |
 |------|------|------|
-| 访问 | 前端能开但接口失败 | 确认 API 在 8000；用户端未误设生产空 `VITE_API_BASE` |
-| 登录 | 管理端 403 | 账号尚未 admin；检查 `ADMIN_BOOTSTRAP_EMAILS` 后重启 |
-| 部署 | 数据库连不上 | 端口 15432、密码与 compose 一致、容器 healthy |
-| 部署 | Redis 连不上 | 应用默认示例为 `16379`；`config.py` 回退值是 `6379`，以 `.env` 为准 |
-| AI | 分镜/视频失败 | Key、模型 ID、方舟额度；先看任务中心与后端日志 |
-| 成片 | 有视频无中文字幕 | 安装中文字体后重新合成 |
-| 支付 | 回调失败 | notify URL 不要包含 `/api/` |
+| Docker | 用户端能开但接口 502 | 等 API healthy（首次建表约数十秒）；`logs -f api` |
+| Docker | `pull access denied` | 确认镜像名含公开命名空间 `gcc`；无需登录 |
+| 访问 | 前端能开但接口失败 | 开发时确认 API 在 8000，且未误设生产空 `VITE_API_BASE` |
+| 登录 | 管理端 403 | 账号尚未 admin；写入 `ADMIN_BOOTSTRAP_EMAILS` 后重建 api |
+| 部署 | 数据库连不上 | Docker 应用应连 `postgres:5432`；本机开发连 `127.0.0.1:15432` |
+| 部署 | Redis 连不上 | Docker 用 `redis:6379`；本机示例为 `16379` |
+| AI | 分镜/视频失败 | Key、模型 ID、额度；先看任务中心与 `api` 日志 |
+| 成片 | 有视频无中文字幕 | 本机安装中文字体后重新合成；Docker 镜像已带文泉驿 |
+| 支付 | 回调失败 | notify URL 不要包含 `/api/`，用 `/epay/notify` |
 | 安全 | 误提交密钥 | 轮换 Key；确认 `.env`、`deploy_kepu.py`、`.tmp/` 在 gitignore 中 |
 
 ---
@@ -516,40 +630,51 @@ curl http://127.0.0.1:8000/api/health
 | 变量 | 默认 / 示例 | 说明 |
 |------|-------------|------|
 | `SECRET_KEY` | `dev-secret-change-me` | JWT 签名，生产必改 |
-| `DATABASE_URL` | `postgresql+asyncpg://printfilm:…@127.0.0.1:15432/printfilm` | 异步库 |
-| `DATABASE_URL_SYNC` | `postgresql+psycopg2://…` | 同步库 |
-| `REDIS_URL` | `redis://127.0.0.1:16379/0` | 缓存 / 找回密码 |
-| `CORS_ORIGINS` | `http://localhost:5173,…5174` | 逗号分隔 |
-| `PUBLIC_BASE_URL` | `http://127.0.0.1:8000` | 对外回链根 |
+| `DATABASE_URL` | Docker 下由 compose 注入 `postgres:5432` | 异步库 |
+| `DATABASE_URL_SYNC` | 同上 | 同步库 |
+| `REDIS_URL` | Docker：`redis://redis:6379/0` | 缓存 / 找回密码 |
+| `CORS_ORIGINS` | `http://localhost:8080,…8081` | 逗号分隔 |
+| `PUBLIC_BASE_URL` | `http://localhost:8080` | 对外回链根 |
 | `ADMIN_BOOTSTRAP_EMAILS` | （空） | 启动提权邮箱 |
-| `ARK_*` / `OPENAI_*` / `MODEL_*` | 见 `.env.example` | 模型 |
+| `ARK_*` / `OPENAI_*` / `MODEL_*` | 见示例文件 | 模型 |
 | `BILLING_*` / `EPAY_*` | 默认关闭计费 | 钱包与支付 |
 | `OSS_*` | 默认关闭 | 对象存储 |
-| `FFMPEG_PATH` / `FFPROBE_PATH` | `ffmpeg` / `ffprobe` | 也可在管理端「站点工具」改 |
+| `FFMPEG_PATH` / `FFPROBE_PATH` | `ffmpeg` / `ffprobe` | 镜像内已安装 |
 
-完整列表以 `backend/.env.example` 与 `deploy/.env.prod.example` 为准。**不要**把真实 Key 写入文档或 Git。
+完整列表以 `deploy/.env.docker.example`、`backend/.env.example` 为准。**不要**把真实 Key 写入文档或 Git。
 
-#### 11.2 相关文档
+#### 11.2 Docker 镜像地址
+
+| 服务 | 镜像 |
+|------|------|
+| api | `gcc-registry.cn-hangzhou.cr.aliyuncs.com/gcc/printfilm-api:latest`（亦可钉 `v0.2.0`） |
+| web | `gcc-registry.cn-hangzhou.cr.aliyuncs.com/gcc/printfilm-web:latest` |
+| admin-web | `gcc-registry.cn-hangzhou.cr.aliyuncs.com/gcc/printfilm-admin-web:latest` |
+| postgres | `postgres:16-alpine` |
+| redis | `redis:7-alpine` |
+
+#### 11.3 相关文档
 
 | 文档 | 内容 |
 |------|------|
 | [docs/STANDARDS.md](docs/STANDARDS.md) | 工程规范 |
-| [docs/DEPLOY.md](docs/DEPLOY.md) | 线上发布 |
 | [docs/BILLING.md](docs/BILLING.md) | 计费公式与易支付 |
 | [docs/EPISODE_RULES.md](docs/EPISODE_RULES.md) | 漫剧分集规范 |
 | [docs/SEEDANCE_2_5.md](docs/SEEDANCE_2_5.md) | Seedance 参数 |
 | [deploy/README.md](deploy/README.md) | 中间件与本机运维 |
 
-#### 11.3 截图索引
+#### 11.4 截图索引
 
 | 界面 | 文件 |
 |------|------|
 | 工作台 | `docs/images/image-20260910-home.png` |
-| 剧情大纲 | `docs/images/image-20260910-drama.png` |
-| 漫剧资产库 | `docs/images/image-20260910-drama-assets.png` |
-| 漫剧画布 | `docs/images/image-20260910-drama-canvas.png` |
+| 漫剧项目列表 | `docs/images/image-20260917-drama-list.png` |
+| 分集工作台 | `docs/images/image-20260917-drama-episode.png` |
+| 剧本解析 | `docs/images/image-20260917-drama-script.png` |
+| 分镜编辑 | `docs/images/image-20260917-drama-storyboard.png` |
+| 漫剧资产库 | `docs/images/image-20260917-drama-assets.png` |
 | 科普历史 | `docs/images/image-20260910-history.png` |
-| 分镜工作台 | `docs/images/image-20260910-studio.png` |
+| 分镜工作台（科普） | `docs/images/image-20260910-studio.png` |
 | 成片预览 | `docs/images/image-20260910-preview.png` |
 | 管理后台 | `docs/images/image-20260910-admin.png` |
 
@@ -565,10 +690,9 @@ curl http://127.0.0.1:8000/api/health
 - 单文件尽量不超过 500 行，公共逻辑放到 `lib/` / `services/` / `components/`
 
 ```bash
-# 后端（在 backend/ 下）
-# 前端
 cd frontend && npm run lint
 cd ../admin && npm run lint
+cd ../backend && pytest
 ```
 
 ---
@@ -579,5 +703,5 @@ cd ../admin && npm run lint
 
 ---
 
-**PRINTFILM**
-文档版本：0.2.0 | 2026-09-10
+**PRINTFILM**  
+文档版本：0.2.0 | 2026-09-17
