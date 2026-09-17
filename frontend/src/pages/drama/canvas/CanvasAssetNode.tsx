@@ -14,6 +14,7 @@ import {
 import { CanvasNodeGeneratePanel } from './nodes/CanvasNodeGeneratePanel'
 import { CanvasNodePreviewModal } from './CanvasNodePreviewModal'
 import { CanvasNodeUploadBar } from './nodes/CanvasNodeUploadBar'
+import { DRAMA_VOICE_BINDING_ENABLED } from '../../../lib/dramaVoiceBinding'
 
 /** 画布视频缩略：仅展示封面，不拦截单击（单击要选中并显示提示词面板） */
 function CanvasAssetVideoPreview({ src }: { src: string }) {
@@ -57,7 +58,7 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
       : data.label || option.label
   const footerLabel =
     data.kind === 'character'
-      ? voiceLabel
+      ? DRAMA_VOICE_BINDING_ENABLED && voiceLabel
         ? `基础形象 · ${voiceLabel}`
         : '基础形象'
       : data.kind === 'scene'

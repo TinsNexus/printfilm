@@ -12,7 +12,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 from urllib.parse import urlparse
 
 import httpx
@@ -28,6 +28,7 @@ from app.services.logical_model_router import (
 from app.services.tokenfree_audio import (
     TOKENFREE_DEFAULT_TTS_MODEL,
     resolve_tokenfree_tts_model,
+    tokenfree_speech_honors_speaker,
     tokenfree_speech_voice,
     uses_tokenfree_audio,
 )
@@ -64,6 +65,35 @@ from app.services.llm_client import chat_completions
 from app.services import seedance_segments as segplan
 
 logger = logging.getLogger(__name__)
+
+# TokenFree /v1/responses 同步等图，常见 2–8 分钟；连接短、读体长
+IMAGE_GEN_READ_SEC = 600.0
+# 创建视频任务应返回 task_id；TokenFree 拉参考图时可能拖到一两分钟
+VIDEO_CREATE_READ_SEC = 180.0
+# 轮询/单次查询只要状态 JSON
+VIDEO_POLL_READ_SEC = 60.0
+VIDEO_FETCH_READ_SEC = 30.0
+
+
+def _upstream_timeout(read_sec: float, *, connect: float = 30.0) -> httpx.Timeout:
+    """上游 HTTP 超时：建连短、等结果长，避免 ReadTimeout 被当成连不上。"""
+    return httpx.Timeout(connect=connect, read=float(read_sec), write=60.0, pool=30.0)
+
+
+def reraise_upstream_timeout(exc: BaseException, *, kind: str, read_sec: float) -> NoReturn:
+    """把 httpx 超时翻成可读 RuntimeError；ReadTimeout 表示已连通但等结果超时。"""
+    if isinstance(exc, httpx.ReadTimeout):
+        raise RuntimeError(
+            f"{kind}等待上游超时（ReadTimeout）：已连通 TokenFree，但 {read_sec:.0f} 秒内未返回结果，请稍后重试"
+        ) from exc
+    if isinstance(exc, httpx.WriteTimeout):
+        raise RuntimeError(
+            f"{kind}发送请求超时（WriteTimeout）：已连通 TokenFree，但 {read_sec:.0f} 秒内未能发完请求，请稍后重试"
+        ) from exc
+    name = type(exc).__name__
+    raise RuntimeError(
+        f"{kind}无法连接上游（{name}）：请检查网络、代理或 TokenFree 是否可达"
+    ) from exc
 
 
 def _raise_seedream_http_error(
@@ -847,30 +877,33 @@ class ArkGateway:
             if refs:
                 body["image"] = refs if len(refs) > 1 else refs[0]
 
-        async with httpx.AsyncClient(timeout=180.0) as client:
-            async def _post():
-                # 单次上游 POST，限流重试由外层包住
-                return await client.post(
-                    self._route_url(path, route),
-                    headers=self._route_headers(route),
-                    json=body,
-                )
+        try:
+            async with httpx.AsyncClient(timeout=_upstream_timeout(IMAGE_GEN_READ_SEC)) as client:
+                async def _post():
+                    # 单次上游 POST，限流重试由外层包住
+                    return await client.post(
+                        self._route_url(path, route),
+                        headers=self._route_headers(route),
+                        json=body,
+                    )
 
-            if on_tokenfree:
-                async with tokenfree_image_slot():
-                    resp = await post_until_not_rate_limited(_post)
-            else:
-                resp = await _post()
-            if resp.status_code >= 400 or is_tokenfree_retryable_image_error(
-                status_code=resp.status_code, body=resp.text
-            ):
-                _raise_seedream_http_error(
-                    resp.status_code,
-                    resp.text,
-                    model=chosen,
-                    tokenfree=on_tokenfree,
-                )
-            data = resp.json()
+                if on_tokenfree:
+                    async with tokenfree_image_slot():
+                        resp = await post_until_not_rate_limited(_post)
+                else:
+                    resp = await _post()
+                if resp.status_code >= 400 or is_tokenfree_retryable_image_error(
+                    status_code=resp.status_code, body=resp.text
+                ):
+                    _raise_seedream_http_error(
+                        resp.status_code,
+                        resp.text,
+                        model=chosen,
+                        tokenfree=on_tokenfree,
+                    )
+                data = resp.json()
+        except httpx.TimeoutException as exc:
+            reraise_upstream_timeout(exc, kind="生图", read_sec=IMAGE_GEN_READ_SEC)
 
         usage_parsed = parse_usage_dict(data)
         raw_usage = data.get("usage") if isinstance(data.get("usage"), dict) else None
@@ -1142,65 +1175,68 @@ class ArkGateway:
             body["generate_audio"],
         )
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                self._route_url("/contents/generations/tasks", route),
-                headers=self._route_headers(route),
-                json=self._video_json(body, route),
-            )
-            if resp.status_code >= 400 and prompt_as_json:
-                # Fallback: plain text prompt
-                body["content"][0]["text"] = plain
+        try:
+            async with httpx.AsyncClient(timeout=_upstream_timeout(VIDEO_CREATE_READ_SEC)) as client:
                 resp = await client.post(
                     self._route_url("/contents/generations/tasks", route),
                     headers=self._route_headers(route),
                     json=self._video_json(body, route),
                 )
-            # 文案策略：在 ratio/adaptive 结构回退前，对当前意图 body 追加 CG 重试
-            if resp.status_code >= 400:
-                raw_err = resp.text or ""
-                if self._is_seedance_input_privacy_error(raw_err):
-                    raise RuntimeError(_format_seedance_create_error(resp.status_code, raw_err))
-                if self._is_seedance_text_policy_error(raw_err):
-                    cg_content = self._seedance_content_with_cg_style(body.get("content"))
-                    if cg_content is not None:
-                        logger.warning("Seedance i2v text policy hit; retrying with CG style")
-                        body = {**body, "content": cg_content}
-                        resp = await client.post(
-                            self._route_url("/contents/generations/tasks", route),
-                            headers=self._route_headers(route),
-                            json=self._video_json(body, route),
-                        )
-                    if resp.status_code >= 400:
-                        raise RuntimeError(
-                            _format_seedance_create_error(resp.status_code, resp.text)
-                        )
-            if resp.status_code >= 400:
-                err_text = resp.text or ""
-                # 仅「误用 first_frame + ratio」时去掉 ratio；有目标画幅时不得回落到 adaptive 横屏
-                if (
-                    not target_ratio
-                    and "ratio" in err_text.lower()
-                    and "ratio" in body
-                ):
-                    body.pop("ratio", None)
+                if resp.status_code >= 400 and prompt_as_json:
+                    # Fallback: plain text prompt
+                    body["content"][0]["text"] = plain
                     resp = await client.post(
                         self._route_url("/contents/generations/tasks", route),
                         headers=self._route_headers(route),
                         json=self._video_json(body, route),
                     )
-            if resp.status_code >= 400 and not target_ratio:
-                # 无目标画幅时的兼容回退；有竖屏目标时禁止 adaptive，避免再次出横屏
-                body["content"][1].pop("role", None)
-                body["ratio"] = "adaptive"
-                resp = await client.post(
-                    self._route_url("/contents/generations/tasks", route),
-                    headers=self._route_headers(route),
-                    json=self._video_json(body, route),
-                )
-            if resp.status_code >= 400:
-                raise RuntimeError(_format_seedance_create_error(resp.status_code, resp.text))
-            data = resp.json()
+                # 文案策略：在 ratio/adaptive 结构回退前，对当前意图 body 追加 CG 重试
+                if resp.status_code >= 400:
+                    raw_err = resp.text or ""
+                    if self._is_seedance_input_privacy_error(raw_err):
+                        raise RuntimeError(_format_seedance_create_error(resp.status_code, raw_err))
+                    if self._is_seedance_text_policy_error(raw_err):
+                        cg_content = self._seedance_content_with_cg_style(body.get("content"))
+                        if cg_content is not None:
+                            logger.warning("Seedance i2v text policy hit; retrying with CG style")
+                            body = {**body, "content": cg_content}
+                            resp = await client.post(
+                                self._route_url("/contents/generations/tasks", route),
+                                headers=self._route_headers(route),
+                                json=self._video_json(body, route),
+                            )
+                        if resp.status_code >= 400:
+                            raise RuntimeError(
+                                _format_seedance_create_error(resp.status_code, resp.text)
+                            )
+                if resp.status_code >= 400:
+                    err_text = resp.text or ""
+                    # 仅「误用 first_frame + ratio」时去掉 ratio；有目标画幅时不得回落到 adaptive 横屏
+                    if (
+                        not target_ratio
+                        and "ratio" in err_text.lower()
+                        and "ratio" in body
+                    ):
+                        body.pop("ratio", None)
+                        resp = await client.post(
+                            self._route_url("/contents/generations/tasks", route),
+                            headers=self._route_headers(route),
+                            json=self._video_json(body, route),
+                        )
+                if resp.status_code >= 400 and not target_ratio:
+                    # 无目标画幅时的兼容回退；有竖屏目标时禁止 adaptive，避免再次出横屏
+                    body["content"][1].pop("role", None)
+                    body["ratio"] = "adaptive"
+                    resp = await client.post(
+                        self._route_url("/contents/generations/tasks", route),
+                        headers=self._route_headers(route),
+                        json=self._video_json(body, route),
+                    )
+                if resp.status_code >= 400:
+                    raise RuntimeError(_format_seedance_create_error(resp.status_code, resp.text))
+                data = resp.json()
+        except httpx.TimeoutException as exc:
+            reraise_upstream_timeout(exc, kind="生视频", read_sec=VIDEO_CREATE_READ_SEC)
 
         task_id = extract_video_task_id(data)
         if not task_id:
@@ -1267,46 +1303,49 @@ class ArkGateway:
             len(payload.get("content") or []),
         )
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                self._route_url("/contents/generations/tasks", route),
-                headers=self._route_headers(route),
-                json=self._video_json(payload, route),
-            )
-            if resp.status_code >= 400:
-                raw_err = resp.text or ""
-                # 参考图真人：改文案无效
-                if self._is_seedance_input_privacy_error(raw_err):
-                    raise RuntimeError(
-                        _format_seedance_create_error(
-                            resp.status_code,
-                            raw_err,
-                            content_labels=content_labels,
-                        )
-                    )
-                cg_content = None
-                if self._is_seedance_text_policy_error(raw_err):
-                    cg_content = self._seedance_content_with_cg_style(payload.get("content"))
-                if cg_content is not None:
-                    logger.warning(
-                        "Seedance text policy hit project=%s; retrying with CG style",
-                        project_id,
-                    )
-                    payload = {**payload, "content": cg_content}
-                    resp = await client.post(
-                        self._route_url("/contents/generations/tasks", route),
-                        headers=self._route_headers(route),
-                        json=self._video_json(payload, route),
-                    )
+        try:
+            async with httpx.AsyncClient(timeout=_upstream_timeout(VIDEO_CREATE_READ_SEC)) as client:
+                resp = await client.post(
+                    self._route_url("/contents/generations/tasks", route),
+                    headers=self._route_headers(route),
+                    json=self._video_json(payload, route),
+                )
                 if resp.status_code >= 400:
-                    raise RuntimeError(
-                        _format_seedance_create_error(
-                            resp.status_code,
-                            resp.text,
-                            content_labels=content_labels,
+                    raw_err = resp.text or ""
+                    # 参考图真人：改文案无效
+                    if self._is_seedance_input_privacy_error(raw_err):
+                        raise RuntimeError(
+                            _format_seedance_create_error(
+                                resp.status_code,
+                                raw_err,
+                                content_labels=content_labels,
+                            )
                         )
-                    )
-            data = resp.json()
+                    cg_content = None
+                    if self._is_seedance_text_policy_error(raw_err):
+                        cg_content = self._seedance_content_with_cg_style(payload.get("content"))
+                    if cg_content is not None:
+                        logger.warning(
+                            "Seedance text policy hit project=%s; retrying with CG style",
+                            project_id,
+                        )
+                        payload = {**payload, "content": cg_content}
+                        resp = await client.post(
+                            self._route_url("/contents/generations/tasks", route),
+                            headers=self._route_headers(route),
+                            json=self._video_json(payload, route),
+                        )
+                    if resp.status_code >= 400:
+                        raise RuntimeError(
+                            _format_seedance_create_error(
+                                resp.status_code,
+                                resp.text,
+                                content_labels=content_labels,
+                            )
+                        )
+                data = resp.json()
+        except httpx.TimeoutException as exc:
+            reraise_upstream_timeout(exc, kind="生视频", read_sec=VIDEO_CREATE_READ_SEC)
 
         task_id = extract_video_task_id(data)
         if not task_id:
@@ -1415,7 +1454,7 @@ class ArkGateway:
             )
 
         deadline = time.monotonic() + self.settings.ark_video_poll_timeout
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=_upstream_timeout(VIDEO_POLL_READ_SEC, connect=15.0)) as client:
             while time.monotonic() < deadline:
                 try:
                     resp = await client.get(
@@ -1463,7 +1502,7 @@ class ArkGateway:
                 last_frame_url=f"/static/mock/last_{task_id[-8:]}.jpg",
             )
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=_upstream_timeout(VIDEO_FETCH_READ_SEC, connect=15.0)) as client:
                 resp = await client.get(
                     self._url(f"/contents/generations/tasks/{task_id}"),
                     headers=self._headers(),
@@ -1689,7 +1728,7 @@ class ArkGateway:
         duration_hint: float = 4.0,
         emotion_hint: str | None = None,
     ) -> str:
-        """整片/单镜配音：豆包 openspeech → TokenFree speech → edge-tts；失败则抛错，不写静音。"""
+        """整片/单镜配音：豆包 openspeech →（qwen 能认的音色才走 TokenFree）→ edge-tts；失败则抛错，不写静音。"""
         voice_map = {
             "narrator_calm": "zh_female_cancan_uranus_bigtts",
             "warm_storyteller": "zh_female_tianmeixiaoyuan_uranus_bigtts",
@@ -1727,7 +1766,7 @@ class ArkGateway:
         audio_model = self._resolved_audio_model()
         on_tokenfree = uses_tokenfree_audio(base_url=self.settings.ark_base_url or "")
 
-        # 豆包 openspeech：标准 speaker 优先于 TokenFree，避免 /audio/speech 忽略音色 id
+        # 豆包 openspeech：标准 speaker 优先，避免 /audio/speech 忽略音色 id
         if self._openspeech_configured():
             try:
                 ok = await self._tts_openspeech(clean, speaker, dest, emotion_hint=emotion_hint)
@@ -1739,8 +1778,8 @@ class ArkGateway:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("openspeech TTS failed: %s", exc)
 
-        # TokenFree：走 New API /audio/speech（与 MODEL_AUDIO / 默认音频逻辑模型一致）
-        if on_tokenfree:
+        # TokenFree qwen-tts 只认 Ethan/Cherry 等；豆包 zh_* 会全员男=Ethan，先跳过
+        if on_tokenfree and tokenfree_speech_honors_speaker(speaker):
             try:
                 ok = await self._tts_openai_speech(clean, speaker, dest, model=audio_model)
                 if ok:
@@ -1756,15 +1795,31 @@ class ArkGateway:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("tokenfree speech failed: %s", exc)
 
-        # edge-tts 兜底：TokenFree 常无 seed-tts 渠道，豆包未授权时必须仍能出声
+        # edge-tts：按 speaker 映射不同 neural，豆包未授权时仍能分出角色声线
         try:
             await self._tts_edge(clean, dest, voice_hint=speaker)
             url = await _accept_if_audible("edge-tts")
             if url:
-                logger.info("TTS edge-tts ok shot=%s bytes=%s", shot_no, dest.stat().st_size)
+                logger.info("TTS edge-tts ok shot=%s speaker=%s bytes=%s", shot_no, speaker, dest.stat().st_size)
                 return url
         except Exception as exc:  # noqa: BLE001
             logger.warning("edge-tts failed: %s", exc)
+
+        # qwen 压声线也比完全没声音好：edge 失败后再用 TokenFree
+        if on_tokenfree and not tokenfree_speech_honors_speaker(speaker):
+            try:
+                ok = await self._tts_openai_speech(clean, speaker, dest, model=audio_model)
+                if ok:
+                    url = await _accept_if_audible("tokenfree-speech-fallback")
+                    if url:
+                        logger.info(
+                            "TTS tokenfree fallback ok shot=%s model=%s",
+                            shot_no,
+                            audio_model,
+                        )
+                        return url
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("tokenfree speech fallback failed: %s", exc)
 
         # 非 TokenFree 时再试 /audio/speech（方舟等）
         if not on_tokenfree:

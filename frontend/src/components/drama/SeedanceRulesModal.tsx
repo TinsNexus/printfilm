@@ -101,9 +101,11 @@ export function SeedanceRulesModal({ open, onClose }: Props) {
               <li>
                 <strong>reference_image</strong>：本镜引用角色 / 场景 / 道具的封面或主图
               </li>
+              {/* 音色难控：暂不提交 reference_audio，口播由 generate_audio 自发挥
               <li>
                 <strong>reference_audio</strong>：已绑定音色的角色与旁白试听音频
               </li>
+              */}
             </ol>
             <p className="seedance-rules-note">
               系统默认开启 <code>generate_audio</code>：有口播意图时 Seedance 原生配音并烧录字幕；纯画面镜仅环境音、不烧字幕。
@@ -113,8 +115,10 @@ export function SeedanceRulesModal({ open, onClose }: Props) {
             <ol className="seedance-rules-list">
               <li>【强制约束：视频画面风格】— 项目所选画风描述</li>
               <li>【强制约束：音频、字幕与配乐】— 根据脚本旁白 / 对白 / 画面 cue 推断</li>
+              {/*
               <li>【强制约束：角色音色】— 角色名 → 参考音频序号</li>
               <li>【强制约束：旁白音色】— 旁白 → 参考音频序号</li>
+              */}
               <li>【强制约束：角色形象】— 角色名 → 参考图序号</li>
               <li>【强制约束：场景】— 场景名 → 参考图序号</li>
               <li>【强制约束：道具】— 道具名 → 参考图序号</li>
@@ -146,7 +150,7 @@ export function SeedanceRulesModal({ open, onClose }: Props) {
                 <code>@asset:123</code>：在正文中引用 ID 为 123 的角色 / 场景 / 道具
               </li>
               <li>左侧资产面板点击资产，或本镜「参与资产」条，也会自动写入引用</li>
-              <li>被引用的角色需有参考图；需口播的角色需绑定音色（参考音频）</li>
+              <li>被引用的角色需有参考图；口播由 Seedance 按对白/旁白自行发挥，无需绑定音色</li>
             </ul>
 
             <h4>漫剧常用 cue（勿用科普版「全程旁白烧录」字幕句）</h4>
@@ -194,7 +198,7 @@ export function SeedanceRulesModal({ open, onClose }: Props) {
             <h4>生成前检查</h4>
             <ul className="seedance-rules-list">
               <li>脚本校验：时长合法；空镜未被标成对白/旁白（编辑区会即时提示，有错误不可生成）</li>
-              <li>本镜「参与资产」中的角色已有参考图；需说话的角色已「生成音色」或绑定试听（缺项会警告）</li>
+              <li>本镜「参与资产」中的角色已有参考图（缺图会警告）；口播无需绑定音色</li>
               <li>项目顶栏确认画幅与清晰度；分集顶栏确认视频风格、模型后再点「生成」</li>
             </ul>
 
@@ -221,10 +225,9 @@ export function SeedanceRulesModal({ open, onClose }: Props) {
               </li>
             </ul>
 
-            <h4>音色与参考音频</h4>
+            <h4>音色与参考音频（暂关）</h4>
             <ul className="seedance-rules-list">
-              <li>角色 / 旁白音色试听会作为 reference_audio 提交，保证口播声线一致</li>
-              <li>参考音频合成后自动截到 15 秒内（API 单条上限约 30 秒）</li>
+              <li>暂不提交 reference_audio、不绑定角色/旁白试听；口播由 Seedance 原生配音自行发挥</li>
               <li>缺少参考图时，系统会尝试自动补图后再提交 Seedance</li>
             </ul>
 

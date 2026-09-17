@@ -74,27 +74,39 @@ DRAMA_SPEAKER_RULES: list[dict[str, Any]] = [
     {
         "speaker": "zh_male_baqiqingshu_uranus_bigtts",
         "gender": "male",
-        "keywords": ("老", "翁", "族老", "长者", "首领", "青叔", "大叔", "沉稳", "威严", "苍", "应龙"),
+        "keywords": (
+            "老", "翁", "族老", "长者", "首领", "青叔", "大叔", "威严", "苍", "应龙",
+            "爷爷", "祖父", "暮年", "苍老",
+        ),
     },
     {
         "speaker": "zh_male_m191_uranus_bigtts",
         "gender": "male",
-        "keywords": ("领袖", "帝王", "君主", "大王", "治水", "禹", "庄重", "浑厚", "史诗", "统帅"),
+        "keywords": (
+            "领袖", "帝王", "君主", "大王", "治水", "禹", "庄重", "浑厚", "史诗", "统帅",
+            "低沉", "恢弘", "成年男", "管风琴", "悲悯", "厚重",
+        ),
     },
     {
         "speaker": "zh_male_ruyayichen_uranus_bigtts",
         "gender": "male",
-        "keywords": ("儒雅", "书生", "谋士", "伯益", "文士", "智", "温和", "清朗", "参谋"),
+        "keywords": (
+            "儒雅", "书生", "谋士", "伯益", "文士", "温和", "清朗", "参谋",
+            "克制", "颗粒", "偏冷",
+        ),
     },
     {
         "speaker": "zh_male_shaonianzixin_uranus_bigtts",
         "gender": "male",
-        "keywords": ("少年", "青年", "青壮", "小伙", "活力", "清亮", "少年音", "梓辛"),
+        "keywords": ("少年", "少年音", "清亮", "梓辛", "稚", "青春期", "青壮"),
     },
     {
         "speaker": "zh_male_taocheng_uranus_bigtts",
         "gender": "male",
-        "keywords": ("年轻", "小哥", "明快", "阳光", "清爽"),
+        "keywords": (
+            "年轻", "青年", "小哥", "明快", "阳光", "清爽", "童声", "男孩", "儿童",
+            "圆润", "憨厚", "小伙",
+        ),
     },
     {
         "speaker": "zh_female_vv_uranus_bigtts",
@@ -123,8 +135,25 @@ DRAMA_SPEAKER_RULES: list[dict[str, Any]] = [
     },
 ]
 
-MALE_HINTS = ("男", "少年", "青年男", "老年男", "公子", "王爷", "少年音", "大叔", "青壮", "将", "伯", "公")
+MALE_HINTS = (
+    "男", "少年", "青年男", "老年男", "公子", "王爷", "少爷", "少年音", "大叔", "青壮",
+    "将", "伯", "公", "爷爷", "男孩",
+)
 FEMALE_HINTS = ("女", "少女", "女声", "御姐", "小姐", "娘娘", "萝莉", "姑娘", "妇人", "村妇")
+
+# edge-tts 确认可用的男声仅 Yunxi/Yunjian/Yunyang（Yunxia 实为女童，不给男角色）
+EDGE_TTS_BY_SPEAKER: dict[str, str] = {
+    "zh_male_shaonianzixin_uranus_bigtts": "zh-CN-YunxiNeural",
+    "zh_male_taocheng_uranus_bigtts": "zh-CN-YunxiNeural",
+    "zh_male_m191_uranus_bigtts": "zh-CN-YunjianNeural",
+    "zh_male_baqiqingshu_uranus_bigtts": "zh-CN-YunyangNeural",
+    "zh_male_ruyayichen_uranus_bigtts": "zh-CN-YunjianNeural",
+    "zh_female_cancan_uranus_bigtts": "zh-CN-XiaoxiaoNeural",
+    "zh_female_tianmeixiaoyuan_uranus_bigtts": "zh-CN-XiaoyiNeural",
+    "zh_female_shuangkuaisisi_uranus_bigtts": "zh-CN-liaoning-XiaobeiNeural",
+    "zh_female_vv_uranus_bigtts": "zh-CN-shaanxi-XiaoniNeural",
+    "zh_female_xiaohe_uranus_bigtts": "zh-CN-XiaoxiaoNeural",
+}
 
 # Template audio_config.voice_preset aliases → speaker
 VOICE_ALIASES: dict[str, str] = {
@@ -154,7 +183,10 @@ def infer_speaker_gender(speaker: str) -> str | None:
 
 
 def edge_tts_voice_for_speaker(speaker: str) -> str:
-    """edge-tts 兜底：按 speaker 前缀选中文 neural 声线。"""
+    """edge-tts 兜底：按豆包 speaker 映射不同中文 neural，避免全员同一条 Yunxi。"""
+    mapped = EDGE_TTS_BY_SPEAKER.get((speaker or "").strip())
+    if mapped:
+        return mapped
     g = infer_speaker_gender(speaker)
     if g == "male":
         return "zh-CN-YunxiNeural"
@@ -227,7 +259,7 @@ def infer_speaker_from_voice_prompt(voice_prompt: str, *, character_name: str = 
 
 PREVIEW_TEXT = "大家好，这是当前音色的试听效果，适合科普短视频旁白讲解。"
 # 试听缓存文件名后缀：TTS 路由/edge 性别修复后递增，避免继续播放旧错误样例
-PREVIEW_CACHE_TAG = "v2"
+PREVIEW_CACHE_TAG = "v3"
 
 
 async def ensure_voice_preview(voice_id: str) -> str:

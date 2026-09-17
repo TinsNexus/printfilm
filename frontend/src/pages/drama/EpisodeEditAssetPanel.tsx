@@ -2,6 +2,7 @@
 import { resolveDramaAssetPreviewUrl, type DramaAsset } from '../../api/drama'
 import { CharacterVoicePreviewButton } from '../../components/drama/CharacterVoicePreviewButton'
 import { readAssetVoiceBinding } from './CharacterVoiceBindModal'
+import { DRAMA_VOICE_BINDING_ENABLED } from '../../lib/dramaVoiceBinding'
 import {
   ASSET_TABS,
   normalizeAssetTab,
@@ -161,7 +162,9 @@ export function EpisodeEditAssetPanel({
                   </div>
                   <span className="drama-ep-asset-name">{asset.name || `资产 ${asset.id}`}</span>
                   {isActive ? <span className="drama-ep-asset-linked">已关联</span> : null}
-                  {voice ? <span className="drama-ep-asset-voice">音色</span> : null}
+                  {DRAMA_VOICE_BINDING_ENABLED && voice ? (
+                    <span className="drama-ep-asset-voice">音色</span>
+                  ) : null}
                   <span className="drama-ep-asset-settings">设置</span>
                 </button>
                 <div className="drama-ep-asset-ops">

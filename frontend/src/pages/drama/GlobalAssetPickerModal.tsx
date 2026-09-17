@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { dramaApi, resolveDramaMediaUrl, type DramaAsset } from '../../api/drama'
 import { filterDramaLibraryAssets, isDramaLibraryAsset } from '../../lib/dramaLibraryAssets'
+import { DRAMA_VOICE_BINDING_ENABLED } from '../../lib/dramaVoiceBinding'
 import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import Modal from '../../components/ui/Modal'
 import './drama.css'
@@ -28,7 +29,7 @@ const TABS: Array<{ key: GlobalAssetTabKey; label: string }> = [
   { key: 'character', label: '角色' },
   { key: 'scene', label: '场景' },
   { key: 'prop', label: '道具' },
-  { key: 'voice', label: '音色' },
+  ...(DRAMA_VOICE_BINDING_ENABLED ? [{ key: 'voice' as const, label: '音色' }] : []),
 ]
 
 // 资产是否匹配 Tab
@@ -67,7 +68,9 @@ export function GlobalAssetPickerModal({
    * error 错误文案
    */
   const [allAssets, setAllAssets] = useState<DramaAsset[]>([])
-  const [tab, setTab] = useState<GlobalAssetTabKey>(defaultTab)
+  const [tab, setTab] = useState<GlobalAssetTabKey>(
+    defaultTab === 'voice' && !DRAMA_VOICE_BINDING_ENABLED ? 'character' : defaultTab,
+  )
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
@@ -76,7 +79,9 @@ export function GlobalAssetPickerModal({
 
   useEffect(() => {
     if (!open) return
-    setTab(defaultTab)
+    setTab(
+      defaultTab === 'voice' && !DRAMA_VOICE_BINDING_ENABLED ? 'character' : defaultTab,
+    )
     setQuery('')
     setSelectedId(null)
     setError('')

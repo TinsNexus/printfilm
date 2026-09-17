@@ -18,3 +18,15 @@ def test_edge_voice_xiaohe_is_female_neural():
 
 def test_edge_voice_male_preset():
     assert edge_tts_voice_for_speaker("zh_male_shaonianzixin_uranus_bigtts") == "zh-CN-YunxiNeural"
+
+
+def test_edge_voice_male_presets_are_not_all_yunxi():
+    voices = {
+        edge_tts_voice_for_speaker("zh_male_shaonianzixin_uranus_bigtts"),
+        edge_tts_voice_for_speaker("zh_male_m191_uranus_bigtts"),
+        edge_tts_voice_for_speaker("zh_male_baqiqingshu_uranus_bigtts"),
+        edge_tts_voice_for_speaker("zh_male_taocheng_uranus_bigtts"),
+    }
+    assert len(voices) >= 3
+    assert "zh-CN-YunyangNeural" in voices
+    assert "zh-CN-YunxiaNeural" not in voices

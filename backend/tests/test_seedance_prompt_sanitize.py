@@ -100,7 +100,8 @@ def test_os_stage_stays_inner_monologue():
     assert "【对白" in closeup
 
 
-def test_unlabeled_speaker_keeps_reference_audio():
+def test_unlabeled_speaker_skips_reference_audio():
+    """对白仍改写成【对白】，但暂不把试听挂进 content。"""
     script = "@duration:6\n禹：水患未平。"
     reference = [_char(1, "禹", audio="https://cdn.example.com/yu.mp3")]
     items = build_seedance_content_items(script, reference, burn_subtitles=False)
@@ -109,8 +110,9 @@ def test_unlabeled_speaker_keeps_reference_audio():
         for item in items
         if item.get("type") == "audio_url"
     ]
-    assert audios == ["https://cdn.example.com/yu.mp3"]
+    assert audios == []
     assert "【对白" in items[0]["text"]
+    assert "【强制约束：角色音色】" not in items[0]["text"]
 
 
 def test_character_vo_narration_becomes_dialogue_not_stage_direction():
@@ -132,25 +134,25 @@ def test_true_third_person_narration_stays_narration():
     assert "【对白" not in fixed
 
 
-def test_silent_character_reference_audio_omitted():
+def test_bound_voice_not_submitted_as_reference_audio():
+    """已绑定试听也不提交 reference_audio，口播交给模型。"""
     items = build_seedance_content_items(_ACI_SCRIPT, _ACI_REFERENCE, burn_subtitles=False)
     audios = [
         item["audio_url"]["url"]
         for item in items
         if item.get("type") == "audio_url"
     ]
-    assert audios == ["https://cdn.example.com/aci.mp3"]
+    assert audios == []
     text = items[0]["text"]
-    assert "阿词：参考音频1" in text
-    assert "小胖：参考音频" not in text
+    assert "【强制约束：角色音色】" not in text
+    assert "参考音频" not in text
     labels = describe_seedance_content_slots(
         _ACI_REFERENCE,
         None,
         has_text=True,
         content=_ACI_SCRIPT,
     )
-    assert any("阿词" in label and "音色" in label for label in labels)
-    assert not any("小胖" in label and "音色" in label for label in labels)
+    assert not any("音色" in label for label in labels)
 
 
 def test_peiyue_cue_feeds_production_bgm():

@@ -31,12 +31,23 @@ def resolve_tokenfree_tts_model(model: str | None) -> str:
     return mid
 
 
+# qwen-tts 实际认的音色名；豆包 zh_* / S_ 不在此列
+_TOKENFREE_NATIVE_VOICES = frozenset({"Cherry", "Serena", "Ethan", "Chelsie", "alloy"})
+_TOKENFREE_NATIVE_VOICES_FOLD = {v.casefold(): v for v in _TOKENFREE_NATIVE_VOICES}
+
+
+def tokenfree_speech_honors_speaker(speaker: str) -> bool:
+    """qwen-tts 只接受少数英文音色；豆包 id 会被压成 Ethan/Cherry。"""
+    return (speaker or "").strip().casefold() in _TOKENFREE_NATIVE_VOICES_FOLD
+
+
 def tokenfree_speech_voice(speaker: str) -> str:
     """豆包 speaker id → Qwen/OpenAI 兼容音色。"""
     raw = (speaker or "").strip()
+    native = _TOKENFREE_NATIVE_VOICES_FOLD.get(raw.casefold())
+    if native:
+        return native
     low = raw.lower()
     if low.startswith("zh_male") or "_male_" in low:
         return "Ethan"
-    if raw in {"Cherry", "Serena", "Ethan", "Chelsie", "alloy"}:
-        return raw
     return "Cherry"

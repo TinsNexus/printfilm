@@ -11,6 +11,7 @@ import {
   FRAGMENT_CONTENT_DURATION_MAX,
 } from './dramaEpisodePromptEditor'
 import { extractDurations, sumDuration } from './segmentDuration'
+import { DRAMA_VOICE_BINDING_ENABLED } from './dramaVoiceBinding'
 
 /** 漫剧字幕 cue（与后端 DRAMA_SUBTITLE_CUE 一致） */
 export const DRAMA_SUBTITLE_CUE = '【字幕：底部居中·简体中文·逐句轮换·与口播同步】'
@@ -202,7 +203,7 @@ export function validateDramaFragmentAssets(
     if ((kind === 'character' || kind === 'scene' || kind === 'prop') && !hasImage) {
       missingImage.push(asset.name || `#${id}`)
     }
-    if (kind === 'character' && needsVoice && !assetHasVoiceBinding(asset)) {
+    if (DRAMA_VOICE_BINDING_ENABLED && kind === 'character' && needsVoice && !assetHasVoiceBinding(asset)) {
       missingVoice.push(asset.name || `#${id}`)
     }
   }

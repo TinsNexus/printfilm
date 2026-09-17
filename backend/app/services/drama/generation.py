@@ -26,6 +26,7 @@ from app.services.drama.output_settings import (
 from app.services.billing import record_line
 from app.services.drama.build_seedance_generate_body import (
     ASSET_MENTION_TOKEN_PATTERN,
+    SEEDANCE_ATTACH_REFERENCE_AUDIO,
     build_seedance_generate_body,
     build_seedance_reference_catalog,
     describe_seedance_content_slots,
@@ -1425,6 +1426,8 @@ def build_fragment_ref_payloads(
     ref_assets: list[DramaAsset],
 ) -> list[dict[str, Any]]:
     ref_payloads = [drama_asset_to_payload(a) for a in ref_assets]
+    if not SEEDANCE_ATTACH_REFERENCE_AUDIO:
+        return ref_payloads
     narrator_voice: Any = (project.params or {}).get("narrationVoiceAudio")
     if isinstance(narrator_voice, dict):
         narration_url = str(
@@ -1535,14 +1538,15 @@ async def prepare_fragment_video_for_submit(
         ref_assets=ref_assets,
     )
     ref_assets = await ensure_reference_assets_public_urls(db, ref_assets)
-    # 多参考视频需要音色音频
-    ref_assets = await ensure_fragment_reference_audios(
-        db,
-        user,
-        project,
-        fragment,
-        ref_assets,
-    )
+    # 音色难控：暂不合成/补齐 reference_audio
+    if SEEDANCE_ATTACH_REFERENCE_AUDIO:
+        ref_assets = await ensure_fragment_reference_audios(
+            db,
+            user,
+            project,
+            fragment,
+            ref_assets,
+        )
     ref_payloads = build_fragment_ref_payloads(project, ref_assets)
     style_id = str((project.params or {}).get("image_style_id") or "").strip() or None
     catalog = build_seedance_reference_catalog(ref_payloads)

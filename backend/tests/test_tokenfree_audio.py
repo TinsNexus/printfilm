@@ -2,6 +2,7 @@
 
 from app.services.tokenfree_audio import (
     resolve_tokenfree_tts_model,
+    tokenfree_speech_honors_speaker,
     tokenfree_speech_voice,
     uses_tokenfree_audio,
 )
@@ -24,3 +25,10 @@ def test_tokenfree_speech_voice_gender():
     assert tokenfree_speech_voice("zh_female_cancan_uranus_bigtts") == "Cherry"
     assert tokenfree_speech_voice("zh_male_shaonianzixin_uranus_bigtts") == "Ethan"
     assert tokenfree_speech_voice("Cherry") == "Cherry"
+
+
+def test_tokenfree_speech_does_not_honor_doubao_ids():
+    assert tokenfree_speech_honors_speaker("Cherry") is True
+    assert tokenfree_speech_honors_speaker("ethan") is True
+    assert tokenfree_speech_honors_speaker("zh_male_shaonianzixin_uranus_bigtts") is False
+    assert tokenfree_speech_honors_speaker("S_abc") is False

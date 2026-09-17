@@ -4,6 +4,7 @@ import { AudioLines, FolderOpen, Loader2, Upload } from 'lucide-react'
 import { dramaApi } from '../../../../api/drama'
 import { CharacterVoicePreviewButton } from '../../../../components/drama/CharacterVoicePreviewButton'
 import { generateAndBindCharacterVoice } from '../../../../lib/characterVoiceGenerate'
+import { DRAMA_VOICE_BINDING_ENABLED } from '../../../../lib/dramaVoiceBinding'
 import { useCanvasStore } from '../CanvasStore'
 import { CANVAS_UPLOADABLE_KINDS, type CanvasNodeKind } from '../canvasTypes'
 import {
@@ -120,7 +121,7 @@ export function CanvasNodeUploadBar({
           <FolderOpen size={14} strokeWidth={1.8} />
           从资产库选择
         </button>
-        {isCharacter ? (
+        {DRAMA_VOICE_BINDING_ENABLED && isCharacter ? (
           hasVoice && voiceUrl ? (
             <CharacterVoicePreviewButton
               url={voiceUrl}

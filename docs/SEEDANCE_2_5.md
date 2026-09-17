@@ -171,7 +171,7 @@
 | 脚本 `@duration` 合计 | `duration`（钳制约 4–30） |
 | 分镜正文 + 强制约束块 | `content[]` 中 `type=text` |
 | 角色/场景封面 | `image_url` + `role=reference_image` |
-| 角色/旁白试听 | `audio_url` + `role=reference_audio`（源头截到约 15s） |
+| 角色/旁白试听 | **暂不提交** `reference_audio`；口播由 `generate_audio` 自发挥 |
 | 原生配音 | `generate_audio: true` |
 | 水印 | `watermark: false` |
 | 尾帧 | `return_last_frame: true` |
@@ -180,9 +180,10 @@
 
 1. 【强制约束：视频画面风格】  
 2. 【强制约束：音频、字幕与配乐】  
-3. 角色/旁白音色 → 参考音频序号  
-4. 角色形象 / 场景 / 道具 → 参考图序号  
-5. 正文：`@asset` →「名称（参考图 N）」（正文已有同名则不叠写）；`@duration:N` → `00:00-00:04` 时间区间  
+3. 角色形象 / 场景 / 道具 → 参考图序号  
+4. 正文：`@asset` →「名称（参考图 N）」（正文已有同名则不叠写）；`@duration:N` → `00:00-00:04` 时间区间  
+
+（角色/旁白音色 → 参考音频：暂关）  
 
 分镜 cue：
 

@@ -45,6 +45,33 @@ async def test_tts_tokenfree_falls_back_to_edge(tmp_path: Path, monkeypatch: pyt
     silence.assert_not_called()
 
 
+async def test_tts_skips_qwen_for_doubao_speaker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """豆包 zh_male_* 不能先走 qwen（会全员 Ethan），应直接 edge-tts。"""
+    gw = ArkGateway(settings=_tts_settings())
+    monkeypatch.setattr("app.services.storage.project_dir", lambda _pid: tmp_path)
+    monkeypatch.setattr("app.services.storage.publish_local", lambda p: f"/static/{Path(p).name}")
+    monkeypatch.setattr(gw, "_ark_api_key", lambda: "sk-test")
+    monkeypatch.setattr(gw, "_tts_openspeech", AsyncMock(return_value=False))
+    speech = AsyncMock(return_value=True)
+    monkeypatch.setattr(gw, "_tts_openai_speech", speech)
+    monkeypatch.setattr("app.services.ark.is_near_silent_audio", lambda _p: False)
+
+    async def fake_edge(text: str, dest: Path, voice_hint: str = "") -> None:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"a" * 4000)
+
+    monkeypatch.setattr(gw, "_tts_edge", fake_edge)
+
+    url = await gw.tts(
+        "你好。",
+        "zh_male_shaonianzixin_uranus_bigtts",
+        project_id=1,
+        shot_no=3,
+    )
+    assert url.endswith("shot_003_tts.mp3")
+    speech.assert_not_called()
+
+
 async def test_tts_raises_when_all_providers_fail(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """全部语音上游失败时直接报错，不再写静音文件冒充成功。"""
     gw = ArkGateway(settings=_tts_settings())

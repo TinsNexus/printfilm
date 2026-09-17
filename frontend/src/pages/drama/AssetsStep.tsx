@@ -31,6 +31,7 @@ import { alertDramaGenError, formatDramaGenError, isUpstreamAccountError } from 
 import { pageCountOf } from '../../lib/pagination'
 import { readVisualPrompt } from '../../lib/dramaVisualPrompt'
 import { filterDramaLibraryAssets } from '../../lib/dramaLibraryAssets'
+import { DRAMA_VOICE_BINDING_ENABLED } from '../../lib/dramaVoiceBinding'
 import {
   dramaAssetImageGenButtonLabel,
   dramaAssetNeedsImageGeneration,
@@ -42,7 +43,7 @@ const ASSET_TABS: Array<{ key: AssetTabKey; label: string }> = [
   { key: 'character', label: '角色' },
   { key: 'scene', label: '场景' },
   { key: 'prop', label: '道具' },
-  { key: 'voice', label: '音色' },
+  ...(DRAMA_VOICE_BINDING_ENABLED ? [{ key: 'voice' as const, label: '音色' }] : []),
 ]
 
 const PAGE_SIZE_DEFAULT = 12
@@ -684,7 +685,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
 
       <div className="drama-assets-tips" role="note">
         <Sparkles size={15} strokeWidth={1.75} aria-hidden />
-        <span>随时管理角色、场景、道具与音色。确认分集剧本时会自动抽取本集相关资产，出图可在此补做。</span>
+        <span>随时管理角色、场景与道具。确认分集剧本时会自动抽取本集相关资产，出图可在此补做。</span>
       </div>
 
       <div className="drama-assets-toolbar">
@@ -706,12 +707,12 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
               新增角色
             </button>
           ) : null}
-          {tab === 'voice' ? (
+          {DRAMA_VOICE_BINDING_ENABLED && tab === 'voice' ? (
             <button type="button" className="pf-btn" onClick={() => void handleAddVoice()}>
               新增音色
             </button>
           ) : null}
-          {tab !== 'voice' ? (
+          {DRAMA_VOICE_BINDING_ENABLED && tab !== 'voice' ? (
             <button
               type="button"
               className="pf-btn"
@@ -759,7 +760,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
             </button>
           ) : null}
 
-          {tab === 'character' ? (
+          {DRAMA_VOICE_BINDING_ENABLED && tab === 'character' ? (
             <button
               type="button"
               className="pf-btn pf-btn-lime"
@@ -902,26 +903,28 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
                 </button>
                 {isCharacter ? (
                   <>
-                    {voice ? (
-                      <CharacterVoicePreviewButton
-                        url={voice.url}
-                        label={voice.label}
-                        onError={onError}
-                      />
-                    ) : (
-                      <button
-                        type="button"
-                        className="pf-btn pf-btn-sm pf-btn-lime"
-                        disabled={
-                          batchBusy ||
-                          batchVoiceBusy ||
-                          characterVoiceBusyIds.has(asset.id)
-                        }
-                        onClick={() => void handleGenerateCharacterVoice(asset)}
-                      >
-                        {characterVoiceBusyIds.has(asset.id) ? '生成中…' : '生成音色'}
-                      </button>
-                    )}
+                    {DRAMA_VOICE_BINDING_ENABLED ? (
+                      voice ? (
+                        <CharacterVoicePreviewButton
+                          url={voice.url}
+                          label={voice.label}
+                          onError={onError}
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          className="pf-btn pf-btn-sm pf-btn-lime"
+                          disabled={
+                            batchBusy ||
+                            batchVoiceBusy ||
+                            characterVoiceBusyIds.has(asset.id)
+                          }
+                          onClick={() => void handleGenerateCharacterVoice(asset)}
+                        >
+                          {characterVoiceBusyIds.has(asset.id) ? '生成中…' : '生成音色'}
+                        </button>
+                      )
+                    ) : null}
                     <button
                       type="button"
                       className="pf-btn pf-btn-sm drama-btn-danger-text"
@@ -968,7 +971,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
             setDetailAsset(updated)
           }}
           onGenerate={(a) => enqueueOne(a)}
-          onBindVoice={(a) => setVoiceAsset(a)}
+          onBindVoice={DRAMA_VOICE_BINDING_ENABLED ? (a) => setVoiceAsset(a) : undefined}
           onDelete={(a) => {
             setDetailAsset(null)
             void handleDeleteCharacter(a)
@@ -985,7 +988,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
         />
       ) : null}
 
-      {voiceAsset ? (
+      {DRAMA_VOICE_BINDING_ENABLED && voiceAsset ? (
         <CharacterVoiceBindModal
           asset={voiceAsset}
           projectId={projectId}
@@ -999,7 +1002,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
         />
       ) : null}
 
-      {project ? (
+      {DRAMA_VOICE_BINDING_ENABLED && project ? (
         <NarratorVoiceBindModal
           project={project}
           open={narratorVoiceOpen}

@@ -37,6 +37,9 @@ SEEDANCE_VISUAL_STYLE_SECTION_INTRO = (
     "【强制约束：视频画面风格】全片画面必须严格遵循以下风格描述，"
     "严禁偏离、弱化或混用其他画风与镜头美学："
 )
+# 音色难控：暂不提交 reference_audio、不写音色约束；口播由 Seedance generate_audio 自发挥。
+# 恢复绑定/提交时改回 True。
+SEEDANCE_ATTACH_REFERENCE_AUDIO = False
 SEEDANCE_CHARACTER_VOICE_SECTION_HEADER = (
     "【强制约束：角色音色】以下角色说话的音色、语气、节奏与发声质感必须与对应参考音频严格一致，"
     "语速自然偏慢、吐字清晰，严禁加速赶词、替换、混用其他声线或自行改写："
@@ -303,7 +306,8 @@ def build_seedance_reference_catalog(
             seen_image_asset_ids.add(asset_id)
             catalog.images.append(SeedanceReferenceFile(asset_id=asset_id, url=image_url))
 
-        if asset.get("type") in {"character", "narration"}:
+        # 已绑定的试听暂不挂进 content[]，避免 reference_audio 抢模型口播
+        if SEEDANCE_ATTACH_REFERENCE_AUDIO and asset.get("type") in {"character", "narration"}:
             if not _should_attach_reference_audio(
                 asset,
                 filter_audio=filter_audio,
@@ -542,21 +546,27 @@ def build_seedance_prompt_text(
             burn_subtitles=burn_subtitles,
             character_intro=character_intro,
         ),
-        build_reference_index_section(
-            reference,
-            "character",
-            resolved_catalog.audio_index_by_asset_id,
-            SEEDANCE_CHARACTER_VOICE_SECTION_HEADER,
-            "参考音频",
-            resolve_character_prompt_name,
-        ),
-        build_reference_index_section(
-            reference,
-            "narration",
-            resolved_catalog.audio_index_by_asset_id,
-            SEEDANCE_NARRATION_VOICE_SECTION_HEADER,
-            "参考音频",
-            resolve_narration_prompt_name,
+        *(
+            [
+                build_reference_index_section(
+                    reference,
+                    "character",
+                    resolved_catalog.audio_index_by_asset_id,
+                    SEEDANCE_CHARACTER_VOICE_SECTION_HEADER,
+                    "参考音频",
+                    resolve_character_prompt_name,
+                ),
+                build_reference_index_section(
+                    reference,
+                    "narration",
+                    resolved_catalog.audio_index_by_asset_id,
+                    SEEDANCE_NARRATION_VOICE_SECTION_HEADER,
+                    "参考音频",
+                    resolve_narration_prompt_name,
+                ),
+            ]
+            if SEEDANCE_ATTACH_REFERENCE_AUDIO
+            else []
         ),
         build_reference_index_section(
             reference,

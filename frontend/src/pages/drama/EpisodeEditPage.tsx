@@ -38,6 +38,7 @@ import {
   collectDramaGenerateGateIssues,
   formatDramaGateMessage,
 } from '../../lib/dramaEpisodeScriptValidate'
+import { DRAMA_VOICE_BINDING_ENABLED } from '../../lib/dramaVoiceBinding'
 import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import { dialog } from '../../lib/dialog'
 import {
@@ -1476,7 +1477,11 @@ function EpisodeEditInner() {
           onOpenAsset={setDetailAsset}
           onMention={mentionAsset}
           onUnlinkAsset={unlinkSelectedAsset}
-          onGenerateVoice={(asset) => void handleGenerateCharacterVoice(asset)}
+          onGenerateVoice={
+            DRAMA_VOICE_BINDING_ENABLED
+              ? (asset) => void handleGenerateCharacterVoice(asset)
+              : undefined
+          }
           voiceBusyIds={characterVoiceBusyIds}
           onVoiceError={(message) => setError(message)}
           onCreateAsset={() => void handleCreateSideAsset()}
@@ -1845,12 +1850,12 @@ function EpisodeEditInner() {
           onClose={() => setDetailAsset(null)}
           onUpdated={handleCharacterUpdated}
           onGenerate={(a) => enqueueAssetImage(a)}
-          onBindVoice={(a) => setVoiceBindAsset(a)}
+          onBindVoice={DRAMA_VOICE_BINDING_ENABLED ? (a) => setVoiceBindAsset(a) : undefined}
           onError={(message) => setError(message)}
         />
       ) : null}
 
-      {voiceBindAsset ? (
+      {DRAMA_VOICE_BINDING_ENABLED && voiceBindAsset ? (
         <CharacterVoiceBindModal
           asset={voiceBindAsset}
           projectId={pid}

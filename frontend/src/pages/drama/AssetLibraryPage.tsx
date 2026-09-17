@@ -17,6 +17,7 @@ import {
 import { readAssetVoiceBinding } from './CharacterVoiceBindModal'
 import { DramaImageLightbox } from './DramaImageLightbox'
 import { filterDramaLibraryAssets, isDramaLibraryAsset } from '../../lib/dramaLibraryAssets'
+import { DRAMA_VOICE_BINDING_ENABLED } from '../../lib/dramaVoiceBinding'
 import { pageCountOf } from '../../lib/pagination'
 import RequireAuth from './RequireAuth'
 import './drama.css'
@@ -31,7 +32,7 @@ const TABS: Array<{ value: AssetTabKey; label: string }> = [
   { value: 'character', label: '角色' },
   { value: 'scene', label: '场景' },
   { value: 'prop', label: '道具' },
-  { value: 'voice', label: '音色' },
+  ...(DRAMA_VOICE_BINDING_ENABLED ? [{ value: 'voice' as const, label: '音色' }] : []),
 ]
 
 const KIND_LABEL: Record<string, string> = {
@@ -59,6 +60,7 @@ function assetKind(asset: DramaAsset): AssetTabKey | 'other' {
 
 function matchTab(asset: DramaAsset, tab: AssetTabKey): boolean {
   if (!isDramaLibraryAsset(asset)) return false
+  if (!DRAMA_VOICE_BINDING_ENABLED && assetKind(asset) === 'voice') return false
   if (tab === 'all') return true
   return assetKind(asset) === tab
 }
@@ -312,7 +314,7 @@ function AssetLibraryInner() {
                       {fileMeta(asset)} · {projectLabel}
                     </p>
                     <div className="pf-asset-card-actions">
-                      {previewUrl && !isVoice ? (
+                      {DRAMA_VOICE_BINDING_ENABLED && previewUrl && !isVoice ? (
                         <CharacterVoicePreviewButton
                           url={previewUrl}
                           label={asset.name || undefined}

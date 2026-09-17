@@ -70,7 +70,16 @@ export function formatDramaGenError(raw: string | null | undefined): DramaGenErr
     }
   }
 
-  if (/网络错误|ConnectError|ConnectTimeout|ReadTimeout|无法连接上游|tokenfree\.com|api\.kie\.ai/i.test(text)) {
+  if (/ReadTimeout|WriteTimeout|等待上游超时|响应超时/i.test(text)) {
+    return {
+      title: '上游响应超时',
+      message: text.length > 200 ? `${text.slice(0, 200)}…` : text,
+      suggestion:
+        '已经连上 TokenFree，但出图/出视频等待超过上限。请稍后重试；若文本能生成、只有图/视频超时，多半是上游排队较慢，不是代理断网。',
+    }
+  }
+
+  if (/网络错误|ConnectError|ConnectTimeout|无法连接上游|tokenfree\.com|api\.kie\.ai/i.test(text)) {
     return {
       title: '无法连接图片/视频服务',
       message: text.length > 200 ? `${text.slice(0, 200)}…` : text,
