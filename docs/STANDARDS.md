@@ -152,7 +152,7 @@ docs/            产品与工程文档（本规范所在处）
 ## 6. Git 与协作
 
 - 提交信息：说明**为什么**，1–2 句；不要纯堆文件列表。
-- 不提交：`.env`、密钥、`deploy/scripts/deploy_kepu.py`、`docs/releases/`、`docs/reports/`、`docs/DEPLOY.md`、`frontend/dist`、`node_modules`、`.venv`。
+- 不提交：`.env`、密钥、`deploy/scripts/deploy_kepu.py`、`.cursor/`、`.claude/`、`docs/releases/`、`docs/reports/`、`docs/DEPLOY.md`、`frontend/dist`、`node_modules`、`.venv`。
 - 大功能可拆 commit；与发布相关的文档（规范、发布记录）尽量同批可追溯。
 
 ---
