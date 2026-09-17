@@ -37,8 +37,9 @@ from app.services.tokenfree_image import (
     extract_tokenfree_image_url,
     is_tokenfree_image_url,
     is_tokenfree_input_text_sensitive,
-    is_tokenfree_retryable_image_error,
+    is_tokenfree_rate_limit,
     post_until_not_rate_limited,
+    raise_tokenfree_image_if_failed,
     tokenfree_image_slot,
     tokenfree_image_user_error,
     tokenfree_working_image_model,
@@ -892,7 +893,8 @@ class ArkGateway:
                         resp = await post_until_not_rate_limited(_post)
                 else:
                     resp = await _post()
-                if resp.status_code >= 400 or is_tokenfree_retryable_image_error(
+                # 限流/4xx 走 HTTP 文案；200 + status=failed 留给 raise_tokenfree_image_if_failed
+                if resp.status_code >= 400 or is_tokenfree_rate_limit(
                     status_code=resp.status_code, body=resp.text
                 ):
                     _raise_seedream_http_error(
@@ -904,6 +906,9 @@ class ArkGateway:
                 data = resp.json()
         except httpx.TimeoutException as exc:
             reraise_upstream_timeout(exc, kind="生图", read_sec=IMAGE_GEN_READ_SEC)
+
+        if on_tokenfree:
+            raise_tokenfree_image_if_failed(data)
 
         usage_parsed = parse_usage_dict(data)
         raw_usage = data.get("usage") if isinstance(data.get("usage"), dict) else None
@@ -920,7 +925,8 @@ class ArkGateway:
         if not remote:
             remote = self._extract_image_url(data) or extract_tokenfree_image_url(data)
         if not remote:
-            raise RuntimeError(f"Seedream missing url: {json.dumps(data)[:500]}")
+            logger.warning("出图响应无图片地址: %s", json.dumps(data, ensure_ascii=False)[:500])
+            raise RuntimeError("出图未返回图片地址，请稍后重试")
 
         dest_dir = storage.project_dir(project_id or 0)
         name = f"shot_{(shot_no or 0):03d}_{uuid.uuid4().hex[:12]}.png"

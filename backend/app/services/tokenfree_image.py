@@ -51,6 +51,8 @@ def tokenfree_working_image_model(model: str) -> str:
             "gpt-image-2.5",
             TOKENFREE_KIE_IMAGE_MODEL,
             "gpt-image-2.5-sunburst",
+            "gpt-image-2",
+            "gpt-image-2.0",
         }
     ):
         return TOKENFREE_WORKING_IMAGE_MODEL
@@ -108,6 +110,64 @@ def extract_tokenfree_image_url(data: dict[str, Any]) -> str | None:
     return None
 
 
+def _parse_json_object(body: str) -> dict[str, Any] | None:
+    """解析 JSON 对象；失败返回 None。"""
+    text = (body or "").strip()
+    if not text.startswith("{"):
+        return None
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def is_tokenfree_image_task_failed(data: dict[str, Any]) -> bool:
+    """/v1/responses HTTP 200 也可能 status=failed（无 output）。"""
+    if not isinstance(data, dict):
+        return False
+    status = str(data.get("status") or "").lower()
+    if status in {"failed", "cancelled"}:
+        return True
+    meta = data.get("metadata")
+    if isinstance(meta, dict) and str(meta.get("task_status") or "").lower() in {"failed", "cancelled"}:
+        return True
+    err = data.get("error")
+    if isinstance(err, dict) and (err.get("code") or err.get("message")):
+        output = data.get("output")
+        if not output:
+            return True
+    return False
+
+
+def tokenfree_image_failed_task_message(data: dict[str, Any]) -> str:
+    """/responses status=failed 时给用户的中文短句，不含 JSON / resp_id。"""
+    err = data.get("error") if isinstance(data.get("error"), dict) else {}
+    body = json.dumps(data, ensure_ascii=False)
+    if is_tokenfree_input_text_sensitive(status_code=200, body=body):
+        return "生图文案未通过内容审核（可能含敏感或历史名人相关表述），请修改提示词后重试。"
+    code = str((err or {}).get("code") or "").lower()
+    msg = str((err or {}).get("message") or "")
+    if code in {"server_error", "internal_error"} or "task failed" in msg.lower():
+        return "出图上游任务失败，请稍后再点「生成画面」"
+    snippet = (msg or code or "failed")[:200]
+    return f"出图失败：{snippet}"
+
+
+def raise_tokenfree_image_if_failed(data: dict[str, Any]) -> None:
+    """任务失败时抛中文短句，不把 resp_id / JSON 丢给用户。"""
+    if not is_tokenfree_image_task_failed(data):
+        return
+    err = data.get("error") if isinstance(data.get("error"), dict) else {}
+    logger.warning(
+        "TokenFree 生图任务失败 model=%s code=%s message=%s",
+        data.get("model"),
+        (err or {}).get("code"),
+        str((err or {}).get("message") or "")[:160],
+    )
+    raise RuntimeError(tokenfree_image_failed_task_message(data))
+
+
 def is_tokenfree_rate_limit(*, status_code: int = 0, body: str = "") -> bool:
     """429，或明确的观察位/限流错误体；2xx 成功体里的 rate_limit 字段不算。"""
     if int(status_code or 0) == 429:
@@ -154,8 +214,17 @@ def is_tokenfree_no_distributor(*, status_code: int = 0, body: str = "") -> bool
 
 
 def is_tokenfree_retryable_image_error(*, status_code: int = 0, body: str = "") -> bool:
-    """仅限流退避；协议/无线路对同一 Key 会连跪，应立刻换通道或报错。"""
-    return is_tokenfree_rate_limit(status_code=status_code, body=body)
+    """限流，或 HTTP 200 的上游 server_error 可退避；协议/无线路立刻失败。"""
+    if is_tokenfree_rate_limit(status_code=status_code, body=body):
+        return True
+    if int(status_code or 0) != 200:
+        return False
+    payload = _parse_json_object(body)
+    if not payload or not is_tokenfree_image_task_failed(payload):
+        return False
+    err = payload.get("error") if isinstance(payload.get("error"), dict) else {}
+    code = str(err.get("code") or "").lower()
+    return code in {"server_error", "internal_error"}
 
 
 def tokenfree_image_channel_dead(*, status_code: int = 0, body: str = "") -> bool:
@@ -187,6 +256,9 @@ def tokenfree_image_user_error(*, model: str = "", status_code: int = 0, body: s
     if tokenfree_image_channel_dead(status_code=status_code, body=body):
         # TokenFree 上已会把 Seedream 改走 gpt-image，再提示「请改用」会误导
         return "出图通道暂时失败，请稍后再点「生成画面」"
+    payload = _parse_json_object(body)
+    if payload and is_tokenfree_image_task_failed(payload):
+        return tokenfree_image_failed_task_message(payload)
     snippet = (body or "")[:800]
     return f"出图失败 {status_code}: {snippet}"
 
@@ -208,7 +280,7 @@ async def post_until_not_rate_limited(
     delays: tuple[float, ...] = TOKENFREE_IMAGE_RETRY_DELAYS,
     sleep: Callable[[float], Awaitable[Any]] = asyncio.sleep,
 ) -> Any:
-    """POST 遇观察位限流则退避重试；仍失败则返回最后一次响应。"""
+    """POST 遇观察位限流或 HTTP 200+server_error 则退避重试；仍失败则返回最后一次响应。"""
     last: Any = None
     for attempt in range(len(delays) + 1):
         last = await post()

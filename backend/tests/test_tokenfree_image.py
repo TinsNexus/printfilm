@@ -1,5 +1,6 @@
 """TokenFree 生图走 /v1/responses。"""
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -13,6 +14,7 @@ from app.services.tokenfree_image import (
     is_tokenfree_rate_limit,
     is_tokenfree_retryable_image_error,
     post_until_not_rate_limited,
+    raise_tokenfree_image_if_failed,
     tokenfree_image_channel_dead,
     tokenfree_image_user_error,
     tokenfree_working_image_model,
@@ -54,6 +56,8 @@ def test_tokenfree_working_image_model_remaps_seedream():
     assert tokenfree_working_image_model("gpt-image-2-5") == "gpt-image-2-5"
     assert tokenfree_working_image_model("gpt-image-2-5-sunburst") == "gpt-image-2-5"
     assert tokenfree_working_image_model("doubao-seedream-5-0-260128") == "gpt-image-2-5"
+    assert tokenfree_working_image_model("gpt-image-2") == "gpt-image-2-5"
+    assert tokenfree_working_image_model("gpt-image-2.0") == "gpt-image-2-5"
 
 
 def test_extract_tokenfree_image_url_from_img_tag():
@@ -72,6 +76,28 @@ def test_extract_tokenfree_image_url_from_img_tag():
         }
     )
     assert url and url.startswith("https://www.tokenfree.com/v1/tasks/")
+
+
+def test_failed_responses_payload_is_user_error_not_missing_url():
+    """HTTP 200 但 status=failed 时，应报上游任务失败，不要 Seedream missing url。"""
+    payload = {
+        "id": "resp_x",
+        "status": "failed",
+        "model": "gpt-image-2",
+        "output": [],
+        "error": {"code": "server_error", "message": "The task failed."},
+        "metadata": {"task_status": "failed", "task_id": "task_x"},
+    }
+    with pytest.raises(RuntimeError, match="出图上游任务失败") as ei:
+        raise_tokenfree_image_if_failed(payload)
+    assert "Seedream missing url" not in str(ei.value)
+    assert "resp_" not in str(ei.value)
+    body = json.dumps(payload)
+    assert is_tokenfree_retryable_image_error(status_code=200, body=body) is True
+    assert is_tokenfree_retryable_image_error(status_code=400, body=body) is False
+    http_msg = tokenfree_image_user_error(model="gpt-image-2", status_code=200, body=body)
+    assert "出图上游任务失败" in http_msg
+    assert "resp_" not in http_msg
 
 
 def test_is_tokenfree_rate_limit_detects_observations():
@@ -189,6 +215,32 @@ async def test_post_does_not_retry_protocol_error():
 
 
 @pytest.mark.asyncio
+async def test_post_retries_http200_server_error_then_ok():
+    """HTTP 200 + server_error 视为瞬时失败，退避后再试。"""
+    calls = {"n": 0}
+    failed = json.dumps(
+        {
+            "status": "failed",
+            "output": [],
+            "error": {"code": "server_error", "message": "The task failed."},
+        }
+    )
+
+    async def post():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return SimpleNamespace(status_code=200, text=failed)
+        return SimpleNamespace(status_code=200, text='{"status":"completed"}')
+
+    async def fake_sleep(_sec: float):
+        return None
+
+    resp = await post_until_not_rate_limited(post, delays=(0.01,), sleep=fake_sleep)
+    assert calls["n"] == 2
+    assert "completed" in resp.text
+
+
+@pytest.mark.asyncio
 async def test_seedream_once_does_not_fall_back_to_kie(monkeypatch):
     """TokenFree 协议失败时不再回退 api.kie.ai。"""
     from app.config import Settings
@@ -232,3 +284,64 @@ async def test_seedream_once_does_not_fall_back_to_kie(monkeypatch):
             size="2k",
             model="gpt-image-2-5",
         )
+
+
+@pytest.mark.asyncio
+async def test_seedream_once_http200_failed_task(monkeypatch):
+    """同步 /responses 返回 200 + status=failed 时，中文报错且不吐 JSON。"""
+    from app.config import Settings
+    from app.services.ark import ArkGateway
+
+    payload = {
+        "created_at": 1789538577,
+        "error": {"code": "server_error", "message": "The task failed."},
+        "id": "resp_gagCp3JX4JSSQ798RHcnzT6o1hxxkYs6",
+        "model": "gpt-image-2",
+        "output": [],
+        "status": "failed",
+        "metadata": {"task_id": "task_x", "task_status": "failed"},
+    }
+    settings = Settings(
+        ark_mock=False,
+        ark_api_key="sk-test",
+        ark_base_url="https://www.tokenfree.com/v1",
+    )
+    gw = ArkGateway(settings=settings)
+
+    class _Resp:
+        status_code = 200
+        text = json.dumps(payload)
+
+        def json(self):
+            return payload
+
+    class _FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, *args, **kwargs):
+            return _Resp()
+
+    async def _no_retry(post, **_kwargs):
+        return await post()
+
+    monkeypatch.setattr("app.services.ark.httpx.AsyncClient", _FakeClient)
+    monkeypatch.setattr("app.services.ark.post_until_not_rate_limited", _no_retry)
+    monkeypatch.setattr(gw, "_resolve_ark_route", lambda *args, **kwargs: None)
+    with pytest.raises(RuntimeError, match="出图上游任务失败") as ei:
+        await gw._seedream_once(
+            "湖",
+            None,
+            project_id=1,
+            shot_no=1,
+            size="2k",
+            model="gpt-image-2",
+        )
+    assert "Seedream missing url" not in str(ei.value)
+    assert "resp_gag" not in str(ei.value)
