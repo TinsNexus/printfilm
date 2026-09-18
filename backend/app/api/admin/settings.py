@@ -1,9 +1,7 @@
 # Admin model / provider settings API
 import logging
-import time
-from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,7 +15,6 @@ from app.schemas_settings import (
     AdminModelSettingsPatch,
     AdminModelSettingsSaveOut,
 )
-from app.services import storage
 from app.services.model_settings import (
     get_admin_model_settings,
     get_admin_routing_settings,
@@ -29,14 +26,6 @@ from app.services.upstream_model_catalog import list_upstream_models
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-_SITE_QR_MAX_BYTES = 5 * 1024 * 1024
-_SITE_QR_TYPES = {
-    "image/jpeg": ".jpg",
-    "image/jpg": ".jpg",
-    "image/png": ".png",
-    "image/webp": ".webp",
-}
 
 
 class AdminUpstreamModelsRequest(BaseModel):
@@ -155,60 +144,3 @@ async def admin_tokenfree_account_quota(
     except RuntimeError as exc:
         logger.warning("tokenfree quota query failed: %s", exc)
         raise HTTPException(status_code=502, detail="TokenFree 额度查询失败") from exc
-
-
-class WechatGroupQrUploadOut(BaseModel):
-    """微信群二维码上传结果。"""
-
-    ok: bool = True
-    wechat_group_qr_url: str
-    settings: AdminModelSettingsOut
-
-
-@router.post("/settings/site/wechat-group-qr", response_model=WechatGroupQrUploadOut)
-async def admin_upload_wechat_group_qr(
-    file: UploadFile = File(...),
-    _admin: User = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_db),
-) -> WechatGroupQrUploadOut:
-    """上传并替换官网微信用户群二维码（落盘 /static/site，写入 settings）。"""
-    content_type = (file.content_type or "").lower()
-    ext = _SITE_QR_TYPES.get(content_type)
-    if not ext:
-        suffix = Path(file.filename or "").suffix.lower()
-        if suffix in {".jpg", ".jpeg", ".png", ".webp"}:
-            ext = ".jpg" if suffix == ".jpeg" else suffix
-        else:
-            raise HTTPException(status_code=400, detail="仅支持 JPG / PNG / WebP")
-
-    raw = await file.read()
-    if not raw:
-        raise HTTPException(status_code=400, detail="空文件")
-    if len(raw) > _SITE_QR_MAX_BYTES:
-        raise HTTPException(status_code=400, detail="图片不能超过 5MB")
-
-    site_dir = storage.STATIC_ROOT / "site"
-    site_dir.mkdir(parents=True, exist_ok=True)
-    # 固定文件名覆盖，避免旧码残留；query 防 CDN 缓存
-    dest = site_dir / f"wechat_group_qr{ext}"
-    for stale in site_dir.glob("wechat_group_qr.*"):
-        if stale.resolve() != dest.resolve():
-            try:
-                stale.unlink()
-            except OSError:
-                logger.warning("failed to remove old wechat qr %s", stale)
-    dest.write_bytes(raw)
-    published = storage.publish_local(dest, sync=True)
-    # 相对路径加版本；完整 OSS URL 也追加，便于刷缓存
-    sep = "&" if "?" in published else "?"
-    url = f"{published}{sep}v={int(time.time())}"
-
-    try:
-        settings_out, _applied = await patch_admin_model_settings(
-            db,
-            AdminModelSettingsPatch(wechat_group_qr_url=url),
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    return WechatGroupQrUploadOut(wechat_group_qr_url=url, settings=settings_out)

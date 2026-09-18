@@ -77,8 +77,10 @@ export const enShell = {
     open: 'Join WeChat user group',
     title: 'printfilm user group',
     lead: 'Short drama tips · deploy help · templates',
-    qrAlt: 'WeChat group QR code',
-    tip: 'Scan with WeChat. Invite codes expire in about 7 days — open an Issue if it fails.',
+    idLabel: 'WeChat ID',
+    copy: 'Copy',
+    copied: 'Copied',
+    tip: 'Add WeChat ID gitpp88 with note “join group” and we will invite you.',
   },
   auth: {
     loginTitle: 'Back to the studio',

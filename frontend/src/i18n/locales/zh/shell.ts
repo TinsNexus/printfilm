@@ -76,8 +76,10 @@ export const zhShell = {
     open: '加入微信用户群',
     title: 'printfilm 用户群',
     lead: '学习短剧 · 部署答疑 · 模板交流',
-    qrAlt: '微信用户群二维码',
-    tip: '微信扫码入群。邀请码约 7 天有效，失效请联系客服或提 Issue。',
+    idLabel: '微信号',
+    copy: '复制',
+    copied: '已复制',
+    tip: '添加微信号 gitpp88，备注「入群」即可拉你进用户群。',
   },
   auth: {
     loginTitle: '回到工作台',

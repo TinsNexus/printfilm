@@ -654,7 +654,6 @@ export type AdminModelSettings = {
   public_base_url: string;
   ffmpeg_path: string;
   ffprobe_path: string;
-  wechat_group_qr_url: string;
   source: string;
   updated_at?: string | null;
   readiness: ModelCapabilityReadiness[];

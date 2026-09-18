@@ -1,41 +1,10 @@
-/** 全站右下角：微信用户群二维码入口（点击展开；URL 由后台站点配置下发） */
+/** 全站右下角：加微信号入群（展示微信号，可一键复制） */
 import { useEffect, useRef, useState } from 'react'
-import { X } from 'lucide-react'
+import { Check, Copy, X } from 'lucide-react'
 import { useI18n } from '../../i18n'
 
-const FALLBACK_QR = '/wechat-group-qr.png'
-
-/** API 根路径（空字符串 = 同源） */
-function apiBase(): string {
-  const raw = import.meta.env.VITE_API_BASE
-  if (raw === undefined || raw === null) {
-    if (typeof window !== 'undefined' && window.location?.hostname) {
-      const { protocol, hostname } = window.location
-      return `${protocol}//${hostname}:8000`
-    }
-    return 'http://127.0.0.1:8000'
-  }
-  return String(raw).replace(/\/$/, '')
-}
-
-/** 把 /static 相对路径拼到 API 基址；绝对 URL 原样返回 */
-function resolveMediaUrl(url: string): string {
-  const trimmed = url.trim()
-  if (!trimmed) return ''
-  if (
-    trimmed.startsWith('http://') ||
-    trimmed.startsWith('https://') ||
-    trimmed.startsWith('data:') ||
-    trimmed.startsWith('blob:')
-  ) {
-    return trimmed
-  }
-  if (trimmed.startsWith('/')) {
-    const base = apiBase()
-    return base ? `${base}${trimmed}` : trimmed
-  }
-  return trimmed
-}
+/** 社区加群微信号（不加图片二维码） */
+const WECHAT_ID = 'gitpp88'
 
 /** 简易微信气泡图标 */
 function WeChatIcon({ size = 22 }: { size?: number }) {
@@ -49,31 +18,15 @@ function WeChatIcon({ size = 22 }: { size?: number }) {
 
 export default function WeChatGroupFab() {
   const { t } = useI18n()
+  /*
+   * open 浮层是否展开
+   * copied 复制成功短暂态
+   */
   const [open, setOpen] = useState(false)
-  const [qrSrc, setQrSrc] = useState(FALLBACK_QR)
+  const [copied, setCopied] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
-  // 从公开站点配置拉取后台可热更的二维码
-  useEffect(() => {
-    let cancelled = false
-    async function load() {
-      try {
-        const res = await fetch(`${apiBase()}/api/site-config`)
-        if (!res.ok) return
-        const data = (await res.json()) as { wechat_group_qr_url?: string }
-        const resolved = resolveMediaUrl(data.wechat_group_qr_url || '')
-        if (!cancelled && resolved) setQrSrc(resolved)
-      } catch {
-        /* 保持本地兜底图 */
-      }
-    }
-    void load()
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  // 点击浮层外关闭
+  // 点击浮层外 / Esc 关闭
   useEffect(() => {
     if (!open) return
     function onPointerDown(e: PointerEvent) {
@@ -91,6 +44,17 @@ export default function WeChatGroupFab() {
       document.removeEventListener('keydown', onKey)
     }
   }, [open])
+
+  // 复制微信号到剪贴板
+  async function copyWechatId() {
+    try {
+      await navigator.clipboard.writeText(WECHAT_ID)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1800)
+    } catch {
+      /* 忽略剪贴板失败，用户仍可手动选中复制 */
+    }
+  }
 
   return (
     <div className="pf-wx-fab-root" ref={rootRef}>
@@ -110,8 +74,18 @@ export default function WeChatGroupFab() {
               <X size={16} strokeWidth={2} aria-hidden />
             </button>
           </header>
-          <div className="pf-wx-fab-qr">
-            <img src={qrSrc} alt={t('wechatGroup.qrAlt')} width={200} height={200} />
+          <div className="pf-wx-fab-id">
+            <span className="pf-wx-fab-id-label">{t('wechatGroup.idLabel')}</span>
+            <code className="pf-wx-fab-id-value">{WECHAT_ID}</code>
+            <button
+              type="button"
+              className="pf-wx-fab-copy"
+              onClick={() => void copyWechatId()}
+              aria-label={copied ? t('wechatGroup.copied') : t('wechatGroup.copy')}
+            >
+              {copied ? <Check size={14} strokeWidth={2.2} aria-hidden /> : <Copy size={14} strokeWidth={2} aria-hidden />}
+              <span>{copied ? t('wechatGroup.copied') : t('wechatGroup.copy')}</span>
+            </button>
           </div>
           <p className="pf-wx-fab-tip">{t('wechatGroup.tip')}</p>
         </div>

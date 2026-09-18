@@ -7,11 +7,7 @@
 
 ## 社区
 
-扫码加入 **printfilm 用户群**（学习短剧 / 部署答疑 / 模板交流）：
-
-<p align="center">
-  <img src="docs/images/wechat-group-qr.png" alt="PRINTFILM 微信用户群二维码" width="260" />
-</p>
+添加微信号 **`gitpp88`**（备注「入群」）加入 printfilm 用户群：学习短剧 / 部署答疑 / 模板交流。
 
 ![工作台](docs/images/image-20260910-home.png)
 

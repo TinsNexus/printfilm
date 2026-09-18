@@ -157,8 +157,6 @@ class Settings(BaseSettings):
     public_base_url: str = "http://127.0.0.1:8000"
     ffmpeg_path: str = "ffmpeg"
     ffprobe_path: str = "ffprobe"
-    # 官网右下角微信用户群二维码（相对 /static 或完整 URL；后台可更换）
-    wechat_group_qr_url: str = "/static/site/wechat_group_qr.png"
 
     tos_endpoint: str = ""
     tos_bucket: str = ""

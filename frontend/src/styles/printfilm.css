@@ -7177,20 +7177,47 @@ button.pf-shot-editable:disabled {
   color: var(--pf-ink);
 }
 
-.pf-wx-fab-qr {
-  display: grid;
-  place-items: center;
-  padding: 0.35rem;
+.pf-wx-fab-id {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.65rem;
+  padding: 0.75rem 0.85rem;
   border-radius: 12px;
   background: #fafafa;
   border: 1px solid var(--pf-line);
 }
 
-.pf-wx-fab-qr img {
-  display: block;
-  width: 200px;
-  height: auto;
-  max-width: 100%;
+.pf-wx-fab-id-label {
+  font-size: 0.75rem;
+  color: var(--pf-muted);
+}
+
+.pf-wx-fab-id-value {
+  flex: 1 1 auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--pf-ink);
+}
+
+.pf-wx-fab-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: auto;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--pf-line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--pf-ink);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.pf-wx-fab-copy:hover {
+  background: var(--pf-bg);
 }
 
 .pf-wx-fab-tip {
