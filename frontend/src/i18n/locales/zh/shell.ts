@@ -3,7 +3,7 @@
 export const zhShell = {
   meta: {
     title: 'PRINTFILM · AI短视频平台',
-    description: 'PRINTFILM：AI 漫剧从剧本到分集成片，AI短视频从分镜到配音合成。',
+    description: 'PRINTFILM：AI 漫剧从剧本到分集成片，AI短视频从卖点到分镜成片。',
   },
   common: {
     comingSoon: '即将推出',
@@ -70,6 +70,14 @@ export const zhShell = {
     contact: '联系我们',
     help: '帮助中心',
     links: '页脚链接',
+  },
+  wechatGroup: {
+    short: '加群',
+    open: '加入微信用户群',
+    title: 'printfilm 用户群',
+    lead: '学习短剧 · 部署答疑 · 模板交流',
+    qrAlt: '微信用户群二维码',
+    tip: '微信扫码入群。邀请码约 7 天有效，失效请联系客服或提 Issue。',
   },
   auth: {
     loginTitle: '回到工作台',
@@ -154,8 +162,8 @@ export const zhShell = {
     projectFallback: '项目 #{id}',
     kepuLead: 'AI短视频项目与成片记录',
     allHistory: '全部历史',
-    newKepu: '新建科普',
-    noKepu: '还没有科普项目',
+    newKepu: '新建短视频',
+    noKepu: '还没有 AI短视频项目',
     assetsLead: '角色、场景、道具与成片素材统一存放在资产库',
     openAssets: '打开资产库',
     subLead: '按量充值，余额永久有效',

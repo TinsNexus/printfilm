@@ -7,7 +7,14 @@ export const RECOMMENDED_MODEL_IDS: Record<ModelCapability, string[]> = {
   text: ["kimi-k2.6"],
   image: ["gpt-image-2-5"],
   video: ["seedance-2-5", "seedance-2-0", "seedance-2-0-mini"],
-  audio: ["qwen-tts-2025-05-22"],
+  audio: [
+    "qwen-tts-2025-05-22",
+    "qwen3-tts-flash",
+    "gemini-3.1-flash-tts",
+    "gemini-2.5-pro-preview-tts",
+    "elevenlabs-tts",
+    "elevenlabs/text-to-speech-multilingual-v2",
+  ],
 };
 
 const CAPABILITY_ORDER: ModelCapability[] = ["text", "image", "video", "audio"];

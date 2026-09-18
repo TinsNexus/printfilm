@@ -30,7 +30,15 @@ def infer_model_capability(model: str) -> LogicalModelCapability:
     mid = normalize_model_name(model)
     if not mid:
         return "text"
-    if "tts" in mid or mid.startswith("zh_") or "speaker" in mid or mid.startswith("s_"):
+    if (
+        "tts" in mid
+        or "text-to-speech" in mid
+        or "text-to-dialogue" in mid
+        or "elevenlabs" in mid
+        or mid.startswith("zh_")
+        or "speaker" in mid
+        or mid.startswith("s_")
+    ):
         return "audio"
     if (
         "seedance" in mid

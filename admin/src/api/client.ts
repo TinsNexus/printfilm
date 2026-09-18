@@ -24,7 +24,7 @@ export async function api<T>(
   options: RequestInit = {},
 ): Promise<T> {
   const headers = new Headers(options.headers);
-  if (!headers.has("Content-Type") && options.body) {
+  if (!headers.has("Content-Type") && options.body && !(options.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
   const token = getToken();
@@ -654,6 +654,7 @@ export type AdminModelSettings = {
   public_base_url: string;
   ffmpeg_path: string;
   ffprobe_path: string;
+  wechat_group_qr_url: string;
   source: string;
   updated_at?: string | null;
   readiness: ModelCapabilityReadiness[];

@@ -7077,3 +7077,138 @@ button.pf-shot-editable:disabled {
     justify-content: flex-start;
   }
 }
+
+/* ——— WeChat group FAB (全站右下角) ——— */
+.pf-wx-fab-root {
+  position: fixed;
+  right: 20px;
+  bottom: 24px;
+  z-index: 88;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.pf-wx-fab-btn,
+.pf-wx-fab-panel,
+.pf-wx-fab-close {
+  pointer-events: auto;
+}
+
+.pf-wx-fab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 48px;
+  padding: 0 0.95rem 0 0.85rem;
+  border: 0;
+  border-radius: 999px;
+  background: #07c160;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 650;
+  box-shadow: 0 10px 28px rgba(7, 193, 96, 0.35);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.pf-wx-fab-btn:hover {
+  background: #06ad56;
+  transform: translateY(-1px);
+}
+
+.pf-wx-fab-btn.is-open {
+  background: #05964b;
+}
+
+.pf-wx-fab-label {
+  letter-spacing: 0.02em;
+}
+
+.pf-wx-fab-panel {
+  width: min(280px, calc(100vw - 2.5rem));
+  padding: 0.9rem 0.95rem 1rem;
+  border-radius: 16px;
+  background: #fff;
+  border: 1px solid var(--pf-line);
+  box-shadow: 0 16px 40px rgba(17, 19, 24, 0.14);
+}
+
+.pf-wx-fab-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.65rem;
+}
+
+.pf-wx-fab-head strong {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--pf-ink);
+}
+
+.pf-wx-fab-head p {
+  margin: 0.2rem 0 0;
+  font-size: 0.78rem;
+  color: var(--pf-muted);
+  line-height: 1.35;
+}
+
+.pf-wx-fab-close {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--pf-muted);
+  cursor: pointer;
+}
+
+.pf-wx-fab-close:hover {
+  background: var(--pf-bg);
+  color: var(--pf-ink);
+}
+
+.pf-wx-fab-qr {
+  display: grid;
+  place-items: center;
+  padding: 0.35rem;
+  border-radius: 12px;
+  background: #fafafa;
+  border: 1px solid var(--pf-line);
+}
+
+.pf-wx-fab-qr img {
+  display: block;
+  width: 200px;
+  height: auto;
+  max-width: 100%;
+}
+
+.pf-wx-fab-tip {
+  margin: 0.65rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--pf-muted);
+  text-align: center;
+}
+
+@media (max-width: 520px) {
+  .pf-wx-fab-label {
+    display: none;
+  }
+
+  .pf-wx-fab-btn {
+    width: 48px;
+    padding: 0;
+    justify-content: center;
+  }
+}

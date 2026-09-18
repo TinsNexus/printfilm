@@ -26,6 +26,10 @@ def test_tokenfree_style_ids_infer_capability():
     assert infer_model_capability("kie-veo3-fast") == "video"
     assert infer_model_capability("kie-seedream-5") == "image"
     assert infer_model_capability("nano-banana-2") == "image"
+    assert infer_model_capability("qwen-tts-2025-05-22") == "audio"
+    assert infer_model_capability("gemini-3.1-flash-tts") == "audio"
+    assert infer_model_capability("elevenlabs/text-to-speech-multilingual-v2") == "audio"
+    assert infer_model_capability("elevenlabs-tts") == "audio"
 
 
 def test_catalog_payload_uses_tokenfree_routing() -> None:

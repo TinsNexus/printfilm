@@ -2,9 +2,11 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import DialogHost from './components/ui/DialogHost'
 import BillingAlertHost from './components/billing/BillingAlertHost'
 import { DramaGenQueuePanel } from './components/drama/DramaGenQueuePanel'
+import WeChatGroupFab from './components/layout/WeChatGroupFab'
 import AuthPage from './pages/AuthPage'
 import HistoryPage from './pages/HistoryPage'
 import HomePage from './pages/HomePage'
+import MethodPage from './pages/MethodPage'
 import ToolsPage from './pages/ToolsPage'
 import ToolDetailPage from './pages/ToolDetailPage'
 import HelpPage from './pages/HelpPage'
@@ -33,6 +35,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<HomePage />} />
+        <Route path="/method" element={<MethodPage />} />
         <Route path="/auth" element={<AuthPage />} />
         <Route path="/templates" element={<TemplatesPage />} />
         <Route path="/tools" element={<ToolsPage />} />
@@ -64,6 +67,7 @@ export default function App() {
         <Route path="/drama/projects/:projectId/canvas" element={<CanvasPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <WeChatGroupFab />
       <DramaGenQueuePanel />
       <BillingAlertHost />
       <DialogHost />

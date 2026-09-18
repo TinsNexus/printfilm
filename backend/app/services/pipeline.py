@@ -32,8 +32,10 @@ from app.services.style_lock import (
     merge_negative,
     seedream_ref_urls,
     strip_lock_blocks,
+    template_allow_source_names,
     template_consistency_mode,
     template_is_photoreal,
+    template_shot_range,
 )
 from app.services.kepu_continuity import (
     image_refs_for_shot,
@@ -690,6 +692,8 @@ async def _script_stage(project_id: int) -> None:
             extra_requirements=extra,
             consistency_mode=consist,
             output_ratio=_project_output_ratio(project),
+            shot_range_override=template_shot_range(tpl),
+            allow_source_names=template_allow_source_names(tpl),
         )
         plans = plans_result.shots
         project.character_bible = resolve_script_character_bible(

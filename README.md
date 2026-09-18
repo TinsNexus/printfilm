@@ -35,6 +35,7 @@
   - [9. 日常运维](#9-日常运维)
   - [10. 常见问题与排查](#10-常见问题与排查)
   - [11. 附录](#11-附录)
+- [社区](#社区)
 - [贡献](#贡献)
 - [开源许可](#开源许可)
 
@@ -677,6 +678,18 @@ curl http://localhost:8000/api/health
 | 分镜工作台（科普） | `docs/images/image-20260910-studio.png` |
 | 成片预览 | `docs/images/image-20260910-preview.png` |
 | 管理后台 | `docs/images/image-20260910-admin.png` |
+
+---
+
+## 社区
+
+扫码加入 **printfilm 用户群**（学习短剧 / 部署答疑 / 模板交流）：
+
+<p align="center">
+  <img src="docs/images/wechat-group-qr.png" alt="PRINTFILM 微信用户群二维码" width="260" />
+</p>
+
+> 微信群邀请码约 **7 天**有效。线上可在管理后台 **系统设置 → 站点工具** 上传更换；开源 README 请同步更新 `docs/images/wechat-group-qr.png`。若扫码失败也可开 [Issue](https://github.com/yi1108/printfilm/issues) 告知。
 
 ---
 

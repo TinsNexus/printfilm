@@ -18,6 +18,41 @@ type Inspiration = {
 
 const INSPIRATION_POOL: Inspiration[] = [
   {
+    title: '到店打卡怎么拍',
+    theme: '把一家本地店的卖点做成抖音获客口播：前3秒钩子、场景、1-2个体验、到店号召。只写已知事实。',
+    script:
+      '路过这条街十次，这次才走进去。\n\n' +
+      '店面不大，招牌清楚，位置就在地铁口附近。\n\n' +
+      '我点了他们家主打那一项，口感按我自己的感受来：味道正、上桌快。\n\n' +
+      '想试的话，按店里现有套餐自己看，别听绝对化承诺。',
+  },
+  {
+    title: '闺蜜安利一篇笔记',
+    theme: '小红书获客安利：钩子标题、第一印象、分点真实体验、推荐给谁。卖点只作客观陈述。',
+    script:
+      '本来只是路过，结果在店里坐了很久。\n\n' +
+      '第一印象是光线干净、座位不挤。\n\n' +
+      '我点了招牌，份量如实说；环境安静，适合聊天。\n\n' +
+      '更适合想慢慢坐的人；赶时间的可以先看套餐再决定。',
+  },
+  {
+    title: '口碑拆解给决策',
+    theme: '点评式获客讲解：总体评价、环境服务、推荐项带理由、性价比、适合谁。没写的价格不要猜。',
+    script:
+      '总体感受：干净、流程清楚，适合第一次来的人。\n\n' +
+      '环境通透，服务员会主动说明怎么选。\n\n' +
+      '推荐他们家主打项目，理由是我当场体验过、步骤好懂。\n\n' +
+      '人均以店内公示为准。带朋友来比一个人更合适。',
+  },
+  {
+    title: '熟人圈轻推荐',
+    theme: '朋友圈获客短片：一句真实感受、一个具体细节、一句轻推荐。克制，不像广告。',
+    script:
+      '今天路过顺路坐了一会儿，比想象中安静。\n\n' +
+      '窗边那张桌子有自然光，适合歇脚。\n\n' +
+      '你们要是附近，可以自己去看看。',
+  },
+  {
     title: '黑洞是如何形成的',
     theme: '黑洞是如何形成的？用通俗方式讲清恒星坍缩、事件视界与时空弯曲，面向中学生。',
     script:
@@ -200,6 +235,7 @@ export default function CreateProjectPage() {
   const inspTotal = Math.ceil(INSPIRATION_POOL.length / PAGE_SIZE)
   const inspirations = INSPIRATION_POOL.slice(inspPage * PAGE_SIZE, inspPage * PAGE_SIZE + PAGE_SIZE)
 
+  // 把灵感示例填进主题/文案，并同步短标题
   function applyInspiration(item: Inspiration) {
     if (sourceType === 'script') {
       setInputTab('粘贴完整文案')

@@ -106,6 +106,27 @@ RECOMMENDED_MODELS: tuple[dict[str, Any], ...] = (
         "note": "更快更便宜的备选",
         "recommended": False,
     },
+    {
+        "id": "qwen-tts-2025-05-22",
+        "capability": "audio",
+        "label": "Qwen TTS",
+        "note": "默认配音逻辑名；Ali /audio/speech 未实现，实际走 qwen3-omni-flash 流式 chat",
+        "recommended": True,
+    },
+    {
+        "id": "gemini-3.1-flash-tts",
+        "capability": "audio",
+        "label": "Gemini 3.1 Flash TTS",
+        "note": "TokenFree 目录备选配音",
+        "recommended": True,
+    },
+    {
+        "id": "elevenlabs-tts",
+        "capability": "audio",
+        "label": "ElevenLabs TTS",
+        "note": "TokenFree 目录备选配音",
+        "recommended": False,
+    },
 )
 
 _cache: dict[str, "OfficialRate"] | None = None

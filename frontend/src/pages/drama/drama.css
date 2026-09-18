@@ -5920,7 +5920,8 @@
 .drama-ep-fail-reason-pop {
   position: fixed;
   right: 24px;
-  bottom: 96px;
+  /* 在生成队列 FAB（bottom:96）与微信加群钮之上 */
+  bottom: 168px;
   z-index: 80;
   width: min(380px, calc(100vw - 32px));
   max-height: min(70vh, 520px);
@@ -6400,7 +6401,8 @@
 .drama-gen-fab-root {
   position: fixed;
   right: 20px;
-  bottom: 24px;
+  /* 抬高，避免挡住全站微信加群浮钮 */
+  bottom: 96px;
   z-index: 90;
   display: flex;
   flex-direction: column;

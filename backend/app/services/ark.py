@@ -27,10 +27,17 @@ from app.services.logical_model_router import (
 )
 from app.services.tokenfree_audio import (
     TOKENFREE_DEFAULT_TTS_MODEL,
+    build_omni_tts_chat_body,
+    extract_chat_audio_bytes,
+    extract_sse_audio_bytes,
+    iter_tokenfree_tts_models,
     resolve_tokenfree_tts_model,
-    tokenfree_speech_honors_speaker,
     tokenfree_speech_voice,
+    tokenfree_tts_chat_model,
+    tokenfree_tts_uses_chat_audio,
+    tokenfree_tts_uses_omni_stream,
     uses_tokenfree_audio,
+    wrap_pcm_s16le_wav,
 )
 from app.services.tokenfree_image import (
     build_tokenfree_image_body,
@@ -226,6 +233,17 @@ _SEEDREAM_CG_STYLE = (
     "用CG厚涂、游戏CG的风格打造的画面，色彩层次丰富，质感细腻逼真，"
     "真实的光影效果赋予画面生动感"
 )
+
+
+def storyboard_name_policy(allow_source_names: bool) -> str:
+    """旁白是否保留用户文案中的店名/产品名；画面始终不烧录 logo。"""
+    if allow_source_names:
+        return (
+            "用户文案里出现的店名、地址、产品名、人名必须在旁白与 title 原样保留，"
+            "禁止改成某店/某品牌；文案没有的名称一律不许编。"
+            "img_prompt 仍禁止烧录真实 logo、商标图形或屏幕可读文字。"
+        )
+    return "禁止真实商标/公司名/人名（改用泛称）。"
 
 
 @dataclass
@@ -516,6 +534,8 @@ class ArkGateway:
         extra_requirements: str = "",
         consistency_mode: str = "character",
         output_ratio: str = "16:9",
+        shot_range_override: tuple[int, int] | None = None,
+        allow_source_names: bool = False,
     ) -> StoryboardResult:
         if self.mock:
             return await asyncio.to_thread(
@@ -526,6 +546,7 @@ class ArkGateway:
                 duration_min,
                 duration_max,
                 pipeline_mode,
+                shot_range_override,
             )
 
         user_constraints = ""
@@ -588,10 +609,15 @@ class ArkGateway:
                 "每镜 img_prompt 只写本镜场景与构图（景物、动作、光影），不要重复粘贴大段画风/人物锁定原文；"
                 "出现人物时用短句点出与 character_bible 一致的关键特征即可。"
             )
-        # shot_cap 单镜 duration 上限（秒）；shot_lo/shot_hi 按文案字数动态拆镜数
+        # shot_cap 单镜 duration 上限（秒）；shot_lo/shot_hi 按文案字数或模板锁定
         shot_cap = min(duration_max, max_shot_duration)
-        shot_lo, shot_hi = segplan.suggested_kepu_shot_range(source_text, pipeline_mode=pipeline_mode)
+        if shot_range_override:
+            shot_lo, shot_hi = shot_range_override
+        else:
+            shot_lo, shot_hi = segplan.suggested_kepu_shot_range(source_text, pipeline_mode=pipeline_mode)
         shot_range = f"{shot_lo}-{shot_hi}"
+        # name_rule 获客模板保留用户文案中的店名；其它模板改用泛称以免商标入画
+        name_rule = storyboard_name_policy(allow_source_names)
         # segment_rules 科普逐段脚本生产约束（对齐漫剧 cue，无 @asset）
         segment_rules = (
             "【segments 生产规范】"
@@ -604,7 +630,7 @@ class ArkGateway:
             "旁白 duration 严格跟字数，最多多 1 秒呼吸，禁止把短句拉满到镜长上限或拖腔注水；"
             "单段 duration 3-12 秒，镜内各段之和约等于本镜 duration，且不超过 "
             f"{shot_cap} 秒。"
-            "禁止真实商标/公司名/人名（改用泛称）。"
+            f"{name_rule}"
             "character_bible 与 bgm_lock 全片唯一，各镜不得改人设或漂移 BGM 氛围。"
         )
         if pipeline_mode == "image_text":
@@ -633,7 +659,7 @@ class ArkGateway:
                 "segments(数组，精确到每一段：每项含 duration 秒、kind=visual|narration、text；"
                 "visual 写景别与画面动作，narration 写口播)、"
                 f"img_prompt({orient} {ratio} 构图画面提示词，留出边缘给文字叠层，主体居中，"
-                "禁止要求画面内写字；禁止出现真实商标/公司名/人名，用泛称)、"
+                f"禁止要求画面内写字；{name_rule})、"
                 "video_prompt(可留空或写轻微推拉)、camera(如：缓慢推近/轻拉远)、bgm(情绪，全片尽量同一氛围)。"
                 "另输出顶层 bgm_lock(全片统一 BGM 氛围一句)。"
                 f"{segment_rules}"
@@ -1678,15 +1704,17 @@ class ArkGateway:
         *,
         model: str | None = None,
     ) -> bool:
-        """OpenAI 兼容 /audio/speech（TokenFree New API 与方舟同路径）。"""
+        """TokenFree 上 Qwen-TTS 的 /audio/speech 未实现，改走 Omni/Gemini chat。"""
         base = (self.settings.ark_base_url or "").rstrip("/")
         key = (self.settings.ark_api_key or "").strip()
         if not base or not key:
             return False
         model_id = (model or self._resolved_audio_model()).strip()
         if uses_tokenfree_audio(base_url=base):
-            model_id = resolve_tokenfree_tts_model(model_id)
-            voice = tokenfree_speech_voice(voice)
+            model_id = tokenfree_tts_chat_model(resolve_tokenfree_tts_model(model_id))
+            voice = tokenfree_speech_voice(voice, model_id)
+            if tokenfree_tts_uses_chat_audio(model_id):
+                return await self._tts_openai_chat_audio(text, voice, dest, model=model_id)
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(
                 f"{base}/audio/speech",
@@ -1698,6 +1726,9 @@ class ArkGateway:
                     "response_format": "mp3",
                 },
             )
+        if resp.status_code < 400 and resp.content and len(resp.content) >= 1000:
+            dest.write_bytes(resp.content)
+            return True
         if resp.status_code >= 400:
             logger.warning(
                 "OpenAI speech HTTP %s model=%s: %s",
@@ -1705,11 +1736,58 @@ class ArkGateway:
                 model_id,
                 (resp.text or "")[:300],
             )
+        if uses_tokenfree_audio(base_url=base) and tokenfree_tts_uses_chat_audio(model_id):
+            return await self._tts_openai_chat_audio(text, voice, dest, model=model_id)
+        return False
+
+    async def _tts_openai_chat_audio(
+        self,
+        text: str,
+        voice: str,
+        dest: Path,
+        *,
+        model: str,
+    ) -> bool:
+        """Gemini 非流式 chat 出音频；Qwen-Omni 必须 SSE 流式。"""
+        base = (self.settings.ark_base_url or "").rstrip("/")
+        if not base:
             return False
-        if not resp.content or len(resp.content) < 1000:
+        omni = tokenfree_tts_uses_omni_stream(model)
+        body = (
+            build_omni_tts_chat_body(text, voice, model)
+            if omni
+            else {
+                "model": model,
+                "messages": [{"role": "user", "content": text}],
+                "modalities": ["audio"],
+                "audio": {"voice": voice, "format": "mp3"},
+            }
+        )
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(f"{base}/chat/completions", headers=self._headers(), json=body)
+        if resp.status_code >= 400:
+            logger.warning(
+                "OpenAI chat-audio HTTP %s model=%s: %s",
+                resp.status_code,
+                model,
+                (resp.text or "")[:300],
+            )
             return False
-        dest.write_bytes(resp.content)
-        return True
+        audio: bytes | None = extract_sse_audio_bytes(resp.text or "") if omni else None
+        if not audio:
+            try:
+                payload = resp.json()
+            except Exception:  # noqa: BLE001
+                payload = None
+            if isinstance(payload, dict):
+                audio = extract_chat_audio_bytes(payload)
+        if not audio:
+            return False
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        wav = wrap_pcm_s16le_wav(audio)
+        if not wav:
+            return False
+        return await asyncio.to_thread(self._persist_tts_mp3, dest, wav)
 
     @staticmethod
     def _build_tts_additions(speaker: str, emotion_hint: str | None) -> str | None:
@@ -1734,7 +1812,7 @@ class ArkGateway:
         duration_hint: float = 4.0,
         emotion_hint: str | None = None,
     ) -> str:
-        """整片/单镜配音：豆包 openspeech →（qwen 能认的音色才走 TokenFree）→ edge-tts；失败则抛错，不写静音。"""
+        """整片/单镜配音：豆包 openspeech → TokenFree 多 TTS → edge-tts；失败则抛错，不写静音。"""
         voice_map = {
             "narrator_calm": "zh_female_cancan_uranus_bigtts",
             "warm_storyteller": "zh_female_tianmeixiaoyuan_uranus_bigtts",
@@ -1784,24 +1862,25 @@ class ArkGateway:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("openspeech TTS failed: %s", exc)
 
-        # TokenFree qwen-tts 只认 Ethan/Cherry 等；豆包 zh_* 会全员男=Ethan，先跳过
-        if on_tokenfree and tokenfree_speech_honors_speaker(speaker):
-            try:
-                ok = await self._tts_openai_speech(clean, speaker, dest, model=audio_model)
-                if ok:
-                    url = await _accept_if_audible("tokenfree-speech")
-                    if url:
-                        logger.info(
-                            "TTS tokenfree ok shot=%s model=%s bytes=%s",
-                            shot_no,
-                            audio_model,
-                            dest.stat().st_size,
-                        )
-                        return url
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("tokenfree speech failed: %s", exc)
+        # TokenFree：默认模型 + Gemini / ElevenLabs / Qwen 其它 TTS 依次试
+        if on_tokenfree:
+            for model_id in iter_tokenfree_tts_models(audio_model):
+                try:
+                    ok = await self._tts_openai_speech(clean, speaker, dest, model=model_id)
+                    if ok:
+                        url = await _accept_if_audible("tokenfree-speech")
+                        if url:
+                            logger.info(
+                                "TTS tokenfree ok shot=%s model=%s bytes=%s",
+                                shot_no,
+                                model_id,
+                                dest.stat().st_size,
+                            )
+                            return url
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("tokenfree speech failed model=%s: %s", model_id, exc)
 
-        # edge-tts：按 speaker 映射不同 neural，豆包未授权时仍能分出角色声线
+        # edge-tts：按 speaker 映射不同 neural，上游都失败时仍能分出角色声线
         try:
             await self._tts_edge(clean, dest, voice_hint=speaker)
             url = await _accept_if_audible("edge-tts")
@@ -1810,22 +1889,6 @@ class ArkGateway:
                 return url
         except Exception as exc:  # noqa: BLE001
             logger.warning("edge-tts failed: %s", exc)
-
-        # qwen 压声线也比完全没声音好：edge 失败后再用 TokenFree
-        if on_tokenfree and not tokenfree_speech_honors_speaker(speaker):
-            try:
-                ok = await self._tts_openai_speech(clean, speaker, dest, model=audio_model)
-                if ok:
-                    url = await _accept_if_audible("tokenfree-speech-fallback")
-                    if url:
-                        logger.info(
-                            "TTS tokenfree fallback ok shot=%s model=%s",
-                            shot_no,
-                            audio_model,
-                        )
-                        return url
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("tokenfree speech fallback failed: %s", exc)
 
         # 非 TokenFree 时再试 /audio/speech（方舟等）
         if not on_tokenfree:
@@ -1914,12 +1977,76 @@ class ArkGateway:
         return b"".join(chunks)
 
     async def _tts_edge(self, text: str, dest: Path, voice_hint: str = "") -> None:
+        """微软 edge-tts 兜底。国内连 api.msedgeservices.com 常超过默认 10s，拉长握手并重试。"""
         import edge_tts
 
         voice = edge_tts_voice_for_speaker(voice_hint)
         dest.parent.mkdir(parents=True, exist_ok=True)
-        communicate = edge_tts.Communicate(text, voice)
-        await communicate.save(str(dest))
+        last_err: Exception | None = None
+        for attempt in range(3):
+            try:
+                communicate = edge_tts.Communicate(
+                    text,
+                    voice,
+                    connect_timeout=30,
+                    receive_timeout=90,
+                )
+                await communicate.save(str(dest))
+                return
+            except Exception as exc:  # noqa: BLE001
+                last_err = exc
+                logger.warning("edge-tts attempt %s/3 failed: %s", attempt + 1, exc)
+                if attempt < 2:
+                    await asyncio.sleep(1.2 * (attempt + 1))
+        raise RuntimeError(str(last_err) if last_err else "edge-tts failed")
+
+    def _persist_tts_mp3(self, dest: Path, audio: bytes) -> bool:
+        """把 Omni WAV 转成配音 mp3；已是 MPEG 则直接落盘。转码失败返回 False。"""
+        if len(audio) < 1000:
+            return False
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if audio[:3] == b"ID3" or (audio[0] == 0xFF and (audio[1] & 0xE0) == 0xE0):
+            dest.write_bytes(audio)
+            return True
+        import shutil
+        import subprocess
+        import tempfile
+
+        # ffmpeg 可执行文件 / 临时 wav / 转码进程
+        ffmpeg = shutil.which(self.settings.ffmpeg_path) or shutil.which("ffmpeg")
+        if not ffmpeg:
+            logger.warning("tts persist skipped: ffmpeg not found")
+            return False
+        with tempfile.TemporaryDirectory(prefix="pf_tts_") as tmp_dir:
+            src = Path(tmp_dir) / "omni.wav"
+            src.write_bytes(audio)
+            proc = subprocess.run(
+                [
+                    ffmpeg,
+                    "-nostdin",
+                    "-y",
+                    "-i",
+                    str(src),
+                    "-q:a",
+                    "4",
+                    "-acodec",
+                    "libmp3lame",
+                    str(dest),
+                ],
+                capture_output=True,
+                check=False,
+                stdin=subprocess.DEVNULL,
+            )
+        if proc.returncode == 0 and dest.exists() and dest.stat().st_size >= 1000:
+            return True
+        logger.warning(
+            "tts persist ffmpeg failed code=%s stderr=%s",
+            proc.returncode,
+            (proc.stderr or b"").decode("utf-8", errors="replace")[:300],
+        )
+        if dest.exists():
+            dest.unlink(missing_ok=True)
+        return False
 
     def _write_silence_mp3(self, dest: Path, duration: float) -> None:
         import shutil
@@ -2031,6 +2158,7 @@ class ArkGateway:
         duration_min: int,
         duration_max: int,
         pipeline_mode: str = "full",
+        shot_range_override: tuple[int, int] | None = None,
     ) -> StoryboardResult:
         chunks = [c.strip() for c in re.split(r"[。！？\n\.\!\?]+", source_text) if c.strip()]
         if source_type == "theme" and len(chunks) <= 1:
@@ -2045,7 +2173,10 @@ class ArkGateway:
         if len(chunks) < 3:
             chunks = chunks + ["补充画面过渡", "收尾总结"]
         # shot_lo/shot_hi 与正式拆镜区间一致，避免 mock 仍只出 5 镜
-        shot_lo, shot_hi = segplan.suggested_kepu_shot_range(source_text, pipeline_mode=pipeline_mode)
+        if shot_range_override:
+            shot_lo, shot_hi = shot_range_override
+        else:
+            shot_lo, shot_hi = segplan.suggested_kepu_shot_range(source_text, pipeline_mode=pipeline_mode)
         chunks = chunks[:shot_hi]
         while len(chunks) < shot_lo:
             chunks.append("补充画面过渡")

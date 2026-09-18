@@ -4,7 +4,7 @@ export const enPages = {
   home: {
     headlineBefore: 'Turn stories into',
     headlineEm: 'films you can play',
-    lede: 'AI drama from script to episodic film. Explainer videos from storyboard to voice and compose. One studio, two ways to ship.',
+    lede: 'AI drama from script to episodic film. AI short video from offer to storyboard to film. One studio, two ways to ship.',
     startCreate: 'Start creating',
     browseTools: 'Browse tools',
     products: 'Products',
@@ -13,8 +13,8 @@ export const enPages = {
     dramaDesc: 'Generate a script from one line, lock characters and scenes, then board each episode.',
     kepuTitle: 'AI Short Video',
     kepuTag: 'Lead-gen shorts',
-    kepuFor: 'For knowledge creators',
-    kepuDesc: 'Pick a look, write narration boards, and run the pipeline to a short explainer.',
+    kepuFor: 'For brands that need leads',
+    kepuDesc: 'Turn an offer into short videos you can post, then batch them through the storyboard pipeline.',
     howKicker: 'How it works',
     howTitle: 'Three steps to a film',
     capsKicker: 'Capabilities',
@@ -25,9 +25,10 @@ export const enPages = {
     whoKicker: 'For',
     whoTitle: 'Who it’s for',
     closeTitle: 'Start from one idea',
-    closeLead: 'Sign in, pick Drama or Explainers, and enter the matching workspace.',
+    closeLead: 'Sign in, pick Drama or AI Short Video, and enter the matching workspace.',
     viewPricing: 'View pricing',
-    footBrand: 'AI drama and explainer video studio',
+    methodLink: 'Lead-gen method',
+    footBrand: 'AI drama and AI short video studio',
     footNav: 'Footer',
     dramaSteps: ['AI script', 'Cast & scenes', 'Episode boards', 'Export'],
     kepuSteps: ['Pick a style', 'Write boards', 'Voice & compose', 'Batch output'],
@@ -40,11 +41,11 @@ export const enPages = {
       { title: '19 film looks', desc: 'From mythic epics to urban realism and neon cyberpunk — one style carries the whole piece.' },
       { title: 'Reusable assets', desc: 'Generate a character once, reuse it across the series instead of redrawing every shot.' },
       { title: 'Editable boards', desc: '@-mention assets, set duration and camera moves, and see the shot before you generate.' },
-      { title: 'Two output paths', desc: 'Drama for episodic stories, explainers for storyboard pipelines — one account and one wallet.' },
+      { title: 'Two output paths', desc: 'Drama for episodic stories, AI short video for the storyboard pipeline — one account and one wallet.' },
     ],
     audiences: [
       { title: 'Short-drama creators', desc: 'Break a story into shootable episodes. Assets first, film second.' },
-      { title: 'Knowledge creators', desc: 'Turn articles into vertical explainers with a consistent look and pace.' },
+      { title: 'Brand acquisition', desc: 'Turn an offer into vertical shorts with a consistent look you can batch.' },
       { title: 'Small teams', desc: 'Keep projects, assets, and history in one place instead of hopping tools.' },
     ],
   },
@@ -82,12 +83,12 @@ export const enPages = {
       {
         n: '01',
         title: 'Choose an entry',
-        body: 'Open AI Drama or Explainer video from Home. For a single image or clip, use Tools in the top nav.',
+        body: 'Open AI Drama or AI Short Video from Home. For a single image or clip, use Tools in the top nav.',
       },
       {
         n: '02',
         title: 'Configure and generate',
-        body: 'Drama: idea → outline → assets → episodes. Explainers: topic → style → boards → film. Tools: fill a prompt or upload media, then generate.',
+        body: 'Drama: idea → outline → assets → episodes. AI Short Video: topic → style → boards → film. Tools: fill a prompt or upload media, then generate.',
       },
       {
         n: '03',
@@ -97,21 +98,21 @@ export const enPages = {
       {
         n: '04',
         title: 'Save and download',
-        body: 'Outputs land in cloud storage. Explainers download from History; drama from the project workspace; tool runs from Account.',
+        body: 'Outputs land in cloud storage. AI Short Video downloads from History; drama from the project workspace; tool runs from Account.',
       },
     ],
     faq: [
       {
         q: 'Where should I start?',
-        a: 'Open Home and pick AI Drama or Explainer video. Drama is for episodic stories and character consistency; explainers are a short-video storyboard pipeline. For a single image or clip, go to Tools.',
+        a: 'Open Home and pick AI Drama or AI Short Video. Drama is for episodic stories and character consistency; AI Short Video is positioned for lead-gen storyboards. For a single image or clip, go to Tools.',
       },
       {
         q: 'What’s the difference between AI video and stills-to-film?',
-        a: 'AI video has stronger motion and costs more. Stills-to-film (image + narration) is faster and more stable for explainers. Choose when you create a new explainer project.',
+        a: 'AI video has stronger motion and costs more. Stills-to-film (image + narration) is faster and more stable for explainers. Choose when you create a new lead-gen project.',
       },
       {
         q: 'Can I leave the page while it generates?',
-        a: 'Yes. Jobs keep running on the server. Check explainer History, the drama project workspace, or Account for tool-run status. For in-page video tools, staying until it finishes is safer.',
+        a: 'Yes. Jobs keep running on the server. Check AI Short Video History, the drama project workspace, or Account for tool-run status. For in-page video tools, staying until it finishes is safer.',
       },
       {
         q: 'What can the tool hub do?',
@@ -127,11 +128,11 @@ export const enPages = {
       },
       {
         q: 'Where do I download finished films or assets?',
-        a: 'Explainers: History in the top nav. Drama: the project workspace. Global assets: Assets in the top nav.',
+        a: 'AI Short Video: History in the top nav. Drama: the project workspace. Global assets: Assets in the top nav.',
       },
       {
         q: 'What’s in Account?',
-        a: 'Profile, drama projects, explainer history, tool runs, asset library entry, and plan & balance. Team, API, and notifications are still in progress.',
+        a: 'Profile, drama projects, AI Short Video history, tool runs, asset library entry, and plan & balance. Team, API, and notifications are still in progress.',
       },
       {
         q: 'How do top-ups and charges work?',
@@ -139,7 +140,7 @@ export const enPages = {
       },
       {
         q: 'Generation failed or the image is off?',
-        a: 'Tweak the prompt, negative prompt, or reference image and retry. Drama and explainers support per-shot regen. Check network and balance; safety filters may block sensitive content.',
+        a: 'Tweak the prompt, negative prompt, or reference image and retry. Drama and AI Short Video support per-shot regen. Check network and balance; safety filters may block sensitive content.',
       },
     ],
     drawerCats: [
@@ -209,7 +210,7 @@ export const enPages = {
     lead: 'Open a tool workspace to generate images and short video.',
     goDrama: 'Go to Drama',
     goDramaHint: 'Script · episodes · film',
-    goKepu: 'Explainer history',
+    goKepu: 'AI Short Video',
     goKepuHint: 'Storyboard pipeline',
     generating: 'Generating…',
     generatingVideo: 'Generating video…',
@@ -386,9 +387,9 @@ export const enPages = {
     updatedAt: 'Updated {time}',
   },
   history: {
-    title: 'Explainer history',
-    lead: 'Manage explainer projects — keep editing or download the film.',
-    newKepu: 'New explainer',
+    title: 'AI Short Video',
+    lead: 'Manage AI short video projects — keep editing or download the film.',
+    newKepu: 'New short',
     goDrama: 'Go to Drama',
     statTotal: 'Projects',
     statRunning: 'In progress',
@@ -413,7 +414,7 @@ export const enPages = {
     searchPlaceholder: 'Search by title',
     packing: 'Zipping {progress}…',
     packDownload: 'Download zip ({count})',
-    empty: 'No explainer projects yet. Click “New explainer” to start.',
+    empty: 'No AI short video projects yet. Click “New short” to start.',
     noCover: 'No cover',
     published: 'Published',
     templateMeta: 'Template {name} · {when}',
@@ -423,7 +424,7 @@ export const enPages = {
     deleteFailed: 'Delete failed',
     downloadFailed: 'Download failed',
     packFailed: 'Zip failed',
-    pagination: 'Explainer history pages',
+    pagination: 'AI Short Video pages',
   },
   dramaList: {
     title: 'My drama projects',

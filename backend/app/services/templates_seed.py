@@ -1,7 +1,8 @@
 """内置风格模板 — 提示词与风格描述统一中文。
 
 分类约定（category[0] 为主分类，用于首页筛选）：
-电影感 / 真人感 / 写实感 / 科普 / 儿童 / 国风 / 科幻 / 动漫 / 3D / 商业 / 复古 / 纪录片 / 奇幻 / 图文 / 悬疑 / 开源
+电影感 / 真人感 / 写实感 / 科普 / 儿童 / 国风 / 科幻 / 动漫 / 3D / 商业 / 复古 / 纪录片 / 奇幻 / 图文 / 悬疑 / 开源 / 获客
+获客短视频四条在 templates_seed_huoke.py，并入 TEMPLATES 末尾；category[0] 仍为科普。
 真人感、写实感模板须在 seedream_config 设 photoreal: true。
 
 一致性（seedream_config.consistency_mode）：
@@ -13,6 +14,8 @@
 成片方式（是否生成 AI 视频）由用户在风格配置页选择，不再由模板锁定。
 模板 default_ratio 仅作画幅默认建议。
 """
+
+from app.services.templates_seed_huoke import HUOKE_TEMPLATES
 
 TEMPLATES: list[dict] = [
     {
@@ -817,3 +820,5 @@ TEMPLATES: list[dict] = [
         "is_premium": False,
     },
 ]
+
+TEMPLATES.extend(HUOKE_TEMPLATES)

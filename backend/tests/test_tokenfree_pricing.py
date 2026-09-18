@@ -61,12 +61,12 @@ def test_parse_pricing_payload_per_call_and_token() -> None:
     assert video.placeholder is True
 
 
-def test_recommended_models_cover_text_image_video() -> None:
-    """短名单覆盖文字/图/视频，且含默认推荐；不含 TokenFree 不可用的 Seedream。"""
+def test_recommended_models_cover_text_image_video_audio() -> None:
+    """短名单覆盖文字/图/视频/语音，且含默认推荐；不含 TokenFree 不可用的 Seedream。"""
     caps = {row["capability"] for row in RECOMMENDED_MODELS}
-    assert caps == {"text", "image", "video"}
+    assert caps == {"text", "image", "video", "audio"}
     ids = {row["id"] for row in RECOMMENDED_MODELS}
-    assert {"kimi-k2.6", "gpt-image-2-5", "seedance-2-5", "seedance-2-0"} <= ids
+    assert {"kimi-k2.6", "gpt-image-2-5", "seedance-2-5", "seedance-2-0", "qwen-tts-2025-05-22", "gemini-3.1-flash-tts"} <= ids
     assert "seedream-5-0-pro" not in ids
     assert any(row["recommended"] and row["id"] == "kimi-k2.6" for row in RECOMMENDED_MODELS)
 

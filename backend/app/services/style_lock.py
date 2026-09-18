@@ -163,6 +163,33 @@ def template_is_photoreal(tpl) -> bool:
     return any(c in {"真人感", "写实感"} for c in cats)
 
 
+def _seedream_cfg(tpl) -> dict:
+    """取出模板 seedream_config，缺省或类型不对时返回空 dict。"""
+    cfg = getattr(tpl, "seedream_config", None) or {}
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def template_shot_range(tpl) -> tuple[int, int] | None:
+    """模板锁定的分镜数量区间；未配置则返回 None，走字数默认 6–10 镜。"""
+    if tpl is None:
+        return None
+    cfg = _seedream_cfg(tpl)
+    raw_lo = cfg.get("shot_count_min")
+    if raw_lo is None:
+        return None
+    lo = max(1, int(raw_lo))
+    raw_hi = cfg.get("shot_count_max")
+    hi = max(lo, int(raw_hi)) if raw_hi is not None else lo
+    return lo, hi
+
+
+def template_allow_source_names(tpl) -> bool:
+    """获客类模板：旁白保留用户文案里的店名/产品名。"""
+    if tpl is None:
+        return False
+    return bool(_seedream_cfg(tpl).get("allow_source_names"))
+
+
 def template_prompt_defaults(tpl) -> dict[str, str]:
     """Canonical style / character / extra prompts from a template.
 

@@ -2,9 +2,9 @@
 
 export const enShell = {
   meta: {
-    title: 'PRINTFILM · AI video studio',
+    title: 'PRINTFILM · AI short video',
     description:
-      'PRINTFILM: turn scripts into episodic AI dramas, or storyboards into explainer videos.',
+      'PRINTFILM: turn scripts into episodic AI dramas, or offers into AI short videos.',
   },
   common: {
     comingSoon: 'Coming soon',
@@ -72,12 +72,20 @@ export const enShell = {
     help: 'Help',
     links: 'Footer links',
   },
+  wechatGroup: {
+    short: 'WeChat',
+    open: 'Join WeChat user group',
+    title: 'printfilm user group',
+    lead: 'Short drama tips · deploy help · templates',
+    qrAlt: 'WeChat group QR code',
+    tip: 'Scan with WeChat. Invite codes expire in about 7 days — open an Issue if it fails.',
+  },
   auth: {
     loginTitle: 'Back to the studio',
     registerTitle: 'Create a creator account',
     forgotTitle: 'Reset your password',
     resetTitle: 'Choose a new password',
-    lede: 'PRINTFILM · AI drama and explainer videos',
+    lede: 'PRINTFILM · AI drama and AI short video',
     nickname: 'Display name',
     email: 'Email',
     password: 'Password',
@@ -119,7 +127,7 @@ export const enShell = {
     tabs: {
       account: 'Profile',
       projects: 'Drama projects',
-      kepu: 'Explainer history',
+      kepu: 'AI Short Video',
       tools: 'Tool runs',
       assets: 'Assets',
       subscription: 'Plan & balance',
@@ -153,10 +161,10 @@ export const enShell = {
     noDrama: 'No drama projects yet',
     goCreate: 'Create one',
     projectFallback: 'Project #{id}',
-    kepuLead: 'Explainer projects and finished films',
+    kepuLead: 'AI short video projects and finished films',
     allHistory: 'All history',
-    newKepu: 'New explainer',
-    noKepu: 'No explainer projects yet',
+    newKepu: 'New short',
+    noKepu: 'No AI short video projects yet',
     assetsLead: 'Characters, scenes, props, and media live in the asset library',
     openAssets: 'Open library',
     subLead: 'Pay as you go — balance never expires',

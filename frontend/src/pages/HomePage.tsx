@@ -210,6 +210,7 @@ export default function HomePage() {
         <nav className="pf-land-foot-nav" aria-label={t('home.footNav')}>
           <Link to="/drama">{t('nav.drama')}</Link>
           <Link to="/history">{t('nav.kepu')}</Link>
+          <Link to="/method">{t('home.methodLink')}</Link>
           <Link to="/tools">{t('nav.tools')}</Link>
           <Link to="/pricing">{t('nav.pricing')}</Link>
           <Link to="/help">{t('nav.help')}</Link>
