@@ -53,6 +53,8 @@ export const zhShell = {
     pricing: '定价',
     help: '帮助',
     helpCenter: '帮助中心',
+    github: 'GitHub',
+    githubTitle: '开源仓库 · GitHub',
     login: '登录',
     startCreate: '开始创作',
     profile: '个人中心',
@@ -69,6 +71,7 @@ export const zhShell = {
     privacy: '隐私政策',
     contact: '联系我们',
     help: '帮助中心',
+    github: 'GitHub',
     links: '页脚链接',
   },
   wechatGroup: {

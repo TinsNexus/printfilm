@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import AppShell from '../components/layout/AppShell'
 import { useI18n } from '../i18n'
 import { getLegalDoc, type LegalDoc } from '../lib/legalContent'
+import { GITHUB_REPO_URL } from '../lib/siteLinks'
 
 /** 渲染单份法律文档正文 */
 function LegalBody({ doc }: { doc: LegalDoc }) {
@@ -42,6 +43,9 @@ function LegalBody({ doc }: { doc: LegalDoc }) {
         <Link to="/privacy">{t('footer.privacy')}</Link>
         <Link to="/contact">{t('footer.contact')}</Link>
         <Link to="/help">{t('footer.help')}</Link>
+        <a href={GITHUB_REPO_URL} target="_blank" rel="noopener noreferrer">
+          {t('footer.github')}
+        </a>
       </nav>
     </article>
   )

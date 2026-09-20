@@ -1,13 +1,15 @@
 # PRINTFILM
 
 **开源项目**：PRINTFILM  
+**源码**：[github.com/yi1108/printfilm](https://github.com/yi1108/printfilm)  
 **版本**：0.2.0 | **更新**：2026-09-17
 
 模板驱动的 AI 短视频与漫剧创作平台：主题 / 剧本 → 分镜 → 生图 → 生视频 → 成片。口播由 Seedance 在出片时一并生成，无需单独配音。同一条生成能力，多套视觉风格；支持注册登录、按量计费、管理后台与开放 API。
 
 ## 社区
 
-添加微信号 **`gitpp88`**（备注「入群」）加入 printfilm 用户群：学习短剧 / 部署答疑 / 模板交流。
+- **GitHub**：https://github.com/yi1108/printfilm
+- 添加微信号 **`gitpp88`**（备注「入群」）加入 printfilm 用户群：学习短剧 / 部署答疑 / 模板交流。
 
 ![工作台](docs/images/image-20260910-home.png)
 

@@ -28,7 +28,7 @@
   padding: 0;
 }
 
-/* ——— Nav ——— */
+/* ??? Nav ??? */
 .pf-nav {
   position: sticky;
   top: 0;
@@ -104,6 +104,29 @@
 }
 
 .pf-nav-help-btn:hover {
+  color: var(--pf-ink);
+}
+
+.pf-nav-github {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 32px;
+  padding: 0 0.7rem 0 0.55rem;
+  border: 1px solid var(--pf-line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--pf-ink);
+  font-size: 0.82rem;
+  font-weight: 650;
+  text-decoration: none;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.pf-nav-github:hover {
+  border-color: #9fd400;
+  background: rgba(182, 255, 0, 0.28);
+  box-shadow: 0 0 0 3px rgba(182, 255, 0, 0.18);
   color: var(--pf-ink);
 }
 
@@ -194,7 +217,7 @@
   color: var(--pf-muted);
 }
 
-/* ——— Workspace home (多产品工作台首屏) ——— */
+/* ??? Workspace home (????????) ??? */
 .pf-ws-hero {
   position: relative;
   padding: 2.75rem 0 1.75rem;
@@ -367,7 +390,7 @@
   box-shadow: var(--pf-shadow);
 }
 
-/* ——— Official landing home ——— */
+/* ??? Official landing home ??? */
 .pf-land-kicker {
   margin: 0 0 0.55rem;
   font-family: 'Space Grotesk', 'Noto Sans SC', sans-serif;
@@ -430,6 +453,26 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
+}
+
+.pf-land-github {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 1.05rem;
+  color: var(--pf-ink);
+  font-size: 0.92rem;
+  font-weight: 650;
+  text-decoration: none;
+  border-bottom: 2px solid rgba(182, 255, 0, 0.85);
+  padding-bottom: 0.12rem;
+  width: fit-content;
+  transition: color 0.15s ease, border-color 0.15s ease, gap 0.15s ease;
+}
+
+.pf-land-github:hover {
+  gap: 0.6rem;
+  border-bottom-color: var(--pf-lime);
 }
 
 .pf-land-frames {
@@ -813,7 +856,7 @@
   grid-column: 1 / -1;
 }
 
-/* ——— Drama list P3 ——— */
+/* ??? Drama list P3 ??? */
 .pf-pill-row {
   display: flex;
   flex-wrap: wrap;
@@ -2207,7 +2250,7 @@
   text-decoration: underline;
 }
 
-/* —— Legal / contact pages —— */
+/* ?? Legal / contact pages ?? */
 .pf-legal-page {
   width: min(760px, 100%);
   margin: 0 auto;
@@ -2312,7 +2355,7 @@
 
 .pf-contact-channels {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.85rem;
   margin-bottom: 2rem;
 }
@@ -2898,7 +2941,7 @@
   letter-spacing: 0.12em;
 }
 
-/* ——— Common ——— */
+/* ??? Common ??? */
 .pf-card {
   background: var(--pf-card);
   border: 1px solid var(--pf-line);
@@ -2936,7 +2979,7 @@
   color: var(--pf-ink);
 }
 
-/* 余额不足错误内的快速充值跳转 */
+/* ?????????????? */
 .pf-billing-topup-link {
   color: var(--pf-accent, #2563eb);
   font-weight: 600;
@@ -3074,7 +3117,7 @@
   color: #3a4518;
 }
 
-/* ——— Home ——— */
+/* ??? Home ??? */
 .pf-home-hero {
   display: grid;
   grid-template-columns: 1.05fr 0.95fr;
@@ -3341,7 +3384,7 @@
   color: var(--pf-muted);
 }
 
-/* ——— Create / Style three-column ——— */
+/* ??? Create / Style three-column ??? */
 .pf-create {
   display: grid;
   grid-template-columns: 300px 1fr 300px;
@@ -3662,7 +3705,7 @@
   overflow: hidden;
 }
 
-/* 角色设定 / 成片方式等：直接挂 img 的旧结构 */
+/* ???? / ????????? img ???? */
 .pf-style-opt > img,
 .pf-style-opt > .ph {
   width: 100%;
@@ -3681,7 +3724,7 @@
   background: #e8eaee;
 }
 
-/* 竖屏模板：画框保持网格对齐，画面按真实比例完整显示 */
+/* ????????????????????????? */
 .pf-style-opt.portrait .pf-style-opt-media {
   background: #0b0d12;
 }
@@ -3891,7 +3934,7 @@
   border-radius: 3px;
 }
 
-/* Storyboard：中间列允许收缩，避免分镜表 min-width 把右侧「生成进度」裁切掉 */
+/* Storyboard?????????????? min-width ???????????? */
 .pf-board {
   display: grid;
   grid-template-columns: minmax(0, 220px) minmax(0, 1fr) minmax(0, 220px);
@@ -3979,7 +4022,7 @@
   vertical-align: top;
 }
 
-/* 固定窄列不换行；旁白 / 分镜按比例吃剩余宽度，避免整表横向滑动 */
+/* ?????????? / ??????????????????? */
 .pf-shot-table .col-no {
   width: 3rem;
   font-weight: 700;
@@ -5281,7 +5324,7 @@ button.pf-shot-editable:disabled {
   color: var(--pf-muted);
 }
 
-/* —— Pricing / top-up page —— */
+/* ?? Pricing / top-up page ?? */
 .pf-pricing-page {
   width: 100%;
   margin: 0 auto;
@@ -5366,7 +5409,7 @@ button.pf-shot-editable:disabled {
   font-weight: 700;
 }
 
-/* 深色余额卡片 */
+/* ?????? */
 .pf-pricing-wallet-dark {
   background: linear-gradient(155deg, #243041 0%, #151c26 52%, #111820 100%);
   color: #f3f5f8;
@@ -5936,7 +5979,7 @@ button.pf-shot-editable:disabled {
   }
 }
 
-/* —— Payment QR modal —— */
+/* ?? Payment QR modal ?? */
 .pf-modal-panel.pf-pay-modal {
   width: min(400px, 94vw);
   background: #fff;
@@ -6217,7 +6260,7 @@ button.pf-shot-editable:disabled {
   font-size: 0.76rem;
 }
 
-/* —— Global dialog / modal system —— */
+/* ?? Global dialog / modal system ?? */
 .pf-dialog-root {
   position: fixed;
   inset: 0;
@@ -6574,7 +6617,7 @@ button.pf-shot-editable:disabled {
   gap: 0.55rem;
 }
 
-/* —— Help center —— */
+/* ?? Help center ?? */
 .pf-help-modal.pf-modal-panel--drawer {
   width: min(440px, 100vw);
 }
@@ -6778,7 +6821,7 @@ button.pf-shot-editable:disabled {
   }
 }
 
-/* legacy modal reuse — share new veil look */
+/* legacy modal reuse ? share new veil look */
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -6926,6 +6969,16 @@ button.pf-shot-editable:disabled {
 
   .pf-nav-help-btn span {
     display: none;
+  }
+
+  .pf-nav-github span {
+    display: none;
+  }
+
+  .pf-nav-github {
+    width: 32px;
+    padding: 0;
+    justify-content: center;
   }
 
   .pf-nav-burger {
@@ -7078,7 +7131,7 @@ button.pf-shot-editable:disabled {
   }
 }
 
-/* ——— WeChat group FAB (全站右下角) ——— */
+/* ??? WeChat group FAB (?????) ??? */
 .pf-wx-fab-root {
   position: fixed;
   right: 20px;

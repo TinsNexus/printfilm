@@ -54,6 +54,8 @@ export const enShell = {
     pricing: 'Pricing',
     help: 'Help',
     helpCenter: 'Help center',
+    github: 'GitHub',
+    githubTitle: 'Open source on GitHub',
     login: 'Sign in',
     startCreate: 'Start creating',
     profile: 'Account',
@@ -70,6 +72,7 @@ export const enShell = {
     privacy: 'Privacy',
     contact: 'Contact',
     help: 'Help',
+    github: 'GitHub',
     links: 'Footer links',
   },
   wechatGroup: {
