@@ -1141,8 +1141,12 @@ class ArkGateway:
             digest = hashlib.md5(f"{image_url}:{prompt}".encode()).hexdigest()[:10]
             return f"mock-task-{digest}"
 
+        # Seedance 拒绝对角外宽高比（实测 2.5006→报 2.50）；提交前垫黑边钳到安全区间
+        from app.services.seedance_image_aspect import ensure_seedance_compatible_image_url
+
+        safe_image_url = await ensure_seedance_compatible_image_url(image_url)
         # Seedance needs a publicly reachable https image (data URI often rejected / odd errors)
-        image_ref = await self._resolve_image_ref(image_url, prefer_https=True)
+        image_ref = await self._resolve_image_ref(safe_image_url, prefer_https=True)
         # Prefer plain timed script for Seedance 2.5; JSON caption kept as fallback
         plain = (prompt or "").strip() or "画面轻微动态，保持主体外形稳定"
         text = plain if not prompt_as_json else self._seedance_prompt_text(prompt)
@@ -1159,7 +1163,8 @@ class ArkGateway:
             if not text_url:
                 continue
             try:
-                extra_refs.append(await self._resolve_image_ref(text_url, prefer_https=True))
+                safe_extra = await ensure_seedance_compatible_image_url(text_url)
+                extra_refs.append(await self._resolve_image_ref(safe_extra, prefer_https=True))
             except Exception:  # noqa: BLE001
                 logger.warning("Seedance extra ref resolve failed url=%s", text_url[:120])
         if extra_refs:
