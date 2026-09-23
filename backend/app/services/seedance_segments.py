@@ -449,10 +449,13 @@ def build_seedance_production_section(
     ambient_only: bool = False,
     burn_subtitles: bool = True,
     character_intro: bool = True,
+    no_bgm: bool = False,
 ) -> str:
     """组装 Seedance 音频/字幕/BGM 强制约束（科普旁白 / 漫剧画面+对白混排）。
 
-    ambient_only：科普后期 TTS 模式——模型只出操作环境音，禁止口播与 BGM。
+    ambient_only：回退模式——模型只出操作环境音，禁止口播与 BGM（口播由后期 TTS）。
+    默认科普 full 为环境音+口播同出（ambient_only=False）。
+    no_bgm：禁止模型出 BGM（科普内置口播时由后期叠可控 BGM）。
     burn_subtitles=False：成片后再烧 SRT——保留口播，禁止画面内字幕。
     character_intro=False：禁止人物介绍叠字/字卡（与字幕开关独立）。
     """
@@ -479,6 +482,16 @@ def build_seedance_production_section(
         "禁止在画面内烧录字幕、标题、水印、字卡或口播文字；"
         "口播仅出声，文字叠字由后期完成。"
     )
+
+    def _bgm_line(idx: int) -> str:
+        if no_bgm:
+            return (
+                f"{idx}. 背景音乐：禁止任何 BGM、配乐、旋律、哼唱垫乐；"
+                "BGM 由后期统一叠加，视频内只保留口播与环境音效。"
+            )
+        return (
+            f"{idx}. 背景音乐：{bgm_mood}；BGM 音量低于人声约 30%，不得盖过旁白与关键音效。"
+        )
 
     if drama_mixed:
         lines = [
@@ -513,11 +526,10 @@ def build_seedance_production_section(
             )
         else:
             lines.append(
-                "4. 人声：本镜若无旁白/对白标记，则全程无口播，仅环境音与 BGM。"
+                "4. 人声：本镜若无旁白/对白标记，则全程无口播，仅环境音"
+                + ("。" if no_bgm else "与 BGM。")
             )
-        lines.append(
-            f"5. 背景音乐：{bgm_mood}；BGM 音量低于人声约 30%。"
-        )
+        lines.append(_bgm_line(5))
         lines.append(
             "6. 音效：环境音与动作音效与画面同步，层次低于人声。"
         )
@@ -559,9 +571,7 @@ def build_seedance_production_section(
             + ("；口播仅出声，画面不叠字幕；" if not burn_subtitles else "，并同步烧录字幕；")
             + "视频内不要自行添加嘈杂对白。"
         )
-    lines.append(
-        f"4. 背景音乐：{bgm_mood}；BGM 音量低于人声约 30%，不得盖过旁白与关键音效。"
-    )
+    lines.append(_bgm_line(4))
     lines.append(
         "5. 音效：环境音与动作音效与画面同步，层次低于人声。"
     )
@@ -831,6 +841,7 @@ def build_seedance_prompt(
     ambient_only: bool = False,
     burn_subtitles: bool = True,
     character_intro: bool = True,
+    no_bgm: bool = False,
 ) -> str:
     """Assemble final Seedance text: style lock + production constraints + timed body."""
     parts: list[str] = []
@@ -851,6 +862,7 @@ def build_seedance_prompt(
             ambient_only=ambient_only,
             burn_subtitles=burn_subtitles and not ambient_only,
             character_intro=character_intro and not ambient_only,
+            no_bgm=no_bgm and not ambient_only,
         )
     )
     parts.append(

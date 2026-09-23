@@ -1,6 +1,22 @@
 /** 画布资产自定义节点：类型图标 + 媒体卡片 + 选中工具栏 */
-import { memo, useCallback, useState, type ChangeEvent, type KeyboardEvent, type MouseEvent } from 'react'
-import { Handle, NodeToolbar, Position, type Node, type NodeProps } from '@xyflow/react'
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent,
+  type MouseEvent,
+  type SyntheticEvent,
+} from 'react'
+import {
+  Handle,
+  NodeToolbar,
+  Position,
+  useUpdateNodeInternals,
+  type Node,
+  type NodeProps,
+} from '@xyflow/react'
 import { AudioLines, Image as ImageIcon, Landmark, Loader2, Maximize2, Play, UserRound } from 'lucide-react'
 import { resolveDramaMediaUrl } from '../../../api/drama'
 import { isAudioUrl, isPlayableVideoUrl } from '../../../lib/canvasNodeMedia'
@@ -9,6 +25,7 @@ import {
   CANVAS_GENERATABLE_KINDS,
   CANVAS_NODE_OPTION_BY_KIND,
   CANVAS_UPLOADABLE_KINDS,
+  canvasMediaFrameSize,
   type CanvasAssetNodeData,
 } from './canvasTypes'
 import { CanvasNodeGeneratePanel } from './nodes/CanvasNodeGeneratePanel'
@@ -17,10 +34,28 @@ import { CanvasNodeUploadBar } from './nodes/CanvasNodeUploadBar'
 import { DRAMA_VOICE_BINDING_ENABLED } from '../../../lib/dramaVoiceBinding'
 
 /** 画布视频缩略：仅展示封面，不拦截单击（单击要选中并显示提示词面板） */
-function CanvasAssetVideoPreview({ src }: { src: string }) {
+function CanvasAssetVideoPreview({
+  src,
+  onAspect,
+}: {
+  src: string
+  onAspect?: (aspect: number) => void
+}) {
   return (
     <div className="fc-asset-video">
-      <video className="fc-asset-media" src={src} muted playsInline preload="metadata" />
+      <video
+        className="fc-asset-media"
+        src={src}
+        muted
+        playsInline
+        preload="metadata"
+        onLoadedMetadata={(event) => {
+          const el = event.currentTarget
+          if (el.videoWidth > 0 && el.videoHeight > 0) {
+            onAspect?.(el.videoWidth / el.videoHeight)
+          }
+        }}
+      />
       <span className="fc-asset-video-play" aria-hidden>
         <Play size={22} strokeWidth={2.2} fill="currentColor" />
       </span>
@@ -42,6 +77,7 @@ function PlaceholderIcon({ kind }: { kind: CanvasAssetNodeData['kind'] }) {
 /** 渲染单个画布资产节点 */
 function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasAssetNodeData>>) {
   const { updateNodeTextContent, renameNode } = useCanvasStore()
+  const updateNodeInternals = useUpdateNodeInternals()
   const option = CANVAS_NODE_OPTION_BY_KIND[data.kind]
   const Icon = option.icon
   const isText = data.kind === 'text'
@@ -68,12 +104,44 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
   // renaming 是否正在编辑节点名称
   // draftName 编辑中的名称草稿
   // previewOpen 是否打开大屏预览
+  // mediaAspect 媒体宽高比（宽/高），用于预览框横竖自适应
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState(displayName)
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [mediaAspect, setMediaAspect] = useState<number | null>(null)
   const audioSrc = resolveDramaMediaUrl(voiceUrl || (data.kind === 'audio' ? mediaSrc : ''))
   const textContent = typeof data.textContent === 'string' ? data.textContent : ''
   const canPreview = Boolean(mediaSrc || audioSrc || textContent.trim())
+  const frameSize = canvasMediaFrameSize(data.kind, mediaSrc ? mediaAspect : null)
+  const orientationClass =
+    mediaSrc && mediaAspect
+      ? mediaAspect > 1.05
+        ? ' is-landscape'
+        : mediaAspect < 0.95
+          ? ' is-portrait'
+          : ' is-square'
+      : ''
+
+  useEffect(() => {
+    setMediaAspect(null)
+  }, [mediaSrc])
+
+  useEffect(() => {
+    updateNodeInternals(id)
+  }, [id, frameSize.width, frameSize.height, updateNodeInternals])
+
+  /** 图片加载后按自然尺寸更新预览框比例 */
+  const handleImageLoad = useCallback((event: SyntheticEvent<HTMLImageElement>) => {
+    const el = event.currentTarget
+    if (el.naturalWidth > 0 && el.naturalHeight > 0) {
+      setMediaAspect(el.naturalWidth / el.naturalHeight)
+    }
+  }, [])
+
+  /** 视频 metadata 就绪后更新预览框比例 */
+  const handleVideoAspect = useCallback((aspect: number) => {
+    if (aspect > 0) setMediaAspect(aspect)
+  }, [])
 
   const handleTextChange = useCallback(
     (event: ChangeEvent<HTMLTextAreaElement>) => {
@@ -170,7 +238,14 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
         title={canPreview ? '双击放大预览' : undefined}
         onDoubleClick={handleCardDoubleClick}
       >
-        <div className={`fc-asset-body is-${data.kind}`}>
+        <div
+          className={`fc-asset-body is-${data.kind}${orientationClass}`}
+          style={
+            data.kind === 'text' || data.kind === 'audio'
+              ? undefined
+              : { width: frameSize.width, height: frameSize.height }
+          }
+        >
           {isText ? (
             selected ? (
               <textarea
@@ -189,7 +264,7 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
               <span>生成中…</span>
             </div>
           ) : mediaSrc && data.kind === 'video' && isPlayableVideoUrl(mediaSrc) ? (
-            <CanvasAssetVideoPreview src={mediaSrc} />
+            <CanvasAssetVideoPreview src={mediaSrc} onAspect={handleVideoAspect} />
           ) : mediaSrc && (data.kind === 'audio' || isAudioUrl(mediaSrc)) ? (
             <div className="fc-asset-audio-thumb">
               <AudioLines size={28} strokeWidth={1.6} />
@@ -204,6 +279,7 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
               src={mediaSrc}
               alt={displayName}
               draggable={false}
+              onLoad={handleImageLoad}
             />
           ) : (
             <PlaceholderIcon kind={data.kind} />

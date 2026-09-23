@@ -49,7 +49,17 @@ def continuous_narration_ok(project_id: int) -> bool:
 
 
 def project_audio_ready(project: Any) -> bool:
-    """项目旁白是否就绪：整片文件 OK，或全部镜头旁白文件 OK。"""
+    """项目旁白是否就绪：视频内置口播无需外部 TTS；否则整片/分镜旁白文件 OK。"""
+    # full + Seedance 内置口播：assets 阶段不强制外部配音
+    if not _is_image_text(project):
+        try:
+            from app.config import get_settings
+
+            if bool(getattr(get_settings(), "kepu_seedance_native_audio", True)):
+                return True
+        except Exception:  # noqa: BLE001
+            # 配置异常时不 fail-open，避免误跳过外部 TTS
+            pass
     project_id = getattr(project, "id", None)
     if project_id is not None and continuous_narration_ok(int(project_id)):
         return True

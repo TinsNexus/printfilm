@@ -75,7 +75,9 @@ class Settings(BaseSettings):
     drama_user_video_job_limit: int = 12
     # 单个分镜视频最大尝试次数；超过后直接失败，避免长时间卡在同一镜
     drama_fragment_max_attempts: int = 3
-    # 科普 Seedance 仍出音轨：只要操作/环境音效，不要口播与 BGM
+    # 科普 full：Seedance 视频内置口播+环境音，后期不再叠外部 TTS
+    kepu_seedance_native_audio: bool = True
+    # 仅当 native_audio=false 时生效：Seedance 只要操作音效，口播改后期 TTS（默认开）
     kepu_seedance_sfx_audio: bool = True
 
     ark_mock: bool = False

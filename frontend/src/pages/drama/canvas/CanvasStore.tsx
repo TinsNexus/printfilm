@@ -39,6 +39,7 @@ import {
 import { mergeAssetsWithCanvasLayout, buildNodeDataFromAsset } from './assetsToCanvasNodes'
 import {
   CANVAS_NODE_DEFAULT_LABEL,
+  nextCanvasNodeLabel,
   canvasKindToAssetType,
   type CanvasAssetNodeData,
   type CanvasNodeKind,
@@ -133,6 +134,8 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
   const edgesRef = useRef(edges)
   const historyRef = useRef(history)
   const freeCanvasModeRef = useRef(freeCanvasMode)
+  /** 串行化新建节点，避免连点并发同名命中去重 */
+  const addNodeChainRef = useRef(Promise.resolve())
   const flushRef = useRef<
     (override?: { nodes: Node<CanvasAssetNodeData>[]; edges: Edge[] }) => Promise<void>
   >(async () => undefined)
@@ -336,55 +339,93 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
 
   const addNodeOfKind = useCallback(
     async (kind: CanvasNodeKind, position: { x: number; y: number }) => {
-      const label = CANVAS_NODE_DEFAULT_LABEL[kind]
-      let assetId: number | undefined
-      try {
-        const asset = await dramaApi.createAsset({
-          project_id: projectId,
-          type: kind,
-          asset_type: canvasKindToAssetType(kind),
-          name: label,
-          params: { on_canvas: true },
-        })
-        assetId = asset.id
-      } catch (err) {
-        setErrorMessage(err instanceof Error ? err.message : '创建资产失败')
-        return
-      }
+      const run = async () => {
+        /* 唯一名避免同类型同名去重复用资产；错开落点避免叠在同一位置 */
+        let label = nextCanvasNodeLabel(kind, nodesRef.current)
+        const stagger = nodesRef.current.length * 24
+        const placed = { x: position.x + stagger, y: position.y + stagger }
+        let assetId: number | undefined
+        try {
+          const asset = await dramaApi.createAsset({
+            project_id: projectId,
+            type: kind,
+            asset_type: canvasKindToAssetType(kind),
+            name: label,
+            params: { on_canvas: true },
+          })
+          assetId = asset.id
+          /* 若仍命中旧资产（兼容库内同名卡），换名再试一次 */
+          const usedIds = new Set(
+            nodesRef.current
+              .map((n) => n.data.assetId)
+              .filter((id): id is number => typeof id === 'number' && id > 0),
+          )
+          if (usedIds.has(assetId)) {
+            label = `${label} ${Date.now().toString(36)}`
+            const retry = await dramaApi.createAsset({
+              project_id: projectId,
+              type: kind,
+              asset_type: canvasKindToAssetType(kind),
+              name: label,
+              params: { on_canvas: true },
+            })
+            if (usedIds.has(retry.id)) {
+              setErrorMessage('创建节点失败：资产已存在于画布')
+              return
+            }
+            assetId = retry.id
+          }
+        } catch (err) {
+          setErrorMessage(err instanceof Error ? err.message : '创建资产失败')
+          return
+        }
 
-      const id = `asset-${assetId}`
-      const node: Node<CanvasAssetNodeData> = {
-        id,
-        type: 'asset',
-        position,
-        data: {
-          kind,
-          label,
-          assetId,
-          textContent: kind === 'text' ? '' : undefined,
-          mediaUrl: null,
-        },
-      }
-      /* 回写 canvas_node_id，刷新后仍能识别为画布节点 */
-      void dramaApi
-        .updateAsset(assetId, { params: { canvas_node_id: id, on_canvas: true } })
-        .catch(() => undefined)
+        const id = `asset-${assetId}`
+        const node: Node<CanvasAssetNodeData> = {
+          id,
+          type: 'asset',
+          position: placed,
+          data: {
+            kind,
+            label,
+            assetId,
+            textContent: kind === 'text' ? '' : undefined,
+            mediaUrl: null,
+          },
+        }
+        /* 回写 canvas_node_id，刷新后仍能识别为画布节点 */
+        void dramaApi
+          .updateAsset(assetId, { params: { canvas_node_id: id, on_canvas: true } })
+          .catch(() => undefined)
 
-      setHistory((prev) =>
-        pushHistory(prev, {
-          nodes: nodesRef.current,
+        setHistory((prev) =>
+          pushHistory(prev, {
+            nodes: nodesRef.current,
+            edges: edgesRef.current,
+          }),
+        )
+        const nextNodes = [...nodesRef.current, node]
+        nodesRef.current = nextNodes
+        setNodes(nextNodes)
+        markDirty()
+        /* 立刻落盘，避免刷新丢失新建节点 */
+        void flushRef.current({
+          nodes: nextNodes,
           edges: edgesRef.current,
-        }),
-      )
-      const nextNodes = [...nodesRef.current, node]
-      nodesRef.current = nextNodes
-      setNodes(nextNodes)
-      markDirty()
-      /* 立刻落盘，避免刷新丢失新建节点 */
-      void flushRef.current({
-        nodes: nextNodes,
-        edges: edgesRef.current,
+        })
+      }
+
+      const prev = addNodeChainRef.current
+      let release!: () => void
+      addNodeChainRef.current = new Promise<void>((resolve) => {
+        release = resolve
       })
+      await prev
+      try {
+        await run()
+      } finally {
+        release()
+      }
     },
     [markDirty, projectId],
   )

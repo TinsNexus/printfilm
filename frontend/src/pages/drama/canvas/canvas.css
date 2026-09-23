@@ -842,12 +842,14 @@
 .fc-asset-body.is-scene {
   width: 200px;
   height: 240px;
+  transition: width 0.18s ease, height 0.18s ease;
 }
 
 .fc-asset-body.is-image,
 .fc-asset-body.is-video {
   width: 160px;
   height: 220px;
+  transition: width 0.18s ease, height 0.18s ease;
 }
 
 .fc-asset-body.is-audio {

@@ -177,11 +177,25 @@ def _is_image_text(project: Project) -> bool:
     return (project.pipeline_mode or "full") == "image_text"
 
 
+def _kepu_seedance_native_audio(project: Project | None = None) -> bool:
+    """科普 full：Seedance 视频内置口播，不走外部 TTS。"""
+    if project is not None and _is_image_text(project):
+        return False
+    return bool(getattr(get_settings(), "kepu_seedance_native_audio", True))
+
+
 def _kepu_seedance_sfx_audio(project: Project | None = None) -> bool:
-    """科普 full：向 Seedance 要操作/环境音效（不含口播与 BGM）。"""
+    """科普 full 回退：Seedance 只要操作音效，口播改后期 TTS。"""
+    if _kepu_seedance_native_audio(project):
+        return False
     if project is not None and _is_image_text(project):
         return False
     return bool(get_settings().kepu_seedance_sfx_audio)
+
+
+def _kepu_seedance_generate_audio(project: Project | None = None) -> bool:
+    """是否向 Seedance 要音轨（内置口播或仅音效）。"""
+    return _kepu_seedance_native_audio(project) or _kepu_seedance_sfx_audio(project)
 
 
 def _project_output_ratio(project: Project) -> str:
@@ -236,6 +250,7 @@ def _kepu_video_prompt(
     motion_bias: str,
     camera: str,
     ambient_only: bool,
+    no_bgm: bool = False,
 ) -> str:
     """科普提交 Seedance：后期叠字，禁止模型烧录字幕。"""
     return segplan.build_seedance_prompt(
@@ -245,6 +260,7 @@ def _kepu_video_prompt(
         camera=camera,
         ambient_only=ambient_only,
         burn_subtitles=False,
+        no_bgm=no_bgm,
     )
 
 
@@ -902,8 +918,10 @@ async def _parallel_image_and_audio(project_id: int) -> None:
     img_sem = asyncio.Semaphore(max(1, cfg.pipeline_image_concurrency))
     done_img = 0
     progress_lock = asyncio.Lock()
-    # 静图成片与完整模式都合成连贯旁白；已有音轨则跳过
-    need_audio = not _continuous_audio_ok(project_id)
+    # 静图成片仍走外部 TTS；full + Seedance 内置口播则跳过
+    need_audio = (not _kepu_seedance_native_audio(project)) and (
+        not _continuous_audio_ok(project_id)
+    )
 
     async def bump_images() -> None:
         nonlocal done_img
@@ -1094,9 +1112,10 @@ async def _parallel_videos(project_id: int) -> None:
         )
         project = result.scalar_one()
         tpl = project.template
-        # 科普 full：Seedance 出操作音效，口播改后期 TTS
-        generate_audio = _kepu_seedance_sfx_audio(project)
-        ambient_only = generate_audio
+        # 科普 full：默认 Seedance 内置口播；回退模式才 ambient_only + 后期 TTS
+        generate_audio = _kepu_seedance_generate_audio(project)
+        ambient_only = _kepu_seedance_sfx_audio(project)
+        no_bgm = _kepu_seedance_native_audio(project)
         consistency = template_consistency_mode(tpl) == "character" and bool(
             tpl.seedance_config.get("character_consistency", True)
         )
@@ -1188,6 +1207,7 @@ async def _parallel_videos(project_id: int) -> None:
             motion_bias=motion,
             camera=str(meta.get("camera") or ""),
             ambient_only=ambient_only,
+            no_bgm=no_bgm,
         )
         dur = segplan.resolve_api_duration(
             script,
@@ -1376,7 +1396,6 @@ async def _compose_stage(project_id: int) -> None:
         mode = project.pipeline_mode or "full"
 
         # full 模式：成片节奏跟镜头视频真实时长，勿被整片旁白重分配后的短 duration 裁掉画面
-        # （@duration/出视频约 76s，TTS 仅 ~33s 时，旧逻辑会把成片压成旁白长）
         if mode == "full":
             for item in media:
                 if not item.video_path:
@@ -1385,9 +1404,13 @@ async def _compose_stage(project_id: int) -> None:
                 if probed and probed > 0.5:
                     item.duration = float(probed)
 
-        full_audio = _full_narration_path(project_id)
-        if not full_audio.exists():
-            full_audio = None
+        native_audio = _kepu_seedance_native_audio(project)
+        # 视频内置口播：不叠外部 full_narration；回退/静图仍可用整片 TTS
+        full_audio = None
+        if not native_audio:
+            full_audio = _full_narration_path(project_id)
+            if not full_audio.exists():
+                full_audio = None
 
         sub_cfg = _merge_subtitle_preset(
             (project.template.subtitle_config if project.template else None) or {},
@@ -1411,7 +1434,7 @@ async def _compose_stage(project_id: int) -> None:
         if not bgm_mood and project.template and isinstance(project.template.audio_config, dict):
             bgm_mood = str(project.template.audio_config.get("bgm_mood") or "").strip()
         bgm_path = resolve_bgm_path(bgm_mood)
-        keep_video_sfx = _kepu_seedance_sfx_audio(project)
+        keep_video_sfx = native_audio or _kepu_seedance_sfx_audio(project)
 
         await _run_ffmpeg_compose_with_retry(
             project_id,
@@ -1430,6 +1453,7 @@ async def _compose_stage(project_id: int) -> None:
                     bgm_path=bgm_path,
                     bgm_volume=0.22,
                     keep_video_sfx=keep_video_sfx,
+                    prefer_video_audio=native_audio,
                     sfx_volume=0.22,
                 ),
             ),
@@ -1577,7 +1601,9 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
         shot = next((s for s in project.shots if s.id == shot_id), None)
         if not shot or not (shot.image_url or shot.image_ark_url):
             raise ValueError("shot image required")
-        generate_audio = _kepu_seedance_sfx_audio(project)
+        generate_audio = _kepu_seedance_generate_audio(project)
+        ambient_only = _kepu_seedance_sfx_audio(project)
+        no_bgm = _kepu_seedance_native_audio(project)
         motion = str(project.template.seedance_config.get("motion_bias", ""))
         consistency = template_consistency_mode(project.template) == "character" and bool(
             project.template.seedance_config.get("character_consistency", True)
@@ -1591,7 +1617,8 @@ async def regen_shot_video(project_id: int, shot_id: int) -> None:
             style_prefix=_effective_style(project),
             motion_bias=motion,
             camera=shot.camera or "",
-            ambient_only=generate_audio,
+            ambient_only=ambient_only,
+            no_bgm=no_bgm,
         )
         dur = segplan.resolve_api_duration(
             script,
@@ -1663,6 +1690,8 @@ async def regen_shot_audio(project_id: int, shot_id: int) -> None:
             .options(selectinload(Project.template), selectinload(Project.shots))
         )
         project = result.scalar_one()
+        if _kepu_seedance_native_audio(project):
+            raise ValueError("当前为视频内置配音，请重绘该镜视频以更新口播")
         shot = next((s for s in project.shots if s.id == shot_id), None)
         if not shot:
             raise ValueError("shot not found")
@@ -1713,32 +1742,44 @@ async def regen_project_audio_and_compose(project_id: int) -> None:
             .options(selectinload(Project.template), selectinload(Project.shots))
         )
         project = result.scalar_one()
+        native_audio = _kepu_seedance_native_audio(project)
         voice = _project_voice(project)
         shots = sorted(project.shots, key=lambda s: s.shot_no)
         project.final_video_url = None
         await db.commit()
 
-    await publish_progress(
-        project_id,
-        {
-            "event": "progress",
-            "stage": "AUDIOING",
-            "percent": 82,
-            "message": "整片连贯配音中…",
-        },
-    )
-    await _synthesize_continuous_audio(
-        project_id, voice=voice, shot_rows=shots, force=True
-    )
-    await publish_progress(
-        project_id,
-        {
-            "event": "progress",
-            "stage": "AUDIOING",
-            "percent": 90,
-            "message": "整片配音完成，开始合成",
-        },
-    )
+    if native_audio:
+        await publish_progress(
+            project_id,
+            {
+                "event": "progress",
+                "stage": "AUDIOING",
+                "percent": 90,
+                "message": "使用视频内置配音，开始合成",
+            },
+        )
+    else:
+        await publish_progress(
+            project_id,
+            {
+                "event": "progress",
+                "stage": "AUDIOING",
+                "percent": 82,
+                "message": "整片连贯配音中…",
+            },
+        )
+        await _synthesize_continuous_audio(
+            project_id, voice=voice, shot_rows=shots, force=True
+        )
+        await publish_progress(
+            project_id,
+            {
+                "event": "progress",
+                "stage": "AUDIOING",
+                "percent": 90,
+                "message": "整片配音完成，开始合成",
+            },
+        )
 
     try:
         await _compose_stage(project_id)

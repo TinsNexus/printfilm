@@ -218,6 +218,21 @@ def test_build_seedance_production_section_ambient_only():
     assert "轻快专业" not in section
 
 
+def test_build_seedance_production_section_no_bgm_keeps_vo():
+    """内置口播：保留旁白约束，禁止模型 BGM。"""
+    script = build_segment_script(
+        [
+            SegmentBeat(duration=5, kind="narration", text="诺贝尔发明了炸药"),
+        ],
+        bgm_mood="轻快专业",
+    )
+    section = build_seedance_production_section(script, ambient_only=False, no_bgm=True)
+    assert "禁止任何 BGM" in section
+    assert "旁白" in section
+    assert "后期外部 TTS" not in section
+    assert "轻快专业" not in section
+
+
 def test_build_seedance_prompt_ambient_only_rewrites_narration():
     from app.services.seedance_segments import seedance_timeline_without_voice
 

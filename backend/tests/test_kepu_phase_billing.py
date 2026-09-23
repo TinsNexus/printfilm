@@ -65,8 +65,16 @@ def test_resolve_phase_videos_when_continuous_audio_ok(monkeypatch) -> None:
     assert resolve_kepu_billing_phase(_project(shots)) == "videos"
 
 
+def test_resolve_phase_videos_when_native_audio_and_images() -> None:
+    """Seedance 内置口播：有图即可进 videos，不依赖外部 TTS 文件。"""
+    shots = [_shot(image_url="/i.png") for _ in range(3)]
+    assert resolve_kepu_billing_phase(_project(shots)) == "videos"
+
+
 def test_resolve_phase_assets_when_audio_url_but_file_bad(monkeypatch) -> None:
-    """仅有 audio_url 字符串但文件不可用时，仍应留在 assets，避免误冻视频款。"""
+    """回退外部 TTS 时：仅有 audio_url 但文件不可用，仍留在 assets。"""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "kepu_seedance_native_audio", False)
     monkeypatch.setattr(
         "app.services.kepu_stages.continuous_narration_ok",
         lambda _pid: False,
