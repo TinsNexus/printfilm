@@ -227,6 +227,20 @@ async def episode_script(
                 cur_creative = str((cur or {}).get("creative") or "").strip()
             if len(cur_creative) < 20:
                 raise HTTPException(status_code=400, detail="请先填写本集原始创意（至少 20 字）")
+        elif mode == "body":
+            # 与 run_episode_body_from_brief 门槛一致：创意≥10 或摘要≥40，否则任务必败
+            cur = next(
+                (
+                    x
+                    for x in existing
+                    if isinstance(x, dict) and int(x.get("episodeNumber") or 0) == episode_number
+                ),
+                None,
+            )
+            cur_creative = creative_in or str((cur or {}).get("creative") or "").strip()
+            cur_summary = str((cur or {}).get("summary") or "").strip()
+            if len(cur_creative) < 10 and len(cur_summary) < 40:
+                raise HTTPException(status_code=400, detail="请先填写本集创意或摘要")
         elif mode == "brief":
             cur = next(
                 (

@@ -291,6 +291,12 @@ export function OutlineEpisodePanel({
   const selectedGenerating =
     Boolean(generatingMode) && generatingEpisodeNumber === (selected?.episodeNumber ?? null)
   const anyEpisodeGenerating = Boolean(generatingMode)
+  const effectiveCreative =
+    editingSection === 'creative' ? sectionDraft : selected?.creative || ''
+  const effectiveSummary =
+    editingSection === 'summary' ? sectionDraft : selected?.summary || ''
+  const canGenerateBody =
+    episodeBodyCharLen(effectiveCreative) >= 10 || episodeBodyCharLen(effectiveSummary) >= 40
   const canAdd =
     summaryReady &&
     !episodeGenerating &&
@@ -383,8 +389,14 @@ export function OutlineEpisodePanel({
   async function handleGenerate(mode: 'summary' | 'body' | 'full' | 'brief') {
     if (!selected?.episodeNumber) return
     const creative = editingSection === 'creative' ? sectionDraft : selected.creative || ''
+    const summary = editingSection === 'summary' ? sectionDraft : selected.summary || ''
     if ((mode === 'summary' || mode === 'full') && !isSubstantialEpisodeCreative(creative)) {
       setLocalError(`本集原始创意至少 ${MIN_EPISODE_CREATIVE_CHARS} 字`)
+      return
+    }
+    // 与后端 run_episode_body_from_brief 一致：创意≥10 或摘要≥40
+    if (mode === 'body' && episodeBodyCharLen(creative) < 10 && episodeBodyCharLen(summary) < 40) {
+      setLocalError('请先填写本集创意或摘要，再生成剧本正文')
       return
     }
     if (mode === 'brief' && !isSubstantialEpisodeBody(selected.body)) {
@@ -407,12 +419,18 @@ export function OutlineEpisodePanel({
     setLocalError('')
     setLocalNotice('')
     try {
-      if (editingSection === 'creative' || titleDraft !== selected.title) {
+      // 生成前落盘创意/摘要/标题草稿，避免 body 模式只读库内空字段
+      if (
+        editingSection === 'creative' ||
+        editingSection === 'summary' ||
+        titleDraft !== selected.title
+      ) {
         const next = displayEpisodes.map((ep) =>
           ep.episodeNumber === targetEpisode
             ? {
                 ...ep,
                 creative: editingSection === 'creative' ? sectionDraft : ep.creative,
+                summary: editingSection === 'summary' ? sectionDraft : ep.summary,
                 title: titleDraft || ep.title,
               }
             : ep,
@@ -801,7 +819,7 @@ export function OutlineEpisodePanel({
           draft={sectionDraft}
           open={openSections.has('body')}
           busy={busy}
-          generateBusy={generateBusy}
+          generateBusy={generateBusy || !canGenerateBody}
           placeholder={`拍摄剧本正文（进入分镜需满 ${MIN_EPISODE_BODY_CHARS} 字）`}
           regenerateLabel={selectedGenerating && generatingMode === 'body' ? '生成中…' : '生成剧本'}
           onToggle={() => toggleSection('body')}
