@@ -43,6 +43,8 @@ import {
   parseSegmentScript,
   replaceFirstVisualInScript,
   replaceNarrationInScript,
+  shotDisplayDurationSec,
+  sumDuration,
   validateSegmentScriptDuration,
 } from '../../lib/segmentDuration'
 
@@ -62,7 +64,7 @@ function downloadStoryboardCsv(project: Project) {
         s.shot_no,
         s.narration,
         scenePromptForDisplay(s.img_prompt || s.video_prompt || ''),
-        s.duration,
+        shotDisplayDurationSec(s),
         shotDisplayLabel(shotDisplayKind(s, { pipelineMode: project.pipeline_mode })),
         s.overlay_title || '',
       ]
@@ -193,7 +195,7 @@ export default function StoryboardPage() {
   const running = isProjectBusy(project)
   const step = project ? kepuStepIndex('board', project) : 2
   const totalDuration = useMemo(
-    () => (project?.shots || []).reduce((s, x) => s + (Number(x.duration) || 0), 0),
+    () => (project?.shots || []).reduce((s, x) => s + shotDisplayDurationSec(x), 0),
     [project?.shots],
   )
 
@@ -569,15 +571,17 @@ export default function StoryboardPage() {
     })
   }
 
-  // 改脚本时回填旁白与首帧画面
+  // 改脚本时回填旁白与首帧画面，并同步时长为 @duration 合计
   function patchEditingScript(value: string) {
     if (!editing) return
+    const tagged = sumDuration(value)
     setEditing({
       ...editing,
       segment_script: value,
       video_prompt: value,
       narration: narrationFromScript(value),
       img_prompt: firstVisualFromScript(value) || editing.img_prompt,
+      duration: tagged > 0 ? tagged : editing.duration,
     })
   }
 
@@ -600,7 +604,7 @@ export default function StoryboardPage() {
         img_prompt: editing.img_prompt,
         video_prompt: editing.video_prompt,
         segment_script: editing.segment_script,
-        duration: Number(editing.duration) || 4,
+        duration: durationCheck.total > 0 ? durationCheck.total : Number(editing.duration) || 4,
         camera: editing.camera,
       })
       closeShotEdit()
@@ -1132,7 +1136,7 @@ title="用当前镜头重新拼接"
                               )}
                             </button>
                           </td>
-                          <td className="col-dur">{formatMmSs(shot.duration)}</td>
+                          <td className="col-dur">{formatMmSs(shotDisplayDurationSec(shot))}</td>
                           <td className="col-status">
                             <span
                               className={[
@@ -1310,7 +1314,7 @@ title="用当前镜头重新拼接"
                         )
                       }
                     />
-                    镜头 {String(s.shot_no).padStart(2, '0')} · {formatMmSs(Number(s.duration) || 0)}
+                    镜头 {String(s.shot_no).padStart(2, '0')} · {formatMmSs(shotDisplayDurationSec(s))}
                   </label>
                 ))}
             </div>

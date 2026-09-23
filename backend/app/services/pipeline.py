@@ -717,8 +717,11 @@ async def _script_stage(project_id: int) -> None:
         await db.flush()
         bible = project.character_bible
         for plan in plans:
+            segment_script = (plan.segment_script or plan.video_prompt or "").strip()
+            # 时长以脚本 @duration 合计为准（与列表「逐段分镜」标签一致），勿只用 LLM duration 字段
+            script_total = segplan.sum_duration(segment_script)
             dur = clamp_shot_duration(
-                plan.duration,
+                float(script_total if script_total > 0 else plan.duration),
                 pipeline_mode=mode,
                 tpl_min=tpl.shot_duration_min,
                 tpl_max=tpl.shot_duration_max,
@@ -732,7 +735,6 @@ async def _script_stage(project_id: int) -> None:
                 scene = scene.replace(bible, "", 1)
             scene = strip_lock_blocks(scene)
             img_prompt = ark._sanitize_seedream_prompt(scene)
-            segment_script = (plan.segment_script or plan.video_prompt or "").strip()
             db.add(
                 Shot(
                     project_id=project.id,

@@ -222,7 +222,29 @@ def _project_runtime_view(project: Project) -> tuple[str, int, str | None]:
     status = str(getattr(task, "status", "") or "")
     progress = int(getattr(task, "progress_percent", 0) or 0)
     if task_type == "project_pipeline":
-        label = ProjectStatus.SCRIPTING
+        # 勿一律标 SCRIPTING：续跑 videos/assets 时列表会误显示「拆分镜中」
+        payload = getattr(task, "payload", None) or {}
+        phase = str(payload.get("phase") or "").strip().lower() if isinstance(payload, dict) else ""
+        phase_label = {
+            "script": ProjectStatus.SCRIPTING,
+            "assets": ProjectStatus.IMAGING,
+            "videos": ProjectStatus.VIDEOING,
+            "compose": ProjectStatus.COMPOSING,
+        }.get(phase)
+        proj_status = str(project.status or "")
+        if phase_label:
+            label = phase_label
+        elif proj_status in {
+            ProjectStatus.SCRIPTING,
+            ProjectStatus.IMAGING,
+            ProjectStatus.VIDEOING,
+            ProjectStatus.AUDIOING,
+            ProjectStatus.COMPOSING,
+            ProjectStatus.AUDITING,
+        }:
+            label = proj_status
+        else:
+            label = ProjectStatus.SCRIPTING
     elif task_type == "shot_regen_image":
         label = ProjectStatus.IMAGING
     elif task_type == "shot_regen_video":

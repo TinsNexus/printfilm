@@ -52,6 +52,22 @@ export function sumDuration(content: string): number {
 }
 
 /**
+ * 分镜列表展示用时长：优先脚本内 @duration 合计，否则回退 shot.duration
+ * （生成时 LLM 的 duration 字段常与逐段标签脱节，列表应对齐用户看到的 3s/4s 标签）
+ */
+export function shotDisplayDurationSec(shot: {
+  duration?: number | null
+  segment_script?: string | null
+  video_prompt?: string | null
+}): number {
+  const script = String(shot.segment_script || shot.video_prompt || '')
+  const tagged = sumDuration(script)
+  if (tagged > 0) return tagged
+  const stored = Number(shot.duration)
+  return Number.isFinite(stored) && stored > 0 ? stored : 0
+}
+
+/**
  * 校验单个时长是否在科普单段合法区间
  * @param seconds 时长秒数
  */
