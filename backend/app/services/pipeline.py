@@ -1375,6 +1375,16 @@ async def _compose_stage(project_id: int) -> None:
         ratio = _project_output_ratio(project)
         mode = project.pipeline_mode or "full"
 
+        # full 模式：成片节奏跟镜头视频真实时长，勿被整片旁白重分配后的短 duration 裁掉画面
+        # （@duration/出视频约 76s，TTS 仅 ~33s 时，旧逻辑会把成片压成旁白长）
+        if mode == "full":
+            for item in media:
+                if not item.video_path:
+                    continue
+                probed = await asyncio.to_thread(probe_duration, item.video_path)
+                if probed and probed > 0.5:
+                    item.duration = float(probed)
+
         full_audio = _full_narration_path(project_id)
         if not full_audio.exists():
             full_audio = None
