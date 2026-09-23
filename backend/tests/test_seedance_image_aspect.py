@@ -35,4 +35,13 @@ def test_target_canvas_boundary_exactly_2_5_gets_padded():
     canvas = target_canvas_for_seedance_ar(2500, 1000)
     assert canvas is not None
     cw, ch = canvas
-    assert cw / ch <= 2.49
+    assert 0.41 <= cw / ch <= 2.49
+
+
+def test_target_canvas_even_align_stays_safe():
+    # 偶数字对齐不得把 AR 推回 2.50
+    canvas = target_canvas_for_seedance_ar(249, 99)
+    assert canvas is not None
+    cw, ch = canvas
+    assert cw % 2 == 0 and ch % 2 == 0
+    assert 0.41 <= cw / ch <= 2.49

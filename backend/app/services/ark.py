@@ -1295,8 +1295,11 @@ class ArkGateway:
             copy = dict(item)
             if item.get("type") == "image_url":
                 raw_url = (item.get("image_url") or {}).get("url") or ""
+                from app.services.seedance_image_aspect import ensure_seedance_compatible_image_url
+
+                safe_url = await ensure_seedance_compatible_image_url(str(raw_url))
                 copy["image_url"] = {
-                    "url": await self._resolve_media_ref(str(raw_url), prefer_https=True)
+                    "url": await self._resolve_media_ref(safe_url, prefer_https=True)
                 }
             elif item.get("type") == "audio_url":
                 raw_url = (item.get("audio_url") or {}).get("url") or ""
