@@ -702,12 +702,21 @@ def resolve_seedance_ratio(aspect_ratio: str | None) -> str:
     return (aspect_ratio or "9:16").strip() or "9:16"
 
 
-def resolve_seedance_resolution(resolution: str | None) -> str:
-    return (resolution or "480p").strip() or "480p"
+def resolve_seedance_resolution(
+    resolution: str | None,
+    *,
+    model_id: str | None = None,
+) -> str:
+    """解析并按模型能力钳制清晰度。"""
+    from app.services.seedance_resolutions import clamp_video_resolution
+
+    return clamp_video_resolution(model_id, resolution)
 
 
 # 将分镜参数转为 Seedance 请求体
 def build_seedance_generate_body(input_params: BuildSeedanceGenerateBodyInput) -> dict[str, Any]:
+    from app.services.seedance_resolutions import clamp_video_duration
+
     content = input_params.get("content")
     fallback = int(input_params.get("duration_fallback") or 8)
     continuity = (input_params.get("continuity_first_frame_url") or "").strip() or None
@@ -725,8 +734,10 @@ def build_seedance_generate_body(input_params: BuildSeedanceGenerateBodyInput) -
     if character_intro is None:
         character_intro = True
 
+    mid = input_params.get("model_id")
+    raw_duration = resolve_seedance_duration_from_content(content, fallback=fallback)
     body: dict[str, Any] = {
-        "model": resolve_seedance_model_endpoint(input_params.get("model_id")),
+        "model": resolve_seedance_model_endpoint(mid),
         "content": build_seedance_content_items(
             content,
             reference,
@@ -736,8 +747,11 @@ def build_seedance_generate_body(input_params: BuildSeedanceGenerateBodyInput) -
             character_intro=bool(character_intro),
             style_board_url=style_board_url,
         ),
-        "duration": resolve_seedance_duration_from_content(content, fallback=fallback),
-        "resolution": resolve_seedance_resolution(input_params.get("resolution")),
+        "duration": clamp_video_duration(mid, raw_duration),
+        "resolution": resolve_seedance_resolution(
+            input_params.get("resolution"),
+            model_id=mid,
+        ),
         "watermark": False,
         # Seedance 原生配音；字幕/人物介绍叠字由对应开关控制提示词
         "generate_audio": True,

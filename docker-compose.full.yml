@@ -1,6 +1,8 @@
-# PRINTFILM 全栈（本地构建）。推 ACR：acr_push.ps1 -ComposeFile docker-compose.full.yml
-# 启动：cp deploy/.env.docker.example deploy/.env.docker
-#       docker compose --env-file deploy/.env.docker -f docker-compose.full.yml up -d --build
+# PRINTFILM 全栈（本地构建 api / web / admin-web）。
+# 推 ACR 可用仓库根目录发布脚本；中间件用公共镜像不构建。
+# 启动：
+#   cp deploy/.env.docker.example deploy/.env.docker   # 首次
+#   docker compose --env-file deploy/.env.docker -f docker-compose.full.yml up -d --build
 name: printfilm
 
 services:
@@ -54,6 +56,18 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 40s
     ports:
       - "8000:8000"
 

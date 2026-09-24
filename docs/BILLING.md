@@ -43,7 +43,7 @@ charge_fen = cost_fen
 
 未返回 quota 时回退 token 单价。管理端「支付与计费」可「查询 TokenFree 余额」（`GET /v1/dashboard/billing/subscription` + `usage`），并拉取公开价目 `GET https://www.tokenfree.com/api/pricing` 展示推荐模型官方价。
 
-预扣：生图 API 走 TokenFree 实测可通的 `gpt-image-2-5`（分组里没有 `gpt-image-2-5-sunburst`）。计费按 Kie 积分档（1K 6 积分 / 2K 10 积分 / 4K 16 积分；默认 3.5 分/积分 → 2K 35 分，对应 $0.03 / $0.05 / $0.08）。Seedream 会改走 `gpt-image-2-5`，**不要**用 OpenAI $0.625 目录价。**按张官价不再乘 `billing_estimate_buffer`（默认 1.2）**。LLM / 视频 / TTS 估价仍乘缓冲。结算优先单次 `quota` 或 Kie credits；无用量时同样按张档位价，**不再**用 8 元/百万 token。LLM 按官方 in/out（默认 kimi-k2.6，70/30 拆）。视频不用价目表占位 `model_ratio=37.5`，按火山 480P 秒价 × 清晰度倍率（720P×2 / 1080P×4）；漫剧缺省按 720P。勿把 New API 的美元 `cost` 当人民币。
+预扣：生图 API 按逻辑模型路由解析出的上游模型名原样调用 TokenFree（如渠道启用的 `gpt-image-2` / `seedream-5-0-pro`，不做硬改写）。**gpt-image / sunburst** 计费按 Kie 积分档（1K 6 积分 / 2K 10 积分 / 4K 16 积分；默认 3.5 分/积分 → 2K 35 分，对应 $0.03 / $0.05 / $0.08），**不要**用 OpenAI $0.625 目录价。**Seedream** 优先用 TokenFree `/api/pricing` 按张价；无价目时才用上述 Kie 2K 档作保守保底。**按张官价不再乘 `billing_estimate_buffer`（默认 1.2）**。LLM / 视频 / TTS 估价仍乘缓冲。结算优先单次 `quota` 或 Kie credits；无用量时同样按张档位价，**不再**用 8 元/百万 token。LLM 按官方 in/out（默认 kimi-k2.6，70/30 拆）。视频不用价目表占位 `model_ratio=37.5`，按模型×清晰度结算参考秒价（`VENDOR_VIDEO_YUAN_5S_BY_RES` / MiniMax 秒价，汇率取 `billing_usd_cny`）；漫剧缺省按 720P。勿把 New API 的美元 `cost` 当人民币。
 
 管理端「官方用量对照」复用模型页 TokenFree API Key，拉取 New API 日消耗（`/api/data/self` 或 billing usage，日期无效时按累计额度差分记到当天）并与本地成本对照。
 

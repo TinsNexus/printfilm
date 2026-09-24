@@ -38,3 +38,15 @@ def test_pro_detection() -> None:
     assert is_seedream_pro_model("doubao-seedream-5-0-pro-260628")
     assert not is_seedream_pro_model("doubao-seedream-4-5")
     assert not is_seedream_pro_model("kie-seedream-5")
+    assert not is_seedream_pro_model("z-image-turbo")
+    assert not is_seedream_pro_model("gpt-image-2")
+
+
+def test_compact_models_force_1k() -> None:
+    """z-image 等非 Seedream 模型强制 1K，避免大像素触发协议失败。"""
+    size = resolve_seedream_size(
+        aspect_ratio="3:4",
+        resolution="3K",
+        model_id="z-image-turbo",
+    )
+    assert size == "864x1152"

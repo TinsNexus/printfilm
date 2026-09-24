@@ -1,99 +1,107 @@
 export type ModelCapability = "text" | "image" | "video" | "audio";
 
-export type UpstreamModelOption = { id: string; label: string; capability: string };
+export type PresetModelOption = { id: string; label: string };
 
-/** 勾选推荐时补上的 TokenFree id；视频含 2.5 / 2.0 / Mini */
-export const RECOMMENDED_MODEL_IDS: Record<ModelCapability, string[]> = {
-  text: ["kimi-k2.6"],
-  image: ["gpt-image-2-5"],
-  video: ["seedance-2-5", "seedance-2-0", "seedance-2-0-mini"],
-  audio: [
-    "qwen-tts-2025-05-22",
-    "qwen3-tts-flash",
-    "gemini-3.1-flash-tts",
-    "gemini-2.5-pro-preview-tts",
-    "elevenlabs-tts",
-    "elevenlabs/text-to-speech-multilingual-v2",
+/** 与后端 media_model_presets.PRESET_MODELS 对齐 */
+export const PRESET_MODELS: Record<ModelCapability, PresetModelOption[]> = {
+  text: [
+    { id: "kimi-k2.6", label: "Kimi K2.6" },
+    { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro" },
+    { id: "gpt-5.5", label: "GPT 5.5" },
   ],
+  image: [
+    { id: "seedream-5-0-pro", label: "Seedream 5.0 Pro" },
+    { id: "gpt-image-2", label: "GPT Image 2" },
+  ],
+  video: [
+    { id: "seedance-2-0", label: "Seedance 2.0" },
+    { id: "seedance-2-0-mini", label: "Seedance 2.0 Mini" },
+    { id: "seedance-2-5", label: "Seedance 2.5" },
+    { id: "MiniMax-H3", label: "MiniMax H3" },
+  ],
+  audio: [{ id: "gemini-3.1-flash-tts", label: "Gemini 3.1 Flash TTS" }],
 };
 
-const CAPABILITY_ORDER: ModelCapability[] = ["text", "image", "video", "audio"];
+export const CAPABILITY_ORDER: ModelCapability[] = ["text", "image", "video", "audio"];
 
-// 把 Seedance 接入点/短名收到 TokenFree 目录 id
-export function canonicalChannelModelId(model: string): string {
-  const mid = (model || "").trim();
-  if (!mid) return "";
-  const low = mid.toLowerCase();
-  if (!low.includes("seedance")) return mid;
-  if (low.includes("mini")) return "seedance-2-0-mini";
-  if (/(?:2-5|2\.5|260628)/.test(low)) return "seedance-2-5";
-  if (/(?:2-0|2\.0|260128)/.test(low)) return "seedance-2-0";
-  const compact = low.replace(/_/g, "-");
-  if (compact === "seedance-2" || compact === "seedance2" || compact.endsWith("seedance-2")) {
-    return "seedance-2-0";
-  }
-  return mid;
-}
+export const CAPABILITY_LABELS: Record<ModelCapability, string> = {
+  text: "文本",
+  image: "图像",
+  video: "视频",
+  audio: "配音",
+};
 
-// 合并 Seedance 2.0 三档别名，保持原顺序
-export function canonicalizeChannelModels(models: string[]): string[] {
+/** 写入 TokenFree 渠道的全部预设 id */
+export function allPresetChannelModels(): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
-  for (const raw of models) {
-    const id = canonicalChannelModelId(raw);
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    out.push(id);
-  }
-  return out;
-}
-
-// 目录里同款 Seedance 只留一条，优先展示规范 id
-export function collapseCatalogModels(models: UpstreamModelOption[]): UpstreamModelOption[] {
-  const map = new Map<string, UpstreamModelOption>();
-  for (const model of models) {
-    const id = canonicalChannelModelId(model.id);
-    if (!id) continue;
-    const prev = map.get(id);
-    if (!prev || model.id === id) {
-      map.set(id, {
-        ...model,
-        id,
-        label: model.id === id ? model.label || id : id,
-      });
-    }
-  }
-  return Array.from(map.values()).sort((a, b) => a.id.localeCompare(b.id));
-}
-
-// 上游目录里实际存在的推荐 id
-export function pickRecommendedModelIds(models: UpstreamModelOption[]): string[] {
-  const ids = new Set(models.map((item) => canonicalChannelModelId(item.id)));
-  const out: string[] = [];
   for (const cap of CAPABILITY_ORDER) {
-    for (const want of RECOMMENDED_MODEL_IDS[cap]) {
-      if (ids.has(want) && !out.includes(want)) out.push(want);
+    for (const row of PRESET_MODELS[cap]) {
+      const id = (row.id || "").trim();
+      if (!id || seen.has(id.toLowerCase())) continue;
+      seen.add(id.toLowerCase());
+      out.push(id);
     }
   }
   return out;
 }
 
-// 各能力默认项；视频写逻辑 id seedance-2.5，与下拉选项对齐
-export function pickRecommendedDefaults(models: UpstreamModelOption[]): Record<ModelCapability, string> {
-  const ids = new Set(models.map((item) => canonicalChannelModelId(item.id)));
-  const out: Record<ModelCapability, string> = { text: "", image: "", video: "", audio: "" };
+/** 历史友好别名 → 预设规范 id（与后端 PRESET_MODEL_ALIASES 对齐） */
+const PRESET_MODEL_ALIASES: Record<string, string> = {
+  "seedance-2.5": "seedance-2-5",
+  "seedance2.5": "seedance-2-5",
+  "seedance-2": "seedance-2-0",
+  seedance2: "seedance-2-0",
+  "seedance-2.0": "seedance-2-0",
+  "seedance2.0": "seedance-2-0",
+  "seedream-5.0": "seedream-5-0-pro",
+  "seedream-5": "seedream-5-0-pro",
+  "seedream5.0": "seedream-5-0-pro",
+  seedream5: "seedream-5-0-pro",
+  "gpt-image-2-5": "gpt-image-2",
+  "gpt-image-2.5": "gpt-image-2",
+};
+
+function resolvePresetAlias(modelId: string): string {
+  const key = modelId.trim().toLowerCase().replace(/\s+/g, "");
+  for (const [alias, canonical] of Object.entries(PRESET_MODEL_ALIASES)) {
+    if (alias.toLowerCase().replace(/\s+/g, "") === key) return canonical;
+  }
+  return modelId.trim();
+}
+
+/** 非法或不空缺省时落到该能力第一项 */
+export function clampDefaultToPreset(cap: ModelCapability, modelId: string | null | undefined): string {
+  const raw = resolvePresetAlias(modelId || "");
+  const opts = PRESET_MODELS[cap];
+  const hit = opts.find((row) => row.id.toLowerCase() === raw.toLowerCase());
+  if (hit) return hit.id;
+  return opts[0]?.id || "";
+}
+
+/** 加载时检测「历史默认值被钳到预设」以便提示管理员确认 */
+export function detectDefaultRemaps(
+  raw: Partial<Record<`${ModelCapability}_model`, string>> | null | undefined,
+): Array<{ capability: ModelCapability; from: string; to: string }> {
+  const out: Array<{ capability: ModelCapability; from: string; to: string }> = [];
   for (const cap of CAPABILITY_ORDER) {
-    if (cap === "video" && (ids.has("seedance-2-5") || ids.has("seedance-2.5"))) {
-      out.video = "seedance-2.5";
-      continue;
-    }
-    out[cap] = RECOMMENDED_MODEL_IDS[cap].find((id) => ids.has(id)) || "";
+    const key = `${cap}_model` as `${ModelCapability}_model`;
+    const original = String(raw?.[key] || "").trim();
+    if (!original) continue;
+    const clamped = clampDefaultToPreset(cap, original);
+    if (original.toLowerCase() === clamped.toLowerCase()) continue;
+    if (resolvePresetAlias(original).toLowerCase() === clamped.toLowerCase()) continue;
+    out.push({ capability: cap, from: original, to: clamped });
   }
   return out;
 }
 
-// 勾选推荐：canonicalize 后补上短名单，不删已选的 Seedance 2.0
-export function mergeRecommendedSelection(selected: string[], catalog: UpstreamModelOption[]): string[] {
-  const recommended = pickRecommendedModelIds(catalog);
-  return canonicalizeChannelModels([...selected, ...recommended]);
+/** 默认站点默认值（四类各取第一项） */
+export function defaultPresetDefaults(): Record<`${ModelCapability}_model`, string> {
+  return {
+    text_model: clampDefaultToPreset("text", ""),
+    image_model: clampDefaultToPreset("image", ""),
+    video_model: clampDefaultToPreset("video", ""),
+    audio_model: clampDefaultToPreset("audio", ""),
+  };
 }

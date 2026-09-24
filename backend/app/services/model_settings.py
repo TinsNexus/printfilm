@@ -8,7 +8,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,14 +70,18 @@ def _encrypt_secret(value: str) -> str:
     return f"{ENCRYPTED_PREFIX}{token}"
 
 
-# 解密敏感字段
+# 解密敏感字段；密钥轮换/错配时返回空串，避免拖垮启动
 def _decrypt_secret(value: str) -> str:
     if not value:
         return ""
     if not value.startswith(ENCRYPTED_PREFIX):
         return value
     token = value[len(ENCRYPTED_PREFIX) :]
-    return _fernet().decrypt(token.encode("utf-8")).decode("utf-8")
+    try:
+        return _fernet().decrypt(token.encode("utf-8")).decode("utf-8")
+    except InvalidToken:
+        logger.warning("密文字段无法用当前 SECRET_KEY 解密，已忽略（需在管理端重填）")
+        return ""
 
 
 # 返回当前路由快照
@@ -214,6 +218,17 @@ def _merge_friendly_alias_models(
     return merged
 
 
+# TokenFree 价目真实 id（兼容旧前端别名 → 同名逻辑模型，不做换绑）
+_TOKENFREE_IMAGE_IDS: dict[str, str] = {
+    "seedream-5.0": "seedream-5-0-pro",
+    "seedream-5": "seedream-5-0-pro",
+    "5.0": "seedream-5-0-pro",
+    "seedream-4.5": "seedream-4-5",
+    "seedream-4": "seedream-4-5",
+    "4.5": "seedream-4-5",
+}
+
+
 # 从 env 构建默认逻辑模型与默认模型 ID
 def _bootstrap_logical_from_channels(channels: list[SystemModelChannel]) -> tuple[list[LogicalModel], DefaultModels]:
     logical_models = synchronize_logical_models_with_channels([], channels)
@@ -234,30 +249,7 @@ def _bootstrap_logical_from_channels(channels: list[SystemModelChannel]) -> tupl
                     result.append(binding.model_copy())
         return result
 
-    if settings.model_image:
-        bindings = _bindings_for_upstream(settings.model_image)
-        if bindings:
-            alias_models.append(
-                LogicalModel(
-                    id="seedream-5.0",
-                    name="Seedream 5.0",
-                    capability="image",
-                    enabled=True,
-                    bindings=bindings,
-                )
-            )
-    if settings.model_image_45:
-        bindings = _bindings_for_upstream(settings.model_image_45)
-        if bindings:
-            alias_models.append(
-                LogicalModel(
-                    id="seedream-4.5",
-                    name="Seedream 4.5",
-                    capability="image",
-                    enabled=True,
-                    bindings=bindings,
-                )
-            )
+    # 图模不再造 seedream-5.0 友好别名；仅视频保留 Seedance 短名
     if settings.model_video:
         logical_id, name = _seedance_logical_meta(settings.model_video)
         _append_seedance_alias(
@@ -283,9 +275,12 @@ def _bootstrap_logical_from_channels(channels: list[SystemModelChannel]) -> tupl
         default_video = "seedance-2"
     synced = synchronize_logical_models_with_channels(logical_models, channels)
     merged = _merge_friendly_alias_models(synced, alias_models)
+    # 默认图模 = 渠道/价目真实名（如 seedream-5-0-pro）
+    image_default = (settings.model_image or "").strip()
+    image_default = _TOKENFREE_IMAGE_IDS.get(image_default.lower(), image_default)
     defaults = DefaultModels(
         text_model=settings.model_llm,
-        image_model="seedream-5.0" if settings.model_image else "",
+        image_model=image_default,
         video_model=default_video,
         audio_model=settings.model_audio or settings.volc_tts_speaker,
     )
@@ -431,14 +426,19 @@ def _settings_to_dict(settings: Settings | None = None) -> dict[str, Any]:
 
 
 def _decrypt_flat_config(raw: dict[str, Any] | None) -> dict[str, Any]:
+    """解密 flat 密钥；解不开则删掉该字段，让运行时回落到 .env，避免空串/坏密文盖住环境变量。"""
     data = dict((raw or {}).get("flat") or raw or {})
     for field in SECRET_FIELDS:
-        if field in data and data[field]:
-            try:
-                data[field] = _decrypt_secret(str(data[field]))
-            except Exception:  # noqa: BLE001
-                logger.warning("failed to decrypt flat settings field %s", field)
-                data[field] = ""
+        if field not in data or not data[field]:
+            continue
+        raw_val = str(data[field])
+        plain = _decrypt_secret(raw_val)
+        # 仍带 enc: 前缀说明密钥错配/双重加密，丢弃以免污染 overlay
+        if raw_val.startswith(ENCRYPTED_PREFIX) and (not plain or plain.startswith(ENCRYPTED_PREFIX)):
+            logger.warning("flat 密钥字段 %s 无法解密，已忽略并回落 .env", field)
+            data.pop(field, None)
+            continue
+        data[field] = plain
     return data
 
 
@@ -464,6 +464,13 @@ async def _compose_runtime_state(db: AsyncSession) -> tuple[list[SystemModelChan
     """组装运行时路由：始终按渠道 models 同步逻辑模型，默认文字模型随可用上游回落。"""
     app_row = await _get_or_create_app_row(db)
     await _ensure_bootstrapped_channels(db)
+    # 同步能力前预热 TokenFree 价目（tags / endpoints）
+    try:
+        from app.services.tokenfree_pricing import ensure_official_rates
+
+        await ensure_official_rates()
+    except Exception:  # noqa: BLE001
+        pass
     channels = await _load_channels(db, runtime=True)
     config = dict(app_row.config_json or {})
     logical_models = [LogicalModel.model_validate(item) for item in config.get("logical_models") or []]
@@ -477,13 +484,19 @@ async def _compose_runtime_state(db: AsyncSession) -> tuple[list[SystemModelChan
     boot_logical, boot_defaults = _bootstrap_logical_from_channels(
         [_channel_row_to_admin(row) for row in (await db.execute(select(SystemModelChannelRow))).scalars().all()]
     )
-    alias_ids = {"seedream-5.0", "seedream-4.5", "seedance-2.5", "seedance-2"}
+    # 仅合并视频 Seedance 短名；图模一律用 TokenFree 渠道真实 id，不做 seedream-5.0 换绑
+    alias_ids = {"seedance-2.5", "seedance-2"}
     logical_models = _merge_friendly_alias_models(
         logical_models,
         [model for model in boot_logical if model.id in alias_ids],
     )
     if not (default_models.video_model or "").strip() and boot_defaults.video_model:
         default_models = default_models.model_copy(update={"video_model": boot_defaults.video_model})
+    # 默认图模若仍是旧别名，收到价目真实名
+    image_default = (default_models.image_model or boot_defaults.image_model or "").strip()
+    image_default = _TOKENFREE_IMAGE_IDS.get(image_default.lower(), image_default)
+    if image_default:
+        default_models = default_models.model_copy(update={"image_model": image_default})
     default_models = normalize_default_models(default_models, logical_models, channels)
     flat = _effective_flat(_decrypt_flat_config(config))
     from app.services.tokenfree_gateway import apply_tokenfree_flat_overlay
@@ -497,6 +510,9 @@ async def _compose_runtime_state(db: AsyncSession) -> tuple[list[SystemModelChan
         flat["model_video"] = default_models.video_model
     if default_models.audio_model:
         flat["model_audio"] = default_models.audio_model
+    # 4.5 档用价目名
+    flat["model_image_45"] = (flat.get("model_image_45") or "seedream-4-5").strip()
+    flat["model_image_45"] = _TOKENFREE_IMAGE_IDS.get(flat["model_image_45"].lower(), flat["model_image_45"])
     return channels, logical_models, default_models, flat, app_row
 
 
@@ -506,11 +522,16 @@ async def load_model_settings_cache(db: AsyncSession) -> None:
     config = dict(app_row.config_json or {})
     old_ids = {(item or {}).get("id") for item in (config.get("logical_models") or [])}
     new_ids = {model.id for model in logical_models}
+    old_caps = {
+        (item or {}).get("id"): (item or {}).get("capability")
+        for item in (config.get("logical_models") or [])
+    }
+    new_caps = {model.id: model.capability for model in logical_models}
     old_defaults = default_models_from_dict(config.get("default_models"))
     flat_cfg = dict(config.get("flat") or {})
     flat_cfg.update({k: v for k, v in flat.items() if v not in (None, "")})
     flat_changed = flat_cfg != dict(config.get("flat") or {})
-    if old_ids != new_ids or old_defaults != default_models or flat_changed:
+    if old_ids != new_ids or old_caps != new_caps or old_defaults != default_models or flat_changed:
         config["logical_models"] = [model.model_dump() for model in logical_models]
         config["default_models"] = default_models_to_dict(default_models)
         config["flat"] = _encrypt_flat_config(flat_cfg) if flat_cfg else config.get("flat")
@@ -682,7 +703,7 @@ async def patch_admin_routing_settings(
             TOKENFREE_CHANNEL_NAME,
             locked_tokenfree_channel,
         )
-        from app.services.tokenfree_pricing import canonicalize_channel_models
+        from app.services.media_model_presets import all_preset_channel_models
 
         incoming = next(
             (item for item in body.system_channels if (item.id or "").strip() == TOKENFREE_CHANNEL_ID),
@@ -696,9 +717,8 @@ async def patch_admin_routing_settings(
                 api_key = ""
             elif incoming.api_key is not None and str(incoming.api_key).strip():
                 api_key = str(incoming.api_key).strip()
-        models = canonicalize_channel_models(
-            list(incoming.models) if incoming is not None else (list(prev.models or []) if prev else [])
-        )
+        # 渠道 models 固定为站点预设并集，忽略前端自由勾选
+        models = all_preset_channel_models()
         locked = locked_tokenfree_channel(api_key=api_key, models=models, enabled=True)
         row = prev or SystemModelChannelRow(id=TOKENFREE_CHANNEL_ID)
         row.name = TOKENFREE_CHANNEL_NAME
@@ -718,6 +738,19 @@ async def patch_admin_routing_settings(
             db.add(stale)
         await db.flush()
         applied.append("system_channels")
+    else:
+        # 仅改默认模型时也把渠道 models 纠到预设并集
+        from app.services.tokenfree_gateway import TOKENFREE_CHANNEL_ID
+        from app.services.media_model_presets import all_preset_channel_models
+
+        prev = existing_rows.get(TOKENFREE_CHANNEL_ID)
+        if prev is not None:
+            preset = all_preset_channel_models()
+            if list(prev.models or []) != preset:
+                prev.models = preset
+                db.add(prev)
+                await db.flush()
+                applied.append("system_channels")
 
     config = dict(app_row.config_json or {})
     channels_after = await _load_channels(db, runtime=False)
@@ -729,9 +762,15 @@ async def patch_admin_routing_settings(
         applied.append("logical_models")
 
     # 无论前端是否提交逻辑模型，最终都以渠道 models 为准同步（通用 OpenAI 兼容）
+    try:
+        from app.services.tokenfree_pricing import ensure_official_rates
+
+        await ensure_official_rates()
+    except Exception:  # noqa: BLE001
+        pass
     synced = synchronize_logical_models_with_channels(logical_models, channels_after)
     bootstrapped, boot_defaults = _bootstrap_logical_from_channels(channels_after)
-    alias_ids = {"seedream-5.0", "seedream-4.5", "seedance-2.5", "seedance-2"}
+    alias_ids = {"seedance-2.5", "seedance-2"}
     logical_models = _merge_friendly_alias_models(
         synced,
         [model for model in bootstrapped if model.id in alias_ids],
@@ -741,7 +780,33 @@ async def patch_admin_routing_settings(
     if body.default_models is not None:
         defaults = body.default_models
         applied.append("default_models")
+    from app.services.media_model_presets import clamp_default_to_preset
+
+    # 四类默认强制落在预设内（配音仅 gemini-3.1-flash-tts）
+    defaults = defaults.model_copy(
+        update={
+            "text_model": clamp_default_to_preset("text", defaults.text_model),
+            "image_model": clamp_default_to_preset("image", defaults.image_model),
+            "video_model": clamp_default_to_preset("video", defaults.video_model),
+            "audio_model": clamp_default_to_preset("audio", defaults.audio_model),
+        }
+    )
+    image_default = (defaults.image_model or "").strip()
+    image_default = _TOKENFREE_IMAGE_IDS.get(image_default.lower(), image_default)
+    if image_default:
+        defaults = defaults.model_copy(
+            update={"image_model": clamp_default_to_preset("image", image_default)}
+        )
     defaults = normalize_default_models(defaults, logical_models, channels_after)
+    # normalize 可能清空不可解析项；再次钳回预设
+    defaults = defaults.model_copy(
+        update={
+            "text_model": clamp_default_to_preset("text", defaults.text_model),
+            "image_model": clamp_default_to_preset("image", defaults.image_model),
+            "video_model": clamp_default_to_preset("video", defaults.video_model),
+            "audio_model": clamp_default_to_preset("audio", defaults.audio_model),
+        }
+    )
 
     errors = model_routing_validation_errors(logical_models, channels_after, defaults)
     if errors:

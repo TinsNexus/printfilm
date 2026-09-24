@@ -30,8 +30,8 @@ def test_uses_tokenfree_image_on_tokenfree_host():
 
 
 def test_build_tokenfree_image_body_matches_live_success():
-    body = build_tokenfree_image_body(model="gpt-image-2-5", prompt="橘猫", size="2K")
-    assert body["model"] == "gpt-image-2-5"
+    body = build_tokenfree_image_body(model="gpt-image-2", prompt="橘猫", size="2K")
+    assert body["model"] == "gpt-image-2"
     assert "橘猫" in body["input"]
     assert "size:" not in body["input"]
     assert "prompt" not in body
@@ -40,7 +40,7 @@ def test_build_tokenfree_image_body_matches_live_success():
 
 def test_build_tokenfree_image_body_separates_style_and_subject_refs():
     body = build_tokenfree_image_body(
-        model="gpt-image-2-5",
+        model="gpt-image-2",
         prompt="少女站在窗边",
         ref_urls=["https://cdn.example.com/character.png"],
         style_ref_urls=["https://cdn.example.com/ghibli.png"],
@@ -51,13 +51,14 @@ def test_build_tokenfree_image_body_separates_style_and_subject_refs():
     assert text.index("画风参考图") < text.index("构图与主体参考")
 
 
-def test_tokenfree_working_image_model_remaps_seedream():
-    assert tokenfree_working_image_model("seedream-5-0-pro") == "gpt-image-2-5"
+def test_tokenfree_working_image_model_passthrough():
+    """按渠道配置原样发送，不硬改 Seedream / 2.5。"""
+    assert tokenfree_working_image_model("seedream-5-0-pro") == "seedream-5-0-pro"
     assert tokenfree_working_image_model("gpt-image-2-5") == "gpt-image-2-5"
-    assert tokenfree_working_image_model("gpt-image-2-5-sunburst") == "gpt-image-2-5"
-    assert tokenfree_working_image_model("doubao-seedream-5-0-260128") == "gpt-image-2-5"
-    assert tokenfree_working_image_model("gpt-image-2") == "gpt-image-2-5"
-    assert tokenfree_working_image_model("gpt-image-2.0") == "gpt-image-2-5"
+    assert tokenfree_working_image_model("gpt-image-2-5-sunburst") == "gpt-image-2-5-sunburst"
+    assert tokenfree_working_image_model("doubao-seedream-5-0-260128") == "doubao-seedream-5-0-260128"
+    assert tokenfree_working_image_model("gpt-image-2") == "gpt-image-2"
+    assert tokenfree_working_image_model("gpt-image-2.0") == "gpt-image-2.0"
 
 
 def test_extract_tokenfree_image_url_from_img_tag():
@@ -76,6 +77,25 @@ def test_extract_tokenfree_image_url_from_img_tag():
         }
     )
     assert url and url.startswith("https://www.tokenfree.com/v1/tasks/")
+
+
+def test_extract_tokenfree_image_url_from_bare_https():
+    """纯 URL 文本走 _URL_RE（无捕获组），不能再 group(1)。"""
+    url = extract_tokenfree_image_url(
+        {
+            "output": [
+                {
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": "https://www.tokenfree.com/v1/tasks/t2/artifacts/image-0/content?access=y",
+                        }
+                    ]
+                }
+            ]
+        }
+    )
+    assert url == "https://www.tokenfree.com/v1/tasks/t2/artifacts/image-0/content?access=y"
 
 
 def test_failed_responses_payload_is_user_error_not_missing_url():
@@ -112,6 +132,8 @@ def test_is_tokenfree_protocol_error():
     body = '{"error":{"code":"task_protocol_error","message":"Task protocol request failed"}}'
     assert is_tokenfree_protocol_error(status_code=502, body=body) is True
     assert is_tokenfree_protocol_error(status_code=200, body='{"id":"ok"}') is False
+    invalid = '{"error":{"code":"invalid_request_error","message":"Invalid task protocol request"}}'
+    assert is_tokenfree_protocol_error(status_code=400, body=invalid) is True
     assert is_tokenfree_retryable_image_error(status_code=502, body=body) is False
     assert tokenfree_image_channel_dead(status_code=502, body=body) is True
 
@@ -137,12 +159,14 @@ def test_is_tokenfree_no_distributor():
 
 
 def test_tokenfree_image_user_error_does_not_nudge_switch_model():
-    """TokenFree 通道挂了不再提示改用 gpt-image-2-5。"""
+    """TokenFree 通道挂了不再硬推 gpt-image-2；Seedream 协议失败单独提示。"""
     protocol = '{"error":{"code":"task_protocol_error","message":"Task protocol request failed"}}'
-    for mid in ("gpt-image-2-5", "seedream-5-0-pro"):
-        msg = tokenfree_image_user_error(model=mid, status_code=502, body=protocol)
-        assert "请改用 gpt-image-2-5" not in msg
-        assert "暂时失败" in msg
+    gpt_msg = tokenfree_image_user_error(model="gpt-image-2", status_code=502, body=protocol)
+    assert "请改用 gpt-image-2" not in gpt_msg
+    assert "暂时失败" in gpt_msg
+    seedream_msg = tokenfree_image_user_error(model="seedream-5-0-pro", status_code=502, body=protocol)
+    assert "Seedream" in seedream_msg
+    assert "请改用 gpt-image-2" not in seedream_msg
 
 
 def test_raise_seedream_http_error_tokenfree_vs_ark():

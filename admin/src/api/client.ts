@@ -31,15 +31,17 @@ export async function api<T>(
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
   const res = await fetch(path, { ...options, headers });
-  if (res.status === 401) {
+  const text = await res.text();
+  const data = text ? (JSON.parse(text) as ApiError & T) : ({} as T);
+  // 登录 401 = 账号密码错误；其它 401 = 会话失效
+  const isLoginRequest = path.includes("/api/auth/login");
+  if (res.status === 401 && !isLoginRequest) {
     clearAuth();
     if (!window.location.pathname.startsWith("/login")) {
       window.location.href = "/login";
     }
     throw new Error("未登录或登录已失效");
   }
-  const text = await res.text();
-  const data = text ? (JSON.parse(text) as ApiError & T) : ({} as T);
   if (!res.ok) {
     throw new Error(errorMessage(data as ApiError, res.status));
   }

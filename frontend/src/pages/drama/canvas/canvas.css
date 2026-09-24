@@ -250,6 +250,53 @@
   color: #334155;
 }
 
+/* 空白双击新建菜单 */
+.fc-pane-add-menu {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 148px;
+  padding: 8px;
+  border: 1px solid var(--fc-line);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: var(--fc-shadow);
+}
+
+.fc-pane-add-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--fc-ink);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fc-pane-add-menu button:hover {
+  background: #f8fafc;
+}
+
+.fc-pane-add-menu-icon {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  background: #f1f5f9;
+  color: #64748b;
+}
+
 .fc-folder-panel {
   position: absolute;
   top: 0;
@@ -571,9 +618,10 @@
 }
 
 .fc-generate-editor {
-  resize: none;
+  resize: vertical;
   overflow-y: auto;
-  max-height: 140px;
+  min-height: 72px;
+  max-height: 360px;
   white-space: pre-wrap;
   word-break: break-word;
   outline: none;

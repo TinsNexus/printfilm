@@ -6,14 +6,17 @@ import {
   IMAGE_STYLE_OPTIONS,
 } from '../../../../lib/dramaImageStyles'
 import { DramaImageStylePreviewImg } from '../../../../components/drama/DramaImageStylePreviewImg'
+import { DramaMediaModelPicker } from '../../../../components/drama/DramaMediaModelPicker'
 import {
+  aspectRatiosForVideoModel,
+  clampVideoAspectRatioForModel,
   clampVideoDuration,
+  clampVideoResolutionForModel,
+  durationBoundsForModel,
   formatVideoOutputLabel,
-  VIDEO_ASPECT_RATIO_OPTIONS,
-  VIDEO_DURATION_MAX,
-  VIDEO_DURATION_MIN,
+  hasKnownVideoModelResolutions,
+  resolutionsForModel,
   VIDEO_DURATION_PRESETS,
-  VIDEO_RESOLUTION_OPTIONS,
   type VideoAspectRatio,
   type VideoGenerationOptions,
   type VideoResolution,
@@ -51,8 +54,54 @@ export function DramaVideoGenOptionsBar({
     if (!ids.length) return
     if (value.model_id && ids.includes(value.model_id)) return
     const next = catalog.defaults.video_model || ids[0]
-    if (next && next !== value.model_id) onChange({ ...value, model_id: next })
+    if (next && next !== value.model_id) {
+      onChange({
+        ...value,
+        model_id: next,
+        resolution: clampVideoResolutionForModel(next, value.resolution, catalog, videoModels),
+        aspect_ratio: clampVideoAspectRatioForModel(next, value.aspect_ratio, catalog, videoModels),
+        duration_sec: clampVideoDuration(value.duration_sec, next, catalog, videoModels),
+      })
+    }
   }, [catalog, disabled])
+
+  useEffect(() => {
+    // 换模型后：清晰度 / 比例 / 时长钳到允许范围（须已知目录行，避免 SAFE 误写）
+    if (disabled) return
+    if (!hasKnownVideoModelResolutions(value.model_id, catalog, videoModels)) return
+    const nextRes = clampVideoResolutionForModel(
+      value.model_id,
+      value.resolution,
+      catalog,
+      videoModels,
+    )
+    const nextAspect = clampVideoAspectRatioForModel(
+      value.model_id,
+      value.aspect_ratio,
+      catalog,
+      videoModels,
+    )
+    const nextDur = clampVideoDuration(value.duration_sec, value.model_id, catalog, videoModels)
+    if (
+      nextRes !== value.resolution ||
+      nextAspect !== value.aspect_ratio ||
+      nextDur !== value.duration_sec
+    ) {
+      onChange({
+        ...value,
+        resolution: nextRes,
+        aspect_ratio: nextAspect,
+        duration_sec: nextDur,
+      })
+    }
+  }, [value.model_id, catalog, disabled])
+
+  const resolutionOptions = resolutionsForModel(value.model_id, catalog, videoModels)
+  const aspectOptions = aspectRatiosForVideoModel(value.model_id, catalog, videoModels)
+  const durationBounds = durationBoundsForModel(value.model_id, catalog, videoModels)
+  const durationPresets = VIDEO_DURATION_PRESETS.filter(
+    (sec) => sec >= durationBounds.min && sec <= durationBounds.max,
+  )
 
   useEffect(() => {
     if (!open) return
@@ -147,25 +196,33 @@ export function DramaVideoGenOptionsBar({
       {open === 'model' ? (
         <div className="fc-gen-opt-panel" role="dialog" aria-label="视频模型">
           <div className="fc-gen-opt-panel-title">模型</div>
-          <div className="fc-gen-model-list">
-            {videoModels.length === 0 ? (
-              <p className="fc-gen-model-empty">请先在管理后台「模型」勾选视频模型</p>
-            ) : null}
-            {videoModels.map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                className={`fc-gen-model-item${value.model_id === m.id ? ' selected' : ''}`}
-                onClick={() => {
-                  onChange({ ...value, model_id: m.id })
-                  setOpen(null)
-                }}
-              >
-                <strong>{m.label}</strong>
-                <span>{m.description || 'TokenFree'}</span>
-              </button>
-            ))}
-          </div>
+          <DramaMediaModelPicker
+            models={videoModels}
+            selectedId={value.model_id}
+            onSelect={(m) => {
+              const nextRes = clampVideoResolutionForModel(
+                m.id,
+                value.resolution,
+                catalog,
+                videoModels,
+              )
+              const nextAspect = clampVideoAspectRatioForModel(
+                m.id,
+                value.aspect_ratio,
+                catalog,
+                videoModels,
+              )
+              const nextDur = clampVideoDuration(value.duration_sec, m.id, catalog, videoModels)
+              onChange({
+                ...value,
+                model_id: m.id,
+                resolution: nextRes,
+                aspect_ratio: nextAspect,
+                duration_sec: nextDur,
+              })
+              setOpen(null)
+            }}
+          />
         </div>
       ) : null}
 
@@ -173,13 +230,16 @@ export function DramaVideoGenOptionsBar({
         <div className="fc-gen-opt-panel" role="dialog" aria-label="视频时长">
           <div className="fc-gen-opt-panel-title">时长</div>
           <div className="fc-gen-chip-row">
-            {VIDEO_DURATION_PRESETS.map((sec) => (
+            {durationPresets.map((sec) => (
               <button
                 key={sec}
                 type="button"
                 className={`fc-gen-chip${value.duration_sec === sec ? ' selected' : ''}`}
                 onClick={() => {
-                  onChange({ ...value, duration_sec: sec })
+                  onChange({
+                    ...value,
+                    duration_sec: clampVideoDuration(sec, value.model_id, catalog, videoModels),
+                  })
                   setOpen(null)
                 }}
               >
@@ -188,15 +248,23 @@ export function DramaVideoGenOptionsBar({
             ))}
           </div>
           <label className="fc-gen-duration-custom">
-            自定义（{VIDEO_DURATION_MIN}–{VIDEO_DURATION_MAX}s）
+            自定义（{durationBounds.min}–{durationBounds.max}s）
             <input
               type="number"
-              min={VIDEO_DURATION_MIN}
-              max={VIDEO_DURATION_MAX}
+              min={durationBounds.min}
+              max={durationBounds.max}
               value={value.duration_sec}
               disabled={disabled}
               onChange={(e) =>
-                onChange({ ...value, duration_sec: clampVideoDuration(Number(e.target.value)) })
+                onChange({
+                  ...value,
+                  duration_sec: clampVideoDuration(
+                    Number(e.target.value),
+                    value.model_id,
+                    catalog,
+                    videoModels,
+                  ),
+                })
               }
             />
           </label>
@@ -207,7 +275,7 @@ export function DramaVideoGenOptionsBar({
         <div className="fc-gen-opt-panel" role="dialog" aria-label="画幅与清晰度">
           <div className="fc-gen-opt-panel-title">比例</div>
           <div className="fc-gen-chip-row">
-            {VIDEO_ASPECT_RATIO_OPTIONS.map((ratio) => (
+            {aspectOptions.map((ratio) => (
               <button
                 key={ratio}
                 type="button"
@@ -222,7 +290,7 @@ export function DramaVideoGenOptionsBar({
             清晰度
           </div>
           <div className="fc-gen-chip-row">
-            {VIDEO_RESOLUTION_OPTIONS.map((res) => (
+            {resolutionOptions.map((res) => (
               <button
                 key={res}
                 type="button"

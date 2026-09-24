@@ -134,7 +134,7 @@ def _direct_channel_routes(
             continue
         if not channel_supports_model(channel, requested):
             continue
-        # TokenFree 渠道 protocol=openai，resolve_channel_model_capability 会把所有模型判成 text
+        # TokenFree 渠道 protocol=openai；能力靠价目 tags + 名字推断，不再整渠道路径当 text
         if infer_model_capability(requested) != capability:
             continue
         route = _build_route(capability, requested, requested, channel)
@@ -249,13 +249,14 @@ def _default_model_id(defaults: DefaultModels, capability: LogicalModelCapabilit
 
 def _capability_aliases(capability: LogicalModelCapability) -> dict[str, str]:
     if capability == "image":
+        # 旧 UI 别名 → TokenFree 价目真实 id（逻辑模型与上游同名，不做换绑）
         return {
-            "seedream-5.0": "seedream-5.0",
-            "seedream-5": "seedream-5.0",
-            "5.0": "seedream-5.0",
-            "seedream-4.5": "seedream-4.5",
-            "seedream-4": "seedream-4.5",
-            "4.5": "seedream-4.5",
+            "seedream-5.0": "seedream-5-0-pro",
+            "seedream-5": "seedream-5-0-pro",
+            "5.0": "seedream-5-0-pro",
+            "seedream-4.5": "seedream-4-5",
+            "seedream-4": "seedream-4-5",
+            "4.5": "seedream-4-5",
         }
     if capability == "video":
         return {
@@ -279,10 +280,10 @@ def _legacy_upstream_fallback(
     if capability == "image":
         mid = raw.lower()
         if mid in {"", "seedream-5.0", "seedream-5", "5.0"}:
-            route = resolve_logical_model("image", defaults.image_model or "seedream-5.0")
+            route = resolve_logical_model("image", defaults.image_model or "seedream-5-0-pro")
             return route.upstream_model if route else settings.model_image
         if mid in {"seedream-4.5", "seedream-4", "4.5"}:
-            route = resolve_logical_model("image", "seedream-4.5")
+            route = resolve_logical_model("image", "seedream-4-5")
             return route.upstream_model if route else ((settings.model_image_45 or "").strip() or settings.model_image)
         return raw or settings.model_image
     if capability == "video":

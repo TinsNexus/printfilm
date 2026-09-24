@@ -83,12 +83,14 @@ async def generate_asset_video(
     # style_id 画面风格
     content = (prompt or "").strip() or "短剧镜头"
     duration = int(duration_sec or 8)
-    duration = max(settings.seedance_duration_min, min(duration, settings.seedance_duration_max))
     style_id = (image_style_id or "").strip() or str(
         (project.params or {}).get("image_style_id") or ""
     ).strip() or None
     ratio = (aspect_ratio or "").strip() or "9:16"
-    res = (resolution or "").strip() or "720p"
+    from app.services.seedance_resolutions import clamp_video_duration, clamp_video_resolution
+
+    duration = clamp_video_duration(model_id, duration)
+    res = clamp_video_resolution(model_id, (resolution or "").strip() or "720p")
 
     ref_ids = merge_reference_asset_ids(
         content,
@@ -114,6 +116,8 @@ async def generate_asset_video(
             "resolution": res,
             "duration_fallback": duration,
             "style_board_url": video_board_url or None,
+            # 自由画布资产生视频：不烧模型字幕（后期再叠）
+            "burn_subtitles": False,
         }
     )
     local_video, local_last_frame, task_result = await ark.gen_and_wait_seedance_body(
@@ -148,7 +152,7 @@ async def generate_asset_video(
     params["visualPrompt"] = content
     params["generation"] = {"status": "done"}
     params["videoOptions"] = {
-        "model_id": model_id or "seedance-2.5",
+        "model_id": model_id or "seedance-2-5",
         "aspect_ratio": ratio,
         "resolution": res,
         "duration_sec": duration,

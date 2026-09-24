@@ -200,12 +200,14 @@ def charge_fen_for_usage(
 
 
 def _catalog_image_fen_if_per_call(settings: Settings, model: str, *, size: str = "") -> int | None:
-    """gpt-image / Seedream（TokenFree 上改走 gpt-image）按张价；token 计价模型返回 None。"""
+    """gpt-image / Seedream 按张价；token 计价模型返回 None。"""
     from app.services.tokenfree_image import is_seedream_family, tokenfree_working_image_model
     from app.services.tokenfree_pricing import charge_fen_official_image, lookup_rate, resolve_billing_image_size
 
     raw = (model or getattr(settings, "model_image", "") or "").strip()
-    mid = tokenfree_working_image_model(raw or "gpt-image-2-5")
+    mid = tokenfree_working_image_model(raw)
+    if not mid:
+        mid = "gpt-image-2"
     rate = lookup_rate(mid)
     if rate and rate.billing == "token":
         return None

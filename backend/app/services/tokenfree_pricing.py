@@ -28,18 +28,36 @@ LLM_PROMPT_SHARE = 0.7
 # 费率表视频展示用的对照时长
 VIDEO_RATE_SAMPLE_SECONDS = 5.0
 
-# 火山 480P 5 秒官价折秒价（TokenFree 视频表不可信时预估用）
-VENDOR_VIDEO_YUAN_PER_SEC_480P = {
-    "seedance-2-5": 3.36 / 5.0,
-    "seedance-2-0": 2.31 / 5.0,
-    "seedance-2-0-mini": 2.31 / 5.0,
+# 本站视频结算参考价（16:9、无视频输入、5 秒）→ 各清晰度价（元）；用于展示与预扣
+VENDOR_VIDEO_YUAN_5S_BY_RES: dict[str, dict[str, float]] = {
+    "seedance-2-0": {"480p": 2.31, "720p": 4.97},
+    "seedance-2-0-mini": {"480p": 0.80, "720p": 2.50},
+    "seedance-2-5": {"480p": 3.36, "720p": 7.56, "1080p": 18.71},
 }
-# 相对 480P 的预估倍率（宁多冻、少结算超扣）
+# MiniMax-H3：约 $0.08/秒（768P）；本站仅开放 720p；人民币按 billing_usd_cny 折算
+MINIMAX_H3_USD_PER_SEC_720P = 0.08
+
+
+def minimax_h3_yuan_per_sec(settings: Settings | None = None) -> float:
+    """MiniMax-H3 720p 结算参考秒价（人民币）。"""
+    s = settings or get_settings()
+    fx = float(getattr(s, "billing_usd_cny", 0) or 7.0)
+    return MINIMAX_H3_USD_PER_SEC_720P * fx
+
+
+# 兼容旧逻辑：480P 秒价（= 5 秒价 / 5）
+VENDOR_VIDEO_YUAN_PER_SEC_480P = {
+    mid: round(float(tiers["480p"]) / VIDEO_RATE_SAMPLE_SECONDS, 4)
+    for mid, tiers in VENDOR_VIDEO_YUAN_5S_BY_RES.items()
+    if "480p" in tiers
+}
+# 相对 480P 的预估倍率（无精确档位且走 token 回退时用；宁多冻）
 VIDEO_RESOLUTION_MULT = {
     "480p": 1.0,
     "720p": 2.0,
     "1080p": 4.0,
 }
+_VIDEO_RES_ORDER = ("480p", "720p", "1080p")
 # Kie sunburst 控制台档（USD / credits）；公开 /api/pricing 往往只有笼统 gpt-image-2-5
 KIE_SUNBURST_USD_1K = 0.03
 KIE_SUNBURST_USD_2K = 0.05
@@ -72,10 +90,10 @@ RECOMMENDED_MODELS: tuple[dict[str, Any], ...] = (
         "recommended": False,
     },
     {
-        "id": "gpt-image-2-5",
+        "id": "gpt-image-2",
         "capability": "image",
-        "label": "GPT Image 2.5",
-        "note": "TokenFree 实测可通；计费按 Kie 2K 约 $0.05/张。Seedream 会改走此模型",
+        "label": "GPT Image 2",
+        "note": "KIE.AI Market default 渠道启用模型；计费按 Kie 2K 约 $0.05/张",
         "recommended": True,
     },
     {
@@ -147,6 +165,61 @@ class OfficialRate:
     model_ratio: float
     placeholder: bool
     tags: str
+    endpoints: tuple[str, ...] = ()
+    # 由 tags / supported_endpoint_types 推断；无强信号为 None（勿当成 text）
+    capability: str | None = None
+
+
+def capability_from_tokenfree_meta(
+    tags: str = "",
+    endpoints: list[str] | tuple[str, ...] | None = None,
+) -> str | None:
+    """从 TokenFree 价目 tags / supported_endpoint_types 推断能力；无强信号返回 None。"""
+    raw_tags = (tags or "").strip().lower().replace("-", " ")
+    parts = [p.strip() for p in raw_tags.replace("|", ",").split(",") if p.strip()]
+    blob = " ".join(parts)
+    ep = [str(x).strip().lower() for x in (endpoints or []) if str(x).strip()]
+
+    if (
+        any(token in blob for token in ("tts", "text to speech", "text to dialogue"))
+        or "audio" in parts
+        or any("audio" in e or "speech" in e for e in ep)
+    ):
+        return "audio"
+    if (
+        any("video" in e for e in ep)
+        or "video" in parts
+        or any(
+            token in blob
+            for token in (
+                "text to video",
+                "image to video",
+                "video to video",
+                "video editing",
+                "lip sync",
+            )
+        )
+    ):
+        return "video"
+    if (
+        any("image" in e for e in ep)
+        or "image-generation" in ep
+        or "image" in parts
+        or any(
+            token in blob
+            for token in ("text to image", "image to image", "image editing", "kie-image")
+        )
+    ):
+        return "image"
+    return None
+
+
+def lookup_tokenfree_capability(model: str, rates: dict[str, OfficialRate] | None = None) -> str | None:
+    """查价目缓存中的强分类；未收录或仅聊天类标签则返回 None。"""
+    rate = lookup_rate(model, rates)
+    if rate is None:
+        return None
+    return rate.capability
 
 
 def tokenfree_pricing_url() -> str:
@@ -194,6 +267,10 @@ def parse_pricing_item(item: dict[str, Any], *, usd_cny: float) -> OfficialRate 
         rate = max(0.01, float(usd_cny))
     except (TypeError, ValueError):
         return None
+    tags = str(item.get("tags") or "")
+    raw_eps = item.get("supported_endpoint_types") or []
+    endpoints = tuple(str(x).strip() for x in raw_eps if str(x).strip()) if isinstance(raw_eps, list) else ()
+    cap = capability_from_tokenfree_meta(tags, endpoints)
     if qt == 1:
         return OfficialRate(
             model=name,
@@ -204,7 +281,9 @@ def parse_pricing_item(item: dict[str, Any], *, usd_cny: float) -> OfficialRate 
             cny_out_per_1m=0.0,
             model_ratio=0.0,
             placeholder=False,
-            tags=str(item.get("tags") or ""),
+            tags=tags,
+            endpoints=endpoints,
+            capability=cap,
         )
     return OfficialRate(
         model=name,
@@ -215,7 +294,9 @@ def parse_pricing_item(item: dict[str, Any], *, usd_cny: float) -> OfficialRate 
         cny_out_per_1m=round(mr * cr * NEWAPI_USD_PER_1M_AT_RATIO_1 * rate, 4),
         model_ratio=mr,
         placeholder=abs(mr - PLACEHOLDER_MODEL_RATIO) < 0.01,
-        tags=str(item.get("tags") or ""),
+        tags=tags,
+        endpoints=endpoints,
+        capability=cap,
     )
 
 
@@ -345,13 +426,19 @@ def kie_sunburst_credits_for_size(size: str | None = "") -> int:
 
 
 def resolve_billing_image_size(settings: Settings, *, model: str = "", size: str = "") -> str:
-    """计费用清晰度：与 ark 生成侧一致，Pro / sunburst 把 3K·4K 钳到 2K。"""
-    from app.services.drama.seedream_options import is_seedream_pro_model
+    """计费用清晰度：与 ark / resolve_seedream_size 一致（紧凑→1K；Pro/gpt→≤2K）。"""
+    from app.services.drama.seedream_options import (
+        _is_compact_tokenfree_image_model,
+        is_seedream_pro_model,
+    )
     from app.services.tokenfree_image import tokenfree_working_image_model
 
     raw = (size or "").strip() or str(getattr(settings, "ark_image_size", "") or "2K")
     upstream = (model or getattr(settings, "model_image", "") or "").strip()
     working = tokenfree_working_image_model(upstream)
+    # z-image / qwen 等生成侧强制 1K，计费同步
+    if _is_compact_tokenfree_image_model(working) or _is_compact_tokenfree_image_model(upstream):
+        return "1K"
     if (
         is_seedream_pro_model(upstream)
         or "sunburst" in working.lower()
@@ -363,25 +450,27 @@ def resolve_billing_image_size(settings: Settings, *, model: str = "", size: str
 
 
 def charge_fen_official_image(settings: Settings, *, model: str = "", size: str = "") -> int:
-    """生图预估：sunburst / Seedream / gpt-image 按 Kie 积分档；其它按张走价目。"""
+    """生图预估：gpt-image/sunburst 按 Kie 积分档；Seedream 与其它按 TokenFree 按张价。"""
     from app.services.billing.pricing import kie_credits_to_cost_fen
     from app.services.tokenfree_image import is_seedream_family, tokenfree_working_image_model
 
     raw_model = model or getattr(settings, "model_image", "") or ""
     mid = tokenfree_working_image_model(raw_model)
+    resolved = resolve_billing_image_size(settings, model=raw_model, size=size)
     rate = lookup_rate(mid)
-    use_kie_table = (
-        "sunburst" in mid.lower()
-        or is_seedream_family(raw_model)
-        or "gpt-image" in mid.lower()
-    )
+    use_kie_table = "sunburst" in mid.lower() or "gpt-image" in mid.lower()
     if use_kie_table:
-        credits = kie_sunburst_credits_for_size(size or getattr(settings, "ark_image_size", "") or "2K")
+        credits = kie_sunburst_credits_for_size(resolved or "2K")
         fen = kie_credits_to_cost_fen(credits, settings) or 1
         return _markup_charge(fen, settings)
+    # Seedream / 其它：优先官方按张价
     if rate and rate.billing == "per_call" and rate.cny_per_call > 0:
-        return _markup_charge(max(1, int(math.ceil(rate.cny_per_call * 100))), settings)
-    credits = kie_sunburst_credits_for_size("2K")
+        # round 避免 0.28*100 浮点成 28.0000000004 被 ceil 多收 1 分
+        return _markup_charge(max(1, int(round(rate.cny_per_call * 100))), settings)
+    # 无价目时：Seedream 与 gpt-image 共用保守 Kie 2K 档保底（非协议等价，仅防 0 冻）
+    credits = kie_sunburst_credits_for_size(
+        resolved if (use_kie_table or is_seedream_family(raw_model)) else "2K"
+    )
     fen = kie_credits_to_cost_fen(credits, settings) or 1
     return _markup_charge(fen, settings)
 
@@ -411,6 +500,64 @@ def normalize_video_resolution(resolution: str | None, settings: Settings | None
     return fallback if fallback in VIDEO_RESOLUTION_MULT else "480p"
 
 
+def _is_minimax_video_model(model: str) -> bool:
+    """是否 MiniMax 视频模型（勿走 Seedance video_catalog_id 回退）。"""
+    return "minimax" in (model or "").strip().lower()
+
+
+def _resolve_vendor_video_key(model: str) -> str:
+    """解析结算表用的规范 id；非 Seedance/表内 id 原样返回。"""
+    mid = (model or "").strip()
+    if not mid:
+        return ""
+    if mid in VENDOR_VIDEO_YUAN_5S_BY_RES:
+        return mid
+    mapped = canonicalize_channel_model_id(mid)
+    if _is_canonical_seedance(mapped):
+        return mapped
+    return mid
+
+
+def vendor_video_yuan_per_sec(
+    model: str,
+    resolution: str,
+    settings: Settings | None = None,
+) -> float | None:
+    """本站视频结算参考秒价；无对应档位返回 None。"""
+    mid = (model or "").strip()
+    if not mid:
+        return None
+    res = normalize_video_resolution(resolution, settings)
+    if _is_minimax_video_model(mid):
+        return float(minimax_h3_yuan_per_sec(settings))
+    key = _resolve_vendor_video_key(mid)
+    tiers = VENDOR_VIDEO_YUAN_5S_BY_RES.get(key)
+    if not tiers or res not in tiers:
+        return None
+    return float(tiers[res]) / VIDEO_RATE_SAMPLE_SECONDS
+
+
+def format_video_pricing_hint(model: str) -> str:
+    """前台/费率表：列出模型全部清晰度结算参考秒价。"""
+    mid = (model or "").strip()
+    if not mid:
+        return ""
+    if _is_minimax_video_model(mid):
+        return f"约 ¥{minimax_h3_yuan_per_sec():.2f}/秒 · 仅 720p"
+    key = _resolve_vendor_video_key(mid)
+    tiers = VENDOR_VIDEO_YUAN_5S_BY_RES.get(key)
+    if not tiers:
+        return ""
+    parts: list[str] = []
+    for res in _VIDEO_RES_ORDER:
+        yuan_5s = tiers.get(res)
+        if yuan_5s is None:
+            continue
+        per_sec = float(yuan_5s) / VIDEO_RATE_SAMPLE_SECONDS
+        parts.append(f"{res} ¥{per_sec:.2f}/秒")
+    return " · ".join(parts)
+
+
 def charge_fen_official_video(
     seconds: float,
     settings: Settings,
@@ -418,15 +565,21 @@ def charge_fen_official_video(
     model: str = "",
     resolution: str = "",
 ) -> int:
-    """视频预估：火山 480P 秒价 × 清晰度倍率，不用 TokenFree 占位 37.5。"""
+    """视频预估：按模型×清晰度结算参考秒价，不用 TokenFree 占位 37.5。"""
     from app.services.billing.pricing import charge_fen_for_tokens
 
     secs = max(float(seconds or 0), 2.0)
-    mid = video_catalog_id(model or getattr(settings, "model_video", "") or "seedance-2-5")
-    vendor = VENDOR_VIDEO_YUAN_PER_SEC_480P.get(mid)
-    mult = VIDEO_RESOLUTION_MULT[normalize_video_resolution(resolution, settings)]
-    if vendor:
-        return _markup_charge(max(1, int(math.ceil(secs * vendor * mult * 100))), settings)
+    raw = (model or getattr(settings, "model_video", "") or "seedance-2-5").strip()
+    res = normalize_video_resolution(resolution, settings)
+    # MiniMax 必须在 video_catalog_id 之前，否则会误落到 seedance-2-5
+    if _is_minimax_video_model(raw):
+        rate = vendor_video_yuan_per_sec(raw, res, settings)
+    else:
+        mid = video_catalog_id(raw)
+        rate = vendor_video_yuan_per_sec(mid, res, settings)
+    if rate is not None:
+        return _markup_charge(max(1, int(math.ceil(secs * rate * 100))), settings)
+    mult = VIDEO_RESOLUTION_MULT[res]
     tok = int(secs * settings.billing_est_seedance_tokens_per_sec * mult)
     _, charge = charge_fen_for_tokens(tok, "seedance2:video0", settings=settings)
     return charge
@@ -446,19 +599,17 @@ def build_official_rate_rows(
         basis = "missing"
         rate_label = "TokenFree 价目未收录，请到控制台核对"
         if spec["capability"] == "video":
-            vendor = VENDOR_VIDEO_YUAN_PER_SEC_480P.get(str(spec["id"]))
-            if vendor:
-                official_yuan = round(vendor * VIDEO_RATE_SAMPLE_SECONDS, 4)
+            hint = format_video_pricing_hint(str(spec["id"]))
+            tiers = VENDOR_VIDEO_YUAN_5S_BY_RES.get(str(spec["id"]))
+            if hint and tiers and "480p" in tiers:
+                official_yuan = round(float(tiers["480p"]), 4)
                 basis = "vendor_sec"
                 listed = ""
                 if rate and rate.placeholder:
                     listed = f"；TokenFree 表 model_ratio={rate.model_ratio} 疑似占位"
-                rate_label = (
-                    f"预估按火山 480P 约 {vendor:.3f} 元/秒"
-                    f"（{VIDEO_RATE_SAMPLE_SECONDS:g}秒 ¥{official_yuan:.2f}；720P×2 / 1080P×4）{listed}"
-                )
+                rate_label = f"结算参考 {hint}{listed}"
         elif spec["capability"] == "image" and (
-            "sunburst" in str(spec["id"]).lower() or "gpt-image-2-5" in str(spec["id"]).lower()
+            "sunburst" in str(spec["id"]).lower() or "gpt-image" in str(spec["id"]).lower()
         ):
             from app.services.billing.pricing import kie_fen_per_credit
 
@@ -497,6 +648,45 @@ def build_official_rate_rows(
             }
         )
     return items
+
+
+def media_model_pricing_hint(
+    model_id: str,
+    *,
+    capability: str | None = None,
+    rates: dict[str, OfficialRate] | None = None,
+    settings: Settings | None = None,
+) -> str:
+    """前台模型卡片资费短句；有结算参考或价目则生成，否则空串交给预设文案。"""
+    raw = (model_id or "").strip()
+    if not raw:
+        return ""
+    s = settings or get_settings()
+    table = rates if rates is not None else cached_rates()
+    from app.services.media_model_presets import resolve_preset_alias
+
+    key = resolve_preset_alias(raw) or raw
+    low = key.lower()
+
+    # Seedance / MiniMax：多清晰度结算参考；禁止 MiniMax 回退成 seedance-2-5
+    if "seedance" in low or _is_minimax_video_model(key):
+        hint = format_video_pricing_hint(key)
+        if hint:
+            return hint
+
+    if "gpt-image" in low or "sunburst" in low:
+        from app.services.billing.pricing import kie_fen_per_credit
+
+        credits = kie_sunburst_credits_for_size("2K")
+        fen = max(1, int(round(credits * kie_fen_per_credit(s))))
+        return f"约 ¥{fen / 100.0:.2f}/张 · 2K 参考"
+
+    rate = lookup_rate(key, table) or lookup_rate(raw, table)
+    if rate and rate.billing == "per_call" and rate.cny_per_call > 0:
+        return f"约 ¥{rate.cny_per_call:.2f}/次"
+    if rate and rate.billing == "token" and (rate.cny_in_per_1m > 0 or rate.cny_out_per_1m > 0):
+        return f"按 Token 计费"
+    return ""
 
 
 async def fetch_tokenfree_pricing() -> dict[str, Any]:

@@ -8,6 +8,7 @@ import { BarChart3, ChevronDown, CircleHelp, Link2, Smile, Type, Users } from 'l
 
 import { DramaImageStylePreviewImg } from '../../components/drama/DramaImageStylePreviewImg'
 
+import { DramaMediaModelPicker } from '../../components/drama/DramaMediaModelPicker'
 import { SeedanceRulesModal } from '../../components/drama/SeedanceRulesModal'
 
 import {
@@ -41,12 +42,15 @@ type Props = {
   characterIntroMode: DramaCharacterIntroMode
   onStyleChange: (id: ImageStyleId | '') => void
   onModelChange: (id: string) => void
-  onEpisodeOutputChange: (nextParams: Record<string, unknown>) => void | Promise<void>
+  onEpisodeOutputChange: (
+    nextParams: Record<string, unknown>,
+    opts?: { quiet?: boolean },
+  ) => void | Promise<void>
   onLinkLastFrameChange: (enabled: boolean) => void
   onSubtitleModeChange: (mode: DramaSubtitleMode) => void
   onCharacterIntroModeChange: (mode: DramaCharacterIntroMode) => void
   disabled?: boolean
-  /** 画幅/风格/字幕/介绍/衔接为项目全局，分镜页只展示不可改 */
+  /** 风格/字幕/介绍/衔接为项目全局，分镜页只展示不可改；画幅/清晰度仍可改（随模型过滤） */
   globalSettingsReadOnly?: boolean
 }
 
@@ -91,7 +95,9 @@ export function EpisodeEditHeaderControls({
       const width =
         open === 'style'
           ? Math.min(STYLE_PANEL_WIDTH, window.innerWidth - 24)
-          : Math.min(360, window.innerWidth - 24)
+          : open === 'model'
+            ? Math.min(400, window.innerWidth - 24)
+            : Math.min(360, window.innerWidth - 24)
       let left = rect.right - width
       left = Math.max(12, Math.min(left, window.innerWidth - width - 12))
       const top = Math.min(rect.bottom + 8, window.innerHeight - 24)
@@ -144,11 +150,12 @@ export function EpisodeEditHeaderControls({
     >
       <div className="fc-gen-opts-triggers">
         <DramaProjectOutputSettings
-          scope={globalSettingsReadOnly ? 'project' : 'episode'}
-          params={globalSettingsReadOnly ? projectParams : episodeParams}
+          scope="episode"
+          params={episodeParams}
           fallbackParams={projectParams}
-          disabled={globalLocked}
+          disabled={disabled}
           compact
+          videoModelId={modelId}
           onChange={onEpisodeOutputChange}
         />
         <button
@@ -270,25 +277,15 @@ export function EpisodeEditHeaderControls({
                   aria-label="视频模型"
                 >
                   <div className="fc-gen-opt-panel-title">视频模型</div>
-                  <div className="fc-gen-model-list">
-                    {videoModels.length === 0 ? (
-                      <p className="fc-gen-model-empty">请先在管理后台「模型」勾选视频模型</p>
-                    ) : null}
-                    {videoModels.map((opt) => (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        className={`fc-gen-model-item${modelId === opt.id ? ' selected' : ''}`}
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => {
-                          onModelChange(opt.id)
-                          setOpen(null)
-                        }}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
+                  <DramaMediaModelPicker
+                    models={videoModels}
+                    selectedId={modelId}
+                    emptyHint="请先在管理后台「模型」保存预设默认模型"
+                    onSelect={(opt) => {
+                      onModelChange(opt.id)
+                      setOpen(null)
+                    }}
+                  />
                 </div>
               ) : null}
               {open === 'link' ? (

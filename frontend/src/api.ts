@@ -183,6 +183,18 @@ export type MediaModelOption = {
   description: string
   provider: string
   recommended?: boolean
+  /** 该模型允许的清晰度 */
+  allowed_resolutions?: string[]
+  /** 该模型允许的画幅比例 */
+  allowed_aspect_ratios?: string[]
+  /** 视频时长下限（秒） */
+  duration_min?: number
+  /** 视频时长上限（秒） */
+  duration_max?: number
+  /** 选用提示（贵慢/清晰度等，不展示具体价） */
+  pricing_hint?: string
+  /** 大致出片 / 生成耗时提示 */
+  eta_hint?: string
 }
 
 export type MediaModelsCatalog = {

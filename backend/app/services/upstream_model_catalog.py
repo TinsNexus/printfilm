@@ -61,11 +61,19 @@ async def _list_openai_compatible_models(
     api_key: str,
     capability: str = "all",
 ) -> list[dict[str, str]]:
-    """GET {base}/models，按 OpenAI 兼容响应解析。"""
+    """GET {base}/models，按 OpenAI 兼容响应解析；能力优先 TokenFree /api/pricing。"""
     if not base_url:
         raise RuntimeError("请先填写 Base URL")
     if not api_key:
         raise RuntimeError("请先填写 API Key，或使用已保存密钥的渠道")
+
+    # 价目含 tags / supported_endpoint_types，供 infer_model_capability 使用
+    try:
+        from app.services.tokenfree_pricing import ensure_official_rates
+
+        await ensure_official_rates()
+    except Exception:  # noqa: BLE001
+        logger.info("TokenFree 价目预热失败，模型能力回退名字规则", exc_info=True)
 
     headers = {"Authorization": f"Bearer {api_key}"}
     url = f"{base_url.rstrip('/')}/models"
@@ -88,7 +96,17 @@ async def _list_openai_compatible_models(
         model_id = _model_id(item)
         if not model_id:
             continue
-        cap = infer_model_capability(model_id)
+        # 列表项偶发自带 tags / endpoints 时优先用；否则走价目缓存 + 名字规则
+        item_cap = None
+        try:
+            from app.services.tokenfree_pricing import capability_from_tokenfree_meta
+
+            raw_eps = item.get("supported_endpoint_types") or item.get("endpoints") or []
+            eps = raw_eps if isinstance(raw_eps, list) else []
+            item_cap = capability_from_tokenfree_meta(str(item.get("tags") or ""), eps)
+        except Exception:  # noqa: BLE001
+            item_cap = None
+        cap = item_cap or infer_model_capability(model_id)
         if cap_filter not in {"", "all"} and cap != cap_filter:
             continue
         key = normalize_model_name(model_id)

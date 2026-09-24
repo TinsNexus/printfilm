@@ -31,7 +31,7 @@ export function CanvasNodeSelector({ onSelect }: CanvasNodeSelectorProps) {
         </div>
         <p className="fc-node-hint">
           <MousePointer2 size={16} strokeWidth={1.8} />
-          点击快速添加
+          点击快速添加 · 空白处双击也可新建
         </p>
       </div>
     </div>

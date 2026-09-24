@@ -29,34 +29,14 @@ def uses_tokenfree_image(*, base_url: str = "", channel_id: str = "") -> bool:
 
 
 def is_seedream_family(model: str) -> bool:
-    """TokenFree 上 Seedream 走 /responses 会 task_protocol_error。"""
+    """模型名是否属于 Seedream 族（计费/尺寸钳制用）。"""
     mid = (model or "").strip().lower()
     return "seedream" in mid
 
 
-# TokenFree 分组里实际可通的 GPT Image；sunburst 是 Kie 价目名，default 组没有 distributor
-TOKENFREE_WORKING_IMAGE_MODEL = "gpt-image-2-5"
-TOKENFREE_KIE_IMAGE_MODEL = "gpt-image-2-5-sunburst"
-
-
 def tokenfree_working_image_model(model: str) -> str:
-    """Seedream / sunburst 改走实测可通的 gpt-image-2-5；计费仍按 Kie 积分档。"""
-    raw = (model or "").strip()
-    low = raw.lower()
-    if (
-        not raw
-        or is_seedream_family(raw)
-        or low in {
-            "gpt-image-2-5",
-            "gpt-image-2.5",
-            TOKENFREE_KIE_IMAGE_MODEL,
-            "gpt-image-2.5-sunburst",
-            "gpt-image-2",
-            "gpt-image-2.0",
-        }
-    ):
-        return TOKENFREE_WORKING_IMAGE_MODEL
-    return raw
+    """原样返回渠道/路由配置的上游模型名，不做改写。"""
+    return (model or "").strip()
 
 
 def build_tokenfree_image_body(
@@ -78,7 +58,8 @@ def build_tokenfree_image_body(
         text = f"{text}。画风参考图（只借色调、笔触、光影，禁止抄主体与构图）：{' '.join(style_refs)}"
     if refs:
         text = f"{text}。构图与主体参考：{' '.join(refs)}"
-    return {"model": tokenfree_working_image_model(model), "input": text}
+    mid = tokenfree_working_image_model(model)
+    return {"model": mid, "input": text}
 
 
 def extract_tokenfree_image_url(data: dict[str, Any]) -> str | None:
@@ -98,9 +79,13 @@ def extract_tokenfree_image_url(data: dict[str, Any]) -> str | None:
             if isinstance(url, str) and url.startswith("http"):
                 return url.strip()
             text = str(block.get("text") or "")
-            found = _IMG_SRC_RE.search(text) or _URL_RE.search(text)
-            if found:
-                return found.group(1).strip()
+            img = _IMG_SRC_RE.search(text)
+            if img:
+                return img.group(1).strip()
+            # _URL_RE 无捕获组，必须用 group(0)
+            bare = _URL_RE.search(text)
+            if bare:
+                return bare.group(0).strip()
     if data.get("data"):
         first = data["data"][0]
         if isinstance(first, dict):
@@ -189,9 +174,13 @@ def is_tokenfree_rate_limit(*, status_code: int = 0, body: str = "") -> bool:
 
 
 def is_tokenfree_protocol_error(*, status_code: int = 0, body: str = "") -> bool:
-    """KIE / New API 任务协议失败（常见于 Seedream 或瞬时 502）。"""
+    """KIE / New API 任务协议失败（含 Invalid task protocol request）。"""
     text = (body or "").lower()
-    if "task_protocol_error" in text or "task protocol request failed" in text:
+    if (
+        "task_protocol_error" in text
+        or "task protocol request failed" in text
+        or "invalid task protocol" in text
+    ):
         return True
     try:
         payload = json.loads(body) if (body or "").strip().startswith("{") else None
@@ -199,7 +188,13 @@ def is_tokenfree_protocol_error(*, status_code: int = 0, body: str = "") -> bool
         payload = None
     err = payload.get("error") if isinstance(payload, dict) else None
     code = str((err or {}).get("code") or "") if isinstance(err, dict) else ""
-    return int(status_code or 0) == 502 and code.lower() == "task_protocol_error"
+    msg = str((err or {}).get("message") or "") if isinstance(err, dict) else ""
+    if "invalid task protocol" in msg.lower():
+        return True
+    return int(status_code or 0) in {400, 502} and code.lower() in {
+        "task_protocol_error",
+        "invalid_request_error",
+    } and "protocol" in (msg or text).lower()
 
 
 def is_tokenfree_no_distributor(*, status_code: int = 0, body: str = "") -> bool:
@@ -253,8 +248,15 @@ def tokenfree_image_user_error(*, model: str = "", status_code: int = 0, body: s
     """用户可见的 TokenFree 出图失败文案；通道挂了不再误导改模型。"""
     if is_tokenfree_rate_limit(status_code=status_code, body=body):
         return "出图通道繁忙，同时进行的任务过多，请稍后再点「生成画面」"
-    if tokenfree_image_channel_dead(status_code=status_code, body=body):
-        # TokenFree 上已会把 Seedream 改走 gpt-image，再提示「请改用」会误导
+    if is_tokenfree_protocol_error(status_code=status_code, body=body):
+        if is_seedream_family(model):
+            # Seedream 走 /responses 时协议失败多为该模型通道问题，勿当成全站挂死
+            return (
+                "当前 Seedream 出图协议失败，请稍后重试；"
+                "若持续失败，可在管理端将默认图模改为 GPT Image"
+            )
+        return "出图通道暂时失败，请稍后再点「生成画面」"
+    if is_tokenfree_no_distributor(status_code=status_code, body=body):
         return "出图通道暂时失败，请稍后再点「生成画面」"
     payload = _parse_json_object(body)
     if payload and is_tokenfree_image_task_failed(payload):

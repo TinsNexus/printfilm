@@ -74,6 +74,9 @@ def is_seedream_pro_model(model: str | None) -> bool:
     mid = (model or "").strip().lower()
     if not mid:
         return True
+    # 非 Seedream（z-image / gpt-image / qwen-image 等）不按 Pro 规则钳制
+    if "seedream" not in mid:
+        return False
     if "seedream-4" in mid or "4.5" in mid or "4-5" in mid:
         return False
     if "lite" in mid:
@@ -84,7 +87,17 @@ def is_seedream_pro_model(model: str | None) -> bool:
         return True
     if "seedream-5" in mid or "seedream/5" in mid:
         return "lite" not in mid
-    # 默认项目主图模型为 Pro
+    # 未标明版本的 seedream 默认按 Pro
+    return True
+
+
+def _is_compact_tokenfree_image_model(model: str | None) -> bool:
+    """通义 z-image / qwen / banana 等不吃 Seedream 大像素，统一走 1K。"""
+    mid = (model or "").strip().lower()
+    if not mid:
+        return False
+    if "seedream" in mid or "gpt-image" in mid:
+        return False
     return True
 
 
@@ -118,23 +131,28 @@ def clamp_seedream_pixel_size(
     return f"{new_w}x{new_h}"
 
 
-# 将前端模型 ID 解析为 TokenFree 上游模型名
+# 将前端模型 ID 解析为 TokenFree 上游模型名（逻辑模型与上游同名）
 def resolve_seedream_model_endpoint(model_id: str | None) -> str:
     raw = (model_id or "").strip()
     settings = get_settings()
     mid = raw.lower()
     logical_id = resolve_logical_model_id("image", model_id)
     routed = resolve_upstream_model("image", logical_id)
-    if routed and routed != logical_id:
+    if routed:
         return routed
     if mid in {"", "seedream-5.0", "seedream-5", "5.0"}:
-        return resolve_upstream_model("image", "seedream-5.0") or settings.model_image
+        return resolve_upstream_model("image", "seedream-5-0-pro") or settings.model_image or "seedream-5-0-pro"
     if mid in {"seedream-4.5", "seedream-4", "4.5"}:
-        return resolve_upstream_model("image", "seedream-4.5") or (settings.model_image_45 or "").strip() or settings.model_image
-    return model_id or settings.model_image
+        return (
+            resolve_upstream_model("image", "seedream-4-5")
+            or (settings.model_image_45 or "").strip()
+            or settings.model_image
+            or "seedream-4-5"
+        )
+    return model_id or settings.model_image or "seedream-5-0-pro"
 
 
-# 将清晰度 + 比例解析为 Ark size；Pro 自动降到 ≤2K
+# 将清晰度 + 比例解析为 size；Pro / 紧凑模型自动降档
 def resolve_seedream_size(
     *,
     aspect_ratio: str | None = None,
@@ -145,9 +163,11 @@ def resolve_seedream_size(
     res = (resolution or "2K").strip().upper()
     if res not in SEEDREAM_SIZE_MAP:
         res = "2K"
-    # Pro 不支持 3K/4K 档与超大像素，统一钳到 2K
     endpoint = resolve_seedream_model_endpoint(model_id) if model_id is not None else settings.model_image
-    if is_seedream_pro_model(endpoint) and res in {"3K", "4K"}:
+    # z-image / qwen 等：大像素易触发 Invalid task protocol，强制 1K
+    if _is_compact_tokenfree_image_model(endpoint):
+        res = "1K"
+    elif is_seedream_pro_model(endpoint) and res in {"3K", "4K"}:
         res = "2K"
     ratio = (aspect_ratio or "3:4").strip() or "3:4"
     mapped = SEEDREAM_SIZE_MAP[res].get(ratio)

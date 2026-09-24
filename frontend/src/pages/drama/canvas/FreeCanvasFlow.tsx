@@ -1,5 +1,5 @@
 /** React Flow 无限画布核心 */
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import {
   Background,
   MiniMap,
@@ -10,11 +10,17 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { CanvasAssetNode } from './CanvasAssetNode'
+import { CanvasPaneAddMenu } from './CanvasPaneAddMenu'
 import { useCanvasStore } from './CanvasStore'
-import { CANVAS_SNAP_GRID } from './canvasTypes'
+import { CANVAS_NODE_SIZE, CANVAS_SNAP_GRID, type CanvasNodeKind } from './canvasTypes'
 
 type FreeCanvasFlowProps = {
   projectId: number
+}
+
+type PaneAddMenuState = {
+  screen: { x: number; y: number }
+  flow: { x: number; y: number }
 }
 
 /** 渲染 React Flow 无限画布 */
@@ -31,10 +37,13 @@ export function FreeCanvasFlow({ projectId }: FreeCanvasFlowProps) {
     pushSnapshot,
     focusNodeId,
     clearFocusNode,
+    addNodeOfKind,
   } = useCanvasStore()
-  const { fitView, setCenter, getNode } = useReactFlow()
+  const { fitView, setCenter, getNode, screenToFlowPosition } = useReactFlow()
   const wrapperRef = useRef<HTMLDivElement>(null)
   const dragSnapshotPushed = useRef(false)
+  // paneAddMenu 空白双击后的新建菜单
+  const [paneAddMenu, setPaneAddMenu] = useState<PaneAddMenuState | null>(null)
 
   /* 聚焦文件夹选中的节点 */
   useEffect(() => {
@@ -59,7 +68,48 @@ export function FreeCanvasFlow({ projectId }: FreeCanvasFlowProps) {
 
   const handlePaneClick = useCallback(() => {
     wrapperRef.current?.focus()
+    setPaneAddMenu(null)
   }, [])
+
+  /** 空白处双击：在落点弹出新建节点菜单 */
+  const handlePaneDoubleClick = useCallback(
+    (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null
+      if (!target) return
+      if (
+        target.closest(
+          '.react-flow__node, .react-flow__edge, .react-flow__controls, .react-flow__minimap, .fc-pane-add-menu, .fc-generate-panel, button, input, textarea, [contenteditable="true"]',
+        )
+      ) {
+        return
+      }
+      if (!target.closest('.react-flow__pane') && !target.closest('.react-flow__viewport')) {
+        return
+      }
+      event.preventDefault()
+      const flow = screenToFlowPosition({ x: event.clientX, y: event.clientY })
+      setPaneAddMenu({
+        screen: { x: event.clientX, y: event.clientY },
+        flow,
+      })
+    },
+    [screenToFlowPosition],
+  )
+
+  /** 从双击菜单创建节点，居中落在点击位置 */
+  const handlePaneAddSelect = useCallback(
+    (kind: CanvasNodeKind) => {
+      if (!paneAddMenu) return
+      const size = CANVAS_NODE_SIZE[kind]
+      const position = {
+        x: paneAddMenu.flow.x - size.width / 2,
+        y: paneAddMenu.flow.y - size.height / 2,
+      }
+      setPaneAddMenu(null)
+      void addNodeOfKind(kind, position)
+    },
+    [addNodeOfKind, paneAddMenu],
+  )
 
   /* 拖拽开始时压入历史快照（同一拖拽只压一次） */
   const handleNodeDragStart = useCallback(() => {
@@ -96,6 +146,7 @@ export function FreeCanvasFlow({ projectId }: FreeCanvasFlowProps) {
       className="free-canvas-flow"
       style={{ width: '100%', height: '100%', outline: 'none' }}
       data-project-id={projectId}
+      onDoubleClick={handlePaneDoubleClick}
     >
       <ReactFlow
         nodes={nodes}
@@ -125,6 +176,13 @@ export function FreeCanvasFlow({ projectId }: FreeCanvasFlowProps) {
           />
         ) : null}
       </ReactFlow>
+      {paneAddMenu ? (
+        <CanvasPaneAddMenu
+          screen={paneAddMenu.screen}
+          onSelect={handlePaneAddSelect}
+          onClose={() => setPaneAddMenu(null)}
+        />
+      ) : null}
     </div>
   )
 }

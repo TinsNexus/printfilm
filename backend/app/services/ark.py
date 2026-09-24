@@ -49,7 +49,6 @@ from app.services.tokenfree_image import (
     raise_tokenfree_image_if_failed,
     tokenfree_image_slot,
     tokenfree_image_user_error,
-    tokenfree_working_image_model,
     uses_tokenfree_image,
 )
 from app.services.voices import edge_tts_voice_for_speaker
@@ -876,14 +875,13 @@ class ArkGateway:
         channel_id = (route.channel_id if route else "") or ""
         base = (route.base_url if route and route.base_url else self.settings.ark_base_url) or ""
         on_tokenfree = uses_tokenfree_image(base_url=base, channel_id=channel_id)
-        chosen = tokenfree_working_image_model(upstream_model) if on_tokenfree else upstream_model
+        # TokenFree 按逻辑路由解析出的上游模型原样发送，不硬改模型名
+        chosen = (upstream_model or "").strip()
         if on_tokenfree and "gpt-image" in chosen.lower():
             # Kie / gpt-image 实际按 1K·2K 档；3K/4K 钳到 2K，与计费一致
             if str(resolved_size or "").strip().upper() in {"3K", "4K"}:
                 resolved_size = "2K"
         if on_tokenfree:
-            if chosen != (upstream_model or "").strip():
-                logger.warning("TokenFree 将 %s 改走 %s，避免 Seedream task_protocol_error", upstream_model, chosen)
             path = "/responses"
             body = build_tokenfree_image_body(
                 model=chosen,
@@ -1117,7 +1115,13 @@ class ArkGateway:
         return json.dumps({"summary_caption": clean[:500]}, ensure_ascii=False)
 
     @staticmethod
-    def _seedance_duration(duration: int | float) -> int:
+    def _seedance_duration(duration: int | float, *, model: str | None = None) -> int:
+        """按模型钳时长；无模型时退回站点 Seedance 4–30。"""
+        from app.services.seedance_resolutions import clamp_video_duration
+
+        mid = (model or "").strip()
+        if mid:
+            return clamp_video_duration(mid, duration)
         s = get_settings()
         lo = int(getattr(s, "seedance_duration_min", 4) or 4)
         hi = int(getattr(s, "seedance_duration_max", 30) or 30)
@@ -1193,7 +1197,7 @@ class ArkGateway:
         body: dict[str, Any] = {
             "model": video_model,
             "content": content,
-            "duration": self._seedance_duration(duration),
+            "duration": self._seedance_duration(duration, model=video_model),
             "resolution": resolution,
             "watermark": False,
             "generate_audio": bool(generate_audio),
@@ -1333,7 +1337,10 @@ class ArkGateway:
                 content,
                 project_id=project_id,
             )
-        payload["duration"] = self._seedance_duration(payload.get("duration", 8))
+        payload["duration"] = self._seedance_duration(
+            payload.get("duration", 8),
+            model=str(payload.get("model") or ""),
+        )
         route = self._resolve_ark_route("video", str(payload.get("model") or ""))
 
         logger.info(

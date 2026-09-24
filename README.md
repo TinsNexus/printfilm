@@ -88,20 +88,36 @@
 | AI | TokenFree New API（文字 / 图 / 视频） |
 | 部署 | Docker 全栈镜像，或本机三进程 + 中间件容器 |
 
-## 快速开始
+## 快速开始（Docker 一键启动）
 
-本机只需 Docker。ACR `gcc` 公开命名空间，**拉取无需登录**。
+本机只需安装 [Docker Desktop](https://www.docker.com/products/docker-desktop/)（或 Docker Engine + Compose）。镜像在阿里云 ACR `gcc` 公开命名空间，**拉取无需登录**。
+
+### 1. 克隆并准备环境变量
 
 ```bash
 git clone https://github.com/yi1108/printfilm.git
 cd printfilm
 
 cp deploy/.env.docker.example deploy/.env.docker
-# 改 POSTGRES_PASSWORD、SECRET_KEY；填入 TokenFree Key
-# OPENAI_API_KEY 与 ARK_API_KEY 可用同一把
+```
 
+编辑 `deploy/.env.docker`，至少改这三项：
+
+| 变量 | 说明 |
+|------|------|
+| `POSTGRES_PASSWORD` | 数据库密码（勿用示例默认值） |
+| `SECRET_KEY` | 任意长随机串（会话 / 密钥加密） |
+| `OPENAI_API_KEY` / `ARK_API_KEY` | TokenFree API Key（同一把填两处即可） |
+
+无 Key 想先看界面：把 `ARK_MOCK=true`。
+
+### 2. 一键启动
+
+```bash
 docker compose --env-file deploy/.env.docker up -d
 ```
+
+等约半分钟（API 健康检查通过后，web / admin 才会起来）。
 
 | 服务 | 地址 |
 |------|------|
@@ -110,39 +126,91 @@ docker compose --env-file deploy/.env.docker up -d
 | API / 文档 | http://localhost:8000 · `/docs` |
 | 健康检查 | http://localhost:8000/api/health |
 
+常用：
+
+```bash
+docker compose --env-file deploy/.env.docker ps          # 状态
+docker compose --env-file deploy/.env.docker logs -f api # 看日志
+docker compose --env-file deploy/.env.docker down        # 停止（保留数据卷）
+```
+
+### 3. 注册与管理员
+
 | 角色 | 怎么拿 |
 |------|--------|
-| 普通用户 | `/auth` 邮箱注册 |
-| 管理员 | 先注册 → `ADMIN_BOOTSTRAP_EMAILS=你的邮箱` → `docker compose --env-file deploy/.env.docker up -d --force-recreate api`（**不会造号**） |
+| 普通用户 | 打开用户端 → `/auth` 邮箱注册 |
+| 管理员 | 先用该邮箱注册 → 在 `.env.docker` 设 `ADMIN_BOOTSTRAP_EMAILS=你的邮箱` → `docker compose --env-file deploy/.env.docker up -d --force-recreate api`（**只提权，不造号**） |
 
-无 Key 可先看界面：`ARK_MOCK=true`。仓库无内置演示账号；生产请立刻改掉密钥。
+仓库无内置演示账号；生产请立刻改掉密钥。
 
-**更新镜像**
+### 4. 更新到最新镜像
 
 ```bash
 docker compose --env-file deploy/.env.docker pull
 docker compose --env-file deploy/.env.docker up -d
 ```
 
-**从源码构建**（改过前后端 / 拉不到 ACR 时）：
+### 5. 从源码构建（可选）
+
+改过前后端代码，或拉不到 ACR 时：
 
 ```bash
 docker compose --env-file deploy/.env.docker -f docker-compose.full.yml up -d --build
 ```
 
-## AI 配置
+## 配置 TokenFree API Key
 
-开源版文字 / 图 / 视频统一走 **TokenFree**（`https://www.tokenfree.com/v1`）。可在管理后台 **系统设置 → 模型** 填 Key；也可写进 `deploy/.env.docker`：
+开源版文字 / 图 / 视频统一走 **TokenFree New API**（OpenAI 兼容：`https://www.tokenfree.com/v1`）。没有 Key 时只能 `ARK_MOCK=true` 看界面，不能真实生图 / 生视频。
+
+### A. 在 TokenFree 拿到 Key
+
+1. 打开 [https://www.tokenfree.com](https://www.tokenfree.com) 注册并登录。
+2. 进入控制台的 **API 密钥 / Tokens**（部分部署路径为 `/token` 或 `/keys`）。
+3. 点击 **创建**，填名称（如 `printfilm`），按需设额度 / 过期时间。
+4. **立刻复制完整 Key**（形如 `sk-…`，只显示一次）。
+5. 确认账户有余额或可用额度；模型列表里能看到你要用的对话 / 生图 / 视频模型。
+
+> Key 等同密码，不要提交到 Git、不要发到群聊。泄露后在 TokenFree 控制台作废并重建。
+
+### B. 写入 Docker 环境（推荐自托管首次启动）
+
+编辑 `deploy/.env.docker`：
 
 ```env
 OPENAI_API_KEY=sk-你的密钥
 OPENAI_BASE_URL=https://www.tokenfree.com/v1
 ARK_API_KEY=sk-你的密钥
+ARK_MOCK=false
 MODEL_LLM=kimi-k2.6
-MODEL_IMAGE=doubao-seedream-5-0-260128
-MODEL_VIDEO=doubao-seedance-2-5-260628
+MODEL_IMAGE=seedream-5-0-pro
+MODEL_VIDEO=seedance-2-5
 ```
 
+`OPENAI_API_KEY` 与 `ARK_API_KEY` 填**同一把**即可。然后重建 API 容器使环境生效：
+
+```bash
+docker compose --env-file deploy/.env.docker up -d --force-recreate api
+```
+
+打开 http://localhost:8000/api/health ，`ark_mock` 应为 `false`。
+
+### C. 在管理后台填写（推荐日常改 Key）
+
+1. 用管理员登录 http://localhost:8081 。
+2. 打开 **系统设置 → 模型**（路由 / TokenFree 渠道）。
+3. 在 TokenFree 渠道填入 API Key 并保存。
+4. 按需调整默认文字 / 图 / 视频模型；保存后即时生效，一般不必改 `.env`。
+
+后台保存的 Key 会加密进数据库；换机器迁移时记得一并备份库，或重新在后台填写。
+
+### D. 联调排查
+
+| 现象 | 处理 |
+|------|------|
+| 生图 / 生视频报未配置 Key | 检查 `.env.docker` 是否仍为 `replace-me`，或后台渠道是否已填 Key |
+| `ark_mock: true` | 关掉 `ARK_MOCK`，并确认 Key 非空后 `--force-recreate api` |
+| 401 / 额度不足 | 到 TokenFree 控制台看 Key 是否启用、余额是否够 |
+| 模型名 404 | 在后台模型列表里选 TokenFree 实际提供的模型 id |
 ## 适用场景
 
 - 短视频 / 获客片：把卖点做成可投放的短片

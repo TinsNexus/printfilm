@@ -270,21 +270,36 @@ async def resolve_visual_prompt_for_asset(
     strict_llm: bool = False,
     db: AsyncSession | None = None,
 ) -> str:
-    """解析资产生图用的用户描述（过短/模板化则规则 + LLM 补全）。"""
+    """解析资产生图用的用户描述（过短/模板化则规则 + LLM 补全）。
+
+    本次请求显式传入的 prompt 优先；禁止被资产里旧 visualPrompt 静默覆盖。
+    """
     kind = (asset.type or "character").lower()
     name = asset.name or ""
     params = asset.params if isinstance(asset.params, dict) else {}
-    stored = str(
-        params.get("visualPrompt") or params.get("visualImage") or incoming_prompt or ""
-    ).strip()
+    stored = str(params.get("visualPrompt") or params.get("visualImage") or "").strip()
+    incoming = (incoming_prompt or "").strip()
 
     summary: dict[str, Any] | None = None
     if project.script and isinstance(project.script.summary, dict):
         summary = project.script.summary
     bodies = _episode_bodies(project.script.episode_content) if project.script else []
 
-    if not force_refresh and stored and not is_weak_visual_prompt(stored, name, kind):
+    # 用户这次点了「生成」并带了文案：以本次为准（够长直接用；偏短再补全）
+    if incoming:
+        if not is_weak_visual_prompt(incoming, name, kind):
+            return incoming
+        # 未达角色 120 字门槛、但仍有实质描述时直接采用，避免被旧 visualPrompt 锁死
+        if len(incoming) >= 40 and incoming.lower() not in {
+            name.lower(),
+            f"{kind} {name}".lower(),
+        }:
+            return incoming
+        seed = incoming
+    elif not force_refresh and stored and not is_weak_visual_prompt(stored, name, kind):
         return stored
+    else:
+        seed = stored
 
     min_len = MIN_PROMPT_LEN.get(kind, 80)
     llm_bill = {"db": db, "user_id": project.user_id, "drama_project_id": project.id}
@@ -292,8 +307,12 @@ async def resolve_visual_prompt_for_asset(
     if kind == "character":
         summary_char = find_summary_character(summary, name)
         rule_prompt = fallback_character_visual_prompt(asset, summary_char)
+        if seed:
+            rule_prompt = merge_visual_prompts(seed, rule_prompt, min_len=min_len) or seed
 
         context = build_character_visual_context(asset, summary_char, summary)
+        if seed:
+            context = f"用户本次指定的视觉描述：{seed}\n\n{context}"
         style_id = str((project.params or {}).get("image_style_id") or "").strip()
         if style_id:
             context += f"\n项目画面风格 ID：{style_id}"
@@ -315,10 +334,12 @@ async def resolve_visual_prompt_for_asset(
             if strict_llm:
                 raise RuntimeError(f"角色「{name}」AI 提示词生成失败") from exc
             logger.exception("角色视觉提示词 LLM 失败 asset_id=%s", asset.id)
-        return rule_prompt
+        return seed or rule_prompt
 
     if kind == "scene":
         rule_prompt = fallback_scene_visual_prompt(asset, summary, bodies)
+        if seed:
+            rule_prompt = merge_visual_prompts(seed, rule_prompt, min_len=min_len) or seed
 
         excerpt = collect_scene_excerpts(bodies, name)
         story_bits = []
@@ -331,6 +352,7 @@ async def resolve_visual_prompt_for_asset(
         user_msg = "\n".join(
             [
                 f"场景名：{name}",
+                *([f"用户本次指定描述：{seed}"] if seed else []),
                 *story_bits,
                 f"场戏摘录：\n{excerpt}" if excerpt else "（暂无场戏摘录，请根据场景名与故事类型合理补全）",
             ]
@@ -348,10 +370,10 @@ async def resolve_visual_prompt_for_asset(
             if strict_llm:
                 raise RuntimeError(f"场景「{name}」AI 提示词生成失败") from exc
             logger.exception("场景视觉提示词 LLM 失败 asset_id=%s", asset.id)
-        return rule_prompt
+        return seed or rule_prompt
 
     if kind in {"prop", "material", "none"}:
-        rule_prompt = stored or normalize_visual_prompt_text(
+        rule_prompt = seed or normalize_visual_prompt_text(
             f"{name}，{'关键道具' if kind == 'prop' else '气氛空镜'}，"
             f"材质细节清晰，戏剧感强，背景简洁。"
         )
@@ -360,8 +382,8 @@ async def resolve_visual_prompt_for_asset(
         ctx = f"名称：{name}\n"
         if summary:
             ctx += f"故事类型：{summary.get('storyType') or ''}\n"
-        if stored:
-            ctx += f"已有描述：{stored}\n"
+        if seed:
+            ctx += f"用户本次指定描述：{seed}\n"
         excerpt = collect_scene_excerpts(bodies, name)
         if excerpt:
             ctx += f"剧本相关摘录：\n{excerpt[:800]}"
@@ -380,6 +402,8 @@ async def resolve_visual_prompt_for_asset(
             logger.exception("%s 视觉提示词 LLM 失败 asset_id=%s", kind, asset.id)
         return rule_prompt
 
+    if seed and len(seed) >= min_len:
+        return seed
     if stored and len(stored) >= min_len:
         return stored
     return normalize_visual_prompt_text(f"{name}，影视级静物/空镜，材质与氛围清晰，构图简洁。")

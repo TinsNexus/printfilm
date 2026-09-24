@@ -25,11 +25,19 @@ def normalize_model_name(value: str) -> str:
     return re.sub(r"\s+", "", (value or "").strip()).lower()
 
 
-# 从模型名推断能力类型
+# 从模型名推断能力类型（优先 TokenFree 价目 tags / endpoints）
 def infer_model_capability(model: str) -> LogicalModelCapability:
     mid = normalize_model_name(model)
     if not mid:
         return "text"
+    try:
+        from app.services.tokenfree_pricing import lookup_tokenfree_capability
+
+        priced = lookup_tokenfree_capability(model)
+        if priced in {"text", "image", "video", "audio"}:
+            return priced  # type: ignore[return-value]
+    except Exception:  # noqa: BLE001 — 价目未就绪时回退名字规则
+        pass
     if (
         "tts" in mid
         or "text-to-speech" in mid
@@ -47,6 +55,8 @@ def infer_model_capability(model: str) -> LogicalModelCapability:
         or "i2v" in mid
         or mid.startswith("kie-veo")
         or mid.startswith("kie-seedance")
+        or "minimax-h" in mid
+        or "hailuo" in mid
     ):
         return "video"
     if (
@@ -92,9 +102,8 @@ def channel_supports_model(channel: SystemModelChannel, upstream_model: str) -> 
 # 解析渠道下单模型的能力
 def resolve_channel_model_capability(channel: SystemModelChannel, upstream_model: str) -> LogicalModelCapability:
     protocol = (channel.protocol or "auto").lower()
-    if protocol == "openai":
-        return "text"
-    if protocol in {"ark", "kie"}:
+    # TokenFree / New API 也标 openai，不能整渠道路径判成 text；走价目+名字推断
+    if protocol in {"openai", "ark", "kie", "auto"}:
         return infer_model_capability(upstream_model)
     if protocol == "volc_tts":
         return "audio"
@@ -175,11 +184,17 @@ def synchronize_logical_models_with_channels(
                 )
             )
         bindings.sort(key=lambda binding: (binding.priority, binding.id))
+        catalog_cap = catalog_model["capability"]
+        # 价目已给出图/视频/音频时，纠正历史上误标成 text 的逻辑模型
+        if existing and existing.capability == "text" and catalog_cap in {"image", "video", "audio"}:
+            synced_cap = catalog_cap
+        else:
+            synced_cap = existing.capability if existing else catalog_cap
         result.append(
             LogicalModel(
                 id=logical_id,
                 name=(existing.name if existing and existing.name else catalog_model["upstream_model"]),
-                capability=(existing.capability if existing else catalog_model["capability"]),
+                capability=synced_cap,
                 enabled=existing.enabled if existing else True,
                 bindings=bindings,
             )

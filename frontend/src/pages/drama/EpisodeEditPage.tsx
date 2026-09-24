@@ -355,8 +355,11 @@ function EpisodeEditInner() {
     }
   }
 
-  // 持久化本集画幅 / 清晰度到 episode.params；已有成片时提示重新生成
-  async function handleEpisodeOutputChange(nextParams: Record<string, unknown>) {
+  // 持久化本集画幅 / 清晰度到 episode.params；已有成片时提示重新生成（quiet=模型自动钳制时静默）
+  async function handleEpisodeOutputChange(
+    nextParams: Record<string, unknown>,
+    opts?: { quiet?: boolean },
+  ) {
     const prevRatio = readEpisodeAspectRatio(episodeParams, projectParams)
     const prevRes = readEpisodeResolution(episodeParams, projectParams)
     const nextRatio = readEpisodeAspectRatio(nextParams, projectParams)
@@ -366,17 +369,21 @@ function EpisodeEditInner() {
     const prevLabel = formatProjectOutputLabel(prevRatio, prevRes)
     const nextLabel = formatProjectOutputLabel(nextRatio, nextRes)
     const generatedCount = fragments.filter((frag) => Boolean(frag.video)).length
-    const ok = await dialog.confirm({
-      title: '切换画幅 / 清晰度',
-      message:
-        generatedCount > 0
-          ? `将本集从 ${prevLabel} 改为 ${nextLabel}。已生成的 ${generatedCount} 镜不会自动更新，需要重新生成才会按新规格出片。`
-          : `将本集从 ${prevLabel} 改为 ${nextLabel}。之后生成的分镜将使用该规格。`,
-      confirmText: generatedCount > 0 ? '保存并重新生成' : '保存',
-      cancelText: '取消',
-      tone: generatedCount > 0 ? 'danger' : 'default',
-    })
-    if (!ok) return
+    const quiet = Boolean(opts?.quiet)
+
+    if (!quiet) {
+      const ok = await dialog.confirm({
+        title: '切换画幅 / 清晰度',
+        message:
+          generatedCount > 0
+            ? `将本集从 ${prevLabel} 改为 ${nextLabel}。已生成的 ${generatedCount} 镜不会自动更新，需要重新生成才会按新规格出片。`
+            : `将本集从 ${prevLabel} 改为 ${nextLabel}。之后生成的分镜将使用该规格。`,
+        confirmText: generatedCount > 0 ? '保存并重新生成' : '保存',
+        cancelText: '取消',
+        tone: generatedCount > 0 ? 'danger' : 'default',
+      })
+      if (!ok) return
+    }
 
     const prevParams = episodeParams
     setEpisodeParams(nextParams)
@@ -392,14 +399,19 @@ function EpisodeEditInner() {
       setEpisodeParams(updatedParams)
       episodeParamsRef.current = updatedParams
       setAspectRatio(readEpisodeAspectRatio(updatedParams, projectParams))
-      setStatus(
-        generatedCount > 0
-          ? `已更新本集规格为 ${nextLabel}，正在按新规格重新入队…`
-          : `已更新本集规格为 ${nextLabel}`,
-      )
-      setError('')
-      if (generatedCount > 0) {
-        await generateAll({ forceRegen: true, skipConfirm: true })
+      if (!quiet) {
+        setStatus(
+          generatedCount > 0
+            ? `已更新本集规格为 ${nextLabel}，正在按新规格重新入队…`
+            : `已更新本集规格为 ${nextLabel}`,
+        )
+        setError('')
+        if (generatedCount > 0) {
+          await generateAll({ forceRegen: true, skipConfirm: true })
+        }
+      } else if (generatedCount > 0) {
+        // 模型能力自动钳制：不弹确认、不重入队，但提示已生成镜头需手动重生成
+        setStatus(`规格已按当前模型调整为 ${nextLabel}，已生成镜头需重生成才会按新规格出片`)
       }
     } catch (err) {
       setEpisodeParams(prevParams)

@@ -3,15 +3,22 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type 
 import { createPortal } from 'react-dom'
 import { ChevronDown, RectangleVertical } from 'lucide-react'
 import {
-  DRAMA_RATIO_OPTIONS,
-  DRAMA_RES_OPTIONS,
   formatProjectOutputLabel,
   readEpisodeAspectRatio,
   readEpisodeResolution,
   readProjectAspectRatio,
   readProjectResolution,
+  type DramaAspectRatio,
   type DramaResolution,
 } from '../../lib/dramaProjectOutputSettings'
+import {
+  aspectRatiosForVideoModel,
+  clampVideoAspectRatioForModel,
+  clampVideoResolutionForModel,
+  hasKnownVideoModelResolutions,
+  resolutionsForModel,
+} from '../../lib/dramaVideoGenerationOptions'
+import { catalogVideoModels, useMediaModelsCatalog } from '../../hooks/useMediaModelsCatalog'
 import './drama.css'
 
 type Props = {
@@ -21,22 +28,32 @@ type Props = {
   scope?: 'episode' | 'project'
   disabled?: boolean
   compact?: boolean
-  onChange: (nextParams: Record<string, unknown>) => void | Promise<void>
+  /** 当前视频模型；用于过滤清晰度 / 比例 */
+  videoModelId?: string
+  onChange: (
+    nextParams: Record<string, unknown>,
+    opts?: { quiet?: boolean },
+  ) => void | Promise<void>
 }
 
-// 渲染输出规格控件
+/** 渲染输出规格控件 */
 export function DramaProjectOutputSettings({
   params,
   fallbackParams = {},
   scope = 'episode',
   disabled = false,
   compact = false,
+  videoModelId = '',
   onChange,
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
   const [panelStyle, setPanelStyle] = useState<CSSProperties | null>(null)
   const [saving, setSaving] = useState(false)
+  const catalog = useMediaModelsCatalog()
+  const videoModels = catalogVideoModels(catalog)
+  const resolutionOptions = resolutionsForModel(videoModelId, catalog, videoModels)
+  const aspectRatioOptions = aspectRatiosForVideoModel(videoModelId, catalog, videoModels)
 
   const aspectRatio =
     scope === 'episode'
@@ -46,13 +63,37 @@ export function DramaProjectOutputSettings({
     scope === 'episode'
       ? readEpisodeResolution(params, fallbackParams)
       : readProjectResolution(params)
-  const outputLabel = formatProjectOutputLabel(aspectRatio, resolution)
+  const clampedAspect = clampVideoAspectRatioForModel(
+    videoModelId,
+    aspectRatio,
+    catalog,
+    videoModels,
+  ) as DramaAspectRatio
+  const clampedResolution = clampVideoResolutionForModel(
+    videoModelId,
+    resolution,
+    catalog,
+    videoModels,
+  ) as DramaResolution
+  const outputLabel = formatProjectOutputLabel(clampedAspect, clampedResolution)
   const scopeHint = scope === 'episode' ? '本集' : '项目统一'
   const panelTitle = scope === 'episode' ? '分集画幅' : '项目画幅'
   const panelNote =
     scope === 'episode'
-      ? '仅本集分镜使用；未单独设置时继承项目默认。修改后请重新生成各镜视频。'
-      : '全部分集共用同一规格，避免各镜比例/清晰度不一致导致无法拼接。'
+      ? '仅本集分镜使用；未单独设置时继承项目默认。比例与清晰度随当前视频模型过滤，可点选修改。'
+      : '全部分集共用同一规格；比例与清晰度随当前视频模型过滤。'
+
+  /* 仅在目录已匹配到模型白名单时静默钳制回写，避免 catalog/modelId 未就绪时把 1080p 写成 720p */
+  useEffect(() => {
+    if (disabled || saving) return
+    if (!hasKnownVideoModelResolutions(videoModelId, catalog, videoModels)) return
+    if (clampedAspect === aspectRatio && clampedResolution === resolution) return
+    void onChange(
+      { ...params, aspect_ratio: clampedAspect, resolution: clampedResolution },
+      { quiet: true },
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅钳制驱动
+  }, [videoModelId, catalog, clampedAspect, clampedResolution, disabled])
 
   useLayoutEffect(() => {
     if (!open || !rootRef.current) {
@@ -105,7 +146,7 @@ export function DramaProjectOutputSettings({
     e.stopPropagation()
   }
 
-  // 合并写回 params
+  /** 合并写回 params */
   async function applyPatch(patch: Partial<{ aspect_ratio: string; resolution: string }>) {
     if (disabled || saving) return
     const nextParams = { ...params, ...patch }
@@ -153,11 +194,11 @@ export function DramaProjectOutputSettings({
               <div className="fc-gen-opt-panel-title">{panelTitle}</div>
               <p className="drama-project-output-note">{panelNote}</p>
               <div className="fc-gen-chip-row">
-                {DRAMA_RATIO_OPTIONS.map((r) => (
+                {aspectRatioOptions.map((r) => (
                   <button
                     key={r}
                     type="button"
-                    className={`fc-gen-chip${aspectRatio === r ? ' selected' : ''}`}
+                    className={`fc-gen-chip${clampedAspect === r ? ' selected' : ''}`}
                     disabled={disabled || saving}
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => void applyPatch({ aspect_ratio: r })}
@@ -170,11 +211,11 @@ export function DramaProjectOutputSettings({
                 清晰度
               </div>
               <div className="fc-gen-chip-row">
-                {DRAMA_RES_OPTIONS.map((r) => (
+                {resolutionOptions.map((r) => (
                   <button
                     key={r}
                     type="button"
-                    className={`fc-gen-chip${resolution === r ? ' selected' : ''}`}
+                    className={`fc-gen-chip${clampedResolution === r ? ' selected' : ''}`}
                     disabled={disabled || saving}
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => void applyPatch({ resolution: r as DramaResolution })}

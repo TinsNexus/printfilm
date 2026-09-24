@@ -1349,13 +1349,13 @@ async def generate_asset_image(
     gen_meta = {
         "prompt": prompt,
         "image_style_id": style_id,
-        "model_id": model_id or "seedream-5.0",
+        "model_id": model_id or "seedream-5-0-pro",
         "aspect_ratio": ratio,
         "resolution": res,
         "generation": {
             "status": "done",
             "finished_at": finished_at,
-            "model_id": model_id or "seedream-5.0",
+            "model_id": model_id or "seedream-5-0-pro",
             "aspect_ratio": ratio,
             "resolution": res,
             "image_style_id": style_id,
@@ -1485,19 +1485,23 @@ async def prepare_fragment_video_for_submit(
     *,
     model_id: str | None = None,
 ) -> FragmentVideoPrepared:
-    settings = get_settings()
     prompt = prepare_fragment_content(
         fragment.content or "",
         duration_sec=int(fragment.duration_sec or 0) or None,
         is_opening=int(fragment.sort_order or 0) == 0,
     ).strip() or "短剧分镜"
     duration = int(fragment.duration_sec or 8)
-    duration = max(settings.seedance_duration_min, min(duration, settings.seedance_duration_max))
     episode = await db.get(DramaEpisode, fragment.episode_id)
     ratio, resolution = resolve_episode_video_output(
         episode.params if episode else None,
         project.params,
     )
+    mid = (model_id or "").strip() or None
+    from app.services.seedance_resolutions import clamp_video_duration, clamp_video_resolution
+
+    # 按模型钳时长（预设 ∩ 站点 seedance_duration_*；如 MiniMax 4–15）
+    duration = clamp_video_duration(mid, duration)
+    resolution = clamp_video_resolution(mid, resolution)
     # 分集未落库画幅时写入解析结果，避免 UI 默认 9:16 与 params 长期不一致
     if episode is not None:
         ep_params = dict(episode.params or {})
@@ -1508,10 +1512,12 @@ async def prepare_fragment_video_for_submit(
         if str(ep_params.get("resolution") or "").strip() not in {"480p", "720p", "1080p"}:
             ep_params["resolution"] = resolution
             changed = True
+        elif str(ep_params.get("resolution") or "").strip() != resolution:
+            # 模型不允许当前档时回写钳制结果
+            ep_params["resolution"] = resolution
+            changed = True
         if changed:
             episode.params = ep_params
-
-    mid = (model_id or "").strip() or None
 
     refs = (
         await db.execute(

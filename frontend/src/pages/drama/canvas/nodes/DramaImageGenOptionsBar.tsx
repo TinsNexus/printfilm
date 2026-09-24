@@ -7,10 +7,14 @@ import {
   type ImageStyleId,
 } from '../../../../lib/dramaImageStyles'
 import { DramaImageStylePreviewImg } from '../../../../components/drama/DramaImageStylePreviewImg'
+import { DramaMediaModelPicker } from '../../../../components/drama/DramaMediaModelPicker'
 import {
+  aspectRatiosForImageModel,
+  clampImageAspectRatioForModel,
+  clampImageResolutionForModel,
   formatOutputSettingsLabel,
   GENERATION_ASPECT_RATIO_OPTIONS,
-  GENERATION_RESOLUTION_OPTIONS,
+  resolutionsForImageModel,
   type GenerationAspectRatioId,
   type GenerationResolution,
   type ImageGenerationOptions,
@@ -45,14 +49,57 @@ export function DramaImageGenOptionsBar({
   const imageModels = catalogImageModels(catalog)
 
   useEffect(() => {
-    // 目录到达后，把旧 Kie/方舟 id 换成后台默认图片模型
+    // 目录到达后，把旧 Kie/方舟 id 换成后台默认图片模型，并钳制参数
     if (!catalog || disabled) return
     const ids = imageModels.map((m) => m.id)
     if (!ids.length) return
-    if (value.model_id && ids.includes(value.model_id)) return
-    const next = catalog.defaults.image_model || ids[0]
-    if (next && next !== value.model_id) onChange({ ...value, model_id: next })
+    let nextModel = value.model_id
+    if (!nextModel || !ids.includes(nextModel)) {
+      nextModel = catalog.defaults.image_model || ids[0]
+    }
+    const nextRatio = clampImageAspectRatioForModel(
+      nextModel,
+      value.aspect_ratio,
+      catalog,
+      imageModels,
+    )
+    const nextRes = clampImageResolutionForModel(
+      nextModel,
+      value.resolution,
+      catalog,
+      imageModels,
+    )
+    if (
+      nextModel !== value.model_id ||
+      nextRatio !== value.aspect_ratio ||
+      nextRes !== value.resolution
+    ) {
+      onChange({ ...value, model_id: nextModel, aspect_ratio: nextRatio, resolution: nextRes })
+    }
   }, [catalog, disabled])
+
+  useEffect(() => {
+    // 换模型后钳制比例/清晰度
+    if (disabled || !value.model_id) return
+    const nextRatio = clampImageAspectRatioForModel(
+      value.model_id,
+      value.aspect_ratio,
+      catalog,
+      imageModels,
+    )
+    const nextRes = clampImageResolutionForModel(
+      value.model_id,
+      value.resolution,
+      catalog,
+      imageModels,
+    )
+    if (nextRatio !== value.aspect_ratio || nextRes !== value.resolution) {
+      onChange({ ...value, aspect_ratio: nextRatio, resolution: nextRes })
+    }
+  }, [value.model_id, catalog, disabled])
+
+  const aspectOptions = aspectRatiosForImageModel(value.model_id, catalog, imageModels)
+  const resolutionOptions = resolutionsForImageModel(value.model_id, catalog, imageModels)
 
   useEffect(() => {
     if (!open) return
@@ -139,25 +186,21 @@ export function DramaImageGenOptionsBar({
       {open === 'model' ? (
         <div className="fc-gen-opt-panel" role="dialog" aria-label="生图模型">
           <div className="fc-gen-opt-panel-title">模型</div>
-          <div className="fc-gen-model-list">
-            {imageModels.length === 0 ? (
-              <p className="fc-gen-model-empty">请先在管理后台「模型」勾选图片模型</p>
-            ) : null}
-            {imageModels.map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                className={`fc-gen-model-item${value.model_id === m.id ? ' selected' : ''}`}
-                onClick={() => {
-                  onChange({ ...value, model_id: m.id })
-                  setOpen(null)
-                }}
-              >
-                <strong>{m.label}</strong>
-                <span>{m.description || 'TokenFree'}</span>
-              </button>
-            ))}
-          </div>
+          <DramaMediaModelPicker
+            models={imageModels}
+            selectedId={value.model_id}
+            onSelect={(m) => {
+              const nextRatio = clampImageAspectRatioForModel(m.id, value.aspect_ratio, catalog, imageModels)
+              const nextRes = clampImageResolutionForModel(m.id, value.resolution, catalog, imageModels)
+              onChange({
+                ...value,
+                model_id: m.id,
+                aspect_ratio: nextRatio,
+                resolution: nextRes,
+              })
+              setOpen(null)
+            }}
+          />
         </div>
       ) : null}
 
@@ -165,7 +208,7 @@ export function DramaImageGenOptionsBar({
         <div className="fc-gen-opt-panel" role="dialog" aria-label="输出设置">
           <div className="fc-gen-opt-panel-title">比例</div>
           <div className="fc-gen-chip-row">
-            {GENERATION_ASPECT_RATIO_OPTIONS.map((opt) => (
+            {GENERATION_ASPECT_RATIO_OPTIONS.filter((opt) => aspectOptions.includes(opt.id)).map((opt) => (
               <button
                 key={opt.id}
                 type="button"
@@ -182,7 +225,7 @@ export function DramaImageGenOptionsBar({
             清晰度
           </div>
           <div className="fc-gen-chip-row">
-            {GENERATION_RESOLUTION_OPTIONS.map((res) => (
+            {resolutionOptions.map((res) => (
               <button
                 key={res}
                 type="button"

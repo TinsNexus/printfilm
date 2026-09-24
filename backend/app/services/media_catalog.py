@@ -9,15 +9,63 @@ from app.schemas_routing import DefaultModels, LogicalModel, LogicalModelCapabil
 from app.services.model_routing_config import infer_model_capability, normalize_model_name
 
 
-def _row(*, model_id: str, label: str, recommended: bool, description: str = "") -> dict[str, Any]:
-    """组装前台一条模型选项。"""
-    return {
+def _row(
+    *,
+    model_id: str,
+    label: str,
+    recommended: bool,
+    description: str = "",
+    capability: LogicalModelCapability | None = None,
+) -> dict[str, Any]:
+    """组装前台一条模型选项（含按模型参数白名单与展示文案）。"""
+    from app.services.media_model_presets import preset_display_meta
+
+    meta = preset_display_meta(model_id)
+    friendly_label = (meta.get("label") or "").strip()
+    # 原始 id / 别名当 label 时优先用预设友好名
+    raw_label = (label or model_id).strip() or model_id
+    if friendly_label and (
+        not raw_label
+        or normalize_model_name(raw_label) == normalize_model_name(model_id)
+        or raw_label.lower() in {"seedance 2", "seedance 2.5", "seedance2", "seedance2.5"}
+    ):
+        display_label = friendly_label
+    else:
+        display_label = raw_label
+
+    row: dict[str, Any] = {
         "id": model_id,
-        "label": (label or model_id).strip() or model_id,
-        "description": description,
+        "label": display_label,
+        "description": (description or meta.get("note") or "").strip(),
+        "pricing_hint": (meta.get("pricing_hint") or "").strip(),
+        "eta_hint": (meta.get("eta_hint") or "").strip(),
         "provider": "tokenfree",
         "recommended": recommended,
     }
+
+    # 前台只展示定性选用提示（清晰度/贵慢等），不用结算秒价覆盖
+
+    from app.services.media_model_presets import model_generation_options
+
+    opts = model_generation_options(model_id)
+    if capability == "image" or opts.get("capability") == "image":
+        if opts.get("allowed_aspect_ratios"):
+            row["allowed_aspect_ratios"] = list(opts["allowed_aspect_ratios"])
+        if opts.get("allowed_resolutions"):
+            row["allowed_resolutions"] = list(opts["allowed_resolutions"])
+    if capability == "video" or opts.get("capability") == "video":
+        from app.services.seedance_resolutions import (
+            allowed_video_resolutions,
+            video_duration_bounds,
+        )
+
+        row["allowed_resolutions"] = allowed_video_resolutions(model_id)
+        if opts.get("allowed_aspect_ratios"):
+            row["allowed_aspect_ratios"] = list(opts["allowed_aspect_ratios"])
+        lo, hi = video_duration_bounds(model_id)
+        row["duration_min"] = lo
+        row["duration_max"] = hi
+    return row
 
 
 def build_media_catalog(
@@ -28,21 +76,65 @@ def build_media_catalog(
     fallback_image: str = "",
     fallback_video: str = "",
 ) -> dict[str, Any]:
-    """按逻辑模型 + 渠道勾选生成 image/video 目录。"""
+    """按逻辑模型 + 渠道勾选生成 image/video 目录。
+
+    友好别名（seedance-2 / seedance-2.5）归一到预设规范 id，避免列表重复；
+    并保证文/图/视预设始终出现在目录中。
+    """
+    from app.services.media_model_presets import preset_ids, resolve_preset_alias
+
     images: list[dict[str, Any]] = []
     videos: list[dict[str, Any]] = []
     seen_image: set[str] = set()
     seen_video: set[str] = set()
-    friendly_alias_ids = {"seedream-5.0", "seedream-4.5", "seedance-2.5", "seedance-2"}
-    aliased_upstreams = {
-        normalize_model_name(binding.upstream_model)
-        for model in logical_models
-        if model.id in friendly_alias_ids
-        for binding in model.bindings
-    }
 
-    default_image = (defaults.image_model or "").strip()
-    default_video = (defaults.video_model or "").strip()
+    def _canon(mid: str) -> str:
+        aliased = resolve_preset_alias(mid)
+        return (aliased or mid).strip() or mid
+
+    default_image = _canon((defaults.image_model or "").strip())
+    default_video = _canon((defaults.video_model or "").strip())
+
+    def _append(
+        *,
+        model_id: str,
+        label: str,
+        capability: LogicalModelCapability,
+    ) -> None:
+        mid = _canon(model_id)
+        if not mid:
+            return
+        key = normalize_model_name(mid)
+        if capability == "image":
+            if key in seen_image:
+                return
+            seen_image.add(key)
+            images.append(
+                _row(
+                    model_id=mid,
+                    label=label,
+                    recommended=normalize_model_name(mid) == normalize_model_name(default_image),
+                    capability="image",
+                )
+            )
+        elif capability == "video":
+            if key in seen_video:
+                return
+            seen_video.add(key)
+            videos.append(
+                _row(
+                    model_id=mid,
+                    label=label,
+                    recommended=normalize_model_name(mid) == normalize_model_name(default_video),
+                    capability="video",
+                )
+            )
+
+    # 先放全量预设，保证前台名称与档位一致（Seedance 2.0 / 2.0 Mini / 2.5 …）
+    for mid in preset_ids("image"):
+        _append(model_id=mid, label=mid, capability="image")
+    for mid in preset_ids("video"):
+        _append(model_id=mid, label=mid, capability="video")
 
     for model in logical_models:
         if not model.enabled:
@@ -50,14 +142,11 @@ def build_media_catalog(
         mid = (model.id or "").strip()
         if not mid:
             continue
-        key = normalize_model_name(mid)
         label = (model.name or mid).strip() or mid
-        if model.capability == "image" and key not in seen_image:
-            seen_image.add(key)
-            images.append(_row(model_id=mid, label=label, recommended=mid == default_image))
-        elif model.capability == "video" and key not in seen_video:
-            seen_video.add(key)
-            videos.append(_row(model_id=mid, label=label, recommended=mid == default_video))
+        if model.capability == "image":
+            _append(model_id=mid, label=label, capability="image")
+        elif model.capability == "video":
+            _append(model_id=mid, label=label, capability="video")
 
     for channel in channels:
         if not channel.enabled:
@@ -66,39 +155,62 @@ def build_media_catalog(
             mid = (raw or "").strip()
             if not mid:
                 continue
-            key = normalize_model_name(mid)
             cap = infer_model_capability(mid)
-            if cap == "image" and key not in seen_image:
-                if key in aliased_upstreams:
-                    continue
-                seen_image.add(key)
-                images.append(_row(model_id=mid, label=mid, recommended=mid == default_image))
-            elif cap == "video" and key not in seen_video:
-                if key in aliased_upstreams:
-                    continue
-                seen_video.add(key)
-                videos.append(_row(model_id=mid, label=mid, recommended=mid == default_video))
+            if cap in {"image", "video"}:
+                _append(model_id=mid, label=mid, capability=cap)  # type: ignore[arg-type]
 
     if not default_image:
-        default_image = images[0]["id"] if images else (fallback_image or "").strip()
+        default_image = images[0]["id"] if images else _canon((fallback_image or "").strip())
     if not default_video:
-        default_video = videos[0]["id"] if videos else (fallback_video or "").strip()
+        default_video = videos[0]["id"] if videos else _canon((fallback_video or "").strip())
 
-    def _ensure_default_in_list(default_id: str, bucket: list[dict[str, Any]]) -> None:
-        did = (default_id or "").strip()
+    def _ensure_default_in_list(
+        default_id: str,
+        bucket: list[dict[str, Any]],
+        *,
+        capability: LogicalModelCapability,
+    ) -> None:
+        did = _canon(default_id)
         if not did:
             return
         norm = normalize_model_name(did)
         if any(normalize_model_name(str(row.get("id") or "")) == norm for row in bucket):
             return
-        bucket.insert(0, _row(model_id=did, label=did, recommended=True))
+        bucket.insert(
+            0,
+            _row(model_id=did, label=did, recommended=True, capability=capability),
+        )
 
-    _ensure_default_in_list(default_image, images)
-    _ensure_default_in_list(default_video, videos)
+    _ensure_default_in_list(default_image, images, capability="image")
+    _ensure_default_in_list(default_video, videos, capability="video")
     if not images and default_image:
-        images.append(_row(model_id=default_image, label=default_image, recommended=True))
+        images.append(
+            _row(
+                model_id=default_image,
+                label=default_image,
+                recommended=True,
+                capability="image",
+            )
+        )
     if not videos and default_video:
-        videos.append(_row(model_id=default_video, label=default_video, recommended=True))
+        videos.append(
+            _row(
+                model_id=default_video,
+                label=default_video,
+                recommended=True,
+                capability="video",
+            )
+        )
+
+    # 推荐标记以规范化默认 id 为准
+    for row in images:
+        row["recommended"] = normalize_model_name(str(row.get("id") or "")) == normalize_model_name(
+            default_image
+        )
+    for row in videos:
+        row["recommended"] = normalize_model_name(str(row.get("id") or "")) == normalize_model_name(
+            default_video
+        )
 
     return {
         "image_models": images,
