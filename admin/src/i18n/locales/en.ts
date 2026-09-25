@@ -1,3 +1,8 @@
+import { enAdminDramaFragmentDetail } from "./en/adminDramaFragmentDetail";
+import { enAdminOssSettings } from "./en/adminOssSettings";
+import { enAdminDramaEpisodeDetail } from "./en/adminDramaEpisodeDetail";
+import { enAdminDashboardInsights } from "./en/adminDashboardInsights";
+import { enAdminFinance } from "./en/adminFinance";
 import { enAdminRoutingSettings } from "./en/adminRoutingSettings";
 import { enAdminDashboardFilters } from "./en/adminDashboardFilters";
 import { enAdminTemplates } from "./en/adminTemplates";
@@ -19,6 +24,11 @@ import { enShell } from "./en/shell";
 
 export const en = {
   ...enShell,
+  ...enAdminDramaFragmentDetail,
+  ...enAdminOssSettings,
+  ...enAdminDramaEpisodeDetail,
+  ...enAdminDashboardInsights,
+  ...enAdminFinance,
   ...enAdminRoutingSettings,
   ...enAdminDashboardFilters,
   ...enAdminTemplates,

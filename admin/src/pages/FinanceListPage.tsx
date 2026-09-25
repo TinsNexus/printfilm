@@ -8,14 +8,16 @@ import { PageHeader } from "@/components/ui/page";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, type AdminFinanceDaily } from "@/api/client";
 import { fenToYuan } from "@/lib/utils";
+import { formatDateTime, useI18n } from "@/i18n";
+import { tr } from "@/i18n/translate";
 
 type FinanceDays = "7" | "14" | "30" | "90";
 
 const DAY_OPTIONS = [
-  { value: "7", label: "近 7 日" },
-  { value: "14", label: "近 14 日" },
-  { value: "30", label: "近 30 日" },
-  { value: "90", label: "近 90 日" },
+  { value: "7", get label() { return tr("finance.last7Days") } },
+  { value: "14", get label() { return tr("finance.last14Days") } },
+  { value: "30", get label() { return tr("finance.last30Days") } },
+  { value: "90", get label() { return tr("finance.last90Days") } },
 ];
 
 function profitClass(profitFen: number): string {
@@ -26,6 +28,7 @@ function profitClass(profitFen: number): string {
 
 /** 管理端财务列表：按日展示扣费、成本、token、实际成本与利润 */
 export function FinanceListPage() {
+  const { t: tx } = useI18n();
   const [days, setDays] = useState<FinanceDays>("30");
   const [data, setData] = useState<AdminFinanceDaily | null>(null);
   const [loading, setLoading] = useState(true);
@@ -38,7 +41,7 @@ export function FinanceListPage() {
       setData(res);
     } catch (err) {
       setData(null);
-      toast.error(err instanceof Error ? err.message : "财务列表加载失败");
+      toast.error(err instanceof Error ? err.message : tx("finance.couldLoadFinanceList"));
     } finally {
       setLoading(false);
     }
@@ -49,9 +52,9 @@ export function FinanceListPage() {
     try {
       const res = await api<AdminFinanceDaily>(`/api/admin/finance/daily/sync?days=${days}`, { method: "POST" });
       setData(res);
-      toast.success("官方成本已刷新");
+      toast.success(tx("finance.officialCostRefreshed"));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "刷新失败");
+      toast.error(err instanceof Error ? err.message : tx("finance.refreshFailed"));
     } finally {
       setSyncing(false);
     }
@@ -67,11 +70,11 @@ export function FinanceListPage() {
 
   return (
     <div className="admin-page">
-      <PageHeader description="按日汇总本地扣费、成本与官方实际成本，计算利润" />
+      <PageHeader description={tx("finance.dailyTotalsLocalCharges")} />
 
       <AdminFilterBar>
         <AdminChipFilter
-          label="时间范围"
+          label={tx("finance.timeRange")}
           value={days}
           options={DAY_OPTIONS}
           onChange={(v) => setDays(v as FinanceDays)}
@@ -80,18 +83,18 @@ export function FinanceListPage() {
       </AdminFilterBar>
 
       <PageSection
-        title="财务列表"
+        title={tx("finance.financeList")}
         description={
           rangeMismatch
-            ? "数据与当前时间范围不一致，请重新加载"
+            ? tx("finance.dataDoesMatchCurrent")
             : data?.configured
-            ? `近 ${days} 日 · 实际成本来自 TokenFree New API${data.last_sync_at ? ` · 最近同步 ${new Date(data.last_sync_at).toLocaleString()}` : ""}`
-            : "未配置 TokenFree API Key，实际成本列为空；请在「系统设置 → 模型」填写后刷新"
+            ? tx("finance.costNote", { days, sync: data.last_sync_at ? tx("finance.lastSync", { t: formatDateTime(data.last_sync_at) }) : "" })
+            : tx("finance.tokenfreeApiKeyConfigured")
         }
         actions={
           data?.configured ? (
             <Button type="button" size="sm" variant="outline" disabled={syncing || loading} onClick={() => void syncOfficial()}>
-              {syncing ? "刷新中…" : "刷新官方成本"}
+              {syncing ? tx("finance.refreshing") : tx("finance.refreshOfficialCost")}
             </Button>
           ) : null
         }
@@ -101,25 +104,25 @@ export function FinanceListPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>日期</TableHead>
-                <TableHead>本地扣费</TableHead>
-                <TableHead>本地成本</TableHead>
+                <TableHead>{tx("finance.date")}</TableHead>
+                <TableHead>{tx("finance.localCharges")}</TableHead>
+                <TableHead>{tx("finance.localCost")}</TableHead>
                 <TableHead>Token</TableHead>
-                <TableHead>实际成本</TableHead>
-                <TableHead>利润</TableHead>
+                <TableHead>{tx("finance.actualCost")}</TableHead>
+                <TableHead>{tx("finance.profit")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
                   <TableCell colSpan={6} className="!text-center text-[var(--admin-muted)]">
-                    加载中…
+                    {tx("finance.loading")}
                   </TableCell>
                 </TableRow>
               ) : rows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="!text-center text-[var(--admin-muted)]">
-                    暂无数据
+                    {tx("finance.data")}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -141,7 +144,7 @@ export function FinanceListPage() {
                   ))}
                   {totals ? (
                     <TableRow className="bg-[rgba(15,45,32,0.04)] font-medium">
-                      <TableCell>合计</TableCell>
+                      <TableCell>{tx("finance.total")}</TableCell>
                       <TableCell>¥{fenToYuan(totals.charge_fen)}</TableCell>
                       <TableCell>¥{fenToYuan(totals.cost_fen)}</TableCell>
                       <TableCell>{totals.tokens.toLocaleString()}</TableCell>

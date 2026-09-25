@@ -1,3 +1,8 @@
+import { viAdminDramaFragmentDetail } from "./vi/adminDramaFragmentDetail";
+import { viAdminOssSettings } from "./vi/adminOssSettings";
+import { viAdminDramaEpisodeDetail } from "./vi/adminDramaEpisodeDetail";
+import { viAdminDashboardInsights } from "./vi/adminDashboardInsights";
+import { viAdminFinance } from "./vi/adminFinance";
 import { viAdminRoutingSettings } from "./vi/adminRoutingSettings";
 import { viAdminDashboardFilters } from "./vi/adminDashboardFilters";
 import { viAdminTemplates } from "./vi/adminTemplates";
@@ -19,6 +24,11 @@ import { viShell } from "./vi/shell";
 
 export const vi = {
   ...viShell,
+  ...viAdminDramaFragmentDetail,
+  ...viAdminOssSettings,
+  ...viAdminDramaEpisodeDetail,
+  ...viAdminDashboardInsights,
+  ...viAdminFinance,
   ...viAdminRoutingSettings,
   ...viAdminDashboardFilters,
   ...viAdminTemplates,
