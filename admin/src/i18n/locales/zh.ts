@@ -1,3 +1,8 @@
+import { zhAdminUsers } from "./zh/adminUsers";
+import { zhAdminProjects } from "./zh/adminProjects";
+import { zhAdminQueues } from "./zh/adminQueues";
+import { zhAdminPaymentSettings } from "./zh/adminPaymentSettings";
+import { zhAdminDashboard } from "./zh/adminDashboard";
 import { zhAdminTaskDetail } from "./zh/adminTaskDetail";
 import { zhAdminOrders } from "./zh/adminOrders";
 import { zhAdminLayout } from "./zh/adminLayout";
@@ -6,6 +11,11 @@ import { zhShell } from "./zh/shell";
 
 export const zh = {
   ...zhShell,
+  ...zhAdminUsers,
+  ...zhAdminProjects,
+  ...zhAdminQueues,
+  ...zhAdminPaymentSettings,
+  ...zhAdminDashboard,
   ...zhAdminTaskDetail,
   ...zhAdminOrders,
   ...zhAdminLayout,

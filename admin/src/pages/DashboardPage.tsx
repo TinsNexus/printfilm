@@ -39,16 +39,18 @@ import { sumDailyUsage } from "@/pages/dashboard/dashboardMetrics";
 import { UsageDistributionChart } from "@/pages/dashboard/UsageDistributionChart";
 import { TopUsersRankingChart } from "@/pages/dashboard/TopUsersRankingChart";
 import { UsageTrendChart } from "@/pages/dashboard/UsageTrendChart";
+import { formatDateTime, useI18n } from "@/i18n";
+import { tr } from "@/i18n/translate";
 
 type OrderRes = { items: AdminOrder[]; meta: PageMeta };
 
 const CAPABILITY_LABELS: Record<string, string> = {
-  llm: "LLM 文本",
-  image: "生图",
-  video: "视频",
-  tts: "配音",
-  unknown: "其他",
-  other: "其他",
+  get llm() { return tr("dashboard.llmText") },
+  get image() { return tr("dashboard.image") },
+  get video() { return tr("dashboard.video") },
+  get tts() { return tr("dashboard.voice") },
+  get unknown() { return tr("dashboard.other") },
+  get other() { return tr("dashboard.other") },
 };
 
 function statusClass(status: string): string {
@@ -65,12 +67,13 @@ function capabilityLabel(key: string): string {
 }
 
 function domainChartLabel(key: string): string {
-  if (key === "kepu") return "AI短视频";
+  if (key === "kepu") return tr("dashboard.aiShortVideo");
   return taskDomainLabel(key);
 }
 
 /** 管理端仪表盘：板块切换 + 渐变 KPI + 可筛选用量图表 */
 export function DashboardPage() {
+  const { t: tx } = useI18n();
   const [section, setSection] = useState<DashboardSection>("overview");
   const [filters, setFilters] = useState<DashboardFilterState>(DEFAULT_DASHBOARD_FILTERS);
   const [stats, setStats] = useState<AdminStats | null>(null);
@@ -84,7 +87,7 @@ export function DashboardPage() {
       const data = await api<AdminUpstreamUsage>("/api/admin/stats/upstream-usage?days=30");
       setUpstreamUsage(data);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "官方用量加载失败");
+      toast.error(err instanceof Error ? err.message : tx("dashboard.couldLoadOfficialUsage"));
     }
   }, []);
 
@@ -92,10 +95,10 @@ export function DashboardPage() {
     setUpstreamSyncing(true);
     try {
       await api("/api/admin/stats/upstream-usage/sync?days=30", { method: "POST" });
-      toast.success("官方用量已刷新");
+      toast.success(tx("dashboard.officialUsageRefreshed"));
       await loadUpstreamUsage();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "刷新失败");
+      toast.error(err instanceof Error ? err.message : tx("dashboard.refreshFailed"));
     } finally {
       setUpstreamSyncing(false);
     }
@@ -111,7 +114,7 @@ export function DashboardPage() {
       setStats(s);
       setOrders(o.items);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "加载失败");
+      toast.error(err instanceof Error ? err.message : tx("dashboard.failedLoad"));
     } finally {
       setLoading(false);
     }
@@ -141,38 +144,38 @@ export function DashboardPage() {
   const financeInsights = buildFinanceInsights(stats, upstreamUsage);
   const projectInsights = buildProjectInsights(stats, sumDailyUsage(daily));
   const metricHint =
-    filters.metric === "cost" ? "上游成本" : filters.metric === "calls" ? "调用次数" : "扣费金额";
+    filters.metric === "cost" ? tx("dashboard.upstreamCost") : filters.metric === "calls" ? tx("dashboard.calls") : tx("dashboard.chargeAmount");
 
   return (
     <div className="admin-page admin-dashboard-page">
-      <PageHeader description="用户、充值、AI 调用与费用概览" />
+      <PageHeader description={tx("dashboard.overviewUsersTopUps")} />
 
       <div className="admin-dashboard-kpi-grid">
         <DashboardKpiCard
-          label="用户总数"
+          label={tx("dashboard.totalUsers")}
           value={kpiReady ? stats!.user_count : kpiPlaceholder}
-          hint="总注册用户"
+          hint={tx("dashboard.registeredUsers")}
           icon={Users}
           tone="teal"
         />
         <DashboardKpiCard
-          label="累计已付"
+          label={tx("dashboard.totalPaid")}
           value={kpiReady ? `¥${fenToYuan(stats!.order_paid_total_fen)}` : kpiPlaceholder}
-          hint="历史充值"
+          hint={tx("dashboard.lifetimeTopUps")}
           icon={Banknote}
           tone="blue"
         />
         <DashboardKpiCard
-          label="本月 AI 扣费"
+          label={tx("dashboard.aiChargesMonth")}
           value={kpiReady ? `¥${fenToYuan(stats!.usage_charge_month_fen ?? 0)}` : kpiPlaceholder}
-          hint={kpiReady ? `今日 ¥${fenToYuan(stats!.usage_charge_today_fen ?? 0)}` : "今日扣费"}
+          hint={kpiReady ? tx("dashboard.todayAmount", { amount: fenToYuan(stats!.usage_charge_today_fen ?? 0) }) : tx("dashboard.todaySCharges")}
           icon={Zap}
           tone="purple"
         />
         <DashboardKpiCard
-          label="本月上游成本"
+          label={tx("dashboard.upstreamCostMonth")}
           value={kpiReady ? `¥${fenToYuan(stats!.usage_cost_month_fen ?? 0)}` : kpiPlaceholder}
-          hint={kpiReady ? `今日 ¥${fenToYuan(stats!.usage_cost_today_fen ?? 0)}` : "成本汇总"}
+          hint={kpiReady ? tx("dashboard.todayAmount", { amount: fenToYuan(stats!.usage_cost_today_fen ?? 0) }) : tx("dashboard.costSummary")}
           icon={Wallet}
           tone="sand"
         />
@@ -187,8 +190,8 @@ export function DashboardPage() {
         <>
           <div className="admin-dashboard-charts">
             <PageSection
-              title={`${rangeLabel}用量趋势`}
-              description={loading ? "加载中…" : "按筛选条件聚合的日趋势"}
+              title={tx("dashboard.usageTrend", { rangeLabel })}
+              description={loading ? tx("dashboard.loading") : tx("dashboard.dailyTrendAggregatedCurrent")}
               bodyClassName="!pt-2"
               className="admin-dashboard-chart-main admin-dashboard-glass min-h-0"
             >
@@ -196,7 +199,7 @@ export function DashboardPage() {
             </PageSection>
 
             <PageSection
-              title="能力分布"
+              title={tx("dashboard.capabilityBreakdown")}
               description={`${rangeLabel} · ${metricHint}`}
               bodyClassName="!pt-2"
               className="admin-dashboard-chart-side admin-dashboard-glass min-h-0"
@@ -211,10 +214,10 @@ export function DashboardPage() {
           </div>
 
           <PageSection
-            title={`用户消费 TOP3（${rangeLabel}）`}
+            title={tx("dashboard.top3Spenders", { rangeLabel })}
             actions={
               <Link to="/orders?tab=usage" className="admin-link">
-                更多 →
+                {tx("dashboard.more")}
               </Link>
             }
             bodyClassName="!pt-2"
@@ -225,7 +228,7 @@ export function DashboardPage() {
 
           <div className="admin-dashboard-charts">
             <PageSection
-              title="领域分布"
+              title={tx("dashboard.domainBreakdown")}
               description={`${rangeLabel} · ${metricHint}`}
               bodyClassName="!pt-2"
               className="admin-dashboard-chart-main admin-dashboard-glass min-h-0"
@@ -238,7 +241,7 @@ export function DashboardPage() {
               />
             </PageSection>
             <PageSection
-              title="领域洞察"
+              title={tx("dashboard.domainInsights")}
               description={`${rangeLabel} · ${metricHint}`}
               bodyClassName="!pt-2"
               className="admin-dashboard-chart-side admin-dashboard-glass min-h-0"
@@ -253,8 +256,8 @@ export function DashboardPage() {
         <>
           <div className="admin-dashboard-charts">
             <PageSection
-              title={`${rangeLabel}用量趋势`}
-              description={loading ? "加载中…" : "扣费 / 成本 / 调用按日聚合"}
+              title={tx("dashboard.usageTrend", { rangeLabel })}
+              description={loading ? tx("dashboard.loading") : tx("dashboard.chargesCostsCallsAggregated")}
               bodyClassName="!pt-2"
               className="admin-dashboard-chart-main admin-dashboard-glass min-h-0"
             >
@@ -262,7 +265,7 @@ export function DashboardPage() {
             </PageSection>
 
             <PageSection
-              title="能力分布"
+              title={tx("dashboard.capabilityBreakdown")}
               description={`${rangeLabel} · ${metricHint}`}
               bodyClassName="!pt-2"
               className="admin-dashboard-chart-side admin-dashboard-glass min-h-0"
@@ -278,7 +281,7 @@ export function DashboardPage() {
 
           <div className="admin-dashboard-charts">
             <PageSection
-              title="领域分布"
+              title={tx("dashboard.domainBreakdown")}
               description={`${rangeLabel} · ${metricHint}`}
               bodyClassName="!pt-2"
               className="admin-dashboard-chart-main admin-dashboard-glass min-h-0"
@@ -291,10 +294,10 @@ export function DashboardPage() {
               />
             </PageSection>
             <PageSection
-              title={`用户消费排行（${rangeLabel}）`}
+              title={tx("dashboard.spendingRanking", { rangeLabel })}
               actions={
                 <Link to="/orders?tab=usage" className="admin-link">
-                  用量明细 →
+                  {tx("dashboard.usageDetails")}
                 </Link>
               }
               description={metricHint}
@@ -310,11 +313,11 @@ export function DashboardPage() {
       {section === "finance" ? (
         <div className="admin-dashboard-body admin-dashboard-body--finance">
           <PageSection
-            title="财务概览"
-            description="充值、扣费、成本与毛利"
+            title={tx("dashboard.financeOverview")}
+            description={tx("dashboard.topUpsChargesCosts")}
             actions={
               <Link to="/finance" className="admin-link">
-                财务列表 →
+                {tx("dashboard.financeList")}
               </Link>
             }
             bodyClassName="!pt-2"
@@ -324,16 +327,16 @@ export function DashboardPage() {
           </PageSection>
 
           <PageSection
-            title="TokenFree 官方用量对照"
+            title={tx("dashboard.tokenfreeOfficialUsageComparison")}
             description={
               upstreamUsage?.configured
-                ? `近 30 日本地成本 vs TokenFree New API 用量${upstreamUsage.last_sync_at ? ` · 最近同步 ${new Date(upstreamUsage.last_sync_at).toLocaleString()}` : ""}`
-                : "未配置 TokenFree API Key，请在「系统设置 → 模型」填写后刷新官方数据"
+                ? tx("dashboard.upstreamNote", { sync: upstreamUsage.last_sync_at ? tx("dashboard.lastSync", { t: formatDateTime(upstreamUsage.last_sync_at) }) : "" })
+                : tx("dashboard.tokenfreeApiKeyConfigured")
             }
             actions={
               upstreamUsage?.configured ? (
                 <Button type="button" size="sm" variant="outline" disabled={upstreamSyncing} onClick={() => void syncUpstreamUsage()}>
-                  {upstreamSyncing ? "刷新中…" : "刷新官方数据"}
+                  {upstreamSyncing ? tx("dashboard.refreshing") : tx("dashboard.refreshOfficialData")}
                 </Button>
               ) : null
             }
@@ -344,19 +347,19 @@ export function DashboardPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>日期</th>
-                    <th>本地成本</th>
-                    <th>本地 token</th>
-                    <th>官方 token</th>
-                    <th>官方成本</th>
-                    <th>差额</th>
+                    <th>{tx("dashboard.date")}</th>
+                    <th>{tx("dashboard.localCost")}</th>
+                    <th>{tx("dashboard.localTokens")}</th>
+                    <th>{tx("dashboard.officialTokens")}</th>
+                    <th>{tx("dashboard.officialCost")}</th>
+                    <th>{tx("dashboard.difference")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(upstreamUsage?.series ?? []).length === 0 ? (
                     <tr>
                       <td colSpan={6} className="!text-center text-[var(--admin-muted)]">
-                        暂无对照数据
+                        {tx("dashboard.comparisonData")}
                       </td>
                     </tr>
                   ) : (
@@ -381,11 +384,11 @@ export function DashboardPage() {
           </PageSection>
 
           <PageSection
-            title="最近订单"
-            description="仅展示支付成功"
+            title={tx("dashboard.recentOrders")}
+            description={tx("dashboard.paidOrdersOnly")}
             actions={
               <Link to="/orders" className="admin-link">
-                全部 →
+                {tx("dashboard.all")}
               </Link>
             }
             bodyClassName="!pt-0"
@@ -395,16 +398,16 @@ export function DashboardPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>用户名</th>
-                    <th>金额</th>
-                    <th>支付时间</th>
+                    <th>{tx("dashboard.username")}</th>
+                    <th>{tx("dashboard.amount")}</th>
+                    <th>{tx("dashboard.paid")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {orders.length === 0 ? (
                     <tr>
                       <td colSpan={3} className="!text-center text-[var(--admin-muted)]">
-                        暂无已支付订单
+                        {tx("dashboard.paidOrdersYet")}
                       </td>
                     </tr>
                   ) : (
@@ -430,8 +433,8 @@ export function DashboardPage() {
       {section === "projects" ? (
         <>
           <PageSection
-            title="运维概览"
-            description="项目规模、调用与状态分布"
+            title={tx("dashboard.operationsOverview")}
+            description={tx("dashboard.projectScaleCallsStatus")}
             bodyClassName="!pt-2"
             className="admin-dashboard-glass min-h-0"
           >
@@ -440,14 +443,14 @@ export function DashboardPage() {
 
           <div className="admin-dashboard-project-row">
             <PageSection
-              title="AI短视频项目状态"
-              description={`漫剧项目 ${stats?.drama_project_count ?? 0} 部`}
+              title={tx("dashboard.aiShortVideoProject")}
+              description={tx("dashboard.dramaCount", { n: stats?.drama_project_count ?? 0 })}
               bodyClassName="!pt-2"
               className="admin-dashboard-glass min-h-0"
             >
               <div className="flex flex-wrap gap-1.5">
                 {statusEntries.length === 0 ? (
-                  <span className="text-xs text-[var(--admin-muted)]">暂无数据</span>
+                  <span className="text-xs text-[var(--admin-muted)]">{tx("dashboard.data")}</span>
                 ) : (
                   statusEntries.map(([status, count]) => (
                     <span key={status} className={`admin-status-pill !px-2.5 !py-1 !text-[11px] ${statusClass(status)}`}>
@@ -458,22 +461,22 @@ export function DashboardPage() {
               </div>
             </PageSection>
 
-            <PageSection title="调用统计" bodyClassName="!pt-2" className="admin-dashboard-glass min-h-0">
+            <PageSection title={tx("dashboard.callStatistics")} bodyClassName="!pt-2" className="admin-dashboard-glass min-h-0">
               <div className="admin-dashboard-stat-grid">
                 <div>
-                  <div className="admin-dashboard-stat-grid-label">今日调用</div>
+                  <div className="admin-dashboard-stat-grid-label">{tx("dashboard.callsToday")}</div>
                   <div className="admin-dashboard-stat-grid-value">
                     {kpiReady ? stats!.usage_calls_today ?? 0 : kpiPlaceholder}
                   </div>
                 </div>
                 <div>
-                  <div className="admin-dashboard-stat-grid-label">本月调用</div>
+                  <div className="admin-dashboard-stat-grid-label">{tx("dashboard.callsMonth")}</div>
                   <div className="admin-dashboard-stat-grid-value">
                     {kpiReady ? stats!.usage_calls_month ?? 0 : kpiPlaceholder}
                   </div>
                 </div>
                 <div>
-                  <div className="admin-dashboard-stat-grid-label">累计调用</div>
+                  <div className="admin-dashboard-stat-grid-label">{tx("dashboard.totalCalls")}</div>
                   <div className="admin-dashboard-stat-grid-value">
                     {kpiReady ? stats!.usage_calls_total ?? 0 : kpiPlaceholder}
                   </div>
@@ -482,7 +485,7 @@ export function DashboardPage() {
             </PageSection>
           </div>
 
-          <PageSection title={`领域分布（${projectsRangeLabel}）`} bodyClassName="!pt-2" className="admin-dashboard-glass min-h-0">
+          <PageSection title={tx("dashboard.domainBreakdown2", { projectsRangeLabel })} bodyClassName="!pt-2" className="admin-dashboard-glass min-h-0">
             <UsageDistributionChart
               data={byDomain}
               metric="charge"
@@ -491,39 +494,39 @@ export function DashboardPage() {
             />
           </PageSection>
 
-          <PageSection title="快捷入口" bodyClassName="!pt-2" className="admin-dashboard-glass">
+          <PageSection title={tx("dashboard.shortcuts")} bodyClassName="!pt-2" className="admin-dashboard-glass">
             <div className="admin-dashboard-tools">
               <Link to="/templates" className="admin-dashboard-tool-btn">
                 <Shapes className="h-5 w-5" />
-                <span>模板管理</span>
+                <span>{tx("dashboard.templates")}</span>
               </Link>
               <Link to="/orders?tab=usage" className="admin-dashboard-tool-btn">
                 <Receipt className="h-5 w-5" />
-                <span>订单用量</span>
+                <span>{tx("dashboard.ordersUsage")}</span>
               </Link>
               <Link to="/users" className="admin-dashboard-tool-btn">
                 <Users className="h-5 w-5" />
-                <span>用户管理</span>
+                <span>{tx("dashboard.users")}</span>
               </Link>
               <Link to="/projects" className="admin-dashboard-tool-btn">
                 <Clapperboard className="h-5 w-5" />
-                <span>AI短视频</span>
+                <span>{tx("dashboard.aiShortVideo")}</span>
               </Link>
               <Link to="/drama-projects" className="admin-dashboard-tool-btn">
                 <Film className="h-5 w-5" />
-                <span>漫剧项目</span>
+                <span>{tx("dashboard.dramaProjects")}</span>
               </Link>
               <Link to="/queues" className="admin-dashboard-tool-btn">
                 <Layers className="h-5 w-5" />
-                <span>任务队列</span>
+                <span>{tx("dashboard.taskQueue")}</span>
               </Link>
               <Link to="/settings" className="admin-dashboard-tool-btn">
                 <Settings className="h-5 w-5" />
-                <span>系统配置</span>
+                <span>{tx("dashboard.systemConfiguration")}</span>
               </Link>
               <Link to="/orders" className="admin-dashboard-tool-btn">
                 <Activity className="h-5 w-5" />
-                <span>财务流水</span>
+                <span>{tx("dashboard.financeLedger")}</span>
               </Link>
             </div>
           </PageSection>
