@@ -1,0 +1,30 @@
+/** 中文：漫剧项目列表页（DramaListPage） */
+
+export const zhDramaListPage = {
+  dramaListPage: {
+    canvasPlaceholder: '自由画布创作项目，稍后在画布中完善故事与资产。',
+    selectedProjects: '已选择 {n} 个项目',
+    failedLoad: '加载失败',
+    storyNeedsLeastCharacters: '故事内容至少 {CREATIVE_MIN_LENGTH} 字',
+    keepStoryWithinCharacters: '故事内容请控制在 {CREATIVE_MAX_LENGTH} 字以内',
+    couldCreateProject: '创建失败',
+    freeCanvasProject: '自由画布项目',
+    couldCreateCanvasProject: '创建画布项目失败',
+    enterStoryHereSetting: '在此输入你构想的故事内容：故事设定、主角特征、剧情脉络、最终结局等',
+    creating: '创建中…',
+    generateNow: '立即生成',
+    projectsYet: '还没有项目',
+    createFirstDramaAi: '用 AI 生剧本或自由画布，创建你的第一部漫剧',
+    newProject: '新建项目',
+    projectsMatchFilter: '没有符合筛选的项目',
+    clearFilters: '清除筛选',
+    open: '打开 {itemTitle}',
+    freeCanvas: '自由画布',
+    coverGenerating: '封面生成中',
+    awaitingImage: '待出图',
+    totalCostNumberGenerations: '本剧累计费用与生成次数',
+    deselect: '取消选择',
+    deleting: '删除中…',
+    delete: '删除',
+  },
+} as const

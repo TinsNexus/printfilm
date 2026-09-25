@@ -1,3 +1,7 @@
+import { enDramaMention } from './en/dramaMention'
+import { enDramaValidate } from './en/dramaValidate'
+import { enDramaListPage } from './en/dramaListPage'
+import { enSettingsApi } from './en/settingsApi'
 import { enDramaAssetDetail } from './en/dramaAssetDetail'
 import { enDramaScriptPreview } from './en/dramaScriptPreview'
 import { enDramaGenQueue } from './en/dramaGenQueue'
@@ -21,6 +25,10 @@ import { enStudio } from './en/studio'
 
 export const en = {
   ...enShell,
+  ...enDramaMention,
+  ...enDramaValidate,
+  ...enDramaListPage,
+  ...enSettingsApi,
   ...enDramaAssetDetail,
   ...enDramaScriptPreview,
   ...enDramaGenQueue,

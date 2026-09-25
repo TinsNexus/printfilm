@@ -1,3 +1,7 @@
+import { viDramaMention } from './vi/dramaMention'
+import { viDramaValidate } from './vi/dramaValidate'
+import { viDramaListPage } from './vi/dramaListPage'
+import { viSettingsApi } from './vi/settingsApi'
 import { viDramaAssetDetail } from './vi/dramaAssetDetail'
 import { viDramaScriptPreview } from './vi/dramaScriptPreview'
 import { viDramaGenQueue } from './vi/dramaGenQueue'
@@ -21,6 +25,10 @@ import { viStudio } from './vi/studio'
 
 export const vi = {
   ...viShell,
+  ...viDramaMention,
+  ...viDramaValidate,
+  ...viDramaListPage,
+  ...viSettingsApi,
   ...viDramaAssetDetail,
   ...viDramaScriptPreview,
   ...viDramaGenQueue,

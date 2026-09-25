@@ -1,3 +1,7 @@
+import { zhDramaMention } from './zh/dramaMention'
+import { zhDramaValidate } from './zh/dramaValidate'
+import { zhDramaListPage } from './zh/dramaListPage'
+import { zhSettingsApi } from './zh/settingsApi'
 import { zhDramaAssetDetail } from './zh/dramaAssetDetail'
 import { zhDramaScriptPreview } from './zh/dramaScriptPreview'
 import { zhDramaGenQueue } from './zh/dramaGenQueue'
@@ -21,6 +25,10 @@ import { zhStudio } from './zh/studio'
 
 export const zh = {
   ...zhShell,
+  ...zhDramaMention,
+  ...zhDramaValidate,
+  ...zhDramaListPage,
+  ...zhSettingsApi,
   ...zhDramaAssetDetail,
   ...zhDramaScriptPreview,
   ...zhDramaGenQueue,

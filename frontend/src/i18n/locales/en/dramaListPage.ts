@@ -1,0 +1,30 @@
+/** 英文：漫剧项目列表页（DramaListPage） */
+
+export const enDramaListPage = {
+  dramaListPage: {
+    canvasPlaceholder: 'A free-canvas project — flesh out the story and assets on the canvas later.',
+    selectedProjects: '{n} projects selected',
+    failedLoad: 'Failed to load',
+    storyNeedsLeastCharacters: 'The story needs at least {CREATIVE_MIN_LENGTH} characters',
+    keepStoryWithinCharacters: 'Keep the story within {CREATIVE_MAX_LENGTH} characters',
+    couldCreateProject: 'Could not create the project',
+    freeCanvasProject: 'Free canvas project',
+    couldCreateCanvasProject: 'Could not create the canvas project',
+    enterStoryHereSetting: 'Enter your story here: the setting, the protagonist, the plot outline, the ending…',
+    creating: 'Creating…',
+    generateNow: 'Generate now',
+    projectsYet: 'No projects yet',
+    createFirstDramaAi: 'Create your first drama with an AI script or the free canvas',
+    newProject: 'New project',
+    projectsMatchFilter: 'No projects match the filter',
+    clearFilters: 'Clear filters',
+    open: 'Open {itemTitle}',
+    freeCanvas: 'Free canvas',
+    coverGenerating: 'Cover generating',
+    awaitingImage: 'Awaiting image',
+    totalCostNumberGenerations: 'Total cost and number of generations for this drama',
+    deselect: 'Deselect',
+    deleting: 'Deleting…',
+    delete: 'Delete',
+  },
+} as const

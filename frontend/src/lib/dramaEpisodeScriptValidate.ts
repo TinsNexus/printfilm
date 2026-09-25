@@ -12,6 +12,7 @@ import {
 } from './dramaEpisodePromptEditor'
 import { extractDurations, sumDuration } from './segmentDuration'
 import { DRAMA_VOICE_BINDING_ENABLED } from './dramaVoiceBinding'
+import { tr } from '../i18n/translate'
 
 /** 漫剧字幕 cue（与后端 DRAMA_SUBTITLE_CUE 一致） */
 export const DRAMA_SUBTITLE_CUE = '【字幕：底部居中·简体中文·逐句轮换·与口播同步】'
@@ -137,24 +138,24 @@ export function validateDramaFragmentScript(content: string): DramaScriptIssue[]
   if (badSegment != null) {
     issues.push({
       level: 'error',
-      message: `单个 @duration 需在 ${DRAMA_SEGMENT_DURATION_MIN}–${DRAMA_SEGMENT_DURATION_HARD_MAX} 秒之间`,
+      message: tr('scriptValidate.eachDurationMustBetween', { DRAMA_SEGMENT_DURATION_MIN, DRAMA_SEGMENT_DURATION_HARD_MAX }),
     })
   } else if (durations.some((value) => value > DRAMA_SEGMENT_DURATION_MAX)) {
     issues.push({
       level: 'warn',
-      message: `部分 @duration 超过新分镜建议 ${DRAMA_SEGMENT_DURATION_MAX}s，旧稿可继续生成`,
+      message: tr('scriptValidate.someDurationValuesExceed', { DRAMA_SEGMENT_DURATION_MAX }),
     })
   }
 
   if (total > DRAMA_SHOT_DURATION_HARD_MAX) {
     issues.push({
       level: 'error',
-      message: `本镜 @duration 合计 ${total}s，超过 Seedance 上限 ${DRAMA_SHOT_DURATION_HARD_MAX}s`,
+      message: tr('scriptValidate.shotSDurationTotal', { total, DRAMA_SHOT_DURATION_HARD_MAX }),
     })
   } else if (total > FRAGMENT_CONTENT_DURATION_MAX) {
     issues.push({
       level: 'warn',
-      message: `本镜 @duration 合计 ${total}s，超过新分镜建议 ${FRAGMENT_CONTENT_DURATION_MAX}s（旧稿可继续生成）`,
+      message: tr('scriptValidate.shotSDurationTotal2', { total, FRAGMENT_CONTENT_DURATION_MAX }),
     })
   }
 
@@ -168,7 +169,7 @@ export function validateDramaFragmentScript(content: string): DramaScriptIssue[]
       issues.push({
         level: 'error',
         message:
-          '检测到「空镜/景别」被标成对白或旁白（会口播并烧字幕）。请改为「【画面·无配音仅环境音】」或「空镜：…」纯画面行',
+          tr('scriptValidate.shotSizeEmptyShot'),
       })
       break
     }
@@ -211,14 +212,14 @@ export function validateDramaFragmentAssets(
   if (missingImage.length > 0) {
     issues.push({
       level: 'warn',
-      message: `以下资产缺少参考图，生成时可能自动补图或效果不稳定：${missingImage.slice(0, 5).join('、')}${missingImage.length > 5 ? '…' : ''}`,
+      message: tr('scriptValidate.missingImage', { names: `${missingImage.slice(0, 5).join(tr('scriptValidate.listSep'))}${missingImage.length > 5 ? '…' : ''}` }),
     })
   }
 
   if (missingVoice.length > 0) {
     issues.push({
       level: 'warn',
-      message: `脚本含对白，但以下角色尚未绑定音色：${missingVoice.slice(0, 5).join('、')}${missingVoice.length > 5 ? '…' : ''}`,
+      message: tr('scriptValidate.missingVoice', { names: `${missingVoice.slice(0, 5).join(tr('scriptValidate.listSep'))}${missingVoice.length > 5 ? '…' : ''}` }),
     })
   }
 
@@ -247,10 +248,10 @@ export function formatDramaGateMessage(
 ): string {
   const parts = [baseMessage]
   if (blocking.length > 0) {
-    parts.push('', '【须先修复】', ...blocking.map((i) => `· ${i.message}`))
+    parts.push('', tr('scriptValidate.mustFixFirst'), ...blocking.map((i) => `· ${i.message}`))
   }
   if (warnings.length > 0) {
-    parts.push('', '【建议处理，仍可继续】', ...warnings.map((i) => `· ${i.message}`))
+    parts.push('', tr('scriptValidate.recommendedStillContinue'), ...warnings.map((i) => `· ${i.message}`))
   }
   return parts.join('\n')
 }

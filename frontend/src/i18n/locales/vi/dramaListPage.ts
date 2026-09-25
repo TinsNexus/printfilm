@@ -1,0 +1,30 @@
+/** 越南语：漫剧项目列表页（DramaListPage） */
+
+export const viDramaListPage = {
+  dramaListPage: {
+    canvasPlaceholder: 'Dự án sáng tạo canvas tự do — hoàn thiện câu chuyện và tài nguyên trên canvas sau.',
+    selectedProjects: 'Đã chọn {n} dự án',
+    failedLoad: 'Tải thất bại',
+    storyNeedsLeastCharacters: 'Nội dung câu chuyện cần ít nhất {CREATIVE_MIN_LENGTH} ký tự',
+    keepStoryWithinCharacters: 'Nội dung câu chuyện tối đa {CREATIVE_MAX_LENGTH} ký tự',
+    couldCreateProject: 'Tạo dự án thất bại',
+    freeCanvasProject: 'Dự án canvas tự do',
+    couldCreateCanvasProject: 'Tạo dự án canvas thất bại',
+    enterStoryHereSetting: 'Nhập nội dung câu chuyện bạn hình dung: bối cảnh, đặc điểm nhân vật chính, mạch cốt truyện, kết thúc…',
+    creating: 'Đang tạo…',
+    generateNow: 'Tạo ngay',
+    projectsYet: 'Chưa có dự án',
+    createFirstDramaAi: 'Tạo bộ phim ngắn đầu tiên của bạn bằng kịch bản AI hoặc canvas tự do',
+    newProject: 'Dự án mới',
+    projectsMatchFilter: 'Không có dự án nào khớp bộ lọc',
+    clearFilters: 'Xóa bộ lọc',
+    open: 'Mở {itemTitle}',
+    freeCanvas: 'Canvas tự do',
+    coverGenerating: 'Đang tạo ảnh bìa',
+    awaitingImage: 'Chờ tạo ảnh',
+    totalCostNumberGenerations: 'Tổng chi phí và số lần tạo của phim này',
+    deselect: 'Bỏ chọn',
+    deleting: 'Đang xóa…',
+    delete: 'Xóa',
+  },
+} as const

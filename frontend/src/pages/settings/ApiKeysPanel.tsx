@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { apiKeysApi, getPublicApiBase, type ApiKeyItem } from '../../api/apiKeys'
 import { dialog } from '../../lib/dialog'
+import { useI18n } from '../../i18n'
 
 /** 格式化时间 */
 function formatWhen(iso?: string | null) {
@@ -17,6 +18,7 @@ function formatWhen(iso?: string | null) {
 
 /** 设置页 API：Key 管理与调用文档 */
 export default function ApiKeysPanel() {
+  const { t: tx } = useI18n()
   /*
    * keys Key 列表
    * name 新建名称
@@ -37,7 +39,7 @@ export default function ApiKeysPanel() {
     try {
       setKeys(await apiKeysApi.list())
     } catch (e) {
-      setError(e instanceof Error ? e.message : '加载失败')
+      setError(e instanceof Error ? e.message : tx('apiKeys.failedLoad'))
     }
   }
 
@@ -51,12 +53,12 @@ export default function ApiKeysPanel() {
     setError('')
     setCreatedSecret('')
     try {
-      const row = await apiKeysApi.create(name.trim() || '默认 Key')
+      const row = await apiKeysApi.create(name.trim() || tx('apiKeys.defaultKey'))
       setCreatedSecret(row.secret)
       setName('')
       await reload()
     } catch (e) {
-      setError(e instanceof Error ? e.message : '创建失败')
+      setError(e instanceof Error ? e.message : tx('apiKeys.couldCreateKey'))
     } finally {
       setBusy(false)
     }
@@ -64,9 +66,9 @@ export default function ApiKeysPanel() {
 
   async function handleRevoke(item: ApiKeyItem) {
     const ok = await dialog.confirm({
-      title: '撤销 API Key',
-      message: `确定撤销「${item.name}」（${item.key_prefix}…）？撤销后无法恢复。`,
-      confirmText: '撤销',
+      title: tx('apiKeys.revokeApiKey'),
+      message: tx('apiKeys.revokeCannotUndone', { itemName: item.name, itemKey_prefix: item.key_prefix }),
+      confirmText: tx('apiKeys.revoke'),
     })
     if (!ok) return
     setBusy(true)
@@ -75,7 +77,7 @@ export default function ApiKeysPanel() {
       await apiKeysApi.revoke(item.id)
       await reload()
     } catch (e) {
-      setError(e instanceof Error ? e.message : '撤销失败')
+      setError(e instanceof Error ? e.message : tx('apiKeys.couldRevokeKey'))
     } finally {
       setBusy(false)
     }
@@ -92,28 +94,28 @@ export default function ApiKeysPanel() {
   return (
     <section className="pf-settings-card">
       <h1>API</h1>
-      <p className="pf-muted">使用 API Key 调用生图、生视频与 Seedance 转发，按量从余额扣费</p>
+      <p className="pf-muted">{tx('apiKeys.useApiKeyCall')}</p>
 
       <div className="pf-api-create">
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Key 名称，如「生产环境」"
+          placeholder={tx('apiKeys.keyNameEG')}
           maxLength={64}
         />
         <button type="button" className="pf-btn pf-btn-lime pf-btn-sm" disabled={busy} onClick={() => void handleCreate()}>
-          {busy ? '处理中…' : '创建 Key'}
+          {busy ? tx('apiKeys.working') : tx('apiKeys.createKey')}
         </button>
       </div>
 
       {createdSecret ? (
         <div className="pf-api-secret">
           <p>
-            <strong>请立即复制保存，关闭后无法再次查看：</strong>
+            <strong>{tx('apiKeys.copySaveNowCannot')}</strong>
           </p>
           <code>{createdSecret}</code>
           <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" onClick={() => void copyText(createdSecret)}>
-            复制 Key
+            {tx('apiKeys.copyKey')}
           </button>
         </div>
       ) : null}
@@ -128,8 +130,8 @@ export default function ApiKeysPanel() {
                 <span className="pf-settings-list-main">
                   <strong>{item.name}</strong>
                   <em className="pf-muted">
-                    {item.key_prefix}… · 创建于 {formatWhen(item.created_at)}
-                    {item.last_used_at ? ` · 最近使用 ${formatWhen(item.last_used_at)}` : ''}
+                    {tx('apiKeys.keyMeta', { prefix: item.key_prefix, when: formatWhen(item.created_at) })}
+                    {item.last_used_at ? tx('apiKeys.lastUsed', { when: formatWhen(item.last_used_at) }) : ''}
                   </em>
                 </span>
                 <button
@@ -138,7 +140,7 @@ export default function ApiKeysPanel() {
                   disabled={busy}
                   onClick={() => void handleRevoke(item)}
                 >
-                  撤销
+                  {tx('apiKeys.revoke')}
                 </button>
               </div>
             </li>
@@ -146,16 +148,16 @@ export default function ApiKeysPanel() {
         </ul>
       ) : (
         <div className="pf-settings-empty">
-          <p>还没有 API Key</p>
+          <p>{tx('apiKeys.apiKeysYet')}</p>
         </div>
       )}
 
       <div className="pf-api-docs">
-        <h3>调用说明</h3>
-        <p className="pf-muted">鉴权：Header 任选其一</p>
+        <h3>{tx('apiKeys.howCall')}</h3>
+        <p className="pf-muted">{tx('apiKeys.authPickOneHeader')}</p>
         <pre>{`Authorization: Bearer pf_live_...\nX-Api-Key: pf_live_...`}</pre>
 
-        <p className="pf-muted">生图（Seedream）</p>
+        <p className="pf-muted">{tx('apiKeys.imageGenerationSeedream')}</p>
         <pre>{`POST ${base}/api/v1/images/generations
 Content-Type: application/json
 
@@ -165,7 +167,7 @@ Content-Type: application/json
   "image_url": null
 }`}</pre>
 
-        <p className="pf-muted">生视频（Seedance 首帧图生视频）</p>
+        <p className="pf-muted">{tx('apiKeys.videoGenerationSeedanceFirst')}</p>
         <pre>{`POST ${base}/api/v1/videos/generations
 
 {
@@ -175,7 +177,7 @@ Content-Type: application/json
   "resolution": "480p"
 }`}</pre>
 
-        <p className="pf-muted">Seedance 转发（多模态 body）</p>
+        <p className="pf-muted">{tx('apiKeys.seedanceForwardingMultimodalBody')}</p>
         <pre>{`POST ${base}/api/v1/seedance/tasks
 
 {
@@ -187,7 +189,7 @@ Content-Type: application/json
   "resolution": "480p"
 }`}</pre>
 
-        <p className="pf-muted">查询视频任务</p>
+        <p className="pf-muted">{tx('apiKeys.queryVideoTask')}</p>
         <pre>{`GET ${base}/api/v1/tasks/{task_id}`}</pre>
       </div>
     </section>
