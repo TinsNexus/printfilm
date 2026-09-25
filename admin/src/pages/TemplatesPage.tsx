@@ -16,14 +16,16 @@ import { PaginationBar } from "@/components/PaginationBar";
 import { TEMPLATE_PAGE_SIZE } from "@/lib/pagination";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page";
+import { useI18n } from "@/i18n";
+import { tr } from "@/i18n/translate";
 
 type ListRes = { items: AdminTemplate[]; meta: PageMeta };
 type MetaRes = { categories: string[] };
 
 const STATUS_OPTIONS = [
-  { value: "", label: "全部状态" },
-  { value: "active", label: "已上架" },
-  { value: "inactive", label: "已下架" },
+  { value: "", get label() { return tr("templates.allStatuses") } },
+  { value: "active", get label() { return tr("templates.listed") } },
+  { value: "inactive", get label() { return tr("templates.unlisted") } },
   { value: "premium", label: "Premium" },
 ];
 
@@ -54,6 +56,7 @@ function seedreamText(cfg: Record<string, unknown> | undefined, key: string): st
 
 // 模板管理：封面卡片网格 + 分类筛选 + 全局 UI 组件
 export function TemplatesPage() {
+  const { t: tx } = useI18n();
   const [page, setPage] = useState(1);
   const [data, setData] = useState<ListRes | null>(null);
   const [categories, setCategories] = useState<string[]>([]);
@@ -82,7 +85,7 @@ export function TemplatesPage() {
       if (statusFilter === "inactive") params.set("is_active", "false");
       setData(await api<ListRes>(`/api/admin/templates?${params}`));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "加载失败");
+      toast.error(err instanceof Error ? err.message : tx("templates.failedLoad"));
     } finally {
       setLoading(false);
     }
@@ -112,7 +115,7 @@ export function TemplatesPage() {
     const countFor = (cat: string) =>
       items.filter((t) => (t.category || []).includes(cat)).length;
     return [
-      { value: "", label: "全部分类", count: items.length },
+      { value: "", label: tx("templates.allCategories"), count: items.length },
       ...categories.map((cat) => ({
         value: cat,
         label: cat,
@@ -159,7 +162,7 @@ export function TemplatesPage() {
       });
       setOpen(true);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "加载模板详情失败");
+      toast.error(err instanceof Error ? err.message : tx("templates.couldLoadTemplateDetails"));
     }
   }
 
@@ -196,7 +199,7 @@ export function TemplatesPage() {
           }),
         });
       } else {
-        if (!form.id.trim()) throw new Error("请填写模板 ID");
+        if (!form.id.trim()) throw new Error(tx("templates.enterTemplateId"));
         await api(`/api/admin/templates`, {
           method: "POST",
           body: JSON.stringify({
@@ -224,11 +227,11 @@ export function TemplatesPage() {
           }),
         });
       }
-      toast.success("已保存");
+      toast.success(tx("templates.saved"));
       setOpen(false);
       await Promise.all([load(), loadMeta()]);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "保存失败");
+      toast.error(err instanceof Error ? err.message : tx("templates.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -240,7 +243,7 @@ export function TemplatesPage() {
       await api(`/api/admin/templates/${id}`, { method: "PATCH", body: JSON.stringify(body) });
       await load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "更新失败");
+      toast.error(err instanceof Error ? err.message : tx("templates.updateFailed"));
     }
   }
 
@@ -250,11 +253,11 @@ export function TemplatesPage() {
     setDeleting(true);
     try {
       await api(`/api/admin/templates/${deleteTarget}`, { method: "DELETE" });
-      toast.success("已删除");
+      toast.success(tx("templates.deleted"));
       setDeleteTarget(null);
       await Promise.all([load(), loadMeta()]);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "删除失败");
+      toast.error(err instanceof Error ? err.message : tx("templates.deleteFailed"));
     } finally {
       setDeleting(false);
     }
@@ -263,11 +266,11 @@ export function TemplatesPage() {
   return (
     <div className="admin-list-page">
       <PageHeader
-        description="风格 / 角色 / 提示词以本页为准；已创建项目需在分镜页恢复模板后才会跟随。"
+        description={tx("templates.styleCharacterPromptsPage")}
         actions={
           <Button onClick={openCreate} className="gap-2">
             <Plus className="h-4 w-4" />
-            新建模板
+            {tx("templates.newTemplate")}
           </Button>
         }
       />
@@ -276,13 +279,13 @@ export function TemplatesPage() {
         trailing={
           <>
             <LayoutGrid className="h-4 w-4" />
-            {filteredItems.length} / {data?.meta.total ?? 0} 项
+            {tx("templates.itemsCount", { n: filteredItems.length, total: data?.meta.total ?? 0 })}
           </>
         }
       >
         <AdminSearchInput
           className="min-w-[220px] flex-1 max-w-md"
-          placeholder="搜索名称 / ID / 描述 / 分类"
+          placeholder={tx("templates.searchNameIdDescription")}
           value={q}
           onChange={setQ}
           onKeyDown={(e) => {
@@ -302,7 +305,7 @@ export function TemplatesPage() {
           }}
         />
         <AdminChipFilter
-          label="分类"
+          label={tx("templates.category")}
           value={categoryFilter}
           options={categoryOptions}
           onChange={(v) => {
@@ -318,20 +321,20 @@ export function TemplatesPage() {
             void load(1);
           }}
         >
-          筛选
+          {tx("templates.filter")}
         </Button>
       </AdminFilterBar>
 
       {loading ? (
         <div className="template-grid-loading">
           <Loader2 className="h-6 w-6 animate-spin text-[#67c23a]" />
-          <span>加载模板…</span>
+          <span>{tx("templates.loadingTemplates")}</span>
         </div>
       ) : filteredItems.length === 0 ? (
         <div className="template-grid-empty">
-          <p>暂无匹配的模板</p>
+          <p>{tx("templates.matchingTemplates")}</p>
           <Button variant="outline" size="sm" onClick={openCreate}>
-            新建第一个模板
+            {tx("templates.createFirstTemplate")}
           </Button>
         </div>
       ) : (
@@ -371,9 +374,9 @@ export function TemplatesPage() {
 
       <AdminConfirmDialog
         open={Boolean(deleteTarget)}
-        title="删除模板"
-        description={deleteTarget ? `确认删除模板「${deleteTarget}」？已被项目引用的模板无法删除。` : undefined}
-        confirmLabel="删除"
+        title={tx("templates.deleteTemplate")}
+        description={deleteTarget ? tx("templates.deleteTemplateTemplatesReferenced", { deleteTarget }) : undefined}
+        confirmLabel={tx("templates.delete")}
         loading={deleting}
         destructive
         onOpenChange={(next) => {

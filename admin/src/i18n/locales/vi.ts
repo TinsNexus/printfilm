@@ -1,3 +1,7 @@
+import { viAdminRoutingSettings } from "./vi/adminRoutingSettings";
+import { viAdminDashboardFilters } from "./vi/adminDashboardFilters";
+import { viAdminTemplates } from "./vi/adminTemplates";
+import { viAdminUserDrawer } from "./vi/adminUserDrawer";
 import { viAdminRuntimeSettings } from "./vi/adminRuntimeSettings";
 import { viAdminTemplateEditor } from "./vi/adminTemplateEditor";
 import { viAdminWorks } from "./vi/adminWorks";
@@ -15,6 +19,10 @@ import { viShell } from "./vi/shell";
 
 export const vi = {
   ...viShell,
+  ...viAdminRoutingSettings,
+  ...viAdminDashboardFilters,
+  ...viAdminTemplates,
+  ...viAdminUserDrawer,
   ...viAdminRuntimeSettings,
   ...viAdminTemplateEditor,
   ...viAdminWorks,

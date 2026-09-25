@@ -1,0 +1,30 @@
+/** 中文：模板管理页（TemplatesPage） */
+
+export const zhAdminTemplates = {
+  templates: {
+    itemsCount: "{n} / {total} 项",
+    allStatuses: "全部状态",
+    listed: "已上架",
+    unlisted: "已下架",
+    failedLoad: "加载失败",
+    allCategories: "全部分类",
+    couldLoadTemplateDetails: "加载模板详情失败",
+    enterTemplateId: "请填写模板 ID",
+    saved: "已保存",
+    saveFailed: "保存失败",
+    updateFailed: "更新失败",
+    deleted: "已删除",
+    deleteFailed: "删除失败",
+    styleCharacterPromptsPage: "风格 / 角色 / 提示词以本页为准；已创建项目需在分镜页恢复模板后才会跟随。",
+    newTemplate: "新建模板",
+    searchNameIdDescription: "搜索名称 / ID / 描述 / 分类",
+    category: "分类",
+    filter: "筛选",
+    loadingTemplates: "加载模板…",
+    matchingTemplates: "暂无匹配的模板",
+    createFirstTemplate: "新建第一个模板",
+    deleteTemplate: "删除模板",
+    deleteTemplateTemplatesReferenced: "确认删除模板「{deleteTarget}」？已被项目引用的模板无法删除。",
+    delete: "删除",
+  },
+} as const;

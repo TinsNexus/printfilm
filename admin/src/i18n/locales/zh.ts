@@ -1,3 +1,7 @@
+import { zhAdminRoutingSettings } from "./zh/adminRoutingSettings";
+import { zhAdminDashboardFilters } from "./zh/adminDashboardFilters";
+import { zhAdminTemplates } from "./zh/adminTemplates";
+import { zhAdminUserDrawer } from "./zh/adminUserDrawer";
 import { zhAdminRuntimeSettings } from "./zh/adminRuntimeSettings";
 import { zhAdminTemplateEditor } from "./zh/adminTemplateEditor";
 import { zhAdminWorks } from "./zh/adminWorks";
@@ -15,6 +19,10 @@ import { zhShell } from "./zh/shell";
 
 export const zh = {
   ...zhShell,
+  ...zhAdminRoutingSettings,
+  ...zhAdminDashboardFilters,
+  ...zhAdminTemplates,
+  ...zhAdminUserDrawer,
   ...zhAdminRuntimeSettings,
   ...zhAdminTemplateEditor,
   ...zhAdminWorks,

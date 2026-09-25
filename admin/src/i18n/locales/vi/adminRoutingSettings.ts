@@ -1,0 +1,31 @@
+/** 越南语：模型路由设置（RoutingSettingsPanel） */
+
+export const viAdminRoutingSettings = {
+  routing: {
+    textModel: "Mô hình văn bản",
+    imageModel: "Mô hình ảnh",
+    videoModel: "Mô hình video",
+    voiceModel: "Mô hình lồng tiếng",
+    couldLoadModelSettings: "Tải cấu hình mô hình thất bại",
+    modelSettingsSaved: "Đã lưu cấu hình mô hình",
+    saveFailed: "Lưu thất bại",
+    loadingModelSettings: "Đang tải cấu hình mô hình…",
+    save: "Lưu",
+    configurationReady: "Cấu hình sẵn sàng",
+    configured: "Đã cấu hình",
+    ready: "Chưa sẵn sàng",
+    configurationChecks: "Kiểm tra cấu hình",
+    defaultModelsMappedPresets: "Mô hình mặc định đã ánh xạ vào preset",
+    savingWritesPresetIds: "Sau khi lưu sẽ ghi các id preset ở trên; nếu cần giữ mô hình cũ hãy đổi dropdown trước rồi lưu.",
+    upstreamLockedEnteringApi: "Upstream đã bị khóa. Sau khi nhập API Key, hãy chọn mô hình mặc định của site từ bốn dropdown preset bên dưới rồi lưu.",
+    apiEndpoint: "Địa chỉ API",
+    console: "Bảng điều khiển: ",
+    savedLeaveBlankKeep: "Đã lưu; để trống nếu không đổi",
+    configured2: "Chưa cấu hình",
+    savedLeaveBlankKeep2: "Đã lưu; để trống nếu không đổi",
+    pasteTokenfreeApiKey: "Dán TokenFree API Key",
+    clear: "Xóa",
+    defaultModels: "Mô hình mặc định",
+    userSideUseAll: "Phía người dùng dùng được mọi preset; ở đây chỉ đặt mặc định của site. Lồng tiếng hiện chỉ có một lựa chọn.",
+  },
+} as const;

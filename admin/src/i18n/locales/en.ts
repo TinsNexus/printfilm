@@ -1,3 +1,7 @@
+import { enAdminRoutingSettings } from "./en/adminRoutingSettings";
+import { enAdminDashboardFilters } from "./en/adminDashboardFilters";
+import { enAdminTemplates } from "./en/adminTemplates";
+import { enAdminUserDrawer } from "./en/adminUserDrawer";
 import { enAdminRuntimeSettings } from "./en/adminRuntimeSettings";
 import { enAdminTemplateEditor } from "./en/adminTemplateEditor";
 import { enAdminWorks } from "./en/adminWorks";
@@ -15,6 +19,10 @@ import { enShell } from "./en/shell";
 
 export const en = {
   ...enShell,
+  ...enAdminRoutingSettings,
+  ...enAdminDashboardFilters,
+  ...enAdminTemplates,
+  ...enAdminUserDrawer,
   ...enAdminRuntimeSettings,
   ...enAdminTemplateEditor,
   ...enAdminWorks,

@@ -1,5 +1,7 @@
 import { AdminChipFilter } from "@/components/admin/AdminChipFilter";
 import { AdminFilterBar } from "@/components/admin/AdminFilterBar";
+import { useI18n } from "@/i18n";
+import { tr } from "@/i18n/translate";
 
 /** 仪表盘筛选维度 */
 export type DashboardDays = "1" | "7" | "14" | "30";
@@ -30,39 +32,39 @@ export const PROJECTS_DASHBOARD_FILTERS: DashboardFilterState = {
 };
 
 const DAY_OPTIONS = [
-  { value: "1", label: "今日" },
-  { value: "7", label: "近 7 日" },
-  { value: "14", label: "近 14 日" },
-  { value: "30", label: "近 30 日" },
+  { value: "1", get label() { return tr("dashFilters.today") } },
+  { value: "7", get label() { return tr("dashFilters.last7Days") } },
+  { value: "14", get label() { return tr("dashFilters.last14Days") } },
+  { value: "30", get label() { return tr("dashFilters.last30Days") } },
 ];
 
 /** 图表 / 区块标题用的时间范围文案 */
 export function dashboardRangeLabel(days: DashboardDays): string {
-  if (days === "1") return "今日";
-  return `近 ${days} 日`;
+  if (days === "1") return tr("dashFilters.today");
+  return tr("dashFilters.lastDays", { days });
 }
 
 const DOMAIN_OPTIONS = [
-  { value: "all", label: "全部领域" },
-  { value: "drama", label: "漫剧" },
-  { value: "kepu", label: "AI短视频" },
-  { value: "api", label: "开放 API" },
-  { value: "tools", label: "工具" },
-  { value: "studio", label: "工作室" },
+  { value: "all", get label() { return tr("dashFilters.allDomains") } },
+  { value: "drama", get label() { return tr("dashFilters.drama") } },
+  { value: "kepu", get label() { return tr("dashFilters.aiShortVideo") } },
+  { value: "api", get label() { return tr("dashFilters.openApi") } },
+  { value: "tools", get label() { return tr("dashFilters.tools") } },
+  { value: "studio", get label() { return tr("dashFilters.studio") } },
 ];
 
 const CAPABILITY_OPTIONS = [
-  { value: "all", label: "全部能力" },
+  { value: "all", get label() { return tr("dashFilters.allCapabilities") } },
   { value: "llm", label: "LLM" },
-  { value: "image", label: "生图" },
-  { value: "video", label: "视频" },
-  { value: "tts", label: "配音" },
+  { value: "image", get label() { return tr("dashFilters.image") } },
+  { value: "video", get label() { return tr("dashFilters.video") } },
+  { value: "tts", get label() { return tr("dashFilters.voice") } },
 ];
 
 const METRIC_OPTIONS = [
-  { value: "charge", label: "扣费" },
-  { value: "cost", label: "成本" },
-  { value: "calls", label: "调用" },
+  { value: "charge", get label() { return tr("dashFilters.charge") } },
+  { value: "cost", get label() { return tr("dashFilters.cost") } },
+  { value: "calls", get label() { return tr("dashFilters.calls") } },
 ];
 
 type DashboardFiltersProps = {
@@ -72,33 +74,34 @@ type DashboardFiltersProps = {
 
 /** 仪表盘用量筛选条（两行紧凑布局） */
 export function DashboardFilters({ value, onChange }: DashboardFiltersProps) {
+  const { t: tx } = useI18n();
   const patch = (partial: Partial<DashboardFilterState>) => onChange({ ...value, ...partial });
 
   return (
     <AdminFilterBar className="admin-dashboard-filters">
       <AdminChipFilter
-        label="时间维度"
+        label={tx("dashFilters.timeRange")}
         value={value.days}
         options={DAY_OPTIONS}
         onChange={(days) => patch({ days: days as DashboardDays })}
         className="admin-chip-filter--segment"
       />
       <AdminChipFilter
-        label="业务领域"
+        label={tx("dashFilters.businessDomain")}
         value={value.domain}
         options={DOMAIN_OPTIONS}
         onChange={(domain) => patch({ domain: domain as DashboardDomain })}
         className="admin-chip-filter--segment"
       />
       <AdminChipFilter
-        label="能力类型"
+        label={tx("dashFilters.capabilityType")}
         value={value.capability}
         options={CAPABILITY_OPTIONS}
         onChange={(capability) => patch({ capability: capability as DashboardCapability })}
         className="admin-chip-filter--segment"
       />
       <AdminChipFilter
-        label="统计指标"
+        label={tx("dashFilters.metric")}
         value={value.metric}
         options={METRIC_OPTIONS}
         onChange={(metric) => patch({ metric: metric as DashboardMetric })}
