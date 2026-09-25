@@ -51,7 +51,7 @@ try {
   const prefixOf = (path) => [...known].some((k) => k === path || k.startsWith(path + '.'))
   for (const f of walk(join(root, 'src')).filter((f) => !f.includes('/i18n/locales/'))) {
     const src = readFileSync(f, 'utf8')
-    for (const m of src.matchAll(/(?<![\w.])(?:t|tr)\(\s*(['"])([A-Za-z][\w]*(?:\.[\w\u4e00-\u9fff]+)+)\1/g)) {
+    for (const m of src.matchAll(/(?<![\w.])(?:t|tr|tx)\(\s*(['"])([A-Za-z][\w]*(?:\.[\w\u4e00-\u9fff]+)+)\1/g)) {
       if (!prefixOf(m[2])) { bad++; console.log(`unknown key ${m[2]}  (${f.replace(root + '/', '')})`) }
     }
   }

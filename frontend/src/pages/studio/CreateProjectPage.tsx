@@ -7,7 +7,10 @@ import AppShell from '../../components/layout/AppShell'
 import Stepper from '../../components/ui/Stepper'
 import PillTabs from '../../components/ui/PillTabs'
 import { IconChevronLeft, IconRefresh, IconSparkles } from '../../components/ui/Icons'
-import { CATEGORY_ORDER } from '../../lib/categories'
+import { useI18n } from '../../i18n'
+import { messages } from '../../i18n/messages'
+import { tr } from '../../i18n/translate'
+import { CATEGORY_ORDER, categoryLabel } from '../../lib/categories'
 import { kepuStepIndex, kepuSteps } from '../../lib/status'
 
 type Inspiration = {
@@ -16,6 +19,7 @@ type Inspiration = {
   script: string
 }
 
+// 灵感示例是成片口播/主题的正文（成片语言为中文），不随界面语言翻译
 const INSPIRATION_POOL: Inspiration[] = [
   {
     title: '到店打卡怎么拍',
@@ -164,9 +168,17 @@ const INSPIRATION_POOL: Inspiration[] = [
 
 const PAGE_SIZE = 6
 
+// 输入方式 id（界面文案见 studio.create.tabTheme / tabScript）
+type InputTab = 'theme' | 'script'
+const INPUT_TABS: InputTab[] = ['theme', 'script']
+
+// 所有语言下的“未命名”默认标题：切换语言后旧默认标题仍应被视为默认
+const DEFAULT_TITLES = new Set<string>(Object.values(messages).map((m) => m.studio.untitled))
+
+// 标题为空或仍是默认“未命名”占位
 function isDefaultTitle(value: string) {
   const t = value.trim()
-  return !t || t === '未命名作品'
+  return !t || DEFAULT_TITLES.has(t)
 }
 
 function deriveTitle(text: string) {
@@ -176,18 +188,19 @@ function deriveTitle(text: string) {
     .replace(/["""'']/g, '')
     .replace(/[。！？!?：:].*$/, '')
     .trim()
-  if (!line) return '未命名作品'
+  if (!line) return tr('studio.untitled')
   return line.slice(0, 18)
 }
 
 export default function CreateProjectPage() {
   const nav = useNavigate()
+  const { t: tx } = useI18n()
   const [params] = useSearchParams()
   const [templates, setTemplates] = useState<Template[]>([])
   const [templateId, setTemplateId] = useState(params.get('template') || '')
   const [category, setCategory] = useState('全部')
   const [q, setQ] = useState('')
-  const [inputTab, setInputTab] = useState('一句话主题')
+  const [inputTab, setInputTab] = useState<InputTab>('theme')
   const [sourceText, setSourceText] = useState(INSPIRATION_POOL[0].theme)
   const [title, setTitle] = useState(INSPIRATION_POOL[0].title)
   const [titleTouched, setTitleTouched] = useState(false)
@@ -231,17 +244,17 @@ export default function CreateProjectPage() {
   }, [templates, category, q])
 
   const selected = templates.find((t) => t.id === templateId)
-  const sourceType = inputTab === '粘贴完整文案' ? 'script' : 'theme'
+  const sourceType = inputTab
   const inspTotal = Math.ceil(INSPIRATION_POOL.length / PAGE_SIZE)
   const inspirations = INSPIRATION_POOL.slice(inspPage * PAGE_SIZE, inspPage * PAGE_SIZE + PAGE_SIZE)
 
   // 把灵感示例填进主题/文案，并同步短标题
   function applyInspiration(item: Inspiration) {
     if (sourceType === 'script') {
-      setInputTab('粘贴完整文案')
+      setInputTab('script')
       setSourceText(item.script.slice(0, 8000))
     } else {
-      setInputTab('一句话主题')
+      setInputTab('theme')
       setSourceText(item.theme.slice(0, 100))
     }
     setTitle(item.title.slice(0, 24))
@@ -265,7 +278,7 @@ export default function CreateProjectPage() {
         setTitle(result.title.slice(0, 24))
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'AI 生成失败')
+      setError(err instanceof Error ? err.message : tx('studio.create.errAi'))
     } finally {
       setAiBusy(false)
     }
@@ -273,7 +286,7 @@ export default function CreateProjectPage() {
 
   async function next() {
     if (!templateId || !sourceText.trim()) {
-      setError('请选择模板并填写主题内容')
+      setError(tx('studio.create.errNeedTemplate'))
       return
     }
     setBusy(true)
@@ -285,7 +298,7 @@ export default function CreateProjectPage() {
       const pipeline_mode: 'full' | 'image_text' =
         modeParam === 'image_text' || modeParam === 'full' ? modeParam : 'full'
       const finalTitle =
-        title.trim() || deriveTitle(sourceText) || sourceText.trim().slice(0, 24) || '未命名作品'
+        title.trim() || deriveTitle(sourceText) || sourceText.trim().slice(0, 24) || tx('studio.untitled')
       const project = await api.createProject({
         template_id: templateId,
         title: finalTitle,
@@ -298,7 +311,7 @@ export default function CreateProjectPage() {
       })
       nav(`/studio/${project.id}/style`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '创建失败')
+      setError(err instanceof Error ? err.message : tx('studio.create.errCreate'))
     } finally {
       setBusy(false)
     }
@@ -311,9 +324,9 @@ export default function CreateProjectPage() {
           <div>
             <button type="button" className="pf-back" onClick={() => nav('/')}>
               <IconChevronLeft size={18} />
-              新建项目 / 开始创作
+              {tx('studio.create.crumb')}
             </button>
-            <h1 className="pf-page-title">创建项目</h1>
+            <h1 className="pf-page-title">{tx('studio.create.title')}</h1>
           </div>
           <Stepper steps={kepuSteps()} current={kepuStepIndex('create')} doneThrough={-1} />
         </div>
@@ -321,11 +334,17 @@ export default function CreateProjectPage() {
 
       <div className="pf-create">
         <aside className="pf-create-col">
-          <h3>选择模板</h3>
+          <h3>{tx('studio.create.pickTemplate')}</h3>
           <div className="pf-search">
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索模板…" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={tx('studio.create.searchTemplate')} />
           </div>
-          <PillTabs items={categories.slice(0, 6)} value={category} onChange={setCategory} ariaLabel="模板分类" />
+          <PillTabs
+            items={categories.slice(0, 6)}
+            labels={Object.fromEntries(categories.map((c) => [c, categoryLabel(c)]))}
+            value={category}
+            onChange={setCategory}
+            ariaLabel={tx('studio.create.categoryAria')}
+          />
           <div className="pf-tpl-list" style={{ marginTop: '0.75rem' }}>
             {filtered.map((t) => (
               <button
@@ -338,7 +357,7 @@ export default function CreateProjectPage() {
                 <div>
                   <strong>{t.name}</strong>
                   <span>
-                    {t.default_ratio} · {(t.category || [])[0] || '通用'}
+                    {t.default_ratio} · {categoryLabel((t.category || [])[0] || '通用')}
                   </span>
                 </div>
               </button>
@@ -347,22 +366,22 @@ export default function CreateProjectPage() {
         </aside>
 
         <section className="pf-create-col">
-          <h3>输入内容</h3>
+          <h3>{tx('studio.create.inputTitle')}</h3>
           <div className="pf-input-tabs">
-            {['一句话主题', '粘贴完整文案'].map((tab) => (
+            {INPUT_TABS.map((tab) => (
               <button
                 key={tab}
                 type="button"
                 className={['pf-pill', inputTab === tab ? 'lime active' : ''].join(' ')}
                 onClick={() => setInputTab(tab)}
               >
-                {tab}
+                {tx(tab === 'script' ? 'studio.create.tabScript' : 'studio.create.tabTheme')}
               </button>
             ))}
           </div>
 
           <label className="pf-field">
-            <span className="pf-field-label">项目名称</span>
+            <span className="pf-field-label">{tx('studio.create.projectName')}</span>
             <input
               className="pf-field-input"
               value={title}
@@ -376,7 +395,7 @@ export default function CreateProjectPage() {
                   setTitleTouched(false)
                 }
               }}
-              placeholder="将根据内容自动填充"
+              placeholder={tx('studio.create.namePlaceholder')}
             />
           </label>
 
@@ -389,10 +408,12 @@ export default function CreateProjectPage() {
                 onClick={aiExpand}
               >
                 <IconSparkles size={14} />
-                {aiBusy ? '生成中…' : sourceType === 'script' ? 'AI 扩写文案' : 'AI 生成主题'}
+                {aiBusy
+                  ? tx('studio.create.aiBusy')
+                  : tx(sourceType === 'script' ? 'studio.create.aiExpandScript' : 'studio.create.aiGenTheme')}
               </button>
               <span className="pf-muted" style={{ fontSize: '0.75rem' }}>
-                {sourceType === 'script' ? '可从一句话扩成完整口播' : '补全受众与知识点'}
+                {tx(sourceType === 'script' ? 'studio.create.hintScript' : 'studio.create.hintTheme')}
               </span>
             </div>
             <textarea
@@ -405,24 +426,22 @@ export default function CreateProjectPage() {
                 }
               }}
               placeholder={
-                sourceType === 'theme'
-                  ? '例如：黑洞是如何形成的？用通俗方式讲清引力与时空'
-                  : '粘贴或 AI 生成完整口播文案…'
+                tx(sourceType === 'theme' ? 'studio.create.themePlaceholder' : 'studio.create.scriptPlaceholder')
               }
             />
             {sourceType === 'theme' ? (
               <span className="pf-char-count">{sourceText.length}/100</span>
             ) : (
-              <span className="pf-char-count">{sourceText.length} 字</span>
+              <span className="pf-char-count">{tx('studio.create.charCount', { n: sourceText.length })}</span>
             )}
           </div>
 
           <div className="pf-inspire">
             <div className="pf-inspire-head">
-              <strong>灵感示例</strong>
+              <strong>{tx('studio.create.inspireTitle')}</strong>
               <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm pf-btn-icon" onClick={shuffleInspirations}>
                 <IconRefresh size={14} />
-                换一批
+                {tx('studio.create.shuffle')}
               </button>
             </div>
             <div className="pf-chips">
@@ -439,18 +458,20 @@ export default function CreateProjectPage() {
               ))}
             </div>
             <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0.55rem 0 0' }}>
-              点击示例会填充完整{sourceType === 'script' ? '文案' : '主题'}并自动写入项目名称
+              {tx('studio.create.inspireNote', {
+                kind: tx(sourceType === 'script' ? 'studio.create.kindScript' : 'studio.create.kindTheme'),
+              })}
             </p>
           </div>
 
           <div className="pf-hint" style={{ marginTop: '1rem' }}>
-            主题越具体，AI 越容易生成准确的科普分镜与旁白。可写清受众与核心知识点。
+            {tx('studio.create.hint')}
           </div>
           {error ? <BillingErrorNotice message={error} /> : null}
         </section>
 
         <aside className="pf-create-col">
-          <h3>创作摘要</h3>
+          <h3>{tx('studio.create.summary')}</h3>
           {selected ? (
             <div style={{ marginBottom: '0.85rem' }}>
               <img
@@ -464,27 +485,27 @@ export default function CreateProjectPage() {
               </p>
             </div>
           ) : (
-            <p className="pf-muted">请选择模板</p>
+            <p className="pf-muted">{tx('studio.create.pickPrompt')}</p>
           )}
           <div className="pf-summary-row">
-            <span>作品名称</span>
-            <span>{title.trim() || '未命名作品'}</span>
+            <span>{tx('studio.create.sumName')}</span>
+            <span>{title.trim() || tx('studio.untitled')}</span>
           </div>
           <div className="pf-summary-row">
-            <span>输出模式</span>
-            <span>{selected?.default_ratio === '9:16' ? '视频 · 9:16' : '视频 · 16:9'}</span>
+            <span>{tx('studio.create.sumMode')}</span>
+            <span>{tx('studio.create.modeVideo', { ratio: selected?.default_ratio === '9:16' ? '9:16' : '16:9' })}</span>
           </div>
           <div className="pf-summary-row">
-            <span>预估时长</span>
-            <span>~1–3 分钟</span>
+            <span>{tx('studio.create.sumDuration')}</span>
+            <span>{tx('studio.create.durationValue')}</span>
           </div>
           <div className="pf-summary-row">
-            <span>语言</span>
-            <span>中文（普通话）</span>
+            <span>{tx('studio.create.sumLang')}</span>
+            <span>{tx('studio.create.langValue')}</span>
           </div>
           <div className="pf-summary-row">
-            <span>输入方式</span>
-            <span>{inputTab}</span>
+            <span>{tx('studio.create.sumInput')}</span>
+            <span>{tx(inputTab === 'script' ? 'studio.create.tabScript' : 'studio.create.tabTheme')}</span>
           </div>
           <button
             type="button"
@@ -493,7 +514,7 @@ export default function CreateProjectPage() {
             disabled={busy || aiBusy || !templateId || !sourceText.trim()}
             onClick={next}
           >
-            {busy ? '创建中…' : '下一步：风格配置'}
+            {busy ? tx('studio.create.nextBusy') : tx('studio.create.next')}
             {!busy ? <span aria-hidden>→</span> : null}
           </button>
           <button
@@ -504,10 +525,10 @@ export default function CreateProjectPage() {
             onClick={aiExpand}
           >
             <IconSparkles size={14} />
-            {aiBusy ? 'AI 生成中…' : '不够完整？让 AI 帮你写'}
+            {aiBusy ? tx('studio.create.aiHelpBusy') : tx('studio.create.aiHelp')}
           </button>
           <p className="pf-muted" style={{ fontSize: '0.78rem', marginTop: '0.5rem' }}>
-            画风已随模板带上。下一步确认配音与成片方式。
+            {tx('studio.create.styleNote')}
           </p>
         </aside>
       </div>
