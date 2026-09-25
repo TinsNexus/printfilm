@@ -1,3 +1,6 @@
+import { enDramaAssetDetail } from './en/dramaAssetDetail'
+import { enDramaScriptPreview } from './en/dramaScriptPreview'
+import { enDramaGenQueue } from './en/dramaGenQueue'
 import { enBillingPay } from './en/billingPay'
 import { enToolRuns } from './en/toolRuns'
 import { enDramaVoiceBind } from './en/dramaVoiceBind'
@@ -18,6 +21,9 @@ import { enStudio } from './en/studio'
 
 export const en = {
   ...enShell,
+  ...enDramaAssetDetail,
+  ...enDramaScriptPreview,
+  ...enDramaGenQueue,
   ...enBillingPay,
   ...enToolRuns,
   ...enDramaVoiceBind,

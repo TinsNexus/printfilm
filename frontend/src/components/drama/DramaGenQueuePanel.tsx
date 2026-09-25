@@ -14,21 +14,36 @@ import {
   type DramaGenJob,
 } from '../../lib/dramaGenQueue'
 import '../../pages/drama/drama.css'
+import { useI18n } from '../../i18n'
+import { tr } from '../../i18n/translate'
 
 const OPEN_STORAGE_KEY = 'drama-gen-queue-fab-open'
 
-const STATUS_LABEL: Record<string, string> = {
-  queued: '排队中',
-  running: '生成中',
-  done: '已完成',
-  failed: '失败',
+// 状态 / 子类型 → 文案键（展示时再翻译，避免模块级常量固化语言）
+const STATUS_LABEL_KEY: Record<string, string> = {
+  queued: 'genQueue.statusQueued',
+  running: 'genQueue.statusRunning',
+  done: 'genQueue.statusDone',
+  failed: 'genQueue.statusFailed',
 }
 
-const IMAGE_SUBTYPE_LABEL: Record<string, string> = {
-  character: '角色图',
-  scene: '场景图',
-  prop: '道具图',
-  material: '素材图',
+const IMAGE_SUBTYPE_LABEL_KEY: Record<string, string> = {
+  character: 'genQueue.characterImage',
+  scene: 'genQueue.sceneImage',
+  prop: 'genQueue.propImage',
+  material: 'genQueue.assetImage',
+}
+
+// 视频任务 subtype 是任务类型标识（与 dramaGenQueue 中的常量一致），展示时映射为译文
+const VIDEO_SUBTYPE_LABEL_KEY: Record<string, string> = {
+  分镜视频: 'genQueue.shotVideo',
+  画布视频: 'genQueue.canvasVideo',
+}
+
+// 状态展示
+function statusLabel(status: string): string {
+  const key = STATUS_LABEL_KEY[status]
+  return key ? tr(key) : status
 }
 
 // 读取折叠偏好
@@ -42,8 +57,12 @@ function readOpenPreference(): boolean {
 
 // 任务类型展示
 function jobTypeLabel(job: DramaGenJob): string {
-  if (job.kind === 'video') return job.subtype || '分镜视频'
-  return IMAGE_SUBTYPE_LABEL[job.subtype] || job.subtype || '图片'
+  if (job.kind === 'video') {
+    const key = VIDEO_SUBTYPE_LABEL_KEY[job.subtype]
+    return key ? tr(key) : job.subtype || tr('genQueue.shotVideo')
+  }
+  const key = IMAGE_SUBTYPE_LABEL_KEY[job.subtype]
+  return key ? tr(key) : job.subtype || tr('genQueue.image')
 }
 
 // 任务图标
@@ -54,6 +73,7 @@ function JobKindIcon({ kind }: { kind: DramaGenJob['kind'] }) {
 
 // 渲染右下角统一生成队列
 export function DramaGenQueuePanel() {
+  const { t: tx } = useI18n()
   const queue = useDramaGenQueue()
   const [open, setOpen] = useState(readOpenPreference)
   const [detailJob, setDetailJob] = useState<DramaGenJob | null>(null)
@@ -139,7 +159,7 @@ export function DramaGenQueuePanel() {
   return (
     <div className="drama-gen-fab-root">
       {open ? (
-        <div className="drama-gen-fab-panel" role="dialog" aria-label="生成队列">
+        <div className="drama-gen-fab-panel" role="dialog" aria-label={tx('genQueue.generationQueue')}>
           {detailJob ? (
             <DramaGenTaskDetail job={detailJob} onClose={() => setDetailJob(null)} />
           ) : (
@@ -148,14 +168,14 @@ export function DramaGenQueuePanel() {
                 <div className="drama-gen-fab-title">
                   <Layers size={18} strokeWidth={1.75} aria-hidden />
                   <div>
-                    <strong>生成队列</strong>
+                    <strong>{tx('genQueue.generationQueue')}</strong>
                     <span>
                       {active.length > 0
-                        ? `${active.length} 项进行中`
+                        ? tx('genQueue.progress', { activeLength: active.length })
                         : failed.length > 0
-                          ? `${failed.length} 项失败`
+                          ? tx('genQueue.failed', { failedLength: failed.length })
                           : finished.length > 0
-                            ? '全部完成'
+                            ? tx('genQueue.allDone')
                             : ''}
                     </span>
                   </div>
@@ -166,8 +186,8 @@ export function DramaGenQueuePanel() {
                       type="button"
                       className="drama-gen-fab-icon-btn"
                       onClick={cancelAllVideo}
-                      title="取消全部视频任务"
-                      aria-label="取消全部视频任务"
+                      title={tx('genQueue.cancelAllVideoTasks')}
+                      aria-label={tx('genQueue.cancelAllVideoTasks')}
                     >
                       <Octagon size={16} />
                     </button>
@@ -177,8 +197,8 @@ export function DramaGenQueuePanel() {
                       type="button"
                       className="drama-gen-fab-icon-btn"
                       onClick={clearFinishedDramaGenJobs}
-                      title="清空已结束"
-                      aria-label="清空已结束"
+                      title={tx('genQueue.clearFinished')}
+                      aria-label={tx('genQueue.clearFinished')}
                     >
                       <Trash2 size={16} />
                     </button>
@@ -187,8 +207,8 @@ export function DramaGenQueuePanel() {
                     type="button"
                     className="drama-gen-fab-icon-btn"
                     onClick={close}
-                    title="关闭队列"
-                    aria-label="关闭队列"
+                    title={tx('genQueue.closeQueue')}
+                    aria-label={tx('genQueue.closeQueue')}
                   >
                     <X size={18} />
                   </button>
@@ -210,7 +230,7 @@ export function DramaGenQueuePanel() {
                           <div className="drama-gen-fab-item-main">
                             <span className="drama-gen-fab-kind">
                               <JobKindIcon kind={job.kind} />
-                              <em>{job.kind === 'video' ? '视频' : '图片'}</em>
+                              <em>{job.kind === 'video' ? tx('genQueue.video2') : tx('genQueue.image')}</em>
                             </span>
                             <span className="drama-gen-fab-name">{job.title}</span>
                             <span className="drama-gen-fab-type">{jobTypeLabel(job)}</span>
@@ -221,9 +241,9 @@ export function DramaGenQueuePanel() {
                           <span className="drama-gen-fab-status">
                             {job.status === 'queued' && queueIndex >= 0
                               ? queuedOnly.length <= 1 || queueIndex === 0
-                                ? '排队中'
-                                : `排队 #${queueIndex + 1}`
-                              : STATUS_LABEL[job.status]}
+                                ? tx('genQueue.statusQueued')
+                                : tx('genQueue.queuedNo', { n: queueIndex + 1 })
+                              : statusLabel(job.status)}
                           </span>
                         </div>
                         {errView ? (
@@ -240,13 +260,13 @@ export function DramaGenQueuePanel() {
                             ) : null}
                             {errView.upstreamAccountBlocked ? (
                               <p className="drama-gen-fab-error-tip drama-gen-fab-upstream-tip">
-                                需管理员充值 TokenFree Seedream 账户，用户端充值无法解决。
+                                {tx('genQueue.adminNeedsTopUp')}
                               </p>
                             ) : null}
-                            <span className="drama-gen-fab-open-hint">查看原因</span>
+                            <span className="drama-gen-fab-open-hint">{tx('genQueue.viewReason')}</span>
                           </div>
                         ) : (
-                          <span className="drama-gen-fab-open-hint">查看详情</span>
+                          <span className="drama-gen-fab-open-hint">{tx('genQueue.viewDetails')}</span>
                         )}
                         {(job.status === 'queued' || job.status === 'running') && (
                           <div className="drama-gen-fab-bar" aria-hidden />
@@ -271,9 +291,9 @@ export function DramaGenQueuePanel() {
         type="button"
         className={`drama-gen-fab-btn${active.length > 0 ? ' is-busy' : ''}${failed.length > 0 && active.length === 0 ? ' is-failed' : ''}`}
         onClick={toggleOpen}
-        title={open ? '收起生成队列' : '展开生成队列'}
+        title={open ? tx('genQueue.collapseGenerationQueue') : tx('genQueue.expandGenerationQueue')}
         aria-expanded={open}
-        aria-label="生成队列"
+        aria-label={tx('genQueue.generationQueue')}
       >
         <Layers size={22} strokeWidth={1.75} aria-hidden />
         {badgeCount > 0 ? <span className="drama-gen-fab-badge">{badgeCount}</span> : null}

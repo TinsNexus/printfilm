@@ -1,3 +1,6 @@
+import { zhDramaAssetDetail } from './zh/dramaAssetDetail'
+import { zhDramaScriptPreview } from './zh/dramaScriptPreview'
+import { zhDramaGenQueue } from './zh/dramaGenQueue'
 import { zhBillingPay } from './zh/billingPay'
 import { zhToolRuns } from './zh/toolRuns'
 import { zhDramaVoiceBind } from './zh/dramaVoiceBind'
@@ -18,6 +21,9 @@ import { zhStudio } from './zh/studio'
 
 export const zh = {
   ...zhShell,
+  ...zhDramaAssetDetail,
+  ...zhDramaScriptPreview,
+  ...zhDramaGenQueue,
   ...zhBillingPay,
   ...zhToolRuns,
   ...zhDramaVoiceBind,
