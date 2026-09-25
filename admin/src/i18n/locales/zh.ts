@@ -1,3 +1,10 @@
+import { zhAdminInsightMaps } from "./zh/adminInsightMaps";
+import { zhAdminDramaEpisodes } from "./zh/adminDramaEpisodes";
+import { zhAdminDramaAssetDetail } from "./zh/adminDramaAssetDetail";
+import { zhAdminDramaFragments } from "./zh/adminDramaFragments";
+import { zhAdminDramaAssets } from "./zh/adminDramaAssets";
+import { zhAdminDramaProjects } from "./zh/adminDramaProjects";
+import { zhAdminSiteSettings } from "./zh/adminSiteSettings";
 import { zhAdminDramaFragmentDetail } from "./zh/adminDramaFragmentDetail";
 import { zhAdminOssSettings } from "./zh/adminOssSettings";
 import { zhAdminDramaEpisodeDetail } from "./zh/adminDramaEpisodeDetail";
@@ -24,6 +31,13 @@ import { zhShell } from "./zh/shell";
 
 export const zh = {
   ...zhShell,
+  ...zhAdminInsightMaps,
+  ...zhAdminDramaEpisodes,
+  ...zhAdminDramaAssetDetail,
+  ...zhAdminDramaFragments,
+  ...zhAdminDramaAssets,
+  ...zhAdminDramaProjects,
+  ...zhAdminSiteSettings,
   ...zhAdminDramaFragmentDetail,
   ...zhAdminOssSettings,
   ...zhAdminDramaEpisodeDetail,

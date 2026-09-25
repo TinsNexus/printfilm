@@ -1,3 +1,10 @@
+import { enAdminInsightMaps } from "./en/adminInsightMaps";
+import { enAdminDramaEpisodes } from "./en/adminDramaEpisodes";
+import { enAdminDramaAssetDetail } from "./en/adminDramaAssetDetail";
+import { enAdminDramaFragments } from "./en/adminDramaFragments";
+import { enAdminDramaAssets } from "./en/adminDramaAssets";
+import { enAdminDramaProjects } from "./en/adminDramaProjects";
+import { enAdminSiteSettings } from "./en/adminSiteSettings";
 import { enAdminDramaFragmentDetail } from "./en/adminDramaFragmentDetail";
 import { enAdminOssSettings } from "./en/adminOssSettings";
 import { enAdminDramaEpisodeDetail } from "./en/adminDramaEpisodeDetail";
@@ -24,6 +31,13 @@ import { enShell } from "./en/shell";
 
 export const en = {
   ...enShell,
+  ...enAdminInsightMaps,
+  ...enAdminDramaEpisodes,
+  ...enAdminDramaAssetDetail,
+  ...enAdminDramaFragments,
+  ...enAdminDramaAssets,
+  ...enAdminDramaProjects,
+  ...enAdminSiteSettings,
   ...enAdminDramaFragmentDetail,
   ...enAdminOssSettings,
   ...enAdminDramaEpisodeDetail,

@@ -1,3 +1,10 @@
+import { viAdminInsightMaps } from "./vi/adminInsightMaps";
+import { viAdminDramaEpisodes } from "./vi/adminDramaEpisodes";
+import { viAdminDramaAssetDetail } from "./vi/adminDramaAssetDetail";
+import { viAdminDramaFragments } from "./vi/adminDramaFragments";
+import { viAdminDramaAssets } from "./vi/adminDramaAssets";
+import { viAdminDramaProjects } from "./vi/adminDramaProjects";
+import { viAdminSiteSettings } from "./vi/adminSiteSettings";
 import { viAdminDramaFragmentDetail } from "./vi/adminDramaFragmentDetail";
 import { viAdminOssSettings } from "./vi/adminOssSettings";
 import { viAdminDramaEpisodeDetail } from "./vi/adminDramaEpisodeDetail";
@@ -24,6 +31,13 @@ import { viShell } from "./vi/shell";
 
 export const vi = {
   ...viShell,
+  ...viAdminInsightMaps,
+  ...viAdminDramaEpisodes,
+  ...viAdminDramaAssetDetail,
+  ...viAdminDramaFragments,
+  ...viAdminDramaAssets,
+  ...viAdminDramaProjects,
+  ...viAdminSiteSettings,
   ...viAdminDramaFragmentDetail,
   ...viAdminOssSettings,
   ...viAdminDramaEpisodeDetail,
