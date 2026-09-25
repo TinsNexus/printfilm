@@ -83,7 +83,7 @@ pytest tests/test_x.py::test_name       # 单测
 
 ### 前端两个应用的差异
 
-- `frontend/`：**vite 未配 proxy**。API base 规则：未设 `VITE_API_BASE` → `当前主机:8000`（开发）；设为空字符串 → 同源（生产 nginx）。请求统一走 `src/api.ts` 与 `src/api/*`。样式体系是 `styles/printfilm.css` + `pf-*` 语义 class（**不要**在用户端引 Tailwind）。含中/英 i18n
+- `frontend/`：**vite 未配 proxy**。API base 规则：未设 `VITE_API_BASE` → `当前主机:8000`（开发）；设为空字符串 → 同源（生产 nginx）。请求统一走 `src/api.ts` 与 `src/api/*`。样式体系是 `styles/printfilm.css` + `pf-*` 语义 class（**不要**在用户端引 Tailwind）。含中/英/越 i18n（见 `docs/I18N.md`；改文案后跑 `cd frontend && npm run i18n:check`）
 - `admin/`：Tailwind v4 + Radix/shadcn 风格组件，`@` → `src`，vite 代理 `/api`、`/static` 到 :8000；用 `cn()`；列表必须服务端分页（`page/page_size/meta.total`，复用 `PaginationBar`）
 
 两端公共逻辑放 `lib/`（用户端已有大量 `drama*` 纯函数 helper，新功能先搜再写），页面只做编排。
