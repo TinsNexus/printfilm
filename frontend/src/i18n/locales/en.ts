@@ -1,3 +1,11 @@
+import { enFragmentPlanSkill } from './en/fragmentPlanSkill'
+import { enDramaImageStyleModal } from './en/dramaImageStyleModal'
+import { enDramaRefStrip } from './en/dramaRefStrip'
+import { enDramaEpisodeDir } from './en/dramaEpisodeDir'
+import { enDramaEpisodeCount } from './en/dramaEpisodeCount'
+import { enPricingWallet } from './en/pricingWallet'
+import { enUsageCharges } from './en/usageCharges'
+import { enDramaSteps } from './en/dramaSteps'
 import { enCanvasNodePreview } from './en/canvasNodePreview'
 import { enDramaVoiceCard } from './en/dramaVoiceCard'
 import { enDramaSubtitleBoard } from './en/dramaSubtitleBoard'
@@ -53,6 +61,14 @@ import { enStudio } from './en/studio'
 
 export const en = {
   ...enShell,
+  ...enFragmentPlanSkill,
+  ...enDramaImageStyleModal,
+  ...enDramaRefStrip,
+  ...enDramaEpisodeDir,
+  ...enDramaEpisodeCount,
+  ...enPricingWallet,
+  ...enUsageCharges,
+  ...enDramaSteps,
   ...enCanvasNodePreview,
   ...enDramaVoiceCard,
   ...enDramaSubtitleBoard,

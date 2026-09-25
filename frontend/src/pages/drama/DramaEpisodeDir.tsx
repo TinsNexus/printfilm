@@ -1,6 +1,7 @@
 /** 漫剧分集左侧目录（大纲 / 分集页 / 分镜页共用） */
 import type { ReactNode } from 'react'
 import type { DramaEpisode } from '../../api/drama'
+import { tr } from '../../i18n/translate'
 
 export type DramaEpisodeDirItem = {
   id: number
@@ -31,21 +32,21 @@ export function buildEpisodeDirItems(episodes: DramaEpisode[]): DramaEpisodeDirI
     const fragCount = (ep.fragments || []).length
     return {
       id: ep.id,
-      label: epNo >= 1 ? `第 ${epNo} 集` : `未编号 · ${ep.id}`,
-      title: ep.name || `分集 ${ep.id}`,
-      meta: fragCount > 0 ? `${fragCount} 镜` : undefined,
+      label: epNo >= 1 ? tr('episodeDir.episode', { epNo }) : tr('episodeDir.unnumbered', { epId: ep.id }),
+      title: ep.name || tr('episodeDir.episode2', { epId: ep.id }),
+      meta: fragCount > 0 ? tr('episodeDir.shots', { fragCount }) : undefined,
     }
   })
 }
 
 // 左侧分集目录
 export function DramaEpisodeDir({
-  title = '分集目录',
+  title = tr('episodeDir.episodes'),
   items,
   activeId,
   onSelect,
   footer,
-  emptyText = '暂无分集',
+  emptyText = tr('episodeDir.episodesYet'),
 }: DramaEpisodeDirProps) {
   return (
     <aside className="drama-episode-dir">

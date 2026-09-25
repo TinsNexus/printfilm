@@ -1,3 +1,11 @@
+import { zhFragmentPlanSkill } from './zh/fragmentPlanSkill'
+import { zhDramaImageStyleModal } from './zh/dramaImageStyleModal'
+import { zhDramaRefStrip } from './zh/dramaRefStrip'
+import { zhDramaEpisodeDir } from './zh/dramaEpisodeDir'
+import { zhDramaEpisodeCount } from './zh/dramaEpisodeCount'
+import { zhPricingWallet } from './zh/pricingWallet'
+import { zhUsageCharges } from './zh/usageCharges'
+import { zhDramaSteps } from './zh/dramaSteps'
 import { zhCanvasNodePreview } from './zh/canvasNodePreview'
 import { zhDramaVoiceCard } from './zh/dramaVoiceCard'
 import { zhDramaSubtitleBoard } from './zh/dramaSubtitleBoard'
@@ -53,6 +61,14 @@ import { zhStudio } from './zh/studio'
 
 export const zh = {
   ...zhShell,
+  ...zhFragmentPlanSkill,
+  ...zhDramaImageStyleModal,
+  ...zhDramaRefStrip,
+  ...zhDramaEpisodeDir,
+  ...zhDramaEpisodeCount,
+  ...zhPricingWallet,
+  ...zhUsageCharges,
+  ...zhDramaSteps,
   ...zhCanvasNodePreview,
   ...zhDramaVoiceCard,
   ...zhDramaSubtitleBoard,

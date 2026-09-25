@@ -1,3 +1,11 @@
+import { viFragmentPlanSkill } from './vi/fragmentPlanSkill'
+import { viDramaImageStyleModal } from './vi/dramaImageStyleModal'
+import { viDramaRefStrip } from './vi/dramaRefStrip'
+import { viDramaEpisodeDir } from './vi/dramaEpisodeDir'
+import { viDramaEpisodeCount } from './vi/dramaEpisodeCount'
+import { viPricingWallet } from './vi/pricingWallet'
+import { viUsageCharges } from './vi/usageCharges'
+import { viDramaSteps } from './vi/dramaSteps'
 import { viCanvasNodePreview } from './vi/canvasNodePreview'
 import { viDramaVoiceCard } from './vi/dramaVoiceCard'
 import { viDramaSubtitleBoard } from './vi/dramaSubtitleBoard'
@@ -53,6 +61,14 @@ import { viStudio } from './vi/studio'
 
 export const vi = {
   ...viShell,
+  ...viFragmentPlanSkill,
+  ...viDramaImageStyleModal,
+  ...viDramaRefStrip,
+  ...viDramaEpisodeDir,
+  ...viDramaEpisodeCount,
+  ...viPricingWallet,
+  ...viUsageCharges,
+  ...viDramaSteps,
   ...viCanvasNodePreview,
   ...viDramaVoiceCard,
   ...viDramaSubtitleBoard,

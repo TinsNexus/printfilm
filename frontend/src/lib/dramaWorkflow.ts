@@ -1,4 +1,5 @@
 import type { DramaProject, DramaProjectListItem } from '../api/drama'
+import { tr } from '../i18n/translate'
 
 export type DramaWorkflow = 'script' | 'canvas'
 
@@ -48,10 +49,10 @@ export function dramaProjectEntryPath(
 /** 列表卡片 meta 文案 */
 export function formatDramaCardMeta(item: DramaProjectListItem): string {
   if (isCanvasWorkflow(item)) {
-    return `自由画布 · ${item.asset_count || 0} 节点资产`
+    return tr('dramaWorkflow.metaCanvas', { n: item.asset_count || 0 })
   }
   if (item.has_script) {
-    return `已写剧本 · ${item.episode_count || 0} 集 · ${item.asset_count || 0} 资产`
+    return tr('dramaWorkflow.metaScript', { ep: item.episode_count || 0, n: item.asset_count || 0 })
   }
-  return `草稿 · 待写剧本 · ${item.asset_count || 0} 资产`
+  return tr('dramaWorkflow.metaDraft', { n: item.asset_count || 0 })
 }
