@@ -3,6 +3,7 @@ import { useEffect, type ReactNode } from 'react'
 import { ArrowRight, ArrowUpRight } from 'lucide-react'
 import LanguageSwitch from '../components/layout/LanguageSwitch'
 import { useI18n } from '../i18n'
+import { LOCALE_HTML } from '../i18n/detect'
 import {
   METHOD_GEO_URL,
   METHOD_LANDING,
@@ -64,7 +65,7 @@ export default function MethodPage() {
     '@type': 'Article',
     headline: copy.jsonLdHeadline,
     description: copy.metaDescription,
-    inLanguage: locale === 'zh' ? 'zh-CN' : 'en',
+    inLanguage: LOCALE_HTML[locale],
     author: { '@type': 'Organization', name: 'PRINTFILM' },
     publisher: { '@type': 'Organization', name: 'PRINTFILM' },
     mainEntityOfPage: { '@type': 'WebPage', '@id': PAGE_URL },

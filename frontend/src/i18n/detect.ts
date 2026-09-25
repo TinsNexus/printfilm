@@ -1,19 +1,21 @@
 /** 浏览器语言检测、本地覆盖与 html lang 同步 */
 
-export type Locale = 'zh' | 'en'
+export type Locale = 'zh' | 'en' | 'vi'
 
-export const LOCALES: Locale[] = ['zh', 'en']
+export const LOCALES: Locale[] = ['zh', 'en', 'vi']
 
 export const LOCALE_STORAGE_KEY = 'printfilm.locale'
 
 export const LOCALE_HTML: Record<Locale, string> = {
   zh: 'zh-CN',
   en: 'en',
+  vi: 'vi',
 }
 
 export const LOCALE_DATE: Record<Locale, string> = {
   zh: 'zh-CN',
   en: 'en-US',
+  vi: 'vi-VN',
 }
 
 // 当前生效语言（供非 React 工具函数读取）
@@ -21,13 +23,15 @@ let activeLocale: Locale = 'zh'
 
 // 是否为已支持的语言代码
 export function isLocale(value: unknown): value is Locale {
-  return value === 'zh' || value === 'en'
+  return value === 'zh' || value === 'en' || value === 'vi'
 }
 
-// 从 Accept-Language / navigator 映射到 zh 或 en
+// 从 Accept-Language / navigator 映射到 zh / vi / en
 export function localeFromBrowser(lang?: string): Locale {
   const raw = (lang || '').trim().toLowerCase()
-  return raw.startsWith('zh') ? 'zh' : 'en'
+  if (raw.startsWith('zh')) return 'zh'
+  if (raw.startsWith('vi')) return 'vi'
+  return 'en'
 }
 
 // 读取用户手动选择；无记录则返回 null（跟随浏览器）
