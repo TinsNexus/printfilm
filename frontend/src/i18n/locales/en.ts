@@ -1,3 +1,11 @@
+import { enCanvasNodePreview } from './en/canvasNodePreview'
+import { enDramaVoiceCard } from './en/dramaVoiceCard'
+import { enDramaSubtitleBoard } from './en/dramaSubtitleBoard'
+import { enMonthlyUsage } from './en/monthlyUsage'
+import { enCanvasLeftToolbar } from './en/canvasLeftToolbar'
+import { enEpFragmentNode } from './en/epFragmentNode'
+import { enDramaOutputSettings } from './en/dramaOutputSettings'
+import { enCanvasMention } from './en/canvasMention'
 import { enCanvasImageOpts } from './en/canvasImageOpts'
 import { enDramaSegPlayer } from './en/dramaSegPlayer'
 import { enCanvasAssetNode } from './en/canvasAssetNode'
@@ -45,6 +53,14 @@ import { enStudio } from './en/studio'
 
 export const en = {
   ...enShell,
+  ...enCanvasNodePreview,
+  ...enDramaVoiceCard,
+  ...enDramaSubtitleBoard,
+  ...enMonthlyUsage,
+  ...enCanvasLeftToolbar,
+  ...enEpFragmentNode,
+  ...enDramaOutputSettings,
+  ...enCanvasMention,
   ...enCanvasImageOpts,
   ...enDramaSegPlayer,
   ...enCanvasAssetNode,

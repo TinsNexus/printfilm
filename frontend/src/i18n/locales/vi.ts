@@ -1,3 +1,11 @@
+import { viCanvasNodePreview } from './vi/canvasNodePreview'
+import { viDramaVoiceCard } from './vi/dramaVoiceCard'
+import { viDramaSubtitleBoard } from './vi/dramaSubtitleBoard'
+import { viMonthlyUsage } from './vi/monthlyUsage'
+import { viCanvasLeftToolbar } from './vi/canvasLeftToolbar'
+import { viEpFragmentNode } from './vi/epFragmentNode'
+import { viDramaOutputSettings } from './vi/dramaOutputSettings'
+import { viCanvasMention } from './vi/canvasMention'
 import { viCanvasImageOpts } from './vi/canvasImageOpts'
 import { viDramaSegPlayer } from './vi/dramaSegPlayer'
 import { viCanvasAssetNode } from './vi/canvasAssetNode'
@@ -45,6 +53,14 @@ import { viStudio } from './vi/studio'
 
 export const vi = {
   ...viShell,
+  ...viCanvasNodePreview,
+  ...viDramaVoiceCard,
+  ...viDramaSubtitleBoard,
+  ...viMonthlyUsage,
+  ...viCanvasLeftToolbar,
+  ...viEpFragmentNode,
+  ...viDramaOutputSettings,
+  ...viCanvasMention,
   ...viCanvasImageOpts,
   ...viDramaSegPlayer,
   ...viCanvasAssetNode,

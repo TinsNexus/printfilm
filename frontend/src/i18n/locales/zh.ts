@@ -1,3 +1,11 @@
+import { zhCanvasNodePreview } from './zh/canvasNodePreview'
+import { zhDramaVoiceCard } from './zh/dramaVoiceCard'
+import { zhDramaSubtitleBoard } from './zh/dramaSubtitleBoard'
+import { zhMonthlyUsage } from './zh/monthlyUsage'
+import { zhCanvasLeftToolbar } from './zh/canvasLeftToolbar'
+import { zhEpFragmentNode } from './zh/epFragmentNode'
+import { zhDramaOutputSettings } from './zh/dramaOutputSettings'
+import { zhCanvasMention } from './zh/canvasMention'
 import { zhCanvasImageOpts } from './zh/canvasImageOpts'
 import { zhDramaSegPlayer } from './zh/dramaSegPlayer'
 import { zhCanvasAssetNode } from './zh/canvasAssetNode'
@@ -45,6 +53,14 @@ import { zhStudio } from './zh/studio'
 
 export const zh = {
   ...zhShell,
+  ...zhCanvasNodePreview,
+  ...zhDramaVoiceCard,
+  ...zhDramaSubtitleBoard,
+  ...zhMonthlyUsage,
+  ...zhCanvasLeftToolbar,
+  ...zhEpFragmentNode,
+  ...zhDramaOutputSettings,
+  ...zhCanvasMention,
   ...zhCanvasImageOpts,
   ...zhDramaSegPlayer,
   ...zhCanvasAssetNode,

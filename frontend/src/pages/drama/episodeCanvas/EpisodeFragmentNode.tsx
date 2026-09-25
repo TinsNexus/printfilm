@@ -3,6 +3,7 @@ import { memo, useCallback, type ChangeEvent } from 'react'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import { Clapperboard, Plus } from 'lucide-react'
 import type { EpisodeFragmentNodeData } from './buildEpisodeFlow'
+import { tr } from '../../../i18n/translate'
 
 type Props = NodeProps<Node<EpisodeFragmentNodeData>> & {
   onPromptChange?: (fragmentId: number, content: string) => void
@@ -35,14 +36,14 @@ function EpisodeFragmentNodeComponent({
           <button
             type="button"
             className="ep-frag-link-btn nodrag nopan"
-            title="关联出境资产"
-            aria-label="关联出境资产"
+            title={tr('fragNode.linkScreenAssets')}
+            aria-label={tr('fragNode.linkScreenAssets')}
             onClick={() => onRequestLinkAsset?.(data.fragmentId)}
           >
             <Plus size={14} strokeWidth={2} />
           </button>
         ) : (
-          <em className="ep-frag-link-count">{data.linkedCount || 0} 资产</em>
+          <em className="ep-frag-link-count">{tr('fragNode.assetsCount', { n: data.linkedCount || 0 })}</em>
         )}
       </div>
 
@@ -60,25 +61,25 @@ function EpisodeFragmentNodeComponent({
           <img src={media} alt="" draggable={false} />
         ) : (
           <div className="ep-frag-media-empty">
-            <span>暂无成片</span>
-            <small>生成后显示在此</small>
+            <span>{tr('fragNode.clipYet')}</span>
+            <small>{tr('fragNode.appearsHereOnceGenerated')}</small>
           </div>
         )}
       </div>
 
       <div className="ep-frag-prompt">
-        <label>提示词</label>
+        <label>{tr('fragNode.prompt')}</label>
         {selected ? (
           <textarea
             className="ep-frag-prompt-input nodrag nowheel"
             value={data.content}
             onChange={handlePromptChange}
-            placeholder="分镜脚本 / Seedance 提示词…"
+            placeholder={tr('fragNode.shotScriptSeedancePrompt')}
             rows={5}
           />
         ) : (
           <p className="ep-frag-prompt-text">
-            {(data.content || '').trim() || '（空提示词）'}
+            {(data.content || '').trim() || tr('fragNode.emptyPrompt')}
           </p>
         )}
       </div>

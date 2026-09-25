@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { FolderOpen, Plus, X } from 'lucide-react'
 import { useCanvasStore } from './CanvasStore'
 import { ADD_NODE_OPTIONS, CANVAS_NODE_OPTION_BY_KIND, type CanvasNodeKind } from './canvasTypes'
+import { tr } from '../../../i18n/translate'
 
 type CanvasLeftToolbarProps = {
   onSelectNode: (kind: CanvasNodeKind) => void
@@ -44,9 +45,9 @@ export function CanvasLeftToolbar({ onSelectNode }: CanvasLeftToolbarProps) {
           <button
             type="button"
             className={`fc-icon-btn is-primary${panelOpen ? ' is-open' : ''}`}
-            aria-label={panelOpen ? '关闭添加节点' : '添加节点'}
+            aria-label={panelOpen ? tr('canvasLeft.closeAddNode') : tr('canvasLeft.addNode')}
             aria-expanded={panelOpen}
-            title="添加节点"
+            title={tr('canvasLeft.addNode')}
             onClick={(event) => {
               event.stopPropagation()
               setPanelOpen((v) => !v)
@@ -57,7 +58,7 @@ export function CanvasLeftToolbar({ onSelectNode }: CanvasLeftToolbarProps) {
           </button>
 
           {panelOpen ? (
-            <div className="fc-add-panel-bridge" role="menu" aria-label="添加节点类型">
+            <div className="fc-add-panel-bridge" role="menu" aria-label={tr('canvasLeft.nodeTypesAdd')}>
               <div className="fc-add-panel">
                 {ADD_NODE_OPTIONS.map((option) => {
                   const Icon = option.icon
@@ -86,8 +87,8 @@ export function CanvasLeftToolbar({ onSelectNode }: CanvasLeftToolbarProps) {
         <button
           type="button"
           className={`fc-icon-btn${folderOpen ? ' is-active' : ''}`}
-          aria-label="资产文件夹"
-          title="资产文件夹"
+          aria-label={tr('canvasLeft.assetFolder')}
+          title={tr('canvasLeft.assetFolder')}
           aria-expanded={folderOpen}
           onClick={() => {
             setFolderOpen((v) => !v)
@@ -98,10 +99,10 @@ export function CanvasLeftToolbar({ onSelectNode }: CanvasLeftToolbarProps) {
         </button>
 
         {folderOpen ? (
-          <div className="fc-folder-panel" role="dialog" aria-label="画布节点列表">
-            <h4>画布节点</h4>
+          <div className="fc-folder-panel" role="dialog" aria-label={tr('canvasLeft.canvasNodeList')}>
+            <h4>{tr('canvasLeft.canvasNodes')}</h4>
             {nodes.length === 0 ? (
-              <p className="fc-folder-empty">暂无节点，点击 + 添加</p>
+              <p className="fc-folder-empty">{tr('canvasLeft.nodesYetClickAdd')}</p>
             ) : (
               nodes.map((node) => {
                 const option = CANVAS_NODE_OPTION_BY_KIND[node.data.kind]

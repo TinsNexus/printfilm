@@ -2,6 +2,7 @@
 import { Landmark, UserRound, Image as ImageIcon, PlaySquare } from 'lucide-react'
 import { resolveDramaMediaUrl } from '../../../../api/drama'
 import type { CanvasNodeKind } from '../canvasTypes'
+import { tr } from '../../../../i18n/translate'
 
 export type CanvasMentionItem = {
   nodeId: string
@@ -31,11 +32,11 @@ function KindIcon({ kind }: { kind: CanvasNodeKind }) {
 
 /** 类型中文标签 */
 function kindLabel(kind: CanvasNodeKind) {
-  if (kind === 'character') return '角色'
-  if (kind === 'scene') return '场景'
-  if (kind === 'video') return '视频'
-  if (kind === 'image') return '图片'
-  return '资产'
+  if (kind === 'character') return tr('canvasMention.character')
+  if (kind === 'scene') return tr('canvasMention.scene')
+  if (kind === 'video') return tr('canvasMention.video')
+  if (kind === 'image') return tr('canvasMention.image')
+  return tr('canvasMention.asset')
 }
 
 /** 按查询过滤可引用节点 */
@@ -67,7 +68,7 @@ export function CanvasMentionPopover({
     <div
       className="fc-mention-popover nodrag nopan nowheel"
       role="listbox"
-      aria-label="引用画布节点"
+      aria-label={tr('canvasMention.referenceCanvasNode')}
       onPointerDown={(e) => {
         e.preventDefault()
         e.stopPropagation()
@@ -78,7 +79,7 @@ export function CanvasMentionPopover({
       }}
     >
       <div className="fc-mention-head">
-        <span>引用节点</span>
+        <span>{tr('canvasMention.referenceNode')}</span>
         <button
           type="button"
           className="fc-mention-close"
@@ -87,13 +88,13 @@ export function CanvasMentionPopover({
             e.stopPropagation()
             onClose()
           }}
-          aria-label="关闭"
+          aria-label={tr('canvasMention.close')}
         >
           ×
         </button>
       </div>
       {filtered.length === 0 ? (
-        <div className="fc-mention-empty">无匹配节点 · 先创建角色/场景</div>
+        <div className="fc-mention-empty">{tr('canvasMention.matchingNodesCreateCharacter')}</div>
       ) : (
         <ul className="fc-mention-list">
           {filtered.map((item, index) => {

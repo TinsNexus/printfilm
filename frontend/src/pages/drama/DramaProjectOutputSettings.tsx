@@ -20,6 +20,7 @@ import {
 } from '../../lib/dramaVideoGenerationOptions'
 import { catalogVideoModels, useMediaModelsCatalog } from '../../hooks/useMediaModelsCatalog'
 import './drama.css'
+import { useI18n } from '../../i18n'
 
 type Props = {
   params: Record<string, unknown>
@@ -46,6 +47,7 @@ export function DramaProjectOutputSettings({
   videoModelId = '',
   onChange,
 }: Props) {
+  const { t: tx } = useI18n()
   const rootRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
   const [panelStyle, setPanelStyle] = useState<CSSProperties | null>(null)
@@ -76,12 +78,12 @@ export function DramaProjectOutputSettings({
     videoModels,
   ) as DramaResolution
   const outputLabel = formatProjectOutputLabel(clampedAspect, clampedResolution)
-  const scopeHint = scope === 'episode' ? '本集' : '项目统一'
-  const panelTitle = scope === 'episode' ? '分集画幅' : '项目画幅'
+  const scopeHint = scope === 'episode' ? tx('outputSettings.episode') : tx('outputSettings.projectWide')
+  const panelTitle = scope === 'episode' ? tx('outputSettings.episodeAspectRatio') : tx('outputSettings.projectAspectRatio')
   const panelNote =
     scope === 'episode'
-      ? '仅本集分镜使用；未单独设置时继承项目默认。比例与清晰度随当前视频模型过滤，可点选修改。'
-      : '全部分集共用同一规格；比例与清晰度随当前视频模型过滤。'
+      ? tx('outputSettings.usedOnlyEpisodeS')
+      : tx('outputSettings.allEpisodesShareOne')
 
   /* 仅在目录已匹配到模型白名单时静默钳制回写，避免 catalog/modelId 未就绪时把 1080p 写成 720p */
   useEffect(() => {
@@ -172,8 +174,8 @@ export function DramaProjectOutputSettings({
         disabled={disabled || saving}
         title={
           scope === 'episode'
-            ? '本集画幅与清晰度；各镜生成后可直接拼接'
-            : '全项目统一画幅与清晰度，各分镜生成后可直接拼接'
+            ? tx('outputSettings.episodeSAspectRatio')
+            : tx('outputSettings.projectWideAspectRatio')
         }
         onClick={() => setOpen((c) => !c)}
       >
@@ -189,7 +191,7 @@ export function DramaProjectOutputSettings({
               className="fc-gen-opt-panel drama-ep-opt-panel fc-gen-opt-panel--portal"
               style={panelStyle}
               role="dialog"
-              aria-label={scope === 'episode' ? '分集画幅与清晰度' : '项目画幅与清晰度'}
+              aria-label={scope === 'episode' ? tx('outputSettings.episodeAspectRatioResolution') : tx('outputSettings.projectAspectRatioResolution')}
             >
               <div className="fc-gen-opt-panel-title">{panelTitle}</div>
               <p className="drama-project-output-note">{panelNote}</p>
@@ -208,7 +210,7 @@ export function DramaProjectOutputSettings({
                 ))}
               </div>
               <div className="fc-gen-opt-panel-title" style={{ marginTop: 12 }}>
-                清晰度
+                {tx('outputSettings.resolution')}
               </div>
               <div className="fc-gen-chip-row">
                 {resolutionOptions.map((r) => (
