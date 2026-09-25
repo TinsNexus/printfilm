@@ -1,0 +1,31 @@
+/** 英文：漫剧分集顶栏生成参数（EpisodeEditHeaderControls） */
+
+export const enDramaHeader = {
+  dramaHeader: {
+    readOnlyTitle: '{label} (project setting, read-only in shots)',
+    linkHelp: 'On by default. Shots generate in order; the next shot can be submitted early and waits in the queue for the previous one to finish. When off, shots generate in parallel by default. Switching immediately re-orders tasks that have not started. With character/scene references, the last frame is attached to the reference images (cannot be mixed with first_frame).',
+    videoStyle: 'Video style',
+    videoModel: 'Video model',
+    modelSubtitles: 'Model subtitles',
+    postSubtitles: 'Post subtitles',
+    characterIntros: 'Character intros',
+    introCaptions: 'No intro captions',
+    subtitleSettings: 'Subtitle settings',
+    characterIntroCaptions: 'Character intro captions',
+    lastFrameLinkingBetween: 'Last-frame linking between shots',
+    lastFrameLinking: 'Last-frame linking',
+    parallelGeneration: 'Parallel generation',
+    seedanceValueRulesUsage: 'Seedance value rules & usage',
+    saveDefaultPresetModel: 'Save a default preset model under “Models” in the admin console first',
+    shotLinking: 'Shot linking',
+    linkPreviousShotS: 'Link from the previous shot’s last frame',
+    modelRenderedSubtitles: 'Model-rendered subtitles',
+    switchingImmediatelyRestoresCue: 'Switching immediately restores the “同步字幕 / 字幕 cue” (sync subtitle / subtitle cue) prompts in the current shot text; the model renders subtitles directly when generating.',
+    postProductionSubtitles: 'Post-production subtitles',
+    switchingImmediatelyRemovesSubtitle: 'Switching immediately removes the subtitle prompts from the current shots; the subtitle board on the right can still be previewed and exported for post-production overlay.',
+    modelRenderedIntros: 'Model-rendered intros',
+    whenRePlanningShots: 'When on, re-planning shots writes a “人物介绍·画面叠字·角色身旁” (character intro · on-screen text · beside the character) line for key characters on first appearance; the model places the intro beside the character when generating.',
+    introsOff: 'Intros off',
+    switchingImmediatelyRemovesIntro: 'Switching immediately removes the intro caption lines from the current shots and forbids on-screen intro cards when generating. Removed intros only come back after re-planning shots.',
+  },
+} as const

@@ -1,0 +1,31 @@
+/** 越南语：漫剧分集顶栏生成参数（EpisodeEditHeaderControls） */
+
+export const viDramaHeader = {
+  dramaHeader: {
+    readOnlyTitle: '{label} (cài đặt dự án, chỉ đọc trong cảnh)',
+    linkHelp: 'Mặc định bật. Các cảnh được tạo theo thứ tự; có thể gửi trước cảnh kế tiếp và chờ trong hàng đợi cho cảnh trước hoàn tất. Khi tắt, mặc định tạo song song. Khi chuyển sẽ sắp xếp lại ngay các tác vụ chưa bắt đầu. Khi có ảnh tham chiếu nhân vật/bối cảnh, khung cuối được đính kèm cùng ảnh tham chiếu (không dùng chung với first_frame).',
+    videoStyle: 'Phong cách video',
+    videoModel: 'Mô hình video',
+    modelSubtitles: 'Phụ đề do mô hình',
+    postSubtitles: 'Phụ đề hậu kỳ',
+    characterIntros: 'Giới thiệu nhân vật',
+    introCaptions: 'Không chữ giới thiệu',
+    subtitleSettings: 'Cài đặt phụ đề',
+    characterIntroCaptions: 'Chữ giới thiệu nhân vật',
+    lastFrameLinkingBetween: 'Nối khung cuối giữa các cảnh',
+    lastFrameLinking: 'Nối khung cuối',
+    parallelGeneration: 'Tạo song song',
+    seedanceValueRulesUsage: 'Quy tắc truyền giá trị và sử dụng Seedance',
+    saveDefaultPresetModel: 'Trước hết hãy lưu mô hình mặc định trong mục “Mô hình” của trang quản trị',
+    shotLinking: 'Nối cảnh',
+    linkPreviousShotS: 'Nối từ khung cuối của cảnh trước',
+    modelRenderedSubtitles: 'Phụ đề do mô hình tự tạo',
+    switchingImmediatelyRestoresCue: 'Sau khi chuyển sẽ lập tức bổ sung lại prompt “同步字幕 / 字幕 cue” (phụ đề đồng bộ / cue phụ đề) vào nội dung cảnh hiện tại; khi tạo, mô hình sẽ tự tạo phụ đề.',
+    postProductionSubtitles: 'Phụ đề ghép hậu kỳ',
+    switchingImmediatelyRemovesSubtitle: 'Sau khi chuyển sẽ lập tức bỏ prompt phụ đề khỏi các cảnh hiện tại; bảng phụ đề bên phải vẫn có thể xem trước và xuất để chèn chữ hậu kỳ.',
+    modelRenderedIntros: 'Giới thiệu do mô hình chèn',
+    whenRePlanningShots: 'Khi bật, mỗi lần lập lại storyboard sẽ ghi dòng “人物介绍·画面叠字·角色身旁” (giới thiệu nhân vật · chữ trên hình · cạnh nhân vật) cho nhân vật quan trọng xuất hiện lần đầu; khi tạo, mô hình đặt phần giới thiệu cạnh nhân vật.',
+    introsOff: 'Tắt giới thiệu',
+    switchingImmediatelyRemovesIntro: 'Sau khi chuyển sẽ lập tức bỏ các dòng chữ giới thiệu nhân vật khỏi cảnh hiện tại và cấm thẻ giới thiệu trên hình khi tạo. Phần giới thiệu đã bỏ chỉ trở lại sau khi lập lại storyboard.',
+  },
+} as const

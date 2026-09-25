@@ -21,25 +21,28 @@ import { DRAMA_VOICE_BINDING_ENABLED } from '../../lib/dramaVoiceBinding'
 import { pageCountOf } from '../../lib/pagination'
 import RequireAuth from './RequireAuth'
 import './drama.css'
+import { useI18n } from '../../i18n'
+import { tr } from '../../i18n/translate'
 
 type AssetTabKey = 'all' | 'character' | 'scene' | 'prop' | 'voice'
 
 const PAGE_SIZE_DEFAULT = 12
 const PAGE_SIZE_OPTIONS = [12, 24, 36] as const
 
-const TABS: Array<{ value: AssetTabKey; label: string }> = [
-  { value: 'all', label: '全部' },
-  { value: 'character', label: '角色' },
-  { value: 'scene', label: '场景' },
-  { value: 'prop', label: '道具' },
-  ...(DRAMA_VOICE_BINDING_ENABLED ? [{ value: 'voice' as const, label: '音色' }] : []),
+// 标签走 labelKey（模块级常量在导入时求值，不能直接存翻译后的文案）
+const TABS: Array<{ value: AssetTabKey; labelKey: string }> = [
+  { value: 'all', labelKey: 'dramaLibrary.tabAll' },
+  { value: 'character', labelKey: 'dramaLibrary.kindCharacter' },
+  { value: 'scene', labelKey: 'dramaLibrary.kindScene' },
+  { value: 'prop', labelKey: 'dramaLibrary.kindProp' },
+  ...(DRAMA_VOICE_BINDING_ENABLED ? [{ value: 'voice' as const, labelKey: 'dramaLibrary.kindVoice' }] : []),
 ]
 
-const KIND_LABEL: Record<string, string> = {
-  character: '角色',
-  scene: '场景',
-  prop: '道具',
-  voice: '音色',
+const KIND_LABEL_KEY: Record<string, string> = {
+  character: 'dramaLibrary.kindCharacter',
+  scene: 'dramaLibrary.kindScene',
+  prop: 'dramaLibrary.kindProp',
+  voice: 'dramaLibrary.kindVoice',
 }
 
 export default function AssetLibraryPage() {
@@ -67,11 +70,11 @@ function matchTab(asset: DramaAsset, tab: AssetTabKey): boolean {
 
 function fileMeta(asset: DramaAsset): string {
   const kind = assetKind(asset)
-  if (kind !== 'other') return KIND_LABEL[kind]
+  if (kind !== 'other') return tr(KIND_LABEL_KEY[kind])
   const url = (asset.cover || asset.url || '').toLowerCase()
   const ext = url.match(/\.([a-z0-9]{2,5})(\?|$)/)?.[1]
   if (ext) return `.${ext}`
-  return asset.type || '文件'
+  return asset.type || tr('dramaLibrary.file')
 }
 
 // 音色资产或角色已绑定音色的试听地址
@@ -87,6 +90,7 @@ function isImageLike(asset: DramaAsset): boolean {
 
 // 渲染资产库内容
 function AssetLibraryInner() {
+  const { t: tx } = useI18n()
   /*
    * assets 当前项目范围下的资产
    * projects 项目列表（筛选用）
@@ -129,7 +133,7 @@ function AssetLibraryInner() {
         if (!cancelled) setAssets(filterDramaLibraryAssets(rows))
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : '加载失败')
+        if (!cancelled) setError(err instanceof Error ? err.message : tx('dramaLibrary.failedLoad'))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -147,19 +151,19 @@ function AssetLibraryInner() {
 
   const projectNameById = useMemo(() => {
     const map = new Map<number, string>()
-    for (const p of projects) map.set(p.id, p.title || `项目 #${p.id}`)
+    for (const p of projects) map.set(p.id, p.title || tx('dramaLibrary.project', { pId: p.id }))
     return map
-  }, [projects])
+  }, [projects, tx])
 
   const projectOptions = useMemo(
     () => [
-      { value: '', label: '全部项目' },
+      { value: '', label: tx('dramaLibrary.allProjects') },
       ...projects.map((p) => ({
         value: String(p.id),
-        label: p.title || `项目 #${p.id}`,
+        label: p.title || tx('dramaLibrary.project', { pId: p.id }),
       })),
     ],
-    [projects],
+    [projects, tx],
   )
 
   const filtered = useMemo(() => {
@@ -194,7 +198,7 @@ function AssetLibraryInner() {
   function toggleVoice(asset: DramaAsset) {
     const src = resolveDramaMediaUrl(voicePreviewUrl(asset))
     if (!src) {
-      setError('该音色尚未合成试听')
+      setError(tx('dramaLibrary.voicePreviewAudioYet'))
       return
     }
     if (playingId === asset.id) {
@@ -205,7 +209,7 @@ function AssetLibraryInner() {
     if (!audioRef.current) audioRef.current = new Audio()
     audioRef.current.src = src
     audioRef.current.onended = () => setPlayingId(null)
-    void audioRef.current.play().catch(() => setError('播放失败'))
+    void audioRef.current.play().catch(() => setError(tx('dramaLibrary.playbackFailed')))
     setPlayingId(asset.id)
   }
 
@@ -215,39 +219,39 @@ function AssetLibraryInner() {
         <header className="pf-drama-list-head">
           <div className="pf-drama-list-title-row">
             <div>
-              <h1>资产管理</h1>
+              <h1>{tx('dramaLibrary.assetManagement')}</h1>
               <p className="pf-muted" style={{ margin: '0.35rem 0 0' }}>
-                按角色、场景、道具与音色浏览
+                {tx('dramaLibrary.browseCharacterSceneProp')}
               </p>
             </div>
             <div className="pf-drama-list-actions">
               <Button to="/drama" variant="ghost" size="sm">
-                漫剧项目
+                {tx('dramaLibrary.dramaProjects')}
               </Button>
               <Button to="/history" variant="ghost" size="sm">
-                科普历史
+                {tx('dramaLibrary.shortVideoHistory')}
               </Button>
               <Button to="/settings" variant="ghost" size="sm">
-                个人中心
+                {tx('dramaLibrary.account')}
               </Button>
             </div>
           </div>
 
           <div className="pf-drama-list-toolbar">
-            <PillFilter options={TABS} value={tab} onChange={setTab} ariaLabel="资产分类" />
+            <PillFilter options={TABS.map((t) => ({ value: t.value, label: tx(t.labelKey) }))} value={tab} onChange={setTab} ariaLabel={tx('dramaLibrary.assetCategories')} />
             <div className="pf-asset-toolbar-filters">
               <FilterSelect
-                label="按项目筛选"
+                label={tx('dramaLibrary.filterProject')}
                 value={projectId}
                 options={projectOptions}
                 onChange={setProjectId}
               />
               <label className="pf-drama-search">
-                <span className="sr-only">搜索资产</span>
+                <span className="sr-only">{tx('dramaLibrary.searchAssets')}</span>
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="搜索名称或项目"
+                  placeholder={tx('dramaLibrary.searchNameProject')}
                 />
               </label>
             </div>
@@ -259,14 +263,14 @@ function AssetLibraryInner() {
         <div className="pf-asset-toolbar-meta">
           <p className="pf-muted" style={{ margin: 0 }}>
             {loading
-              ? '加载中…'
-              : `共 ${assets.length} 项 · 筛选后 ${filtered.length} 项 · 第 ${safePage}/${pageCount} 页`}
+              ? tx('dramaLibrary.loading')
+              : tx('dramaLibrary.assetsFilteringPage', { assetsLength: assets.length, filteredLength: filtered.length, safePage, pageCount })}
           </p>
         </div>
 
         {!loading && filtered.length === 0 ? (
           <div className="pf-empty-state is-compact">
-            <p className="pf-muted">该分类暂无资产</p>
+            <p className="pf-muted">{tx('dramaLibrary.assetsCategoryYet')}</p>
           </div>
         ) : (
           <>
@@ -275,7 +279,7 @@ function AssetLibraryInner() {
                 const kind = assetKind(asset)
                 const mediaSrc = resolveDramaMediaUrl(asset.cover || (kind === 'voice' ? '' : asset.url))
                 const projectLabel =
-                  projectNameById.get(asset.project_id) || `项目 #${asset.project_id}`
+                  projectNameById.get(asset.project_id) || tx('dramaLibrary.project2', { assetProject_id: asset.project_id })
                 const previewUrl = voicePreviewUrl(asset)
                 const isVoice = kind === 'voice'
                 const playing = playingId === asset.id
@@ -288,7 +292,7 @@ function AssetLibraryInner() {
                           className={`pf-asset-play${playing ? ' is-playing' : ''}`}
                           onClick={() => toggleVoice(asset)}
                           disabled={!previewUrl}
-                          title={previewUrl ? (playing ? '停止试听' : '试听音色') : '尚未合成试听'}
+                          title={previewUrl ? (playing ? tx('dramaLibrary.stopPreview') : tx('dramaLibrary.previewVoice')) : tx('dramaLibrary.previewAudioYet')}
                         >
                           <span className="pf-asset-play-icon" aria-hidden>
                             {playing ? <Pause size={20} strokeWidth={2} /> : <Play size={20} strokeWidth={2} />}
@@ -301,7 +305,7 @@ function AssetLibraryInner() {
                           onClick={() =>
                             setLightbox({ src: mediaSrc, alt: asset.name || fileMeta(asset) })
                           }
-                          title="查看大图"
+                          title={tx('dramaLibrary.viewLarger')}
                         >
                           <img src={mediaSrc} alt={asset.name || ''} />
                         </button>
@@ -309,7 +313,7 @@ function AssetLibraryInner() {
                         <span>{fileMeta(asset)}</span>
                       )}
                     </div>
-                    <h3>{asset.name || '未命名'}</h3>
+                    <h3>{asset.name || tx('dramaLibrary.unnamed')}</h3>
                     <p>
                       {fileMeta(asset)} · {projectLabel}
                     </p>
@@ -321,10 +325,10 @@ function AssetLibraryInner() {
                           onError={setError}
                         />
                       ) : isVoice && !previewUrl ? (
-                        <span className="pf-muted">尚未合成试听</span>
+                        <span className="pf-muted">{tx('dramaLibrary.previewAudioYet')}</span>
                       ) : null}
                       <Button to={`/drama/projects/${asset.project_id}`} variant="ghost" size="sm">
-                        打开项目
+                        {tx('dramaLibrary.openProject')}
                       </Button>
                     </div>
                   </article>
@@ -342,7 +346,7 @@ function AssetLibraryInner() {
                 setPage(1)
               }}
               onChange={setPage}
-              ariaLabel="资产库分页"
+              ariaLabel={tx('dramaLibrary.assetLibraryPages')}
             />
           </>
         )}

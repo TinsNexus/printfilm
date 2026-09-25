@@ -1,0 +1,31 @@
+/** 中文：漫剧分集顶栏生成参数（EpisodeEditHeaderControls） */
+
+export const zhDramaHeader = {
+  dramaHeader: {
+    readOnlyTitle: '{label}（项目设置，分镜只读）',
+    linkHelp: '默认开启。按镜序生成，可提前提交下一镜并在队列中等待上一镜完成；关闭后默认并发生成。切换时会立刻重排未开始的任务。有角色/场景参考时以参考图附带尾帧（不可与 first_frame 混用）',
+    videoStyle: '视频风格',
+    videoModel: '视频模型',
+    modelSubtitles: '模型字幕',
+    postSubtitles: '后期字幕',
+    characterIntros: '人物介绍',
+    introCaptions: '无介绍叠字',
+    subtitleSettings: '字幕设置',
+    characterIntroCaptions: '人物介绍叠字',
+    lastFrameLinkingBetween: '镜间尾帧衔接',
+    lastFrameLinking: '尾帧衔接',
+    parallelGeneration: '并发生成',
+    seedanceValueRulesUsage: 'Seedance 传值与使用规则',
+    saveDefaultPresetModel: '请先在管理后台「模型」保存预设默认模型',
+    shotLinking: '镜间衔接',
+    linkPreviousShotS: '用上一镜尾帧衔接',
+    modelRenderedSubtitles: '模型自出字幕',
+    switchingImmediatelyRestoresCue: '切换后会立刻在当前分镜正文里补回「同步字幕 / 字幕 cue」提示词，生成时由模型直接出字幕。',
+    postProductionSubtitles: '后期拼接字幕',
+    switchingImmediatelyRemovesSubtitle: '切换后会立刻去掉当前分镜里的字幕提示词；右侧字幕板仍可预览与导出，供后期叠字。',
+    modelRenderedIntros: '模型叠字介绍',
+    whenRePlanningShots: '开启后，重新规划分镜时会为首次出场重要角色写入「人物介绍·画面叠字·角色身旁」；生成时由模型把介绍贴在角色身旁。',
+    introsOff: '关闭人物介绍',
+    switchingImmediatelyRemovesIntro: '切换后会立刻去掉当前分镜里的人物介绍叠字行；生成时禁止画面内介绍字卡。已去掉的介绍需重新分镜才会回来。',
+  },
+} as const

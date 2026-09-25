@@ -1,3 +1,6 @@
+import { enDramaEpisodes } from './en/dramaEpisodes'
+import { enDramaHeader } from './en/dramaHeader'
+import { enDramaLibrary } from './en/dramaLibrary'
 import { enStudioEditor } from './en/studioEditor'
 import { enDramaOutlineStep } from './en/dramaOutlineStep'
 import { enStudioStyle } from './en/studioStyle'
@@ -12,6 +15,9 @@ import { enStudio } from './en/studio'
 
 export const en = {
   ...enShell,
+  ...enDramaEpisodes,
+  ...enDramaHeader,
+  ...enDramaLibrary,
   ...enStudioEditor,
   ...enDramaOutlineStep,
   ...enStudioStyle,

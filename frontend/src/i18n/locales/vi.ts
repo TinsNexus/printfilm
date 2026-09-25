@@ -1,3 +1,6 @@
+import { viDramaEpisodes } from './vi/dramaEpisodes'
+import { viDramaHeader } from './vi/dramaHeader'
+import { viDramaLibrary } from './vi/dramaLibrary'
 import { viStudioEditor } from './vi/studioEditor'
 import { viDramaOutlineStep } from './vi/dramaOutlineStep'
 import { viStudioStyle } from './vi/studioStyle'
@@ -12,6 +15,9 @@ import { viStudio } from './vi/studio'
 
 export const vi = {
   ...viShell,
+  ...viDramaEpisodes,
+  ...viDramaHeader,
+  ...viDramaLibrary,
   ...viStudioEditor,
   ...viDramaOutlineStep,
   ...viStudioStyle,
