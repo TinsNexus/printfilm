@@ -37,6 +37,7 @@ import {
   dramaAssetNeedsImageGeneration,
 } from '../../lib/dramaAssetImage'
 import { tRich, useI18n } from '../../i18n'
+import { tr } from '../../i18n/translate'
 
 type AssetTabKey = 'character' | 'scene' | 'prop' | 'voice'
 
@@ -140,7 +141,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
           setAssets((prev) => (prev ?? []).map((a) => (a.id === next.id ? next : a)))
         })
       } catch (err) {
-        onError(err instanceof Error ? err.message : tx('dramaAssets.couldLoadAssets'))
+        onError(err instanceof Error ? err.message : tr('dramaAssets.couldLoadAssets'))
         try {
           const list = normalizeAssetList(await dramaApi.listAssets(projectId, { libraryOnly: true }))
           setAssets(list)

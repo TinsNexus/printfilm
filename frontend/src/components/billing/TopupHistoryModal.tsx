@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import Modal from '../ui/Modal'
 import { api, type BillingOrder } from '../../api'
 import { useI18n } from '../../i18n'
+import { tr } from '../../i18n/translate'
 
 type Props = {
   open: boolean
@@ -57,7 +58,7 @@ export default function TopupHistoryModal({ open, onClose }: Props) {
         if (!cancelled) setOrders(r.orders || [])
       })
       .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : tx('topupHistory.failedLoad'))
+        if (!cancelled) setError(e instanceof Error ? e.message : tr('topupHistory.failedLoad'))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)

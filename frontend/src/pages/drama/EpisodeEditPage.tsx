@@ -90,6 +90,7 @@ import { buildEpisodeDirItems, DramaEpisodeDir } from './DramaEpisodeDir'
 import RequireAuth from './RequireAuth'
 import './drama.css'
 import { useI18n } from '../../i18n'
+import { tr } from '../../i18n/translate'
 
 export default function EpisodeEditPage() {
   return (
@@ -740,7 +741,7 @@ function EpisodeEditInner() {
     setBusy(false)
     setStatus('')
     setError('')
-    reload().catch((err) => setError(err instanceof Error ? err.message : tx('dramaEp.failedLoad')))
+    reload().catch((err) => setError(err instanceof Error ? err.message : tr('dramaEp.failedLoad')))
     dramaApi
       .listAssets(pid)
       .then(setAssets)

@@ -10,6 +10,7 @@ import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import { handleBillingError } from '../../lib/billingError'
 import { kepuStepIndex, kepuSteps } from '../../lib/status'
 import { useI18n } from '../../i18n'
+import { tr } from '../../i18n/translate'
 
 // 文案走 labelKey / descKey（模块级常量在导入时求值，不能直接存翻译后的文案）
 const OUTPUT_MODES: { id: PipelineMode; labelKey: string; descKey: string; image: string }[] = [
@@ -95,7 +96,7 @@ export default function StyleConfigPage() {
         if (p.image_model) setImageModel(p.image_model)
         if (p.video_model) setVideoModel(p.video_model)
       })
-      .catch((err) => setError(err instanceof Error ? err.message : tx('styleCfg.failedLoad')))
+      .catch((err) => setError(err instanceof Error ? err.message : tr('styleCfg.failedLoad')))
   }, [nav, projectId])
 
   useEffect(() => {

@@ -8,6 +8,7 @@ import ComingSoon from '../../components/ui/ComingSoon'
 import { STATUS_CN, shotsByNo } from '../../lib/status'
 import { downloadSingleVideo } from '../../lib/clientDownload'
 import { useI18n } from '../../i18n'
+import { tr } from '../../i18n/translate'
 
 // 面板 id（展示名走 TAB_LABEL_KEY，避免用文案当状态值）
 const PANEL_TABS = ['copy', 'visual', 'voice', 'transition'] as const
@@ -50,7 +51,7 @@ export default function EditorPage() {
           setNarration(first.narration || '')
         }
       })
-      .catch((err) => setError(err instanceof Error ? err.message : tx('editorPage.failedLoad')))
+      .catch((err) => setError(err instanceof Error ? err.message : tr('editorPage.failedLoad')))
   }, [nav, projectId])
 
   const orderedShots = useMemo(() => shotsByNo(project?.shots), [project?.shots])

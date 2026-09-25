@@ -3,6 +3,7 @@ import { api, type UsageChargeRecord } from '../../api'
 import Pagination from '../ui/Pagination'
 import { pageCountOf } from '../../lib/pagination'
 import { useI18n } from '../../i18n'
+import { tr } from '../../i18n/translate'
 
 /** 格式化相对时间展示 */
 function formatWhen(iso?: string | null) {
@@ -65,7 +66,7 @@ export default function UsageChargeRecords({ variant = 'compact' }: UsageChargeR
       setPage(nextPage)
       setItems(res.items)
     } catch (e) {
-      setError(e instanceof Error ? e.message : tx('usageCharges.couldLoadChargeRecords'))
+      setError(e instanceof Error ? e.message : tr('usageCharges.couldLoadChargeRecords'))
       setItems([])
       setTotal(0)
     } finally {

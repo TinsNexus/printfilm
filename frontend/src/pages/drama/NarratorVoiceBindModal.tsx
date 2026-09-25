@@ -65,12 +65,12 @@ export function NarratorVoiceBindModal({ project, open, onClose, onUpdated, onEr
         const voices = list.filter((a) => (a.type || '').toLowerCase() === 'voice')
         setVoiceAssets(voices)
       })
-      .catch((err) => onError(err instanceof Error ? err.message : tx('narratorBind.couldLoadVoiceAssets')))
+      .catch((err) => onError(err instanceof Error ? err.message : tr('narratorBind.couldLoadVoiceAssets')))
   }, [current?.sourceAssetId, onError, open, project.id])
 
   const handleConfirm = useCallback(async () => {
     if (!selectedVoice?.url || busy) {
-      onError(tx('narratorBind.chooseNarrationVoiceAlready'))
+      onError(tr('narratorBind.chooseNarrationVoiceAlready'))
       return
     }
     setBusy(true)
@@ -93,7 +93,7 @@ export function NarratorVoiceBindModal({ project, open, onClose, onUpdated, onEr
       onUpdated(updated)
       onClose()
     } catch (err) {
-      onError(err instanceof Error ? err.message : tx('narratorBind.bindingFailed'))
+      onError(err instanceof Error ? err.message : tr('narratorBind.bindingFailed'))
     } finally {
       setBusy(false)
     }
@@ -109,7 +109,7 @@ export function NarratorVoiceBindModal({ project, open, onClose, onUpdated, onEr
       onUpdated(updated)
       onClose()
     } catch (err) {
-      onError(err instanceof Error ? err.message : tx('narratorBind.unbindingFailed'))
+      onError(err instanceof Error ? err.message : tr('narratorBind.unbindingFailed'))
     } finally {
       setBusy(false)
     }

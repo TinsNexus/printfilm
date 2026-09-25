@@ -14,6 +14,7 @@ import {
 import { getToolDef } from '../lib/toolsCatalog'
 import { pageCountOf } from '../lib/pagination'
 import { useI18n } from '../i18n'
+import { tr } from '../i18n/translate'
 
 const PAGE_SIZE_DEFAULT = 8
 
@@ -96,7 +97,7 @@ export default function SettingsToolRunsPanel() {
         setTotal(res.total)
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : tx('toolRuns.failedLoad'))
+        if (!cancelled) setError(err instanceof Error ? err.message : tr('toolRuns.failedLoad'))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)

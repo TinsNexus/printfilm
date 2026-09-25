@@ -168,7 +168,7 @@ export default function StoryboardPage() {
           setTemplate(list.find((t) => t.id === p.template_id) || null)
         })
       })
-      .catch((err) => setError(err instanceof Error ? err.message : tx('sb.failedToLoad')))
+      .catch((err) => setError(err instanceof Error ? err.message : tr('sb.failedToLoad')))
   }, [nav, projectId])
 
   useEffect(() => {

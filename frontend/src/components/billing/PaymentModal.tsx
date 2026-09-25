@@ -4,6 +4,7 @@ import Modal from '../ui/Modal'
 import PaymentBrandIcon from './PaymentBrandIcon'
 import { api } from '../../api'
 import { useI18n } from '../../i18n'
+import { tr } from '../../i18n/translate'
 
 export type PayCheckout = {
   out_trade_no: string
@@ -108,7 +109,7 @@ export default function PaymentModal({ open, checkout, onClose, onPaid }: Props)
       }
       if (!payload) {
         setQrDataUrl('')
-        setError(tx('payModal.couldGetPaymentQr'))
+        setError(tr('payModal.couldGetPaymentQr'))
         return
       }
       // 若网关直接返回图片 URL，优先使用
@@ -125,7 +126,7 @@ export default function PaymentModal({ open, checkout, onClose, onPaid }: Props)
         })
         if (!cancelled) setQrDataUrl(url)
       } catch {
-        if (!cancelled) setError(tx('payModal.couldGenerateQrCode'))
+        if (!cancelled) setError(tr('payModal.couldGenerateQrCode'))
       }
     }
 

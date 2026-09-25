@@ -93,7 +93,7 @@ export function GlobalAssetPickerModal({
     dramaApi
       .listAssets(undefined, { libraryOnly: true })
       .then((rows) => setAllAssets(filterDramaLibraryAssets(rows)))
-      .catch((err) => setError(err instanceof Error ? err.message : tx('assetPicker.couldLoadAssetLibrary')))
+      .catch((err) => setError(err instanceof Error ? err.message : tr('assetPicker.couldLoadAssetLibrary')))
       .finally(() => setLoading(false))
   }, [open, defaultTab])
 

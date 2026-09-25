@@ -9,6 +9,7 @@ import { readEpisodeSubtitleMode, subtitleModeUsesModelOutput } from '../../lib/
 import { FragmentPlanSkillModal } from '../../components/drama/FragmentPlanSkillModal'
 import { readFragmentGenerationStatus } from './dramaEpisodeEditUtils'
 import { tRich, useI18n } from '../../i18n'
+import { tr } from '../../i18n/translate'
 
 type EpisodesStepProps = {
   projectId: number
@@ -125,7 +126,7 @@ export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
           setEpisodes(await dramaApi.listEpisodes(projectId))
         }
       } catch (err) {
-        onError(err instanceof Error ? err.message : tx('dramaEpisodes.couldLoadEpisodes'))
+        onError(err instanceof Error ? err.message : tr('dramaEpisodes.couldLoadEpisodes'))
         try {
           setEpisodes(await dramaApi.listEpisodes(projectId))
         } catch {

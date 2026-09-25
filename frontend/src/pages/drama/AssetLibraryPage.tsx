@@ -133,7 +133,7 @@ function AssetLibraryInner() {
         if (!cancelled) setAssets(filterDramaLibraryAssets(rows))
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : tx('dramaLibrary.failedLoad'))
+        if (!cancelled) setError(err instanceof Error ? err.message : tr('dramaLibrary.failedLoad'))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)

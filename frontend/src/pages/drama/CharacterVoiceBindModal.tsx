@@ -147,7 +147,7 @@ export function CharacterVoiceBindModal({
         setNewPrompt(result.voice_prompt || '')
         setSuggestedSpeaker(result.speaker || '')
       } catch (err) {
-        onError(err instanceof Error ? err.message : tx('dramaVoiceBind.aiCouldGenerateVoice'))
+        onError(err instanceof Error ? err.message : tr('dramaVoiceBind.aiCouldGenerateVoice'))
       } finally {
         setPromptBusy(false)
       }
@@ -163,7 +163,7 @@ export function CharacterVoiceBindModal({
     setSelectedId(bound?.sourceAssetId ?? null)
     setNewPrompt('')
     setSuggestedSpeaker('')
-    setNewName(tx('dramaVoiceBind.defaultVoiceName', { name: asset.name || tx('dramaVoiceBind.roleFallback') }))
+    setNewName(tr('dramaVoiceBind.defaultVoiceName', { name: asset.name || tr('dramaVoiceBind.roleFallback') }))
     setMode('pick')
     promptRequestedRef.current = false
 
@@ -179,7 +179,7 @@ export function CharacterVoiceBindModal({
           setMode('create')
         }
       })
-      .catch((err) => onError(err instanceof Error ? err.message : tx('dramaVoiceBind.couldLoadVoiceAssets')))
+      .catch((err) => onError(err instanceof Error ? err.message : tr('dramaVoiceBind.couldLoadVoiceAssets')))
   }, [open, asset, projectId, bound?.sourceAssetId, onError])
 
   // 进入「新建并合成」时自动 AI 生成音色描述

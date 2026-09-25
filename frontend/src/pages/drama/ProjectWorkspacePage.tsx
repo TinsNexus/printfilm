@@ -21,6 +21,7 @@ import { OutlineStep } from './OutlineStep'
 import RequireAuth from './RequireAuth'
 import './drama.css'
 import { useI18n } from '../../i18n'
+import { tr } from '../../i18n/translate'
 
 export default function ProjectWorkspacePage() {
   return (
@@ -99,7 +100,7 @@ function WorkspaceInner() {
             if (isEpisodesRouteStep(initial)) {
               void resolveStoryboardPath(id)
                 .then((path) => navigate(path, { replace: true }))
-                .catch((err) => setError(err instanceof Error ? err.message : tx('workspace.cannotEnterShotPlanning')))
+                .catch((err) => setError(err instanceof Error ? err.message : tr('workspace.cannotEnterShotPlanning')))
               return
             }
             setActiveStep(initial)
@@ -107,7 +108,7 @@ function WorkspaceInner() {
           locationApplied.current = true
         }
       })
-      .catch((err) => setError(err instanceof Error ? err.message : tx('workspace.failedLoad')))
+      .catch((err) => setError(err instanceof Error ? err.message : tr('workspace.failedLoad')))
       .finally(() => setLoading(false))
   }, [id])
 
