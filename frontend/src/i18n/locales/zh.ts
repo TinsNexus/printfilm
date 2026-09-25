@@ -1,3 +1,9 @@
+import { zhCanvasImageOpts } from './zh/canvasImageOpts'
+import { zhDramaSegPlayer } from './zh/dramaSegPlayer'
+import { zhCanvasAssetNode } from './zh/canvasAssetNode'
+import { zhDramaWorkspace } from './zh/dramaWorkspace'
+import { zhAgentSkillPicker } from './zh/agentSkillPicker'
+import { zhCanvasUploadBar } from './zh/canvasUploadBar'
 import { zhTopupHistory } from './zh/topupHistory'
 import { zhCanvasVideoOpts } from './zh/canvasVideoOpts'
 import { zhDramaEditUtils } from './zh/dramaEditUtils'
@@ -39,6 +45,12 @@ import { zhStudio } from './zh/studio'
 
 export const zh = {
   ...zhShell,
+  ...zhCanvasImageOpts,
+  ...zhDramaSegPlayer,
+  ...zhCanvasAssetNode,
+  ...zhDramaWorkspace,
+  ...zhAgentSkillPicker,
+  ...zhCanvasUploadBar,
   ...zhTopupHistory,
   ...zhCanvasVideoOpts,
   ...zhDramaEditUtils,

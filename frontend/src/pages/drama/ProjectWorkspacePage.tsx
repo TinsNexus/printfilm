@@ -20,6 +20,7 @@ import { AssetsStep } from './AssetsStep'
 import { OutlineStep } from './OutlineStep'
 import RequireAuth from './RequireAuth'
 import './drama.css'
+import { useI18n } from '../../i18n'
 
 export default function ProjectWorkspacePage() {
   return (
@@ -31,6 +32,7 @@ export default function ProjectWorkspacePage() {
 
 // 项目工作台主体
 function WorkspaceInner() {
+  const { t: tx } = useI18n()
   const { projectId } = useParams()
   const id = Number(projectId)
   const navigate = useNavigate()
@@ -62,7 +64,7 @@ function WorkspaceInner() {
     if (normalized && isEpisodesRouteStep(normalized)) {
       void resolveStoryboardPath(id)
         .then((path) => navigate(path, { replace: true }))
-        .catch((err) => setError(err instanceof Error ? err.message : '无法进入分镜'))
+        .catch((err) => setError(err instanceof Error ? err.message : tx('workspace.cannotEnterShotPlanning')))
       return
     }
     if (normalized && isProjectStepKey(normalized)) {
@@ -97,7 +99,7 @@ function WorkspaceInner() {
             if (isEpisodesRouteStep(initial)) {
               void resolveStoryboardPath(id)
                 .then((path) => navigate(path, { replace: true }))
-                .catch((err) => setError(err instanceof Error ? err.message : '无法进入分镜'))
+                .catch((err) => setError(err instanceof Error ? err.message : tx('workspace.cannotEnterShotPlanning')))
               return
             }
             setActiveStep(initial)
@@ -105,7 +107,7 @@ function WorkspaceInner() {
           locationApplied.current = true
         }
       })
-      .catch((err) => setError(err instanceof Error ? err.message : '加载失败'))
+      .catch((err) => setError(err instanceof Error ? err.message : tx('workspace.failedLoad')))
       .finally(() => setLoading(false))
   }, [id])
 
@@ -138,7 +140,7 @@ function WorkspaceInner() {
       setProject(updated)
       setTitleDraft(updated.title)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '标题保存失败')
+      setError(err instanceof Error ? err.message : tx('workspace.couldSaveTitle'))
     } finally {
       setEditingTitle(false)
     }
@@ -147,7 +149,7 @@ function WorkspaceInner() {
   if (!Number.isFinite(id) || id <= 0) {
     return (
       <AppShell active="drama" flush>
-        <div className="drama-workspace-status">项目 ID 无效</div>
+        <div className="drama-workspace-status">{tx('workspace.invalidProjectId')}</div>
       </AppShell>
     )
   }
@@ -155,7 +157,7 @@ function WorkspaceInner() {
   if (loading) {
     return (
       <AppShell active="drama" flush>
-        <div className="drama-workspace-status">加载中…</div>
+        <div className="drama-workspace-status">{tx('workspace.loading')}</div>
       </AppShell>
     )
   }
@@ -171,7 +173,7 @@ function WorkspaceInner() {
   if (!project) {
     return (
       <AppShell active="drama" flush>
-        <div className="drama-workspace-status">项目不存在</div>
+        <div className="drama-workspace-status">{tx('workspace.projectDoesExist')}</div>
       </AppShell>
     )
   }
@@ -184,7 +186,7 @@ function WorkspaceInner() {
             <button
               type="button"
               className="drama-icon-btn"
-              aria-label="返回"
+              aria-label={tx('workspace.back')}
               onClick={() => navigate('/drama/dramas')}
             >
               <ChevronLeft size={20} strokeWidth={1.75} />
@@ -213,7 +215,7 @@ function WorkspaceInner() {
 
           <div className="drama-workspace-top-right">
             {project.usage ? (
-              <span className="drama-usage-chip" title="本剧累计费用与生成次数">
+              <span className="drama-usage-chip" title={tx('workspace.totalCostNumberGenerations')}>
                 {formatDramaUsageBrief(project.usage)}
               </span>
             ) : null}
@@ -223,7 +225,7 @@ function WorkspaceInner() {
               onClick={() => setAssetsOpen((open) => !open)}
             >
               <Boxes size={15} strokeWidth={2} aria-hidden />
-              资产库
+              {tx('workspace.assetLibrary')}
             </button>
           </div>
         </header>

@@ -1,3 +1,9 @@
+import { enCanvasImageOpts } from './en/canvasImageOpts'
+import { enDramaSegPlayer } from './en/dramaSegPlayer'
+import { enCanvasAssetNode } from './en/canvasAssetNode'
+import { enDramaWorkspace } from './en/dramaWorkspace'
+import { enAgentSkillPicker } from './en/agentSkillPicker'
+import { enCanvasUploadBar } from './en/canvasUploadBar'
 import { enTopupHistory } from './en/topupHistory'
 import { enCanvasVideoOpts } from './en/canvasVideoOpts'
 import { enDramaEditUtils } from './en/dramaEditUtils'
@@ -39,6 +45,12 @@ import { enStudio } from './en/studio'
 
 export const en = {
   ...enShell,
+  ...enCanvasImageOpts,
+  ...enDramaSegPlayer,
+  ...enCanvasAssetNode,
+  ...enDramaWorkspace,
+  ...enAgentSkillPicker,
+  ...enCanvasUploadBar,
   ...enTopupHistory,
   ...enCanvasVideoOpts,
   ...enDramaEditUtils,

@@ -1,3 +1,9 @@
+import { viCanvasImageOpts } from './vi/canvasImageOpts'
+import { viDramaSegPlayer } from './vi/dramaSegPlayer'
+import { viCanvasAssetNode } from './vi/canvasAssetNode'
+import { viDramaWorkspace } from './vi/dramaWorkspace'
+import { viAgentSkillPicker } from './vi/agentSkillPicker'
+import { viCanvasUploadBar } from './vi/canvasUploadBar'
 import { viTopupHistory } from './vi/topupHistory'
 import { viCanvasVideoOpts } from './vi/canvasVideoOpts'
 import { viDramaEditUtils } from './vi/dramaEditUtils'
@@ -39,6 +45,12 @@ import { viStudio } from './vi/studio'
 
 export const vi = {
   ...viShell,
+  ...viCanvasImageOpts,
+  ...viDramaSegPlayer,
+  ...viCanvasAssetNode,
+  ...viDramaWorkspace,
+  ...viAgentSkillPicker,
+  ...viCanvasUploadBar,
   ...viTopupHistory,
   ...viCanvasVideoOpts,
   ...viDramaEditUtils,
