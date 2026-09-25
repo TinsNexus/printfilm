@@ -1,3 +1,7 @@
+import { enAdminRuntimeSettings } from "./en/adminRuntimeSettings";
+import { enAdminTemplateEditor } from "./en/adminTemplateEditor";
+import { enAdminWorks } from "./en/adminWorks";
+import { enAdminDramaDetail } from "./en/adminDramaDetail";
 import { enAdminUsers } from "./en/adminUsers";
 import { enAdminProjects } from "./en/adminProjects";
 import { enAdminQueues } from "./en/adminQueues";
@@ -11,6 +15,10 @@ import { enShell } from "./en/shell";
 
 export const en = {
   ...enShell,
+  ...enAdminRuntimeSettings,
+  ...enAdminTemplateEditor,
+  ...enAdminWorks,
+  ...enAdminDramaDetail,
   ...enAdminUsers,
   ...enAdminProjects,
   ...enAdminQueues,

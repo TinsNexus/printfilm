@@ -11,4 +11,5 @@ export {
   type Locale,
 } from "./detect";
 export { messages, type Messages } from "./messages";
+export { tMarkup, tRich } from "./rich";
 export { tr } from "./translate";

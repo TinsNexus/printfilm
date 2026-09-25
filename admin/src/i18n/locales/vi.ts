@@ -1,3 +1,7 @@
+import { viAdminRuntimeSettings } from "./vi/adminRuntimeSettings";
+import { viAdminTemplateEditor } from "./vi/adminTemplateEditor";
+import { viAdminWorks } from "./vi/adminWorks";
+import { viAdminDramaDetail } from "./vi/adminDramaDetail";
 import { viAdminUsers } from "./vi/adminUsers";
 import { viAdminProjects } from "./vi/adminProjects";
 import { viAdminQueues } from "./vi/adminQueues";
@@ -11,6 +15,10 @@ import { viShell } from "./vi/shell";
 
 export const vi = {
   ...viShell,
+  ...viAdminRuntimeSettings,
+  ...viAdminTemplateEditor,
+  ...viAdminWorks,
+  ...viAdminDramaDetail,
   ...viAdminUsers,
   ...viAdminProjects,
   ...viAdminQueues,
