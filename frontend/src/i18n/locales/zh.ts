@@ -1,3 +1,6 @@
+import { zhBillingPay } from './zh/billingPay'
+import { zhToolRuns } from './zh/toolRuns'
+import { zhDramaVoiceBind } from './zh/dramaVoiceBind'
 import { zhDramaEpisodes } from './zh/dramaEpisodes'
 import { zhDramaHeader } from './zh/dramaHeader'
 import { zhDramaLibrary } from './zh/dramaLibrary'
@@ -15,6 +18,9 @@ import { zhStudio } from './zh/studio'
 
 export const zh = {
   ...zhShell,
+  ...zhBillingPay,
+  ...zhToolRuns,
+  ...zhDramaVoiceBind,
   ...zhDramaEpisodes,
   ...zhDramaHeader,
   ...zhDramaLibrary,

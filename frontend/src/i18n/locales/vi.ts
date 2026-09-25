@@ -1,3 +1,6 @@
+import { viBillingPay } from './vi/billingPay'
+import { viToolRuns } from './vi/toolRuns'
+import { viDramaVoiceBind } from './vi/dramaVoiceBind'
 import { viDramaEpisodes } from './vi/dramaEpisodes'
 import { viDramaHeader } from './vi/dramaHeader'
 import { viDramaLibrary } from './vi/dramaLibrary'
@@ -15,6 +18,9 @@ import { viStudio } from './vi/studio'
 
 export const vi = {
   ...viShell,
+  ...viBillingPay,
+  ...viToolRuns,
+  ...viDramaVoiceBind,
   ...viDramaEpisodes,
   ...viDramaHeader,
   ...viDramaLibrary,
