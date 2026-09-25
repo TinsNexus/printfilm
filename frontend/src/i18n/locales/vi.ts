@@ -1,3 +1,4 @@
+import { viLibMisc } from './vi/libMisc'
 import { viFragmentPlanSkill } from './vi/fragmentPlanSkill'
 import { viDramaImageStyleModal } from './vi/dramaImageStyleModal'
 import { viDramaRefStrip } from './vi/dramaRefStrip'
@@ -61,6 +62,7 @@ import { viStudio } from './vi/studio'
 
 export const vi = {
   ...viShell,
+  ...viLibMisc,
   ...viFragmentPlanSkill,
   ...viDramaImageStyleModal,
   ...viDramaRefStrip,

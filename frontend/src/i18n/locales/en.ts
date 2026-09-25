@@ -1,3 +1,4 @@
+import { enLibMisc } from './en/libMisc'
 import { enFragmentPlanSkill } from './en/fragmentPlanSkill'
 import { enDramaImageStyleModal } from './en/dramaImageStyleModal'
 import { enDramaRefStrip } from './en/dramaRefStrip'
@@ -61,6 +62,7 @@ import { enStudio } from './en/studio'
 
 export const en = {
   ...enShell,
+  ...enLibMisc,
   ...enFragmentPlanSkill,
   ...enDramaImageStyleModal,
   ...enDramaRefStrip,

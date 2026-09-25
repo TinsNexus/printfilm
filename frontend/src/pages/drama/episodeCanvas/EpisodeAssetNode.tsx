@@ -3,6 +3,7 @@ import { memo } from 'react'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import { X } from 'lucide-react'
 import type { EpisodeAssetNodeData } from './buildEpisodeFlow'
+import { tr } from '../../../i18n/translate'
 
 type Props = NodeProps<Node<EpisodeAssetNodeData>> & {
   onUnlinkAsset?: (fragmentId: number, assetId: number) => void
@@ -17,8 +18,8 @@ function EpisodeAssetNodeComponent({ data, selected, onUnlinkAsset }: Props) {
       <div className="ep-asset-node-head">
         <span>{data.typeLabel}</span>
         {links.length > 1 ? (
-          <span className="ep-asset-node-count" title="关联分镜数">
-            {links.length} 镜
+          <span className="ep-asset-node-count" title={tr('lib.linkedShots')}>
+            {tr('lib.shotsN', { n: links.length })}
           </span>
         ) : null}
       </div>
@@ -37,8 +38,8 @@ function EpisodeAssetNodeComponent({ data, selected, onUnlinkAsset }: Props) {
               key={link.fragmentId}
               type="button"
               className="ep-asset-node-unlink-chip"
-              aria-label={`取消 ${link.label} 的关联`}
-              title={`取消 ${link.label} 的关联`}
+              aria-label={tr('lib.unlink', { linkLabel: link.label })}
+              title={tr('lib.unlink', { linkLabel: link.label })}
               onClick={() => onUnlinkAsset?.(link.fragmentId, data.assetId)}
             >
               {link.label}

@@ -1,6 +1,7 @@
 /** Agent Skill API：列表 / 上传 / 启用 / 删除 */
 
 import { getDramaApiBase } from './drama'
+import { tr } from '../i18n/translate'
 
 /** 组装请求头；FormData 时不要强行 JSON */
 function authHeaders(json = true): HeadersInit {
@@ -20,7 +21,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     const detail = err.detail
-    throw new Error(typeof detail === 'string' ? detail : '请求失败')
+    throw new Error(typeof detail === 'string' ? detail : tr('lib.requestFailed'))
   }
   return res.json()
 }
@@ -64,7 +65,7 @@ export async function uploadAgentSkillFile(file: File) {
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(typeof err.detail === 'string' ? err.detail : '上传失败')
+    throw new Error(typeof err.detail === 'string' ? err.detail : tr('lib.uploadFailed'))
   }
   return res.json() as Promise<AgentSkill>
 }

@@ -9,6 +9,7 @@ import {
   mediaModelIconKind,
   type MediaModelIconKind,
 } from '../../lib/dramaMediaModelMeta'
+import { tr } from '../../i18n/translate'
 
 type Props = {
   models: MediaModelOption[]
@@ -42,7 +43,7 @@ function ModelIcon({ kind }: { kind: MediaModelIconKind }) {
 export function DramaMediaModelPicker({
   models,
   selectedId,
-  emptyHint = '请先在管理后台「模型」保存预设默认模型',
+  emptyHint = tr('lib.saveDefaultPresetModel'),
   onSelect,
 }: Props) {
   if (models.length === 0) {
@@ -66,7 +67,7 @@ export function DramaMediaModelPicker({
             type="button"
             className={`fc-gen-model-card${selected ? ' selected' : ''}`}
             title={mediaModelHoverText(m)}
-            aria-label={`${m.label}${desc ? `，${desc}` : ''}${metaBits.length ? `，${metaBits.join('，')}` : ''}${price ? `，${price}` : ''}`}
+            aria-label={[m.label, desc, ...metaBits, price].filter(Boolean).join(tr('lib.listComma'))}
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => onSelect(m)}
           >
@@ -76,7 +77,7 @@ export function DramaMediaModelPicker({
             <span className="fc-gen-model-card-body">
               <span className="fc-gen-model-card-head">
                 <strong>{m.label}</strong>
-                {m.recommended ? <em className="fc-gen-model-card-rec">默认</em> : null}
+                {m.recommended ? <em className="fc-gen-model-card-rec">{tr('lib.default')}</em> : null}
                 <em className="fc-gen-model-card-badge">{badge}</em>
                 {selected ? (
                   <Check className="fc-gen-model-card-check" size={15} strokeWidth={2.4} aria-hidden />

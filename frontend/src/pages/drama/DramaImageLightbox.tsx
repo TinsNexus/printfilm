@@ -1,6 +1,7 @@
 /** 资产图片全屏放大预览（点击遮罩 / Esc 关闭） */
 import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import { tr } from '../../i18n/translate'
 
 type Props = {
   src: string
@@ -9,7 +10,7 @@ type Props = {
 }
 
 // 渲染图片放大层
-export function DramaImageLightbox({ src, alt = '预览', onClose }: Props) {
+export function DramaImageLightbox({ src, alt = tr('lib.preview3'), onClose }: Props) {
   useEffect(() => {
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -31,10 +32,10 @@ export function DramaImageLightbox({ src, alt = '预览', onClose }: Props) {
       className="drama-lightbox-backdrop"
       role="dialog"
       aria-modal="true"
-      aria-label="图片预览"
+      aria-label={tr('lib.imagePreview')}
       onClick={onClose}
     >
-      <button type="button" className="drama-lightbox-close" aria-label="关闭" onClick={onClose}>
+      <button type="button" className="drama-lightbox-close" aria-label={tr('lib.close')} onClick={onClose}>
         ×
       </button>
       <img

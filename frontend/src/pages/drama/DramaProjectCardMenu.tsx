@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { MoreHorizontal } from 'lucide-react'
+import { tr } from '../../i18n/translate'
 
 type Props = {
   onRename: () => void
@@ -87,7 +88,7 @@ export function DramaProjectCardMenu({ onRename, onDelete }: Props) {
       <button
         type="button"
         className="drama-project-row-more-btn"
-        aria-label="更多操作"
+        aria-label={tr('lib.moreActions')}
         aria-expanded={open}
         aria-haspopup="menu"
         onClick={(event) => {
@@ -115,7 +116,7 @@ export function DramaProjectCardMenu({ onRename, onDelete }: Props) {
               closeThenRun(onRename)
             }}
           >
-            重命名
+            {tr('lib.rename')}
           </button>
           <button
             type="button"
@@ -132,7 +133,7 @@ export function DramaProjectCardMenu({ onRename, onDelete }: Props) {
               closeThenRun(onDelete)
             }}
           >
-            删除
+            {tr('lib.delete')}
           </button>
         </div>
       ) : null}

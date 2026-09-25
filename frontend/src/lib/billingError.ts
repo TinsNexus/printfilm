@@ -1,4 +1,5 @@
 import { dialog } from './dialog'
+import { tr } from '../i18n/translate'
 
 export const PRICING_PATH = '/pricing'
 
@@ -25,10 +26,10 @@ export async function handleBillingError(
   const message = err instanceof Error ? err.message : String(err || '')
   if (!isBillingError(message)) return false
   const go = await dialog.confirm({
-    title: '余额不足',
-    message: message || '当前余额不足以开始生成，请先充值。',
-    confirmText: '去充值',
-    cancelText: '知道了',
+    title: tr('lib.insufficientBalance'),
+    message: message || tr('lib.balanceTooLowStart'),
+    confirmText: tr('lib.topUp'),
+    cancelText: tr('lib.got'),
     tone: 'danger',
   })
   if (go) {

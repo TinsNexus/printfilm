@@ -1,4 +1,5 @@
 import { throwApiError } from './lib/apiError'
+import { tr } from './i18n/translate'
 
 function defaultApiBase() {
   if (typeof window !== 'undefined' && window.location?.hostname) {
@@ -374,7 +375,7 @@ export const api = {
           : Array.isArray(detail)
             ? detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join('; ')
             : res.statusText
-      throw new Error(message || '头像上传失败')
+      throw new Error(message || tr('lib.avatarUploadFailed'))
     }
     return res.json() as Promise<User>
   },
@@ -443,7 +444,7 @@ export const api = {
           : Array.isArray(detail)
             ? detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join('; ')
             : res.statusText
-      throw new Error(message || '封面上传失败')
+      throw new Error(message || tr('lib.coverUploadFailed'))
     }
     return res.json() as Promise<Project>
   },
@@ -506,7 +507,7 @@ export const api = {
           : Array.isArray(detail)
             ? detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join('; ')
             : res.statusText
-      throw new Error(message || '打包下载失败')
+      throw new Error(message || tr('lib.zipDownloadFailed'))
     }
     const blob = await res.blob()
     const cd = res.headers.get('Content-Disposition') || ''
@@ -554,7 +555,7 @@ export const api = {
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }))
       const detail = err.detail
-      throw new Error(typeof detail === 'string' ? detail : '画面上传失败')
+      throw new Error(typeof detail === 'string' ? detail : tr('lib.imageUploadFailed'))
     }
     return res.json() as Promise<Project>
   },

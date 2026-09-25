@@ -7,6 +7,7 @@ import { resolveStoryboardPath } from '../../lib/dramaStoryboardNav'
 import { dramaApi } from '../../api/drama'
 import RequireAuth from './RequireAuth'
 import './drama.css'
+import { tr } from '../../i18n/translate'
 
 export default function EpisodesPage() {
   return (
@@ -37,7 +38,7 @@ function EpisodesRedirect() {
         const path = await resolveStoryboardPath(pid)
         if (!cancelled) navigate(path, { replace: true })
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : '无法进入分镜')
+        if (!cancelled) setError(err instanceof Error ? err.message : tr('lib.cannotEnterShotPlanning'))
       }
     })()
     return () => {
@@ -48,7 +49,7 @@ function EpisodesRedirect() {
   return (
     <AppShell active="drama" flush>
       <div className="drama-workspace-status">
-        {error || '正在进入分镜…'}
+        {error || tr('lib.enteringShotPlanning')}
       </div>
     </AppShell>
   )

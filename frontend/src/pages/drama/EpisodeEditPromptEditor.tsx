@@ -18,6 +18,7 @@ import {
 } from '../../lib/dramaEpisodePromptEditor'
 import type { AssetScope } from './dramaEpisodeEditUtils'
 import { EpisodeEditMentionPopover } from './EpisodeEditMentionPopover'
+import { tr } from '../../i18n/translate'
 
 type Props = {
   content: string
@@ -35,7 +36,7 @@ export function EpisodeEditPromptEditor({
   assets,
   referencedIds,
   editing,
-  placeholder = '输入画面描述、对白、旁白；键入 @ 引用资产或插入时长…',
+  placeholder = tr('lib.enterVisualsDialogueNarration'),
   onContentChange,
   onOpenAsset,
 }: Props) {
@@ -189,7 +190,7 @@ export function EpisodeEditPromptEditor({
         className={`drama-ep-prompt-editor${editing ? ' is-editing' : ''}`}
         role="textbox"
         aria-multiline="true"
-        aria-label="分镜脚本"
+        aria-label={tr('lib.shotScript')}
         aria-readonly={!editing}
         contentEditable={editing}
         suppressContentEditableWarning

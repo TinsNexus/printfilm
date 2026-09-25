@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Pause, Volume2 } from 'lucide-react'
 import { resolveDramaMediaUrl } from '../../api/drama'
+import { tr } from '../../i18n/translate'
 
 type Props = {
   url: string
@@ -49,7 +50,7 @@ export function CharacterVoicePreviewButton({
 
   function handlePreview() {
     if (!src) {
-      onError?.('试听地址无效')
+      onError?.(tr('lib.previewUrlInvalid'))
       return
     }
     if (playing) {
@@ -67,7 +68,7 @@ export function CharacterVoicePreviewButton({
     setPlaying(true)
     void sharedAudio.play().catch(() => {
       setPlaying(false)
-      onError?.('播放失败')
+      onError?.(tr('lib.playbackFailed'))
     })
   }
 
@@ -91,10 +92,10 @@ export function CharacterVoicePreviewButton({
         e.stopPropagation()
         handlePreview()
       }}
-      title={label ? `试听：${label}` : '试听音色'}
+      title={label ? tr('lib.preview', { label }) : tr('lib.previewVoice')}
     >
       {playing ? <Pause size={14} strokeWidth={1.8} aria-hidden /> : <Volume2 size={14} strokeWidth={1.8} aria-hidden />}
-      {playing ? '停止' : '试听'}
+      {playing ? tr('lib.stop') : tr('lib.preview2')}
     </button>
   )
 }
