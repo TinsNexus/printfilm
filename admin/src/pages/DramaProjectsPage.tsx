@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page";
 import { fenToYuan } from "@/lib/utils";
-import { useI18n } from "@/i18n";
+import { formatDateTime, useI18n } from "@/i18n";
 
 type ListRes = { items: AdminDramaProject[]; meta: PageMeta };
 
@@ -101,7 +101,7 @@ export function DramaProjectsPage() {
                 <td className="text-xs text-[var(--admin-muted)]">{row.summary_status || "—"}</td>
                 <td className="text-xs text-[var(--admin-muted)]">{row.assets_seed_status || "—"}</td>
                 <td className="text-xs text-[var(--admin-muted)]">
-                  {row.updated_at ? new Date(row.updated_at).toLocaleString() : "—"}
+                  {row.updated_at ? formatDateTime(row.updated_at) : "—"}
                 </td>
                 <td>
                   <Button size="sm" variant="outline" asChild>

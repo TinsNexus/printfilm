@@ -10,26 +10,29 @@ import {
   useSettingsSaveSlot,
 } from "@/components/settings/SettingsSaveContext";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n";
+import { tr } from "@/i18n/translate";
 
 type SettingsTab = "routing" | "runtime" | "oss" | "payment" | "site";
 
 const TABS: { id: SettingsTab; label: string }[] = [
-  { id: "routing", label: "模型" },
-  { id: "runtime", label: "运行参数" },
-  { id: "oss", label: "存储 OSS" },
-  { id: "payment", label: "支付计费" },
-  { id: "site", label: "站点工具" },
+  { id: "routing", get label() { return tr("settingsPage.models") } },
+  { id: "runtime", get label() { return tr("settingsPage.runtime") } },
+  { id: "oss", get label() { return tr("settingsPage.storageOss") } },
+  { id: "payment", get label() { return tr("settingsPage.paymentBilling") } },
+  { id: "site", get label() { return tr("settingsPage.siteTools") } },
 ];
 
 // 页头：标题 + 统一保存按钮
 function SettingsPageHeader() {
+  const { t: tx } = useI18n();
   const { action } = useSettingsSaveSlot();
   return (
     <header className="settings-page-hero">
       <div className="min-w-0">
-        <h1 className="settings-page-title">系统设置</h1>
+        <h1 className="settings-page-title">{tx("settingsPage.systemSettings")}</h1>
         <p className="settings-head-desc">
-          TokenFree API Key、运行参数、OSS / 易支付 / 计费与站点配置；密钥加密存库，留空保存不修改。
+          {tx("settingsPage.tokenfreeApiKeyRuntime")}
         </p>
       </div>
       {action ? (
@@ -40,7 +43,7 @@ function SettingsPageHeader() {
           onClick={() => void action.onSave()}
         >
           {action.saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-          {action.label ?? "保存"}
+          {action.label ?? tx("settingsPage.save")}
         </button>
       ) : null}
     </header>
@@ -49,13 +52,14 @@ function SettingsPageHeader() {
 
 // 系统设置内容区
 function SettingsPageInner() {
+  const { t: tx } = useI18n();
   const [tab, setTab] = useState<SettingsTab>("routing");
 
   return (
     <div className="settings-page admin-page">
       <SettingsPageHeader />
 
-      <div className="settings-tabs" role="tablist" aria-label="系统设置分区">
+      <div className="settings-tabs" role="tablist" aria-label={tx("settingsPage.systemSettingsSections")}>
         {TABS.map(({ id, label }) => (
           <button
             key={id}

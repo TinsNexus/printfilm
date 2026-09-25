@@ -11,6 +11,7 @@ import {
 } from "@/components/settings/SettingsPanel";
 import { Switch } from "@/components/ui/switch";
 import { tRich, useI18n } from "@/i18n";
+import { tr } from "@/i18n/translate";
 
 // 运行参数配置（并发、质量、Mock 等 flat 字段）
 export function RuntimeSettingsPanel() {
@@ -25,7 +26,7 @@ export function RuntimeSettingsPanel() {
       const data = await api<AdminModelSettings>("/api/admin/settings/models");
       setForm(data);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : tx("runtimeSettings.failedLoad"));
+      toast.error(err instanceof Error ? err.message : tr("runtimeSettings.failedLoad"));
     } finally {
       setLoading(false);
     }
@@ -41,8 +42,8 @@ export function RuntimeSettingsPanel() {
         id: item.capability,
         label: item.label,
         ready: item.ready,
-        readyText: item.model || tx("runtimeSettings.ready"),
-        pendingText: tx("runtimeSettings.ready2"),
+        readyText: item.model || tr("runtimeSettings.ready"),
+        pendingText: tr("runtimeSettings.ready2"),
       })),
     [form?.readiness],
   );

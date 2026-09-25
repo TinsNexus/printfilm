@@ -41,7 +41,7 @@ export function FinanceListPage() {
       setData(res);
     } catch (err) {
       setData(null);
-      toast.error(err instanceof Error ? err.message : tx("finance.couldLoadFinanceList"));
+      toast.error(err instanceof Error ? err.message : tr("finance.couldLoadFinanceList"));
     } finally {
       setLoading(false);
     }
@@ -52,9 +52,9 @@ export function FinanceListPage() {
     try {
       const res = await api<AdminFinanceDaily>(`/api/admin/finance/daily/sync?days=${days}`, { method: "POST" });
       setData(res);
-      toast.success(tx("finance.officialCostRefreshed"));
+      toast.success(tr("finance.officialCostRefreshed"));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : tx("finance.refreshFailed"));
+      toast.error(err instanceof Error ? err.message : tr("finance.refreshFailed"));
     } finally {
       setSyncing(false);
     }

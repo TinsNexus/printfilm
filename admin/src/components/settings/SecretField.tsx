@@ -1,4 +1,5 @@
 import { LabeledControl } from "@/components/settings/SettingsPanel";
+import { tr } from "@/i18n/translate";
 
 type SecretFieldProps = {
   label: string;
@@ -23,25 +24,25 @@ export function SecretField({
   return (
     <LabeledControl
       label={label}
-      hint={hint ?? (configured ? "已配置；留空保存则不修改" : undefined)}
+      hint={hint ?? (configured ? tr("ui.configuredLeaveBlankKeep") : undefined)}
     >
       <div className="admin-secret-field">
         <div className="admin-secret-field-row">
           <input
             type="password"
             className="settings-input is-secret"
-            placeholder={placeholder ?? (configured ? "留空则不修改" : "填写密钥")}
+            placeholder={placeholder ?? (configured ? tr("ui.leaveBlankKeep") : tr("ui.enterKey"))}
             value={value}
             onChange={(e) => onChange(e.target.value)}
             autoComplete="new-password"
           />
           {configured && onClear ? (
             <button type="button" className="admin-btn admin-btn-secondary settings-mini-btn" onClick={onClear}>
-              清除
+              {tr("ui.clear")}
             </button>
           ) : null}
         </div>
-        {configured ? <span className="admin-secret-status">已配置</span> : null}
+        {configured ? <span className="admin-secret-status">{tr("ui.configured")}</span> : null}
       </div>
     </LabeledControl>
   );

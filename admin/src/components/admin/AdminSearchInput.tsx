@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import type { KeyboardEventHandler } from "react";
+import { tr } from "@/i18n/translate";
 
 type AdminSearchInputProps = {
   value: string;
@@ -13,7 +14,7 @@ type AdminSearchInputProps = {
 export function AdminSearchInput({
   value,
   onChange,
-  placeholder = "搜索…",
+  placeholder = tr("ui.search"),
   className,
   onKeyDown,
 }: AdminSearchInputProps) {

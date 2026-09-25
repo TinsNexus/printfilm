@@ -1,6 +1,7 @@
 import type { AdminDailyUsage, AdminStats, AdminUsageBucket } from "@/api/client";
 import type { DashboardMetric } from "@/pages/dashboard/DashboardFilters";
 import { fenToYuan } from "@/lib/utils";
+import { tr } from "@/i18n/translate";
 
 /** 时间窗内日趋势汇总 */
 export function sumDailyUsage(daily: AdminDailyUsage[]) {
@@ -42,5 +43,5 @@ export function projectScaleHint(stats: AdminStats | null): string | undefined {
   if (!stats) return undefined;
   const kepu = sumProjectStatuses(stats.project_status_counts);
   const drama = stats.drama_project_count ?? 0;
-  return `科普 ${kepu} · 漫剧 ${drama}`;
+  return tr("ui.explainerDrama", { kepu, drama });
 }

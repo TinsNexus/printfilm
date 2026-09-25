@@ -20,7 +20,7 @@ import { PageHeader } from "@/components/ui/page";
 import { useAdminDetailQuery } from "@/hooks/useAdminDetailQuery";
 import { fenToYuan } from "@/lib/utils";
 import { ledgerKindLabel, orderStatusLabel, payTypeLabel, taskDomainLabel } from "@/lib/statusLabels";
-import { useI18n } from "@/i18n";
+import { formatDateTime, useI18n } from "@/i18n";
 import { tr } from "@/i18n/translate";
 
 type OrderRes = { items: AdminOrder[]; meta: PageMeta };
@@ -262,10 +262,10 @@ export function OrdersPage() {
                     </TableCell>
                     <TableCell className="font-mono text-xs">{o.trade_no || "—"}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {o.paid_at ? new Date(o.paid_at).toLocaleString() : "—"}
+                      {o.paid_at ? formatDateTime(o.paid_at) : "—"}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {new Date(o.created_at).toLocaleString()}
+                      {formatDateTime(o.created_at)}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -338,7 +338,7 @@ export function OrdersPage() {
                     <TableCell>{ledgerRefLink(e)}</TableCell>
                     <TableCell className="max-w-[200px] truncate">{e.note}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {new Date(e.created_at).toLocaleString()}
+                      {formatDateTime(e.created_at)}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -438,7 +438,7 @@ export function OrdersPage() {
                 {(usage?.items ?? []).map((row) => (
                   <TableRow key={row.id}>
                     <TableCell className="text-xs text-muted-foreground">
-                      {row.created_at ? new Date(row.created_at).toLocaleString() : "—"}
+                      {row.created_at ? formatDateTime(row.created_at) : "—"}
                     </TableCell>
                     <TableCell>
                       <AdminEntityLink kind="user" id={row.user_id} label={row.user_email ?? undefined} />
@@ -540,11 +540,11 @@ export function OrdersPage() {
                 { label: tx("orders.channelOrder"), value: orderDetail.trade_no || "—" },
                 {
                   label: tx("orders.paid2"),
-                  value: orderDetail.paid_at ? new Date(orderDetail.paid_at).toLocaleString() : "—",
+                  value: orderDetail.paid_at ? formatDateTime(orderDetail.paid_at) : "—",
                 },
                 {
                   label: tx("orders.created"),
-                  value: new Date(orderDetail.created_at).toLocaleString(),
+                  value: formatDateTime(orderDetail.created_at),
                   full: true,
                 },
               ]}
@@ -580,7 +580,7 @@ export function OrdersPage() {
                 { label: tx("orders.note"), value: ledgerDetail.note || "—" },
                 {
                   label: tx("orders.time"),
-                  value: new Date(ledgerDetail.created_at).toLocaleString(),
+                  value: formatDateTime(ledgerDetail.created_at),
                   full: true,
                 },
               ]}

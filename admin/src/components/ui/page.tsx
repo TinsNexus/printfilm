@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { tr } from "@/i18n/translate";
 
 type PageHeaderProps = {
   title?: string;
@@ -27,8 +28,8 @@ type EmptyStateProps = {
 
 // 空列表占位
 export function EmptyState({
-  title = "暂无数据",
-  description = "换个筛选条件再试试",
+  title = tr("ui.data"),
+  description = tr("ui.tryChangingFilters"),
   className,
 }: EmptyStateProps) {
   return (

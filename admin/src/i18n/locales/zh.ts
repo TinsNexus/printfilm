@@ -1,3 +1,9 @@
+import { zhAdminPeriodKpis } from "./zh/adminPeriodKpis";
+import { zhAdminSettingsPage } from "./zh/adminSettingsPage";
+import { zhAdminLogin } from "./zh/adminLogin";
+import { zhAdminTemplateCard } from "./zh/adminTemplateCard";
+import { zhAdminDashTabs } from "./zh/adminDashTabs";
+import { zhAdminShared } from "./zh/adminShared";
 import { zhAdminInsightMaps } from "./zh/adminInsightMaps";
 import { zhAdminDramaEpisodes } from "./zh/adminDramaEpisodes";
 import { zhAdminDramaAssetDetail } from "./zh/adminDramaAssetDetail";
@@ -31,6 +37,12 @@ import { zhShell } from "./zh/shell";
 
 export const zh = {
   ...zhShell,
+  ...zhAdminPeriodKpis,
+  ...zhAdminSettingsPage,
+  ...zhAdminLogin,
+  ...zhAdminTemplateCard,
+  ...zhAdminDashTabs,
+  ...zhAdminShared,
   ...zhAdminInsightMaps,
   ...zhAdminDramaEpisodes,
   ...zhAdminDramaAssetDetail,

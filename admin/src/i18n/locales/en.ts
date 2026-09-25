@@ -1,3 +1,9 @@
+import { enAdminPeriodKpis } from "./en/adminPeriodKpis";
+import { enAdminSettingsPage } from "./en/adminSettingsPage";
+import { enAdminLogin } from "./en/adminLogin";
+import { enAdminTemplateCard } from "./en/adminTemplateCard";
+import { enAdminDashTabs } from "./en/adminDashTabs";
+import { enAdminShared } from "./en/adminShared";
 import { enAdminInsightMaps } from "./en/adminInsightMaps";
 import { enAdminDramaEpisodes } from "./en/adminDramaEpisodes";
 import { enAdminDramaAssetDetail } from "./en/adminDramaAssetDetail";
@@ -31,6 +37,12 @@ import { enShell } from "./en/shell";
 
 export const en = {
   ...enShell,
+  ...enAdminPeriodKpis,
+  ...enAdminSettingsPage,
+  ...enAdminLogin,
+  ...enAdminTemplateCard,
+  ...enAdminDashTabs,
+  ...enAdminShared,
   ...enAdminInsightMaps,
   ...enAdminDramaEpisodes,
   ...enAdminDramaAssetDetail,

@@ -19,7 +19,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatAccountId } from "@/lib/admin-account";
 import { fenToYuan } from "@/lib/utils";
 import { ledgerKindLabel, orderStatusLabel } from "@/lib/statusLabels";
-import { useI18n } from "@/i18n";
+import { formatDateTime, useI18n } from "@/i18n";
+import { tr } from "@/i18n/translate";
 
 type ListRes<T> = { items: T[]; meta: PageMeta };
 
@@ -57,7 +58,7 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
         setLedger(ledgerRes.items);
         setUsage(usageRes.items);
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : tx("userDrawer.couldLoadUserDetails"));
+        toast.error(err instanceof Error ? err.message : tr("userDrawer.couldLoadUserDetails"));
       } finally {
         setLoading(false);
       }
@@ -98,7 +99,7 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
                   { label: tx("userDrawer.hold"), value: `¥${fenToYuan(user.frozen_fen)}` },
                   {
                     label: tx("userDrawer.registered"),
-                    value: user.created_at ? new Date(user.created_at).toLocaleString() : "—",
+                    value: user.created_at ? formatDateTime(user.created_at) : "—",
                     full: true,
                   },
                 ]}
@@ -129,7 +130,7 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
                         <td className="font-mono text-xs">{o.out_trade_no}</td>
                         <td>¥{fenToYuan(o.amount_fen)}</td>
                         <td>{orderStatusLabel(o.status)}</td>
-                        <td className="text-xs">{new Date(o.created_at).toLocaleString()}</td>
+                        <td className="text-xs">{formatDateTime(o.created_at)}</td>
                       </tr>
                     ))
                   )}
@@ -192,7 +193,7 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
                     usage.map((row) => (
                       <tr key={row.id}>
                         <td className="text-xs">
-                          {row.created_at ? new Date(row.created_at).toLocaleString() : "—"}
+                          {row.created_at ? formatDateTime(row.created_at) : "—"}
                         </td>
                         <td>{row.capability || "—"}</td>
                         <td>¥{fenToYuan(row.charge_fen ?? 0)}</td>

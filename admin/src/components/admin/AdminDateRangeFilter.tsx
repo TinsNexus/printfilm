@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { tr } from "@/i18n/translate";
 
 type AdminDateRangeFilterProps = {
   from: string;
@@ -12,7 +13,7 @@ export function AdminDateRangeFilter({ from, to, onChange, className }: AdminDat
   return (
     <div className={cn("admin-date-range", className)}>
       <label className="admin-field">
-        <span className="admin-field-label">开始</span>
+        <span className="admin-field-label">{tr("ui.start")}</span>
         <input
           type="date"
           className="admin-input"
@@ -22,7 +23,7 @@ export function AdminDateRangeFilter({ from, to, onChange, className }: AdminDat
       </label>
       <span className="admin-date-range-sep">—</span>
       <label className="admin-field">
-        <span className="admin-field-label">结束</span>
+        <span className="admin-field-label">{tr("ui.end")}</span>
         <input
           type="date"
           className="admin-input"

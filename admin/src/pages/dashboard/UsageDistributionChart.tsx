@@ -12,6 +12,7 @@ import {
 import type { AdminUsageBucket } from "@/api/client";
 import { fenToYuan } from "@/lib/utils";
 import type { DashboardMetric } from "./DashboardFilters";
+import { tr } from "@/i18n/translate";
 
 const CHART_COLORS = [
   "var(--admin-forest)",
@@ -60,7 +61,7 @@ export function UsageDistributionChart({
     .filter((row) => row.value > 0);
 
   if (chartData.length === 0) {
-    return <div className="admin-chart-empty">暂无分布数据</div>;
+    return <div className="admin-chart-empty">{tr("ui.distributionData")}</div>;
   }
 
   if (variant === "donut") {
@@ -132,7 +133,7 @@ export function UsageDistributionChart({
               borderRadius: "10px",
               fontSize: "12px",
             }}
-            formatter={(value) => [formatMetric(Number(value ?? 0), metric), "数值"]}
+            formatter={(value) => [formatMetric(Number(value ?? 0), metric), tr("ui.value")]}
           />
           <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={18}>
             {chartData.map((row, idx) => (

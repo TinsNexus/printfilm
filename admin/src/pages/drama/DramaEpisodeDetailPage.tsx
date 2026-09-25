@@ -11,7 +11,8 @@ import {
 import { AdminEntityLink } from "@/components/admin/AdminEntityLink";
 import { Button } from "@/components/ui/button";
 import { formatDramaGenerationStatus } from "@/lib/dramaLabels";
-import { useI18n } from "@/i18n";
+import { formatDateTime, useI18n } from "@/i18n";
+import { tr } from "@/i18n/translate";
 
 /** 漫剧分集详情：含分镜列表 */
 export function DramaEpisodeDetailPage() {
@@ -31,7 +32,7 @@ export function DramaEpisodeDetailPage() {
     void api<AdminDramaEpisode>(`/api/admin/drama-episodes/${id}`)
       .then(setDetail)
       .catch((err) => {
-        toast.error(err instanceof Error ? err.message : tx("episodeDetail.failedLoad"));
+        toast.error(err instanceof Error ? err.message : tr("episodeDetail.failedLoad"));
         navigate("/drama-episodes", { replace: true });
       })
       .finally(() => setLoading(false));
@@ -88,7 +89,7 @@ export function DramaEpisodeDetailPage() {
             { label: tx("episodeDetail.shotPlan"), value: detail.fragment_plan_status || "—" },
             {
               label: tx("episodeDetail.updated"),
-              value: detail.updated_at ? new Date(detail.updated_at).toLocaleString() : "—",
+              value: detail.updated_at ? formatDateTime(detail.updated_at) : "—",
             },
           ]}
         />

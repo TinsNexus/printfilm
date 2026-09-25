@@ -1,3 +1,4 @@
+import { tr } from "@/i18n/translate";
 export type ModelCapability = "text" | "image" | "video" | "audio";
 
 export type PresetModelOption = { id: string; label: string };
@@ -25,10 +26,10 @@ export const PRESET_MODELS: Record<ModelCapability, PresetModelOption[]> = {
 export const CAPABILITY_ORDER: ModelCapability[] = ["text", "image", "video", "audio"];
 
 export const CAPABILITY_LABELS: Record<ModelCapability, string> = {
-  text: "文本",
-  image: "图像",
-  video: "视频",
-  audio: "配音",
+  get text() { return tr("ui.text") },
+  get image() { return tr("ui.image") },
+  get video() { return tr("ui.video") },
+  get audio() { return tr("ui.voice") },
 };
 
 /** 写入 TokenFree 渠道的全部预设 id */

@@ -15,7 +15,7 @@ import { compactJsonPreview, hasJsonContent } from "@/lib/jsonPreview";
 import { cn, fenToYuan } from "@/lib/utils";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { taskDomainLabel, taskStatusLabel, taskTypeLabel } from "@/lib/statusLabels";
-import { useI18n } from "@/i18n";
+import { formatDateTime, useI18n } from "@/i18n";
 import { tr } from "@/i18n/translate";
 
 const REFRESH_MS = 15000;
@@ -32,7 +32,7 @@ function statusClass(status: string): string {
 
 function formatTime(value: string | null | undefined): string {
   if (!value) return "—";
-  return new Date(value).toLocaleString();
+  return formatDateTime(value);
 }
 
 // 阻止冒泡到行 onClick，避免链接跳转时同时打开详情
@@ -140,7 +140,7 @@ export function QueuesPage() {
         setData(res);
       } catch (err) {
         if (!silent) {
-          toast.error(err instanceof Error ? err.message : tx("queues.couldLoadTasks"));
+          toast.error(err instanceof Error ? err.message : tr("queues.couldLoadTasks"));
         }
       } finally {
         setLoading(false);
@@ -156,7 +156,7 @@ export function QueuesPage() {
       try {
         await Promise.all([loadStats(), loadTasks(true)]);
       } catch (err) {
-        if (!silent) toast.error(err instanceof Error ? err.message : tx("queues.refreshFailed"));
+        if (!silent) toast.error(err instanceof Error ? err.message : tr("queues.refreshFailed"));
       } finally {
         setRefreshing(false);
         setLoading(false);
@@ -181,14 +181,14 @@ export function QueuesPage() {
   const handleCancel = useCallback(
     async (task: AdminTaskRow) => {
       if (!canCancel(task)) return;
-      if (!window.confirm(tx("queues.confirmCancel", { id: task.id, type: taskTypeLabel(task.task_type) }))) return;
+      if (!window.confirm(tr("queues.confirmCancel", { id: task.id, type: taskTypeLabel(task.task_type) }))) return;
       setCancelLoading(task.id);
       try {
         await api(`/api/admin/tasks/${task.id}/cancel`, { method: "POST" });
-        toast.success(tx("queues.cancelRequestSubmitted"));
+        toast.success(tr("queues.cancelRequestSubmitted"));
         await refreshAll(true);
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : tx("queues.couldCancel"));
+        toast.error(err instanceof Error ? err.message : tr("queues.couldCancel"));
       } finally {
         setCancelLoading(null);
       }

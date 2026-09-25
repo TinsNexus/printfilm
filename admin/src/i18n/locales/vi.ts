@@ -1,3 +1,9 @@
+import { viAdminPeriodKpis } from "./vi/adminPeriodKpis";
+import { viAdminSettingsPage } from "./vi/adminSettingsPage";
+import { viAdminLogin } from "./vi/adminLogin";
+import { viAdminTemplateCard } from "./vi/adminTemplateCard";
+import { viAdminDashTabs } from "./vi/adminDashTabs";
+import { viAdminShared } from "./vi/adminShared";
 import { viAdminInsightMaps } from "./vi/adminInsightMaps";
 import { viAdminDramaEpisodes } from "./vi/adminDramaEpisodes";
 import { viAdminDramaAssetDetail } from "./vi/adminDramaAssetDetail";
@@ -31,6 +37,12 @@ import { viShell } from "./vi/shell";
 
 export const vi = {
   ...viShell,
+  ...viAdminPeriodKpis,
+  ...viAdminSettingsPage,
+  ...viAdminLogin,
+  ...viAdminTemplateCard,
+  ...viAdminDashTabs,
+  ...viAdminShared,
   ...viAdminInsightMaps,
   ...viAdminDramaEpisodes,
   ...viAdminDramaAssetDetail,

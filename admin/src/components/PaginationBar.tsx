@@ -1,6 +1,8 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { buildPageItems, DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { cn } from "@/lib/utils";
+import { tRich } from "@/i18n";
+import { tr } from "@/i18n/translate";
 
 type Props = {
   page: number;
@@ -35,13 +37,13 @@ export function PaginationBar({
     >
       <div className="flex flex-wrap items-center gap-3">
         <span>
-          共 <em className="not-italic font-semibold text-[var(--admin-text)]">{total}</em> 条
+          {tRich(tr("ui.totalRows"), { total: <em className="not-italic font-semibold text-[var(--admin-text)]">{total}</em> })}
           <span className="mx-1.5 text-[var(--admin-border)]">·</span>
           {from}-{to}
         </span>
         {onPageSizeChange && (
           <label className="flex items-center gap-1.5 text-xs">
-            <span>每页</span>
+            <span>{tr("ui.perPage")}</span>
             <select
               className="admin-select !h-7 !min-w-[4rem] !text-xs"
               value={pageSize}
@@ -53,7 +55,7 @@ export function PaginationBar({
                 </option>
               ))}
             </select>
-            <span>条</span>
+            <span>{tr("ui.items")}</span>
           </label>
         )}
       </div>
@@ -64,7 +66,7 @@ export function PaginationBar({
           className="admin-page-btn"
           disabled={page <= 1}
           onClick={() => onPageChange(page - 1)}
-          aria-label="上一页"
+          aria-label={tr("ui.previousPage")}
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
@@ -89,7 +91,7 @@ export function PaginationBar({
           className="admin-page-btn"
           disabled={page >= totalPages}
           onClick={() => onPageChange(page + 1)}
-          aria-label="下一页"
+          aria-label={tr("ui.nextPage")}
         >
           <ChevronRight className="h-4 w-4" />
         </button>

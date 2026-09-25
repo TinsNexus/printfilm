@@ -11,6 +11,7 @@ import { AdminEntityLink } from "@/components/admin/AdminEntityLink";
 import { Button } from "@/components/ui/button";
 import { formatDramaGenerationStatus } from "@/lib/dramaLabels";
 import { useI18n } from "@/i18n";
+import { tr } from "@/i18n/translate";
 
 /** 漫剧分镜详情 */
 export function DramaFragmentDetailPage() {
@@ -30,7 +31,7 @@ export function DramaFragmentDetailPage() {
     void api<AdminDramaFragment>(`/api/admin/drama-fragments/${id}`)
       .then(setDetail)
       .catch((err) => {
-        toast.error(err instanceof Error ? err.message : tx("fragmentDetail.failedLoad"));
+        toast.error(err instanceof Error ? err.message : tr("fragmentDetail.failedLoad"));
         navigate("/drama-fragments", { replace: true });
       })
       .finally(() => setLoading(false));

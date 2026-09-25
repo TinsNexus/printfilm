@@ -23,7 +23,7 @@ import { PageHeader } from "@/components/ui/page";
 import { useAdminDetailQuery } from "@/hooks/useAdminDetailQuery";
 import { PROJECT_STATUS_OPTIONS, projectStatusLabel, taskStatusLabel, taskTypeLabel } from "@/lib/statusLabels";
 import { fenToYuan } from "@/lib/utils";
-import { useI18n } from "@/i18n";
+import { formatDateTime, useI18n } from "@/i18n";
 
 type ListRes = { items: AdminProject[]; meta: PageMeta };
 
@@ -156,10 +156,10 @@ export function ProjectsPage() {
                 <TableCell>{p.shot_count}</TableCell>
                 <TableCell>¥{fenToYuan(p.charge_fen ?? 0)}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">
-                  {new Date(p.created_at).toLocaleString()}
+                  {formatDateTime(p.created_at)}
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">
-                  {new Date(p.updated_at).toLocaleString()}
+                  {formatDateTime(p.updated_at)}
                 </TableCell>
                 <TableCell>
                   <Button size="sm" variant="outline" onClick={() => void openDetail(p.id)}>

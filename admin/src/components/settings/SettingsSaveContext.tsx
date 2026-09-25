@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { tr } from "@/i18n/translate";
 
 export type SettingsSaveAction = {
   onSave: () => void | Promise<void>;
@@ -31,7 +32,7 @@ export function SettingsSaveProvider({ children }: { children: ReactNode }) {
         prev &&
         next &&
         prev.saving === next.saving &&
-        (prev.label ?? "保存") === (next.label ?? "保存")
+        (prev.label ?? tr("ui.save")) === (next.label ?? tr("ui.save"))
       ) {
         // 同步最新 onSave，避免闭包过期；不触发无意义重渲染依赖
         prev.onSave = next.onSave;

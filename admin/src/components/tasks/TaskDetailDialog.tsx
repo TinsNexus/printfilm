@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { taskDomainLabel, taskStatusLabel, taskTypeLabel } from "@/lib/statusLabels";
 import { hasJsonContent, prettyJson } from "@/lib/jsonPreview";
 import { cn, fenToYuan } from "@/lib/utils";
-import { useI18n } from "@/i18n";
+import { formatDateTime, useI18n } from "@/i18n";
 import { tr } from "@/i18n/translate";
 
 type TaskDetailDialogProps = {
@@ -54,7 +54,7 @@ const PAYLOAD_FIELD_LABELS: Record<string, string> = {
 // 格式化时间为本地字符串
 function fmtTime(value: string | null | undefined): string {
   if (!value) return "—";
-  return new Date(value).toLocaleString();
+  return formatDateTime(value);
 }
 
 // 美化 JSON 展示

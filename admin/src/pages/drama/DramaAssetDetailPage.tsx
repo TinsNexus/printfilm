@@ -7,7 +7,8 @@ import { AdminDetailMeta, AdminDetailSection } from "@/components/admin/AdminDet
 import { AdminEntityLink } from "@/components/admin/AdminEntityLink";
 import { Button } from "@/components/ui/button";
 import { dramaAssetTypeLabel, formatDramaGenerationStatus } from "@/lib/dramaLabels";
-import { useI18n } from "@/i18n";
+import { formatDateTime, useI18n } from "@/i18n";
+import { tr } from "@/i18n/translate";
 
 /** 漫剧资产详情二级页 */
 export function DramaAssetDetailPage() {
@@ -27,7 +28,7 @@ export function DramaAssetDetailPage() {
     void api<AdminDramaAsset>(`/api/admin/drama-assets/${id}`)
       .then(setDetail)
       .catch((err) => {
-        toast.error(err instanceof Error ? err.message : tx("assetDetail.failedLoad"));
+        toast.error(err instanceof Error ? err.message : tr("assetDetail.failedLoad"));
         navigate("/drama-assets", { replace: true });
       })
       .finally(() => setLoading(false));
@@ -98,11 +99,11 @@ export function DramaAssetDetailPage() {
             { label: tx("assetDetail.generationStatus"), value: formatDramaGenerationStatus(detail.generation_status) },
             {
               label: tx("assetDetail.created"),
-              value: detail.created_at ? new Date(detail.created_at).toLocaleString() : "—",
+              value: detail.created_at ? formatDateTime(detail.created_at) : "—",
             },
             {
               label: tx("assetDetail.updated"),
-              value: detail.updated_at ? new Date(detail.updated_at).toLocaleString() : "—",
+              value: detail.updated_at ? formatDateTime(detail.updated_at) : "—",
             },
           ]}
         />

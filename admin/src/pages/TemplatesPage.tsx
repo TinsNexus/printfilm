@@ -115,7 +115,7 @@ export function TemplatesPage() {
     const countFor = (cat: string) =>
       items.filter((t) => (t.category || []).includes(cat)).length;
     return [
-      { value: "", label: tx("templates.allCategories"), count: items.length },
+      { value: "", label: tr("templates.allCategories"), count: items.length },
       ...categories.map((cat) => ({
         value: cat,
         label: cat,

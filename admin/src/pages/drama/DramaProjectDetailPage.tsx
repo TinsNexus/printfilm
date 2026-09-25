@@ -15,7 +15,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { dramaAssetTypeLabel, formatDramaGenerationStatus } from "@/lib/dramaLabels";
 import { taskStatusLabel, taskTypeLabel } from "@/lib/statusLabels";
 import { fenToYuan } from "@/lib/utils";
-import { useI18n } from "@/i18n";
+import { formatDateTime, useI18n } from "@/i18n";
+import { tr } from "@/i18n/translate";
 
 const TABS = ["overview", "episodes", "assets", "tasks"] as const;
 type TabKey = (typeof TABS)[number];
@@ -47,7 +48,7 @@ export function DramaProjectDetailPage() {
     void api<AdminDramaProject>(`/api/admin/drama-projects/${id}`)
       .then(setDetail)
       .catch((err) => {
-        toast.error(err instanceof Error ? err.message : tx("dramaDetail.failedLoad"));
+        toast.error(err instanceof Error ? err.message : tr("dramaDetail.failedLoad"));
         navigate("/drama-projects", { replace: true });
       })
       .finally(() => setLoading(false));
@@ -126,7 +127,7 @@ export function DramaProjectDetailPage() {
                 { label: tx("dramaDetail.shots"), value: detail.fragment_count ?? 0 },
                 {
                   label: tx("dramaDetail.updated"),
-                  value: detail.updated_at ? new Date(detail.updated_at).toLocaleString() : "—",
+                  value: detail.updated_at ? formatDateTime(detail.updated_at) : "—",
                   full: true,
                 },
               ]}

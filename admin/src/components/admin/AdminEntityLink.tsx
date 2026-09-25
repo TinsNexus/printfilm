@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { formatAccountId } from "@/lib/admin-account";
+import { tr } from "@/i18n/translate";
 
 type EntityKind = "user" | "project" | "drama" | "drama_asset" | "task" | "order";
 
@@ -33,17 +34,17 @@ function buildHref(kind: EntityKind, id: number): string {
 function defaultLabel(kind: EntityKind, id: number): string {
   switch (kind) {
     case "user":
-      return `ID：${formatAccountId(id)}`;
+      return tr("ui.idLabel", { id: formatAccountId(id) });
     case "project":
-      return `科普#${id}`;
+      return tr("ui.explainer", { id });
     case "drama":
-      return `漫剧#${id}`;
+      return tr("ui.drama", { id });
     case "drama_asset":
-      return `资产#${id}`;
+      return tr("ui.asset", { id });
     case "task":
-      return `任务#${id}`;
+      return tr("ui.task", { id });
     case "order":
-      return `订单#${id}`;
+      return tr("ui.order", { id });
     default:
       return String(id);
   }

@@ -18,7 +18,8 @@ import { useAdminDetailQuery } from "@/hooks/useAdminDetailQuery";
 import { formatAccountId } from "@/lib/admin-account";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { fenToYuan } from "@/lib/utils";
-import { useI18n } from "@/i18n";
+import { formatDateTime, useI18n } from "@/i18n";
+import { tr } from "@/i18n/translate";
 
 type ListRes = { items: AdminUserRow[]; meta: PageMeta };
 
@@ -70,7 +71,7 @@ export function UsersPage() {
       .then(setStats)
       .catch((err) => {
         setStats(null);
-        toast.error(err instanceof Error ? err.message : tx("users.couldLoadStats"));
+        toast.error(err instanceof Error ? err.message : tr("users.couldLoadStats"));
       });
   }, []);
 
@@ -184,7 +185,7 @@ export function UsersPage() {
                   <Badge variant={u.role === "admin" ? "success" : "secondary"}>{u.role}</Badge>
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">
-                  {u.created_at ? new Date(u.created_at).toLocaleString() : "—"}
+                  {u.created_at ? formatDateTime(u.created_at) : "—"}
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-1">

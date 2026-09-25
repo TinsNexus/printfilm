@@ -87,7 +87,7 @@ export function DashboardPage() {
       const data = await api<AdminUpstreamUsage>("/api/admin/stats/upstream-usage?days=30");
       setUpstreamUsage(data);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : tx("dashboard.couldLoadOfficialUsage"));
+      toast.error(err instanceof Error ? err.message : tr("dashboard.couldLoadOfficialUsage"));
     }
   }, []);
 
@@ -95,10 +95,10 @@ export function DashboardPage() {
     setUpstreamSyncing(true);
     try {
       await api("/api/admin/stats/upstream-usage/sync?days=30", { method: "POST" });
-      toast.success(tx("dashboard.officialUsageRefreshed"));
+      toast.success(tr("dashboard.officialUsageRefreshed"));
       await loadUpstreamUsage();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : tx("dashboard.refreshFailed"));
+      toast.error(err instanceof Error ? err.message : tr("dashboard.refreshFailed"));
     } finally {
       setUpstreamSyncing(false);
     }
@@ -114,7 +114,7 @@ export function DashboardPage() {
       setStats(s);
       setOrders(o.items);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : tx("dashboard.failedLoad"));
+      toast.error(err instanceof Error ? err.message : tr("dashboard.failedLoad"));
     } finally {
       setLoading(false);
     }
@@ -418,7 +418,7 @@ export function DashboardPage() {
                         </td>
                         <td className="font-semibold text-[var(--admin-forest)]">¥{fenToYuan(o.amount_fen)}</td>
                         <td className="text-xs text-[var(--admin-muted)]">
-                          {o.paid_at ? new Date(o.paid_at).toLocaleString() : "—"}
+                          {o.paid_at ? formatDateTime(o.paid_at) : "—"}
                         </td>
                       </tr>
                     ))

@@ -80,7 +80,7 @@ export function RoutingSettingsPanel() {
       });
       setApiKeyInput("");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : tx("routing.couldLoadModelSettings"));
+      toast.error(err instanceof Error ? err.message : tr("routing.couldLoadModelSettings"));
     } finally {
       setLoading(false);
     }

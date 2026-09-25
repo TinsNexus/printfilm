@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type AdminUserRow, type PageMeta } from "@/api/client";
 import { formatAccountId, parseAccountIdQuery } from "@/lib/admin-account";
 import { cn } from "@/lib/utils";
+import { tr } from "@/i18n/translate";
 
 type ListRes = { items: AdminUserRow[]; meta: PageMeta };
 
@@ -16,7 +17,7 @@ type AdminUserSearchSelectProps = {
 export function AdminUserSearchSelect({
   value,
   onChange,
-  placeholder = "搜索用户邮箱 / 账号 ID",
+  placeholder = tr("ui.searchUserEmailAccount"),
   className,
 }: AdminUserSearchSelectProps) {
   const [query, setQuery] = useState("");
@@ -33,10 +34,10 @@ export function AdminUserSearchSelect({
       );
       const hit = res.items.find((u) => u.id === userId) ?? res.items[0];
       if (hit) {
-        setSelectedLabel(`${hit.email} · ID：${formatAccountId(hit.id)}`);
+        setSelectedLabel(tr("ui.userLabel", { email: hit.email, id: formatAccountId(hit.id) }));
       }
     } catch {
-      setSelectedLabel(`ID：${formatAccountId(userId)}`);
+      setSelectedLabel(tr("ui.idLabel", { id: formatAccountId(userId) }));
     }
   }, []);
 
@@ -94,16 +95,16 @@ export function AdminUserSearchSelect({
             setQuery("");
             setSelectedLabel("");
           }}
-          aria-label="清除用户"
+          aria-label={tr("ui.clearUser")}
         >
           ×
         </button>
       ) : null}
       {open && (query.trim() || options.length > 0) ? (
         <div className="admin-user-search-dropdown">
-          {loading ? <div className="admin-user-search-empty">搜索中…</div> : null}
+          {loading ? <div className="admin-user-search-empty">{tr("ui.searching")}</div> : null}
           {!loading && options.length === 0 ? (
-            <div className="admin-user-search-empty">无匹配用户</div>
+            <div className="admin-user-search-empty">{tr("ui.matchingUsers")}</div>
           ) : null}
           {options.map((u) => (
             <button
@@ -113,7 +114,7 @@ export function AdminUserSearchSelect({
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
                 onChange(u.id, u);
-                setSelectedLabel(`${u.email} · ID：${formatAccountId(u.id)}`);
+                setSelectedLabel(tr("ui.userLabel", { email: u.email, id: formatAccountId(u.id) }));
                 setQuery("");
                 setOpen(false);
               }}

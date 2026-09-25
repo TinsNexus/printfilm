@@ -16,7 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { PageHeader } from "@/components/ui/page";
 import { useAdminDetailQuery } from "@/hooks/useAdminDetailQuery";
 import { auditStatusLabel, visibilityLabel } from "@/lib/statusLabels";
-import { useI18n } from "@/i18n";
+import { formatDateTime, useI18n } from "@/i18n";
 
 type ListRes = { items: AdminWork[]; meta: PageMeta };
 
@@ -170,7 +170,7 @@ export function WorksPage() {
                   </Badge>
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">
-                  {new Date(w.published_at).toLocaleString()}
+                  {formatDateTime(w.published_at)}
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-wrap gap-1">
@@ -265,7 +265,7 @@ export function WorksPage() {
                   { label: tx("works.review"), value: auditStatusLabel(detail.audit_status) },
                   {
                     label: tx("works.published"),
-                    value: new Date(detail.published_at).toLocaleString(),
+                    value: formatDateTime(detail.published_at),
                     full: true,
                   },
                 ]}

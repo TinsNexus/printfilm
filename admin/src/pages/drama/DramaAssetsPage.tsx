@@ -15,7 +15,7 @@ import {
   formatDramaGenerationStatus,
 } from "@/lib/dramaLabels";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
-import { useI18n } from "@/i18n";
+import { formatDateTime, useI18n } from "@/i18n";
 
 type ListRes = { items: AdminDramaAsset[]; meta: PageMeta };
 
@@ -140,7 +140,7 @@ export function DramaAssetsPage() {
                   {formatDramaGenerationStatus(row.generation_status)}
                 </td>
                 <td className="text-xs text-[var(--admin-muted)]">
-                  {row.updated_at ? new Date(row.updated_at).toLocaleString() : "—"}
+                  {row.updated_at ? formatDateTime(row.updated_at) : "—"}
                 </td>
                 <td>
                   <Button size="sm" variant="outline" asChild>
