@@ -10,3 +10,4 @@ export {
 } from './detect'
 export { messages, type Messages } from './messages'
 export { tr } from './translate'
+export { tRich } from './rich'

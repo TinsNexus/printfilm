@@ -49,8 +49,14 @@ try {
   })
   const known = new Set(Object.keys(F.zh).map((k) => k.replace(/\[\d+\]/g, '')))
   const prefixOf = (path) => [...known].some((k) => k === path || k.startsWith(path + '.'))
-  for (const f of walk(join(root, 'src')).filter((f) => !f.includes('/i18n/locales/'))) {
+  // 任何形如 'ns.key' 的字面量（ns 为 zh 顶层键，如 labelKey: 'dramaAssets.tabScene'）也必须存在
+  const tops = Object.keys(packs.zh).filter((k) => /^[A-Za-z]\w*$/.test(k))
+  const nsRe = new RegExp(`(['"\`])((?:${tops.join('|')})(?:\\.[\\w\\u4e00-\\u9fff]+)+)\\1`, 'g')
+  for (const f of walk(join(root, 'src')).filter((f) => !f.includes('/src/i18n/'))) {
     const src = readFileSync(f, 'utf8')
+    for (const m of src.matchAll(nsRe)) {
+      if (!prefixOf(m[2])) { bad++; console.log(`unknown key ${m[2]}  (${f.replace(root + '/', '')})`) }
+    }
     for (const m of src.matchAll(/(?<![\w.])(?:t|tr|tx)\(\s*(['"])([A-Za-z][\w]*(?:\.[\w\u4e00-\u9fff]+)+)\1/g)) {
       if (!prefixOf(m[2])) { bad++; console.log(`unknown key ${m[2]}  (${f.replace(root + '/', '')})`) }
     }

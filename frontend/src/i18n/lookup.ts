@@ -1,6 +1,6 @@
 /** 按点路径取文案，并用 {name} 做插值 */
 
-export type TVars = Record<string, string | number>
+export type TVars = Record<string, string | number | null | undefined>
 
 // 从嵌套对象按 "nav.home" 取字符串
 export function lookupMessage(source: unknown, path: string): string | undefined {
@@ -17,6 +17,6 @@ export function lookupMessage(source: unknown, path: string): string | undefined
 export function interpolate(template: string, vars?: TVars): string {
   if (!vars) return template
   return template.replace(/\{(\w+)\}/g, (match, key: string) =>
-    Object.prototype.hasOwnProperty.call(vars, key) ? String(vars[key]) : match,
+    Object.prototype.hasOwnProperty.call(vars, key) ? String(vars[key] ?? '') : match,
   )
 }
