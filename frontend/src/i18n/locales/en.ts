@@ -1,3 +1,7 @@
+import { enCanvasGenPanel } from './en/canvasGenPanel'
+import { enDramaEpisodeSidePane } from './en/dramaEpisodeSidePane'
+import { enDramaEpisodeAssetPanel } from './en/dramaEpisodeAssetPanel'
+import { enDramaProjectSettings } from './en/dramaProjectSettings'
 import { enDramaMention } from './en/dramaMention'
 import { enDramaValidate } from './en/dramaValidate'
 import { enDramaListPage } from './en/dramaListPage'
@@ -25,6 +29,10 @@ import { enStudio } from './en/studio'
 
 export const en = {
   ...enShell,
+  ...enCanvasGenPanel,
+  ...enDramaEpisodeSidePane,
+  ...enDramaEpisodeAssetPanel,
+  ...enDramaProjectSettings,
   ...enDramaMention,
   ...enDramaValidate,
   ...enDramaListPage,

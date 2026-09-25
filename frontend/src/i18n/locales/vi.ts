@@ -1,3 +1,7 @@
+import { viCanvasGenPanel } from './vi/canvasGenPanel'
+import { viDramaEpisodeSidePane } from './vi/dramaEpisodeSidePane'
+import { viDramaEpisodeAssetPanel } from './vi/dramaEpisodeAssetPanel'
+import { viDramaProjectSettings } from './vi/dramaProjectSettings'
 import { viDramaMention } from './vi/dramaMention'
 import { viDramaValidate } from './vi/dramaValidate'
 import { viDramaListPage } from './vi/dramaListPage'
@@ -25,6 +29,10 @@ import { viStudio } from './vi/studio'
 
 export const vi = {
   ...viShell,
+  ...viCanvasGenPanel,
+  ...viDramaEpisodeSidePane,
+  ...viDramaEpisodeAssetPanel,
+  ...viDramaProjectSettings,
   ...viDramaMention,
   ...viDramaValidate,
   ...viDramaListPage,
