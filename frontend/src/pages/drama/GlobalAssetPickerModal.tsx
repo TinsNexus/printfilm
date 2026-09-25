@@ -6,6 +6,8 @@ import { DRAMA_VOICE_BINDING_ENABLED } from '../../lib/dramaVoiceBinding'
 import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import Modal from '../../components/ui/Modal'
 import './drama.css'
+import { useI18n } from '../../i18n'
+import { tr } from '../../i18n/translate'
 
 export type GlobalAssetTabKey = 'character' | 'scene' | 'prop' | 'voice' | 'all'
 
@@ -25,11 +27,12 @@ type Props = {
   onPick: (asset: DramaAsset) => void | Promise<void>
 }
 
-const TABS: Array<{ key: GlobalAssetTabKey; label: string }> = [
-  { key: 'character', label: '角色' },
-  { key: 'scene', label: '场景' },
-  { key: 'prop', label: '道具' },
-  ...(DRAMA_VOICE_BINDING_ENABLED ? [{ key: 'voice' as const, label: '音色' }] : []),
+// 标签走 labelKey（模块级常量在导入时求值，不能直接存翻译后的文案）
+const TABS: Array<{ key: GlobalAssetTabKey; labelKey: string }> = [
+  { key: 'character', labelKey: 'assetPicker.kindCharacter' },
+  { key: 'scene', labelKey: 'assetPicker.kindScene' },
+  { key: 'prop', labelKey: 'assetPicker.kindProp' },
+  ...(DRAMA_VOICE_BINDING_ENABLED ? [{ key: 'voice' as const, labelKey: 'assetPicker.kindVoice' }] : []),
 ]
 
 // 资产是否匹配 Tab
@@ -54,10 +57,11 @@ export function GlobalAssetPickerModal({
   projectId,
   defaultTab = 'character',
   allowedTypes,
-  title = '从资产库选择',
-  confirmLabel = '确认使用',
+  title = tr('assetPicker.chooseLibrary'),
+  confirmLabel = tr('assetPicker.useSelected'),
   onPick,
 }: Props) {
+  const { t: tx } = useI18n()
   /*
    * allAssets 用户全部项目资产
    * tab 当前分类
@@ -89,7 +93,7 @@ export function GlobalAssetPickerModal({
     dramaApi
       .listAssets(undefined, { libraryOnly: true })
       .then((rows) => setAllAssets(filterDramaLibraryAssets(rows)))
-      .catch((err) => setError(err instanceof Error ? err.message : '加载资产库失败'))
+      .catch((err) => setError(err instanceof Error ? err.message : tx('assetPicker.couldLoadAssetLibrary')))
       .finally(() => setLoading(false))
   }, [open, defaultTab])
 
@@ -121,7 +125,7 @@ export function GlobalAssetPickerModal({
       await onPick(picked)
       onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : '应用失败')
+      setError(err instanceof Error ? err.message : tx('assetPicker.couldApply'))
     } finally {
       setBusy(false)
     }
@@ -140,7 +144,7 @@ export function GlobalAssetPickerModal({
       footer={
         <>
           <button type="button" className="pf-btn" onClick={onClose} disabled={busy}>
-            取消
+            {tx('assetPicker.cancel')}
           </button>
           <button
             type="button"
@@ -148,13 +152,13 @@ export function GlobalAssetPickerModal({
             disabled={!selectedId || busy}
             onClick={() => void handleConfirm()}
           >
-            {busy ? '处理中…' : confirmLabel}
+            {busy ? tx('assetPicker.working') : confirmLabel}
           </button>
         </>
       }
     >
       <p className="drama-muted drama-global-picker-lead">
-        展示你名下全部漫剧项目的已生成图片，选中后可导入或应用到当前节点
+        {tx('assetPicker.showsGeneratedImagesAll')}
       </p>
 
       {showTabs ? (
@@ -169,7 +173,7 @@ export function GlobalAssetPickerModal({
                 setSelectedId(null)
               }}
             >
-              {t.label}
+              {tx(t.labelKey)}
             </button>
           ))}
         </div>
@@ -179,11 +183,11 @@ export function GlobalAssetPickerModal({
         className="pf-dialog-input drama-global-picker-search"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="搜索名称或项目 ID"
+        placeholder={tx('assetPicker.searchNameProjectId')}
       />
 
       {error ? <BillingErrorNotice message={error} className="drama-error" /> : null}
-      {loading ? <p className="drama-muted">加载资产库…</p> : null}
+      {loading ? <p className="drama-muted">{tx('assetPicker.loadingAssetLibrary')}</p> : null}
 
       <div className="drama-global-picker-grid">
         {filtered.map((asset) => {
@@ -205,10 +209,10 @@ export function GlobalAssetPickerModal({
                 <img src={src} alt={asset.name || ''} />
               ) : null}
               <div className="drama-global-picker-card-meta">
-                <strong>{asset.name || '未命名'}</strong>
+                <strong>{asset.name || tx('assetPicker.unnamed')}</strong>
                 <span>
-                  {fromCurrent ? '本项目' : `项目 #${asset.project_id}`}
-                  {isVoice && audioSrc ? ' · 已合成' : isVoice ? ' · 未合成' : ''}
+                  {fromCurrent ? tx('assetPicker.project2') : tx('assetPicker.project', { assetProject_id: asset.project_id })}
+                  {isVoice && audioSrc ? tx('assetPicker.synthesized') : isVoice ? tx('assetPicker.synthesized2') : ''}
                 </span>
               </div>
               {selected ? <span className="drama-global-picker-check">✓</span> : null}
@@ -217,7 +221,7 @@ export function GlobalAssetPickerModal({
         })}
       </div>
       {!loading && filtered.length === 0 ? (
-        <p className="drama-muted">当前分类下暂无可用图片，请先在其它项目生成资产</p>
+        <p className="drama-muted">{tx('assetPicker.usableImagesCategoryGenerate')}</p>
       ) : null}
     </Modal>
   )
@@ -229,7 +233,7 @@ export async function importGlobalAssetToProject(
   source: DramaAsset,
 ): Promise<DramaAsset> {
   if (!source.url && !source.cover) {
-    throw new Error('所选资产没有可用图片')
+    throw new Error(tr('assetPicker.selectedAssetUsableImage'))
   }
   const params = {
     ...(source.params || {}),
@@ -240,7 +244,7 @@ export async function importGlobalAssetToProject(
     project_id: projectId,
     type: source.type || 'none',
     asset_type: source.asset_type || 'image',
-    name: source.name || '未命名',
+    name: source.name || tr('assetPicker.unnamed'),
     cover: source.cover || source.url,
     url: source.url || source.cover,
     params,

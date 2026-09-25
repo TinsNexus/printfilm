@@ -1,3 +1,8 @@
+import { enCanvasStore } from './en/canvasStore'
+import { enDramaGenTaskDetail } from './en/dramaGenTaskDetail'
+import { enCanvasBottom } from './en/canvasBottom'
+import { enDramaEpisodeBoard } from './en/dramaEpisodeBoard'
+import { enDramaAssetPicker } from './en/dramaAssetPicker'
 import { enCanvasGenPanel } from './en/canvasGenPanel'
 import { enDramaEpisodeSidePane } from './en/dramaEpisodeSidePane'
 import { enDramaEpisodeAssetPanel } from './en/dramaEpisodeAssetPanel'
@@ -29,6 +34,11 @@ import { enStudio } from './en/studio'
 
 export const en = {
   ...enShell,
+  ...enCanvasStore,
+  ...enDramaGenTaskDetail,
+  ...enCanvasBottom,
+  ...enDramaEpisodeBoard,
+  ...enDramaAssetPicker,
   ...enCanvasGenPanel,
   ...enDramaEpisodeSidePane,
   ...enDramaEpisodeAssetPanel,

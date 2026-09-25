@@ -3,6 +3,7 @@ import { useCallback, useState } from 'react'
 import { LocateFixed, Magnet, Map, Minus, Plus, Redo2, Scan, Undo2 } from 'lucide-react'
 import { useOnViewportChange, useReactFlow } from '@xyflow/react'
 import { useCanvasStore } from './CanvasStore'
+import { tr } from '../../../i18n/translate'
 
 /** 渲染画布左下角控制条 */
 export function CanvasBottomControls() {
@@ -36,8 +37,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className="fc-icon-btn is-sm"
-          aria-label="撤销"
-          title="撤销"
+          aria-label={tr('canvasBottom.undo')}
+          title={tr('canvasBottom.undo')}
           disabled={!canUndo}
           onClick={undo}
         >
@@ -46,8 +47,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className="fc-icon-btn is-sm"
-          aria-label="重做"
-          title="重做"
+          aria-label={tr('canvasBottom.redo')}
+          title={tr('canvasBottom.redo')}
           disabled={!canRedo}
           onClick={redo}
         >
@@ -59,8 +60,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className="fc-icon-btn is-sm"
-          aria-label="定位到内容"
-          title="定位到内容"
+          aria-label={tr('canvasBottom.goContent')}
+          title={tr('canvasBottom.goContent')}
           onClick={() => void fitView({ duration: 200 })}
         >
           <LocateFixed size={16} strokeWidth={1.8} />
@@ -68,8 +69,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className="fc-icon-btn is-sm"
-          aria-label="适应画布"
-          title="适应画布"
+          aria-label={tr('canvasBottom.fitCanvas')}
+          title={tr('canvasBottom.fitCanvas')}
           onClick={() => void fitView({ duration: 200, padding: 0.2 })}
         >
           <Scan size={16} strokeWidth={1.8} />
@@ -80,8 +81,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className={`fc-icon-btn is-sm${snapToGrid ? ' is-active' : ''}`}
-          aria-label={snapToGrid ? '关闭网格吸附' : '开启网格吸附'}
-          title={snapToGrid ? '关闭网格吸附' : '开启网格吸附'}
+          aria-label={snapToGrid ? tr('canvasBottom.turnOffGridSnap') : tr('canvasBottom.turnGridSnap')}
+          title={snapToGrid ? tr('canvasBottom.turnOffGridSnap') : tr('canvasBottom.turnGridSnap')}
           aria-pressed={snapToGrid}
           onClick={toggleSnapToGrid}
         >
@@ -90,8 +91,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className={`fc-icon-btn is-sm${showMinimap ? ' is-active' : ''}`}
-          aria-label={showMinimap ? '关闭小地图' : '开启小地图'}
-          title={showMinimap ? '关闭小地图' : '开启小地图'}
+          aria-label={showMinimap ? tr('canvasBottom.hideMinimap') : tr('canvasBottom.showMinimap')}
+          title={showMinimap ? tr('canvasBottom.hideMinimap') : tr('canvasBottom.showMinimap')}
           aria-pressed={showMinimap}
           onClick={toggleMinimap}
         >
@@ -103,8 +104,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className="fc-icon-btn is-sm"
-          aria-label="缩小"
-          title="缩小"
+          aria-label={tr('canvasBottom.zoomOut')}
+          title={tr('canvasBottom.zoomOut')}
           onClick={() => zoomOut({ duration: 150 })}
         >
           <Minus size={16} strokeWidth={1.8} />
@@ -112,8 +113,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className="fc-zoom-label"
-          aria-label="重置缩放"
-          title="重置缩放"
+          aria-label={tr('canvasBottom.resetZoom')}
+          title={tr('canvasBottom.resetZoom')}
           onClick={handleResetZoom}
         >
           {zoomPercent}%
@@ -121,8 +122,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className="fc-icon-btn is-sm"
-          aria-label="放大"
-          title="放大"
+          aria-label={tr('canvasBottom.zoom')}
+          title={tr('canvasBottom.zoom')}
           onClick={() => zoomIn({ duration: 150 })}
         >
           <Plus size={16} strokeWidth={1.8} />

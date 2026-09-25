@@ -1,3 +1,8 @@
+import { zhCanvasStore } from './zh/canvasStore'
+import { zhDramaGenTaskDetail } from './zh/dramaGenTaskDetail'
+import { zhCanvasBottom } from './zh/canvasBottom'
+import { zhDramaEpisodeBoard } from './zh/dramaEpisodeBoard'
+import { zhDramaAssetPicker } from './zh/dramaAssetPicker'
 import { zhCanvasGenPanel } from './zh/canvasGenPanel'
 import { zhDramaEpisodeSidePane } from './zh/dramaEpisodeSidePane'
 import { zhDramaEpisodeAssetPanel } from './zh/dramaEpisodeAssetPanel'
@@ -29,6 +34,11 @@ import { zhStudio } from './zh/studio'
 
 export const zh = {
   ...zhShell,
+  ...zhCanvasStore,
+  ...zhDramaGenTaskDetail,
+  ...zhCanvasBottom,
+  ...zhDramaEpisodeBoard,
+  ...zhDramaAssetPicker,
   ...zhCanvasGenPanel,
   ...zhDramaEpisodeSidePane,
   ...zhDramaEpisodeAssetPanel,
