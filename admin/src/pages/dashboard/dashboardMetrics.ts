@@ -2,6 +2,7 @@ import type { AdminDailyUsage, AdminStats, AdminUsageBucket } from "@/api/client
 import type { DashboardMetric } from "@/pages/dashboard/DashboardFilters";
 import { fenToYuan } from "@/lib/utils";
 import { tr } from "@/i18n/translate";
+import { formatNumber } from "@/i18n";
 
 /** 时间窗内日趋势汇总 */
 export function sumDailyUsage(daily: AdminDailyUsage[]) {
@@ -24,7 +25,7 @@ export function readBucketMetric(row: AdminUsageBucket, metric: DashboardMetric)
 
 /** 格式化指标展示值 */
 export function formatDashboardMetric(value: number, metric: DashboardMetric): string {
-  if (metric === "calls") return value.toLocaleString();
+  if (metric === "calls") return formatNumber(value);
   return `¥${fenToYuan(value)}`;
 }
 

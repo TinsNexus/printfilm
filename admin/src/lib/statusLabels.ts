@@ -148,8 +148,13 @@ export function taskTypeLabel(taskType: string): string {
   return TASK_TYPE_LABELS[taskType] ?? taskType;
 }
 
-/** Filter options for project status select (value stays English for API) */
-export const PROJECT_STATUS_OPTIONS: { value: string; label: string }[] = [
-  { value: "", label: tr("status.allStatuses") },
-  ...Object.entries(PROJECT_STATUS_LABELS).map(([value, label]) => ({ value, label })),
-];
+/**
+ * Filter options for project status select (value stays English for API).
+ * 用函数而非模块级常量：标签随当前界面语言取值，常量会在导入时固化语言。
+ */
+export function projectStatusOptions(): { value: string; label: string }[] {
+  return [
+    { value: "", label: tr("status.allStatuses") },
+    ...Object.entries(PROJECT_STATUS_LABELS).map(([value, label]) => ({ value, label })),
+  ];
+}

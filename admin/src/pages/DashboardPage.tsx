@@ -39,7 +39,7 @@ import { sumDailyUsage } from "@/pages/dashboard/dashboardMetrics";
 import { UsageDistributionChart } from "@/pages/dashboard/UsageDistributionChart";
 import { TopUsersRankingChart } from "@/pages/dashboard/TopUsersRankingChart";
 import { UsageTrendChart } from "@/pages/dashboard/UsageTrendChart";
-import { formatDateTime, useI18n } from "@/i18n";
+import { formatDateTime, formatNumber, useI18n } from "@/i18n";
 import { tr } from "@/i18n/translate";
 
 type OrderRes = { items: AdminOrder[]; meta: PageMeta };
@@ -367,8 +367,8 @@ export function DashboardPage() {
                       <tr key={row.date}>
                         <td className="font-mono text-xs">{row.date}</td>
                         <td>¥{fenToYuan(row.local_cost_fen)}</td>
-                        <td>{row.local_tokens.toLocaleString()}</td>
-                        <td>{row.official_tokens > 0 ? row.official_tokens.toLocaleString() : "—"}</td>
+                        <td>{formatNumber(row.local_tokens)}</td>
+                        <td>{row.official_tokens > 0 ? formatNumber(row.official_tokens) : "—"}</td>
                         <td>{row.official_cost_fen > 0 ? `¥${fenToYuan(row.official_cost_fen)}` : "—"}</td>
                         <td>
                           {row.official_cost_fen > 0

@@ -4,6 +4,7 @@ export {
   detectLocale,
   formatDateTime,
   formatNumber,
+  formatTimeOfDay,
   getActiveLocale,
   isLocale,
   localeFromBrowser,

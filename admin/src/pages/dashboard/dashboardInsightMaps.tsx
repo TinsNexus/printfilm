@@ -15,6 +15,7 @@ import type { DashboardMetric } from "@/pages/dashboard/DashboardFilters";
 import type { DashboardInsightItem, DashboardInsightTone } from "@/pages/dashboard/DashboardInsightGrid";
 import { formatDashboardMetric, readBucketMetric } from "@/pages/dashboard/dashboardMetrics";
 import { tr } from "@/i18n/translate";
+import { formatNumber } from "@/i18n";
 
 const CAPABILITY_META: Record<string, { label: string; icon: LucideIcon; tone: DashboardInsightTone }> = {
   llm: { get label() { return tr("insightMaps.llmText") }, icon: MessageSquareText, tone: "purple" },
@@ -57,7 +58,7 @@ function buildInsightItems(
         key: row.key,
         label: labelForKey?.(row.key) ?? meta.label,
         value: formatDashboardMetric(value, metric),
-        hint: [shareHint, tr("insightMaps.callsN", { n: row.calls.toLocaleString() })].filter(Boolean).join(" · "),
+        hint: [shareHint, tr("insightMaps.callsN", { n: formatNumber(row.calls) })].filter(Boolean).join(" · "),
         icon: meta.icon,
         tone: meta.tone,
       };

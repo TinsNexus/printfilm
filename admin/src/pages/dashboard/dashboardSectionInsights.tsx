@@ -19,6 +19,7 @@ import { calcProfitFen, sumDailyUsage, sumProjectStatuses } from "@/pages/dashbo
 import { fenToYuan } from "@/lib/utils";
 import { projectStatusLabel } from "@/lib/statusLabels";
 import { tr } from "@/i18n/translate";
+import { formatNumber } from "@/i18n";
 
 /** 财务账单 Tab 图标指标 */
 export function buildFinanceInsights(
@@ -127,7 +128,7 @@ export function buildProjectInsights(stats: AdminStats | null, periodDaily: Retu
     {
       key: "calls-today",
       label: tr("insights.callsToday"),
-      value: (stats.usage_calls_today ?? 0).toLocaleString(),
+      value: formatNumber(stats.usage_calls_today ?? 0),
       hint: tr("insights.callsMonth", { n: stats.usage_calls_month ?? 0 }),
       icon: Activity,
       tone: "mint",
@@ -135,8 +136,8 @@ export function buildProjectInsights(stats: AdminStats | null, periodDaily: Retu
     {
       key: "calls-total",
       label: tr("insights.totalCalls"),
-      value: (stats.usage_calls_total ?? 0).toLocaleString(),
-      hint: tr("insights.callsWindow", { n: periodDaily.calls.toLocaleString() }),
+      value: formatNumber(stats.usage_calls_total ?? 0),
+      hint: tr("insights.callsWindow", { n: formatNumber(periodDaily.calls) }),
       icon: Layers,
       tone: "slate",
     },

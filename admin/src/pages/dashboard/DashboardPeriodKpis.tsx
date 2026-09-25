@@ -4,7 +4,7 @@ import { fenToYuan } from "@/lib/utils";
 import { dashboardRangeLabel, type DashboardFilterState } from "@/pages/dashboard/DashboardFilters";
 import { DashboardKpiCard } from "@/pages/dashboard/DashboardKpiCard";
 import { calcProfitFen, sumDailyUsage } from "@/pages/dashboard/dashboardMetrics";
-import { useI18n } from "@/i18n";
+import { formatNumber, useI18n } from "@/i18n";
 
 type DashboardPeriodKpisProps = {
   stats: AdminStats | null;
@@ -26,7 +26,7 @@ export function DashboardPeriodKpis({ stats, filters, loading }: DashboardPeriod
     <div className="admin-dashboard-kpi-grid admin-dashboard-kpi-grid--secondary">
       <DashboardKpiCard
         label={tx("periodKpis.calls", { rangeLabel })}
-        value={stats ? period.calls.toLocaleString() : placeholder}
+        value={stats ? formatNumber(period.calls) : placeholder}
         hint={stats ? tx("periodKpis.cumulative", { n: stats.usage_calls_total ?? 0 }) : tx("periodKpis.calls2")}
         icon={Activity}
         tone="mint"

@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/ui/page";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, type AdminFinanceDaily } from "@/api/client";
 import { fenToYuan } from "@/lib/utils";
-import { formatDateTime, useI18n } from "@/i18n";
+import { formatDateTime, formatNumber, useI18n } from "@/i18n";
 import { tr } from "@/i18n/translate";
 
 type FinanceDays = "7" | "14" | "30" | "90";
@@ -132,7 +132,7 @@ export function FinanceListPage() {
                       <TableCell className="font-mono text-xs">{row.date}</TableCell>
                       <TableCell>¥{fenToYuan(row.charge_fen)}</TableCell>
                       <TableCell>¥{fenToYuan(row.cost_fen)}</TableCell>
-                      <TableCell>{row.tokens.toLocaleString()}</TableCell>
+                      <TableCell>{formatNumber(row.tokens)}</TableCell>
                       <TableCell>
                         {row.actual_cost_fen > 0 ? `¥${fenToYuan(row.actual_cost_fen)}` : "—"}
                       </TableCell>
@@ -147,7 +147,7 @@ export function FinanceListPage() {
                       <TableCell>{tx("finance.total")}</TableCell>
                       <TableCell>¥{fenToYuan(totals.charge_fen)}</TableCell>
                       <TableCell>¥{fenToYuan(totals.cost_fen)}</TableCell>
-                      <TableCell>{totals.tokens.toLocaleString()}</TableCell>
+                      <TableCell>{formatNumber(totals.tokens)}</TableCell>
                       <TableCell>
                         {totals.actual_cost_fen > 0 ? `¥${fenToYuan(totals.actual_cost_fen)}` : "—"}
                       </TableCell>

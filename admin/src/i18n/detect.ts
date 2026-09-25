@@ -80,6 +80,14 @@ export function formatDateTime(value?: string | Date | null, locale: Locale = ac
   return d.toLocaleString(LOCALE_DATE[locale]);
 }
 
+// 时间（不含日期）按当前语言格式化
+export function formatTimeOfDay(value?: string | Date | null, locale: Locale = activeLocale): string {
+  if (!value) return "—";
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString(LOCALE_DATE[locale]);
+}
+
 // 数字按当前语言分组（如 12,345）
 export function formatNumber(value: number, locale: Locale = activeLocale): string {
   return value.toLocaleString(LOCALE_DATE[locale]);

@@ -21,7 +21,7 @@ import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/ui/page";
 import { useAdminDetailQuery } from "@/hooks/useAdminDetailQuery";
-import { PROJECT_STATUS_OPTIONS, projectStatusLabel, taskStatusLabel, taskTypeLabel } from "@/lib/statusLabels";
+import { projectStatusLabel, projectStatusOptions, taskStatusLabel, taskTypeLabel } from "@/lib/statusLabels";
 import { fenToYuan } from "@/lib/utils";
 import { formatDateTime, useI18n } from "@/i18n";
 
@@ -101,7 +101,7 @@ export function ProjectsPage() {
       <PageHeader description={tx("projects.explainerPipelineProjectsStatus")} />
       <AdminFilterBar>
         <Select value={status} onChange={(e) => setStatus(e.target.value)}>
-          {PROJECT_STATUS_OPTIONS.map((opt) => (
+          {projectStatusOptions().map((opt) => (
             <option key={opt.value || "all"} value={opt.value}>
               {opt.label}
             </option>

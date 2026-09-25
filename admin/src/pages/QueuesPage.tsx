@@ -15,7 +15,7 @@ import { compactJsonPreview, hasJsonContent } from "@/lib/jsonPreview";
 import { cn, fenToYuan } from "@/lib/utils";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { taskDomainLabel, taskStatusLabel, taskTypeLabel } from "@/lib/statusLabels";
-import { formatDateTime, useI18n } from "@/i18n";
+import { formatDateTime, formatTimeOfDay, useI18n } from "@/i18n";
 import { tr } from "@/i18n/translate";
 
 const REFRESH_MS = 15000;
@@ -260,7 +260,7 @@ export function QueuesPage() {
                 {tx("queues.finalStats", { ok: stats?.succeeded_count ?? 0, fail: stats?.failed_count ?? 0, cancel: stats?.cancelled_count ?? 0 })}
               </div>
               <div className="admin-stat-hint">
-                {tx("queues.updatedAt", { t: stats?.fetched_at ? new Date(stats.fetched_at).toLocaleTimeString() : "—" })}
+                {tx("queues.updatedAt", { t: stats?.fetched_at ? formatTimeOfDay(stats.fetched_at) : "—" })}
               </div>
             </div>
           </div>
