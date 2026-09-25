@@ -1,3 +1,6 @@
+import { zhStudioEditor } from './zh/studioEditor'
+import { zhDramaOutlineStep } from './zh/dramaOutlineStep'
+import { zhStudioStyle } from './zh/studioStyle'
 import { zhDramaOutline } from './zh/dramaOutline'
 import { zhDramaAssets } from './zh/dramaAssets'
 import { zhDramaEpisode } from './zh/dramaEpisode'
@@ -9,6 +12,9 @@ import { zhStudio } from './zh/studio'
 
 export const zh = {
   ...zhShell,
+  ...zhStudioEditor,
+  ...zhDramaOutlineStep,
+  ...zhStudioStyle,
   ...zhDramaOutline,
   ...zhDramaAssets,
   ...zhDramaEpisode,

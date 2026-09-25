@@ -7,16 +7,25 @@ import AppShell from '../../components/layout/AppShell'
 import ComingSoon from '../../components/ui/ComingSoon'
 import { STATUS_CN, shotsByNo } from '../../lib/status'
 import { downloadSingleVideo } from '../../lib/clientDownload'
+import { useI18n } from '../../i18n'
 
-const PANEL_TABS = ['文案', '画面', '配音', '转场'] as const
+// 面板 id（展示名走 TAB_LABEL_KEY，避免用文案当状态值）
+const PANEL_TABS = ['copy', 'visual', 'voice', 'transition'] as const
+const TAB_LABEL_KEY: Record<(typeof PANEL_TABS)[number], string> = {
+  copy: 'editorPage.tabCopy',
+  visual: 'editorPage.tabVisual',
+  voice: 'editorPage.tabVoice',
+  transition: 'editorPage.tabTransition',
+}
 
 export default function EditorPage() {
+  const { t: tx } = useI18n()
   const { id } = useParams()
   const projectId = Number(id)
   const nav = useNavigate()
   const [project, setProject] = useState<Project | null>(null)
   const [activeShotId, setActiveShotId] = useState<number | null>(null)
-  const [tab, setTab] = useState<(typeof PANEL_TABS)[number]>('文案')
+  const [tab, setTab] = useState<(typeof PANEL_TABS)[number]>('copy')
   const [narration, setNarration] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -41,7 +50,7 @@ export default function EditorPage() {
           setNarration(first.narration || '')
         }
       })
-      .catch((err) => setError(err instanceof Error ? err.message : '加载失败'))
+      .catch((err) => setError(err instanceof Error ? err.message : tx('editorPage.failedLoad')))
   }, [nav, projectId])
 
   const orderedShots = useMemo(() => shotsByNo(project?.shots), [project?.shots])
@@ -69,7 +78,7 @@ export default function EditorPage() {
       await api.updateShot(project.id, shot.id, { narration })
       setProject(await api.getProject(project.id))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '保存失败')
+      setError(err instanceof Error ? err.message : tx('editorPage.saveFailed'))
     } finally {
       setBusy(false)
     }
@@ -82,7 +91,7 @@ export default function EditorPage() {
       await api.regenImage(project.id, shot.id)
       setProject(await api.getProject(project.id))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '重生成失败')
+      setError(err instanceof Error ? err.message : tx('editorPage.regenerateFailed'))
     } finally {
       setBusy(false)
     }
@@ -100,7 +109,7 @@ export default function EditorPage() {
       const s = next.shots.find((x) => x.id === created.id)
       if (s) selectShot(s)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '添加镜头失败')
+      setError(err instanceof Error ? err.message : tx('editorPage.couldAddShot'))
     } finally {
       setBusy(false)
     }
@@ -120,7 +129,7 @@ export default function EditorPage() {
     try {
       setProject(await api.reorderShots(project.id, ids))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '调序失败')
+      setError(err instanceof Error ? err.message : tx('editorPage.couldReorder'))
     } finally {
       setBusy(false)
     }
@@ -134,7 +143,7 @@ export default function EditorPage() {
     try {
       setProject(await api.uploadShotImage(project.id, shot.id, file))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '上传画面失败')
+      setError(err instanceof Error ? err.message : tx('editorPage.couldUploadImage'))
     } finally {
       setBusy(false)
       if (shotFileRef.current) shotFileRef.current.value = ''
@@ -153,7 +162,7 @@ export default function EditorPage() {
         url: api.assetUrl(project.final_video_url, project.updated_at),
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : '导出失败')
+      setError(err instanceof Error ? err.message : tx('editorPage.exportFailed'))
     } finally {
       setBusy(false)
     }
@@ -166,7 +175,7 @@ export default function EditorPage() {
       await api.regenAudio(project.id, shot.id)
       setProject(await api.getProject(project.id))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '重配音失败')
+      setError(err instanceof Error ? err.message : tx('editorPage.reVoiceFailed'))
     } finally {
       setBusy(false)
     }
@@ -176,7 +185,7 @@ export default function EditorPage() {
     return (
       <AppShell active="studio" flush>
         <p className="pf-muted" style={{ padding: '2rem' }}>
-          加载中…
+          {tx('editorPage.loading')}
         </p>
       </AppShell>
     )
@@ -211,7 +220,7 @@ export default function EditorPage() {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <button type="button" className="pf-link" onClick={() => nav(`/studio/${project.id}`)}>
-            ← 返回项目
+            {tx('editorPage.backProject')}
           </button>
           <strong>{project.title}</strong>
           <span className="pf-muted" style={{ fontSize: '0.8rem' }}>
@@ -220,13 +229,13 @@ export default function EditorPage() {
         </div>
         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
           <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" disabled>
-            撤销 <ComingSoon />
+            {tx('editorPage.undo')} <ComingSoon />
           </button>
           <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" disabled>
-            重做 <ComingSoon />
+            {tx('editorPage.redo')} <ComingSoon />
           </button>
           <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" disabled>
-            保存草稿 <ComingSoon />
+            {tx('editorPage.saveDraft')} <ComingSoon />
           </button>
           <button
             type="button"
@@ -243,7 +252,7 @@ export default function EditorPage() {
               }
             }}
           >
-            预览播放
+            {tx('editorPage.previewPlayback')}
           </button>
           <button
             type="button"
@@ -251,7 +260,7 @@ export default function EditorPage() {
             disabled={busy || !project.final_video_url}
             onClick={() => void exportFilm()}
           >
-            导出视频
+            {tx('editorPage.exportVideo')}
           </button>
         </div>
       </div>
@@ -263,9 +272,9 @@ export default function EditorPage() {
       <div className="pf-editor">
         <aside>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-            <strong>场景列表</strong>
+            <strong>{tx('editorPage.scenes')}</strong>
             <button type="button" className="pf-link" disabled={busy} onClick={() => void addShot()}>
-              + 添加镜头
+              {tx('editorPage.addShot')}
             </button>
           </div>
           {orderedShots.map((s) => (
@@ -282,7 +291,7 @@ export default function EditorPage() {
               )}
               <div>
                 <strong style={{ fontSize: '0.82rem' }}>
-                  {String(s.shot_no).padStart(2, '0')} {s.overlay_title || '镜头'}
+                  {String(s.shot_no).padStart(2, '0')} {s.overlay_title || tx('editorPage.shot')}
                 </strong>
                 <div className="pf-muted" style={{ fontSize: '0.72rem' }}>
                   {(s.narration || '').slice(0, 28)}
@@ -291,7 +300,7 @@ export default function EditorPage() {
             </button>
           ))}
           <p className="pf-muted" style={{ fontSize: '0.8rem', marginTop: '0.75rem' }}>
-            总时长{' '}
+            {tx('editorPage.totalDuration')}{' '}
             {Math.floor(totalDuration / 60)
               .toString()
               .padStart(2, '0')}
@@ -307,7 +316,7 @@ export default function EditorPage() {
               disabled={busy || !shot || shotIndex <= 0}
               onClick={() => void moveShot(-1)}
             >
-              上移
+              {tx('editorPage.moveUp')}
             </button>
             <button
               type="button"
@@ -315,7 +324,7 @@ export default function EditorPage() {
               disabled={busy || !shot || shotIndex < 0 || shotIndex >= orderedShots.length - 1}
               onClick={() => void moveShot(1)}
             >
-              下移
+              {tx('editorPage.moveDown')}
             </button>
           </div>
         </aside>
@@ -323,7 +332,7 @@ export default function EditorPage() {
         <section>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.65rem' }}>
             <strong>
-              {shot ? `镜头 ${shot.shot_no}` : '预览'} · {isPortrait ? '9:16' : '16:9'}
+              {shot ? tx('editorPage.shot2', { shotShot_no: shot.shot_no }) : tx('editorPage.preview')} · {isPortrait ? '9:16' : '16:9'}
             </strong>
             <div style={{ display: 'flex', gap: 8 }}>
               <input
@@ -339,10 +348,10 @@ export default function EditorPage() {
                 disabled={busy || !shot}
                 onClick={() => shotFileRef.current?.click()}
               >
-                上传画面
+                {tx('editorPage.uploadImage')}
               </button>
               <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" disabled={busy} onClick={regenImage}>
-                AI 重绘
+                {tx('editorPage.aiRedraw')}
               </button>
             </div>
           </div>
@@ -359,7 +368,7 @@ export default function EditorPage() {
             ) : shotImage ? (
               <img key={`i-${shot?.id}-${shot?.version}`} src={shotImage} alt="" />
             ) : (
-              <span className="empty">暂无画面</span>
+              <span className="empty">{tx('editorPage.imageYet')}</span>
             )}
           </div>
           {shot?.audio_url ? (
@@ -415,19 +424,19 @@ export default function EditorPage() {
               fontSize: '0.9rem',
             }}
           >
-            可用「上传画面」替换本镜图，或「AI 重绘」按提示词重生。
+            {tx('editorPage.useUploadImageReplace')}
           </div>
 
           <div style={{ marginTop: '1rem' }}>
             <div className="pf-panel-tabs">
-              {['素材库', '收藏素材', 'AI 生成素材', '我的上传'].map((t) => (
+              {[tx('editorPage.assetLibrary'), tx('editorPage.favorites'), tx('editorPage.aiGenerated'), tx('editorPage.myUploads')].map((t) => (
                 <button key={t} type="button" disabled>
                   {t}
                 </button>
               ))}
             </div>
             <p className="pf-muted" style={{ fontSize: '0.85rem' }}>
-              素材库即将推出。当前可用上方「上传画面」或「AI 重绘」替换本镜图。
+              {tx('editorPage.assetLibraryComingSoon')}
             </p>
           </div>
         </section>
@@ -441,15 +450,15 @@ export default function EditorPage() {
                 className={tab === t ? 'active' : ''}
                 onClick={() => setTab(t)}
               >
-                {t}
+                {tx(TAB_LABEL_KEY[t])}
               </button>
             ))}
           </div>
 
-          {tab === '文案' ? (
+          {tab === 'copy' ? (
             <>
               <label className="pf-muted" style={{ fontSize: '0.85rem', display: 'block' }}>
-                文案内容
+                {tx('editorPage.copyText')}
                 <textarea
                   value={narration}
                   onChange={(e) => setNarration(e.target.value)}
@@ -469,14 +478,14 @@ export default function EditorPage() {
                 style={{ marginTop: 8 }}
                 disabled
               >
-                AI 帮我优化这一镜 <ComingSoon />
+                {tx('editorPage.aiOptimize')} <ComingSoon />
               </button>
               <div style={{ marginTop: '0.85rem' }}>
                 <strong style={{ fontSize: '0.88rem' }}>
-                  样式设置 <ComingSoon />
+                  {tx('editorPage.styleSettings')} <ComingSoon />
                 </strong>
                 <p className="pf-muted" style={{ fontSize: '0.8rem' }}>
-                  字体 / 字号 / 颜色 / 对齐占位
+                  {tx('editorPage.fontSizeColorAlignment')}
                 </p>
               </div>
               <button
@@ -486,15 +495,15 @@ export default function EditorPage() {
                 disabled={busy}
                 onClick={saveNarration}
               >
-                保存文案
+                {tx('editorPage.saveCopy')}
               </button>
             </>
           ) : null}
 
-          {tab === '画面' ? (
+          {tab === 'visual' ? (
             <>
               <p className="pf-muted" style={{ fontSize: '0.88rem' }}>
-                可用预览区「上传画面」替换本镜图，或「AI 重绘」按提示词重生。
+                {tx('editorPage.useUploadImagePreview')}
               </p>
               <button
                 type="button"
@@ -502,15 +511,15 @@ export default function EditorPage() {
                 disabled={busy}
                 onClick={regenImage}
               >
-                重新生成当前镜头
+                {tx('editorPage.regenerateShot')}
               </button>
             </>
           ) : null}
 
-          {tab === '配音' ? (
+          {tab === 'voice' ? (
             <>
               <p className="pf-muted" style={{ fontSize: '0.88rem' }}>
-                替换当前镜头配音（沿用项目音色）。
+                {tx('editorPage.replaceShotSVoice')}
               </p>
               <button
                 type="button"
@@ -518,14 +527,14 @@ export default function EditorPage() {
                 disabled={busy}
                 onClick={regenAudio}
               >
-                替换配音
+                {tx('editorPage.replaceVoice')}
               </button>
             </>
           ) : null}
 
-          {tab === '转场' ? (
+          {tab === 'transition' ? (
             <div className="pf-hint">
-              转场效果（淡入淡出、闪白、运镜衔接等）即将推出。
+              {tx('editorPage.transitionEffectsFadeFlash')}
             </div>
           ) : null}
 
@@ -535,7 +544,7 @@ export default function EditorPage() {
             style={{ marginTop: '1rem' }}
             disabled
           >
-            应用到全部同类镜头 <ComingSoon />
+            {tx('editorPage.applyAll')} <ComingSoon />
           </button>
         </aside>
       </div>
