@@ -41,6 +41,8 @@ import {
 import { clearAuth, getCachedUser } from "@/lib/auth";
 
 import { cn } from "@/lib/utils";
+import { LOCALES, useI18n } from "@/i18n";
+import { tr } from "@/i18n/translate";
 
 
 
@@ -74,26 +76,26 @@ const navGroups: NavGroup[] = [
 
   {
 
-    label: "概览",
+    get label() { return tr("layout.overview") },
 
-    items: [{ to: "/", label: "仪表盘", icon: LayoutDashboard, end: true }],
+    items: [{ to: "/", get label() { return tr("layout.dashboard") }, icon: LayoutDashboard, end: true }],
 
   },
 
   {
 
-    label: "业务",
+    get label() { return tr("layout.business") },
 
     items: [
 
-      { to: "/users", label: "用户管理", icon: Users },
+      { to: "/users", get label() { return tr("layout.users") }, icon: Users },
 
-      { to: "/orders", label: "订单流水", icon: Receipt },
-      { to: "/finance", label: "财务列表", icon: Wallet },
+      { to: "/orders", get label() { return tr("layout.ordersLedger") }, icon: Receipt },
+      { to: "/finance", get label() { return tr("layout.finance") }, icon: Wallet },
 
-      { to: "/projects", label: "科普项目", icon: Clapperboard },
+      { to: "/projects", get label() { return tr("layout.explainerProjects") }, icon: Clapperboard },
 
-      { to: "/works", label: "作品审核", icon: FileVideo },
+      { to: "/works", get label() { return tr("layout.workReview") }, icon: FileVideo },
 
     ],
 
@@ -101,17 +103,17 @@ const navGroups: NavGroup[] = [
 
   {
 
-    label: "漫剧",
+    get label() { return tr("layout.drama") },
 
     items: [
 
-      { to: "/drama-projects", label: "漫剧项目", icon: Film, matchPrefix: true },
+      { to: "/drama-projects", get label() { return tr("layout.dramaProjects") }, icon: Film, matchPrefix: true },
 
-      { to: "/drama-assets", label: "资产库", icon: Image, matchPrefix: true },
+      { to: "/drama-assets", get label() { return tr("layout.assetLibrary") }, icon: Image, matchPrefix: true },
 
-      { to: "/drama-episodes", label: "分集管理", icon: ListVideo, matchPrefix: true },
+      { to: "/drama-episodes", get label() { return tr("layout.episodes") }, icon: ListVideo, matchPrefix: true },
 
-      { to: "/drama-fragments", label: "分镜管理", icon: Layers, matchPrefix: true },
+      { to: "/drama-fragments", get label() { return tr("layout.shots") }, icon: Layers, matchPrefix: true },
 
     ],
 
@@ -119,13 +121,13 @@ const navGroups: NavGroup[] = [
 
   {
 
-    label: "资源",
+    get label() { return tr("layout.resources") },
 
     items: [
 
-      { to: "/templates", label: "模板管理", icon: Shapes },
+      { to: "/templates", get label() { return tr("layout.templates") }, icon: Shapes },
 
-      { to: "/queues", label: "任务中心", icon: Layers },
+      { to: "/queues", get label() { return tr("layout.taskCenter") }, icon: Layers },
 
     ],
 
@@ -133,9 +135,9 @@ const navGroups: NavGroup[] = [
 
   {
 
-    label: "系统",
+    get label() { return tr("layout.system") },
 
-    items: [{ to: "/settings", label: "系统设置", icon: Settings }],
+    items: [{ to: "/settings", get label() { return tr("layout.systemSettings") }, icon: Settings }],
 
   },
 
@@ -145,30 +147,30 @@ const navGroups: NavGroup[] = [
 
 const titles: Record<string, string> = {
 
-  "/": "仪表盘",
+  get "/"() { return tr("layout.dashboard") },
 
-  "/users": "用户管理",
+  get "/users"() { return tr("layout.users") },
 
-  "/orders": "订单流水",
-  "/finance": "财务列表",
+  get "/orders"() { return tr("layout.ordersLedger") },
+  get "/finance"() { return tr("layout.finance") },
 
-  "/projects": "科普项目",
+  get "/projects"() { return tr("layout.explainerProjects") },
 
-  "/drama-projects": "漫剧项目",
+  get "/drama-projects"() { return tr("layout.dramaProjects") },
 
-  "/drama-assets": "资产库",
+  get "/drama-assets"() { return tr("layout.assetLibrary") },
 
-  "/drama-episodes": "分集管理",
+  get "/drama-episodes"() { return tr("layout.episodes") },
 
-  "/drama-fragments": "分镜管理",
+  get "/drama-fragments"() { return tr("layout.shots") },
 
-  "/works": "作品审核",
+  get "/works"() { return tr("layout.workReview") },
 
-  "/templates": "模板管理",
+  get "/templates"() { return tr("layout.templates") },
 
-  "/settings": "系统设置",
+  get "/settings"() { return tr("layout.systemSettings") },
 
-  "/queues": "任务中心",
+  get "/queues"() { return tr("layout.taskCenter") },
 
 };
 
@@ -176,15 +178,15 @@ const titles: Record<string, string> = {
 
 function resolveTitle(pathname: string): string {
 
-  if (pathname.startsWith("/drama-projects/")) return "漫剧项目详情";
+  if (pathname.startsWith("/drama-projects/")) return tr("layout.dramaProjectDetails");
 
-  if (pathname.startsWith("/drama-assets/")) return "资产详情";
+  if (pathname.startsWith("/drama-assets/")) return tr("layout.assetDetails");
 
-  if (pathname.startsWith("/drama-episodes/")) return "分集详情";
+  if (pathname.startsWith("/drama-episodes/")) return tr("layout.episodeDetails");
 
-  if (pathname.startsWith("/drama-fragments/")) return "分镜详情";
+  if (pathname.startsWith("/drama-fragments/")) return tr("layout.shotDetails");
 
-  return titles[pathname] ?? "管理后台";
+  return titles[pathname] ?? tr("layout.adminConsole");
 
 }
 
@@ -193,6 +195,7 @@ function resolveTitle(pathname: string): string {
 // Admin shell: dark sidebar + glass top bar
 
 export function AdminLayout() {
+  const { t: tx, locale, setLocale } = useI18n();
 
   const navigate = useNavigate();
 
@@ -244,7 +247,7 @@ export function AdminLayout() {
 
               <div className="admin-brand-name">PRINTFILM</div>
 
-              <div className="admin-brand-sub">管理后台</div>
+              <div className="admin-brand-sub">{tx("layout.adminConsole")}</div>
 
             </div>
 
@@ -312,13 +315,13 @@ export function AdminLayout() {
 
               <div className="truncate text-[13px] font-medium text-[#e8f0eb]">{user?.email}</div>
 
-              <div className="text-xs text-[rgba(240,245,242,0.45)]">超级管理员</div>
+              <div className="text-xs text-[rgba(240,245,242,0.45)]">{tx("layout.superAdmin")}</div>
 
             </div>
 
           )}
 
-          <button type="button" className="admin-icon-btn !text-[rgba(240,245,242,0.55)] hover:!text-[#e8f0eb]" onClick={handleLogout} title="退出登录">
+          <button type="button" className="admin-icon-btn !text-[rgba(240,245,242,0.55)] hover:!text-[#e8f0eb]" onClick={handleLogout} title={tx("layout.signOut")}>
 
             <LogOut className="h-4 w-4" />
 
@@ -344,7 +347,7 @@ export function AdminLayout() {
 
               onClick={() => setCollapsed((v) => !v)}
 
-              aria-label="折叠侧栏"
+              aria-label={tx("layout.collapseSidebar")}
 
             >
 
@@ -356,7 +359,7 @@ export function AdminLayout() {
 
               <div className="admin-topbar-title">{title}</div>
 
-              <div className="admin-topbar-crumb">PRINTFILM · 运营管理</div>
+              <div className="admin-topbar-crumb">{tx("layout.printfilmOperations")}</div>
 
             </div>
 
@@ -364,7 +367,23 @@ export function AdminLayout() {
 
           <div className="flex items-center gap-1">
 
-            <button type="button" className="admin-icon-btn" title="通知">
+            <div className="mr-1 flex items-center gap-0.5 rounded-md border border-black/10 p-0.5" role="group" aria-label={tx("lang.label")}>
+              {LOCALES.map((code) => (
+                <button
+                  key={code}
+                  type="button"
+                  aria-pressed={locale === code}
+                  className={cn(
+                    "rounded px-2 py-0.5 text-xs font-medium transition-colors",
+                    locale === code ? "bg-[#1a2b22] text-white" : "text-slate-500 hover:text-slate-800",
+                  )}
+                  onClick={() => setLocale(code)}
+                >
+                  {tx(`lang.${code}`)}
+                </button>
+              ))}
+            </div>
+            <button type="button" className="admin-icon-btn" title={tx("layout.notifications")}>
 
               <Bell className="h-4 w-4" />
 
@@ -376,7 +395,7 @@ export function AdminLayout() {
 
               className="admin-icon-btn"
 
-              title="全屏"
+              title={tx("layout.fullscreen")}
 
               onClick={() => {
 
