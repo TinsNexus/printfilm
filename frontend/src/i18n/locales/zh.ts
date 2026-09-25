@@ -1,3 +1,4 @@
+import { zhLibData } from './zh/libData'
 import { zhLibMisc } from './zh/libMisc'
 import { zhFragmentPlanSkill } from './zh/fragmentPlanSkill'
 import { zhDramaImageStyleModal } from './zh/dramaImageStyleModal'
@@ -62,6 +63,7 @@ import { zhStudio } from './zh/studio'
 
 export const zh = {
   ...zhShell,
+  ...zhLibData,
   ...zhLibMisc,
   ...zhFragmentPlanSkill,
   ...zhDramaImageStyleModal,

@@ -5,7 +5,7 @@ import { Aperture, Clapperboard, LayoutGrid, Search, Timer, User } from 'lucide-
 import { resolveDramaMediaUrl, type DramaAsset } from '../../api/drama'
 import {
   DRAMA_CAMERA_LEXICON,
-  DRAMA_CAMERA_USAGE_TIPS,
+  dramaCameraUsageTips,
   filterDramaCameraLexicon,
   type DramaCameraLexiconItem,
 } from '../../lib/dramaCameraLexicon'
@@ -397,7 +397,7 @@ export function EpisodeEditMentionPopover({
             </>
           )}
           <ul className="drama-ep-mention-pop-camera-tips">
-            {DRAMA_CAMERA_USAGE_TIPS.map((tip) => (
+            {dramaCameraUsageTips().map((tip) => (
               <li key={tip}>{tip}</li>
             ))}
           </ul>

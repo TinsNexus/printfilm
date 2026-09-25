@@ -1,3 +1,4 @@
+import { tr } from '../i18n/translate'
 /**
  * 短剧剪辑节奏公式（社区 Skill 六式，用于分镜时长建议 / 整集导出规划）
  * 对齐 docs/EPISODE_RULES.md §10 P3
@@ -22,38 +23,38 @@ export type DramaEditRhythmPreset = {
 export const DRAMA_EDIT_RHYTHM_PRESETS: DramaEditRhythmPreset[] = [
   {
     id: 'breath',
-    label: '呼吸式',
-    hint: '缓入—展开—回落，适合建立与抒情',
+    get label() { return tr('rhythm.breathing') },
+    get hint() { return tr('rhythm.easeExpandSettleGood') },
     weights: [3, 5, 4, 3],
   },
   {
     id: 'heartbeat',
-    label: '心跳式',
-    hint: '短促加速，适合冲突与对峙',
+    get label() { return tr('rhythm.heartbeat') },
+    get hint() { return tr('rhythm.shortAcceleratingGoodConflict') },
     weights: [2, 2, 3, 2, 4],
   },
   {
     id: 'wave',
-    label: '海浪式',
-    hint: '层层推高再泄力，适合高潮戏',
+    get label() { return tr('rhythm.wave') },
+    get hint() { return tr('rhythm.buildsLayerLayerReleases') },
     weights: [3, 4, 5, 6, 3],
   },
   {
     id: 'elastic',
-    label: '弹性时间',
-    hint: '关键动作拉长，其余压缩',
+    get label() { return tr('rhythm.elasticTime') },
+    get hint() { return tr('rhythm.stretchesKeyActionsCompresses') },
     weights: [2, 6, 2, 3],
   },
   {
     id: 'pulse',
-    label: '脉冲式',
-    hint: '规律跳动，适合卡点与群像',
+    get label() { return tr('rhythm.pulse') },
+    get hint() { return tr('rhythm.regularBeatsGoodBeat') },
     weights: [3, 3, 3, 3],
   },
   {
     id: 'silence_hammer',
-    label: '静默锤击',
-    hint: '蓄势静场后猛切，适合反转',
+    get label() { return tr('rhythm.silentHammer') },
+    get hint() { return tr('rhythm.quietBuildUpFollowed') },
     weights: [5, 2, 6],
   },
 ]
