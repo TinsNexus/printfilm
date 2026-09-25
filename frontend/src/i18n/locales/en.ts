@@ -1,3 +1,4 @@
+import { enDramaRules } from './en/dramaRules'
 import { enLibData } from './en/libData'
 import { enLibMisc } from './en/libMisc'
 import { enFragmentPlanSkill } from './en/fragmentPlanSkill'
@@ -63,6 +64,7 @@ import { enStudio } from './en/studio'
 
 export const en = {
   ...enShell,
+  ...enDramaRules,
   ...enLibData,
   ...enLibMisc,
   ...enFragmentPlanSkill,
