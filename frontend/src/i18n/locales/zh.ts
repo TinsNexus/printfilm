@@ -1,3 +1,8 @@
+import { zhTopupHistory } from './zh/topupHistory'
+import { zhCanvasVideoOpts } from './zh/canvasVideoOpts'
+import { zhDramaEditUtils } from './zh/dramaEditUtils'
+import { zhCanvasTopBar } from './zh/canvasTopBar'
+import { zhNarratorBind } from './zh/narratorBind'
 import { zhCanvasStore } from './zh/canvasStore'
 import { zhDramaGenTaskDetail } from './zh/dramaGenTaskDetail'
 import { zhCanvasBottom } from './zh/canvasBottom'
@@ -34,6 +39,11 @@ import { zhStudio } from './zh/studio'
 
 export const zh = {
   ...zhShell,
+  ...zhTopupHistory,
+  ...zhCanvasVideoOpts,
+  ...zhDramaEditUtils,
+  ...zhCanvasTopBar,
+  ...zhNarratorBind,
   ...zhCanvasStore,
   ...zhDramaGenTaskDetail,
   ...zhCanvasBottom,

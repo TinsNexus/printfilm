@@ -1,3 +1,8 @@
+import { viTopupHistory } from './vi/topupHistory'
+import { viCanvasVideoOpts } from './vi/canvasVideoOpts'
+import { viDramaEditUtils } from './vi/dramaEditUtils'
+import { viCanvasTopBar } from './vi/canvasTopBar'
+import { viNarratorBind } from './vi/narratorBind'
 import { viCanvasStore } from './vi/canvasStore'
 import { viDramaGenTaskDetail } from './vi/dramaGenTaskDetail'
 import { viCanvasBottom } from './vi/canvasBottom'
@@ -34,6 +39,11 @@ import { viStudio } from './vi/studio'
 
 export const vi = {
   ...viShell,
+  ...viTopupHistory,
+  ...viCanvasVideoOpts,
+  ...viDramaEditUtils,
+  ...viCanvasTopBar,
+  ...viNarratorBind,
   ...viCanvasStore,
   ...viDramaGenTaskDetail,
   ...viCanvasBottom,

@@ -101,7 +101,7 @@ export function EpisodeEditAssetPanel({
             className={tab === item.key ? 'active' : ''}
             onClick={() => onTabChange(tab === item.key ? null : item.key)}
           >
-            {item.label}
+            {tx(item.labelKey)}
           </button>
         ))}
       </div>

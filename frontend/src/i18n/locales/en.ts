@@ -1,3 +1,8 @@
+import { enTopupHistory } from './en/topupHistory'
+import { enCanvasVideoOpts } from './en/canvasVideoOpts'
+import { enDramaEditUtils } from './en/dramaEditUtils'
+import { enCanvasTopBar } from './en/canvasTopBar'
+import { enNarratorBind } from './en/narratorBind'
 import { enCanvasStore } from './en/canvasStore'
 import { enDramaGenTaskDetail } from './en/dramaGenTaskDetail'
 import { enCanvasBottom } from './en/canvasBottom'
@@ -34,6 +39,11 @@ import { enStudio } from './en/studio'
 
 export const en = {
   ...enShell,
+  ...enTopupHistory,
+  ...enCanvasVideoOpts,
+  ...enDramaEditUtils,
+  ...enCanvasTopBar,
+  ...enNarratorBind,
   ...enCanvasStore,
   ...enDramaGenTaskDetail,
   ...enCanvasBottom,

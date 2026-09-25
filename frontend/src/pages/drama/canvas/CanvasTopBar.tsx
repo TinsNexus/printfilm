@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { ChevronLeft, Maximize2, Settings } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useCanvasStore } from './CanvasStore'
+import { tr } from '../../../i18n/translate'
 
 type Props = {
   variant?: 'fullscreen' | 'embedded'
@@ -23,8 +24,8 @@ export function CanvasTopBar({ variant = 'fullscreen' }: Props) {
             <button
               type="button"
               className="fc-icon-btn"
-              aria-label="返回"
-              title="返回"
+              aria-label={tr('canvasTop.back')}
+              title={tr('canvasTop.back')}
               onClick={() => {
                 if (freeCanvasMode) {
                   navigate('/drama')
@@ -38,12 +39,12 @@ export function CanvasTopBar({ variant = 'fullscreen' }: Props) {
             </button>
           )}
           <span className="fc-topbar-title">
-            {embedded ? '资产画布' : freeCanvasMode ? '自由画布' : '资产库编排'}
+            {embedded ? tr('canvasTop.assetCanvas') : freeCanvasMode ? tr('canvasTop.freeCanvas') : tr('canvasTop.libraryArrangement')}
           </span>
           {saveStatusVisible ? (
             <span className="fc-save-pill">
               <span className="fc-save-dot" />
-              已保存
+              {tr('canvasTop.saved')}
             </span>
           ) : null}
         </div>
@@ -53,8 +54,8 @@ export function CanvasTopBar({ variant = 'fullscreen' }: Props) {
             <button
               type="button"
               className="fc-icon-btn"
-              aria-label="全屏画布"
-              title="全屏画布"
+              aria-label={tr('canvasTop.fullscreenCanvas')}
+              title={tr('canvasTop.fullscreenCanvas')}
               onClick={() => navigate(`/drama/projects/${projectId}/canvas`)}
             >
               <Maximize2 size={18} strokeWidth={1.8} />
@@ -63,8 +64,8 @@ export function CanvasTopBar({ variant = 'fullscreen' }: Props) {
           <button
             type="button"
             className="fc-icon-btn"
-            aria-label="设置"
-            title="设置"
+            aria-label={tr('canvasTop.settings')}
+            title={tr('canvasTop.settings')}
             aria-expanded={settingsOpen}
             onClick={() => setSettingsOpen((v) => !v)}
           >
@@ -74,11 +75,11 @@ export function CanvasTopBar({ variant = 'fullscreen' }: Props) {
       </div>
 
       {settingsOpen ? (
-        <div className="fc-settings-pop" role="dialog" aria-label="画布设置">
-          <strong>画布设置</strong>
+        <div className="fc-settings-pop" role="dialog" aria-label={tr('canvasTop.canvasSettings')}>
+          <strong>{tr('canvasTop.canvasSettings')}</strong>
           {freeCanvasMode
-            ? '在画布上添加节点、连线并生成图片与视频。布局与资产会自动保存。'
-            : '布局与项目资产会自动同步保存。上传走 OSS；合成时按需拉本地缓存。'}
+            ? tr('canvasTop.addNodesConnectThem')
+            : tr('canvasTop.layoutProjectAssetsSync')}
           <div style={{ marginTop: 10 }}>
             <button
               type="button"
@@ -86,7 +87,7 @@ export function CanvasTopBar({ variant = 'fullscreen' }: Props) {
               style={{ width: 'auto', padding: '0 12px', borderRadius: 10 }}
               onClick={() => setSettingsOpen(false)}
             >
-              关闭
+              {tr('canvasTop.close')}
             </button>
           </div>
         </div>
