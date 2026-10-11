@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import colorsys
 import hashlib
 import json
 import logging
 import re
+import shutil
+import subprocess
 import time
 import uuid
 from dataclasses import dataclass
@@ -60,6 +63,7 @@ from app.services.tokenfree_video import (
     normalize_video_task_status,
     prepare_video_create_body,
     remap_video_path,
+    uses_9router_gateway,
     tokenfree_video_content_url,
     unwrap_video_task_payload,
     uses_tokenfree_video,
@@ -429,16 +433,21 @@ class ArkGateway:
 
     # 优先后台 TokenFree / 方舟渠道 Key，env 仅作空渠道时的兜底
     def _ark_api_key(self) -> str:
+        from app.services.nine_router.plan_keys import plan_api_key_override
+
+        plan_key = plan_api_key_override()
+        if plan_key:
+            return plan_key
         try:
             from app.services.model_settings import get_routing_snapshot
-            from app.services.tokenfree_gateway import TOKENFREE_CHANNEL_ID
+            from app.services.tokenfree_gateway import PRIMARY_GATEWAY_CHANNEL_IDS
 
             channels = get_routing_snapshot().channels
         except Exception:  # noqa: BLE001
             channels = []
-            TOKENFREE_CHANNEL_ID = "tokenfree"
+            PRIMARY_GATEWAY_CHANNEL_IDS = frozenset({"tokenfree", "9router"})
         enabled = [ch for ch in channels if ch.enabled and (ch.api_key or "").strip()]
-        preferred = next((ch for ch in enabled if ch.id == TOKENFREE_CHANNEL_ID), None)
+        preferred = next((ch for ch in enabled if ch.id in PRIMARY_GATEWAY_CHANNEL_IDS), None)
         if preferred is None:
             preferred = enabled[0] if enabled else None
         if preferred is not None:
@@ -470,8 +479,10 @@ class ArkGateway:
 
     def _route_headers(self, route: ResolvedModelRoute | None = None) -> dict[str, str]:
         if route and route.api_key:
+            from app.services.nine_router.plan_keys import plan_api_key_override
+
             return {
-                "Authorization": f"Bearer {route.api_key}",
+                "Authorization": f"Bearer {plan_api_key_override() or route.api_key}",
                 "Content-Type": "application/json",
             }
         return self._headers()
@@ -499,6 +510,16 @@ class ArkGateway:
         base = (route.base_url if route and route.base_url else self.settings.ark_base_url) or ""
         channel_id = (route.channel_id if route else "") or ""
         return prepare_video_create_body(body, base_url=base, channel_id=channel_id)
+
+    def _video_poll_request(self, task_id: str) -> tuple[str, dict[str, str]]:
+        """轮询 URL 与请求头；9Router 的任务 id 形如 `request_id|connection_id`，需带 x-connection-id。"""
+        headers = self._headers()
+        real_id = task_id
+        if uses_9router_gateway() and "|" in task_id:
+            real_id, conn = task_id.split("|", 1)
+            if conn:
+                headers["x-connection-id"] = conn
+        return self._url(f"/contents/generations/tasks/{real_id}"), headers
 
     def _finalize_video_result(self, result: TaskResult, task_id: str) -> TaskResult:
         """TokenFree 成功但无公网 URL 时，改用 GET /videos/{id}/content。"""
@@ -890,6 +911,20 @@ class ArkGateway:
                 ref_urls=subject_refs,
                 style_ref_urls=style_refs,
             )
+        elif uses_9router_gateway():
+            # 9Router：OpenAI 标准 /images/generations，size 用 WxH，参考图走 image / images
+            from app.services.nine_router.image import pick_9router_image_size
+
+            path = "/images/generations"
+            body = {
+                "model": upstream_model,
+                "prompt": full_prompt,
+                "size": pick_9router_image_size(str(resolved_size or ""), aspect_ratio),
+                "response_format": "url",
+            }
+            if refs:
+                body["images"] = refs
+                body["image"] = refs[0]
         else:
             path = "/images/generations"
             body = {
@@ -958,7 +993,14 @@ class ArkGateway:
         dl_headers = None
         if is_tokenfree_image_url(remote) or is_tokenfree_content_url(remote):
             dl_headers = {"Authorization": f"Bearer {self._ark_api_key()}"}
-        await storage.download_to(remote, dest, headers=dl_headers)
+        if remote.startswith("data:") or not remote.startswith(("http://", "https://", "/")):
+            # b64_json（9Router 等）：直接解码落盘
+            import base64
+
+            b64 = remote.split(",", 1)[1] if remote.startswith("data:") else remote
+            dest.write_bytes(base64.b64decode(b64))
+        else:
+            await storage.download_to(remote, dest, headers=dl_headers)
         merged_usage = dict(raw_usage or {})
         if resolved_size:
             merged_usage.setdefault("size", str(resolved_size))
@@ -1276,6 +1318,11 @@ class ArkGateway:
                 if resp.status_code >= 400:
                     raise RuntimeError(_format_seedance_create_error(resp.status_code, resp.text))
                 data = resp.json()
+                if uses_9router_gateway() and isinstance(data, dict):
+                    # 9Router 轮询需回传创建时返回的 connection id（响应头）
+                    conn = resp.headers.get("x-9router-connection-id")
+                    if conn:
+                        data["_9router_connection_id"] = conn
         except httpx.TimeoutException as exc:
             reraise_upstream_timeout(exc, kind="生视频", read_sec=VIDEO_CREATE_READ_SEC)
 
@@ -1391,6 +1438,11 @@ class ArkGateway:
                             )
                         )
                 data = resp.json()
+                if uses_9router_gateway() and isinstance(data, dict):
+                    # 9Router 轮询需回传创建时返回的 connection id（响应头）
+                    conn = resp.headers.get("x-9router-connection-id")
+                    if conn:
+                        data["_9router_connection_id"] = conn
         except httpx.TimeoutException as exc:
             reraise_upstream_timeout(exc, kind="生视频", read_sec=VIDEO_CREATE_READ_SEC)
 
@@ -1504,10 +1556,8 @@ class ArkGateway:
         async with httpx.AsyncClient(timeout=_upstream_timeout(VIDEO_POLL_READ_SEC, connect=15.0)) as client:
             while time.monotonic() < deadline:
                 try:
-                    resp = await client.get(
-                        self._url(f"/contents/generations/tasks/{task_id}"),
-                        headers=self._headers(),
-                    )
+                    poll_url, poll_headers = self._video_poll_request(task_id)
+                    resp = await client.get(poll_url, headers=poll_headers)
                 except httpx.HTTPError as exc:
                     # 单次网络抖动：退避后继续轮询，由 deadline 收敛，不直接判失败
                     logger.warning(
@@ -1550,10 +1600,8 @@ class ArkGateway:
             )
         try:
             async with httpx.AsyncClient(timeout=_upstream_timeout(VIDEO_FETCH_READ_SEC, connect=15.0)) as client:
-                resp = await client.get(
-                    self._url(f"/contents/generations/tasks/{task_id}"),
-                    headers=self._headers(),
-                )
+                poll_url, poll_headers = self._video_poll_request(task_id)
+                resp = await client.get(poll_url, headers=poll_headers)
         except httpx.HTTPError as exc:
             # 网络抖动对 poller 是下轮重试、对同步端点是继续转圈，均优于 500/误判失败
             logger.warning("Seedance fetch network error task=%s: %s", task_id, exc)
@@ -1734,12 +1782,17 @@ class ArkGateway:
             resp = await client.post(
                 f"{base}/audio/speech",
                 headers=self._headers(),
-                json={
-                    "model": model_id,
-                    "input": text,
-                    "voice": voice,
-                    "response_format": "mp3",
-                },
+                json=(
+                    # 9Router：音色由 model 决定，文档只认 model + input（默认返回 mp3 字节）
+                    {"model": model_id, "input": text}
+                    if uses_9router_gateway()
+                    else {
+                        "model": model_id,
+                        "input": text,
+                        "voice": voice,
+                        "response_format": "mp3",
+                    }
+                ),
             )
         if resp.status_code < 400 and resp.content and len(resp.content) >= 1000:
             dest.write_bytes(resp.content)
@@ -1895,6 +1948,18 @@ class ArkGateway:
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("tokenfree speech failed model=%s: %s", model_id, exc)
 
+        # 9Router：标准 /audio/speech，音色由 model 决定
+        elif uses_9router_gateway():
+            try:
+                ok = await self._tts_openai_speech(clean, speaker, dest, model=audio_model)
+                if ok:
+                    url = await _accept_if_audible("9router-speech")
+                    if url:
+                        logger.info("TTS 9router ok shot=%s model=%s", shot_no, audio_model)
+                        return url
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("9router speech failed model=%s: %s", audio_model, exc)
+
         # edge-tts：按 speaker 映射不同 neural，上游都失败时仍能分出角色声线
         try:
             await self._tts_edge(clean, dest, voice_hint=speaker)
@@ -1905,8 +1970,8 @@ class ArkGateway:
         except Exception as exc:  # noqa: BLE001
             logger.warning("edge-tts failed: %s", exc)
 
-        # 非 TokenFree 时再试 /audio/speech（方舟等）
-        if not on_tokenfree:
+        # 非 TokenFree（且非 9Router，已在上面试过）时再试 /audio/speech（方舟等）
+        if not on_tokenfree and not uses_9router_gateway():
             try:
                 ok = await self._tts_openai_speech(clean, speaker, dest, model=audio_model)
                 if ok:
@@ -2126,37 +2191,61 @@ class ArkGateway:
         return storage.to_public_url(raw)
 
     def _write_mock_image(self, prompt: str, size: str | None = None) -> str:
-        """写出 mock 立绘 SVG；每次唯一文件名，避免重试覆盖。"""
+        """写出 mock 占位 PNG（FFmpeg 无 SVG 解码器，合成会失败）；每次唯一文件名，避免重试覆盖。"""
         digest = uuid.uuid4().hex[:12]
         root = Path(__file__).resolve().parents[2] / "static" / "mock"
         root.mkdir(parents=True, exist_ok=True)
-        path = root / f"image_{digest}.svg"
-        hue = int(digest[:2], 16)
-        label = (prompt[:42] + "…") if len(prompt) > 42 else prompt
-        safe = (
-            label.replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace('"', "&quot;")
-        )
+        path = root / f"image_{digest}.png"
+        hue = int(digest[:2], 16) / 255.0
+
+        def _hex(h: float, s: float, l: float) -> str:
+            r, g, b = colorsys.hls_to_rgb(h % 1.0, l, s)
+            return f"0x{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
+
         # Portrait mock for image_text / 9:16
         portrait = bool(size and ("x" in size.lower()) and self._is_portrait_size(size))
         w, h = (720, 1280) if portrait else (960, 540)
-        svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="hsl({hue},28%,22%)"/>
-      <stop offset="100%" stop-color="hsl({(hue + 40) % 360},22%,38%)"/>
-    </linearGradient>
-  </defs>
-  <rect width="{w}" height="{h}" fill="url(#g)"/>
-  <rect x="{int(w*0.08)}" y="{int(h*0.28)}" width="{int(w*0.4)}" height="{int(h*0.28)}" rx="10" fill="hsl({(hue + 20) % 360},35%,72%)" opacity="0.9"/>
-  <circle cx="{int(w*0.72)}" cy="{int(h*0.38)}" r="{int(w*0.14)}" fill="hsl({(hue + 80) % 360},30%,65%)" opacity="0.55"/>
-  <text x="{int(w*0.08)}" y="{int(h*0.78)}" fill="#f2ebe0" font-family="Georgia, serif" font-size="28">Mock Storyboard</text>
-  <text x="{int(w*0.08)}" y="{int(h*0.84)}" fill="#d7cfc3" font-family="sans-serif" font-size="18">{safe}</text>
-</svg>"""
-        path.write_text(svg, encoding="utf-8")
-        return f"/static/mock/image_{digest}.svg"
+        graph = (
+            f"gradients=s={w}x{h}:c0={_hex(hue, 0.28, 0.22)}:c1={_hex(hue + 0.11, 0.22, 0.38)}"
+            f":x0=0:y0=0:x1={w}:y1={h}:nb_colors=2,"
+            f"drawbox=x={int(w * 0.08)}:y={int(h * 0.28)}:w={int(w * 0.4)}:h={int(h * 0.28)}"
+            f":color={_hex(hue + 0.06, 0.35, 0.72)}@0.9:t=fill,"
+            f"drawbox=x={int(w * 0.58)}:y={int(h * 0.3)}:w={int(w * 0.28)}:h={int(w * 0.28)}"
+            f":color={_hex(hue + 0.22, 0.3, 0.65)}@0.55:t=fill"
+        )
+        ffmpeg = shutil.which(self.settings.ffmpeg_path) or shutil.which("ffmpeg") or "ffmpeg"
+        try:
+            subprocess.run(
+                [ffmpeg, "-y", "-v", "error", "-f", "lavfi", "-i", graph, "-frames:v", "1", str(path)],
+                check=True,
+                capture_output=True,
+                timeout=30,
+            )
+        except (subprocess.SubprocessError, OSError) as exc:
+            # 无 ffmpeg 或 ffmpeg 过旧（缺 gradients 滤镜）时退化为纯色 PNG，保证 mock 模式不中断
+            logger.warning("mock image ffmpeg failed, fallback to solid png: %s", exc)
+            path.write_bytes(self._solid_png(w, h, _hex(hue, 0.28, 0.3)))
+        return f"/static/mock/image_{digest}.png"
+
+    @staticmethod
+    def _solid_png(w: int, h: int, color_hex: str) -> bytes:
+        """纯 Python 生成单色 PNG（无需 ffmpeg/Pillow）。color_hex 形如 0xrrggbb。"""
+        import struct
+        import zlib
+
+        rgb = bytes.fromhex(color_hex[2:])
+        raw = (b"\x00" + rgb * w) * h
+
+        def chunk(tag: bytes, data: bytes) -> bytes:
+            body = tag + data
+            return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+
+        return (
+            b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw, 6))
+            + chunk(b"IEND", b"")
+        )
 
     @staticmethod
     def _is_portrait_size(size: str) -> bool:

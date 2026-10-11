@@ -9,7 +9,7 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.model_routing_config import infer_model_capability, normalize_model_name
-from app.services.tokenfree_gateway import TOKENFREE_BASE_URL
+from app.services.tokenfree_gateway import get_active_base_url
 
 logger = logging.getLogger(__name__)
 
@@ -49,9 +49,9 @@ async def _resolve_channel_credentials(
                 proto = (channel.protocol or "auto").strip().lower() or "auto"
 
     if proto == "ark" and not base:
-        base = TOKENFREE_BASE_URL.rstrip("/")
+        base = get_active_base_url().rstrip("/")
     if proto == "kie" and not base:
-        base = TOKENFREE_BASE_URL.rstrip("/")
+        base = get_active_base_url().rstrip("/")
     return proto, base, key
 
 
@@ -141,9 +141,9 @@ async def list_upstream_models(
         raise RuntimeError("豆包 TTS 暂不支持从上游拉取模型目录，请手动填写 speaker / 音色 ID")
 
     if proto == "kie" or proto == "ark" or "volces.com" in base.lower() or "kie.ai" in base.lower():
-        from app.services.tokenfree_gateway import TOKENFREE_BASE_URL, resolve_tokenfree_api_key
+        from app.services.tokenfree_gateway import get_active_base_url, resolve_tokenfree_api_key
 
-        base = TOKENFREE_BASE_URL
+        base = get_active_base_url()
         key = key or resolve_tokenfree_api_key()
         return await _list_openai_compatible_models(
             base_url=base,
@@ -152,9 +152,9 @@ async def list_upstream_models(
         )
 
     if not base:
-        from app.services.tokenfree_gateway import TOKENFREE_BASE_URL
+        from app.services.tokenfree_gateway import get_active_base_url
 
-        base = TOKENFREE_BASE_URL
+        base = get_active_base_url()
 
     return await _list_openai_compatible_models(
         base_url=base,

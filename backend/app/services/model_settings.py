@@ -139,7 +139,7 @@ def _bootstrap_channels_from_env(settings: Settings | None = None) -> list[Syste
             src.model_audio,
         ]
     )
-    return [locked_tokenfree_channel(api_key=key, models=models, enabled=True)]
+    return [locked_tokenfree_channel(api_key=key, models=models, enabled=True, force_tokenfree=True)]
 
 
 def _seedance_logical_meta(upstream: str) -> tuple[str, str]:
@@ -499,9 +499,10 @@ async def _compose_runtime_state(db: AsyncSession) -> tuple[list[SystemModelChan
         default_models = default_models.model_copy(update={"image_model": image_default})
     default_models = normalize_default_models(default_models, logical_models, channels)
     flat = _effective_flat(_decrypt_flat_config(config))
-    from app.services.tokenfree_gateway import apply_tokenfree_flat_overlay
+    from app.services.tokenfree_gateway import apply_gateway_to_channels, apply_tokenfree_flat_overlay
 
     flat = apply_tokenfree_flat_overlay(flat, channels)
+    channels = apply_gateway_to_channels(channels, flat)
     if default_models.text_model:
         flat["model_llm"] = default_models.text_model
     if default_models.image_model:
@@ -575,6 +576,9 @@ def _to_admin_flat_out(flat: dict[str, Any], *, source: str, updated_at, channel
     for field, flag in SECRET_FIELD_FLAGS.items():
         payload[field] = ""
         payload[flag] = bool(str(flat.get(field) or "").strip())
+    from app.services.nine_router.plan_keys import parse_plan_keys
+
+    payload["ninerouter_plan_names"] = sorted(parse_plan_keys(str(flat.get("ninerouter_plan_keys") or "")))
     payload["source"] = source
     payload["updated_at"] = updated_at
     payload["readiness"] = _build_readiness(channels, logical_models, defaults)
@@ -589,6 +593,7 @@ async def get_admin_model_settings(db: AsyncSession) -> AdminModelSettingsOut:
 
 
 async def get_admin_routing_settings(db: AsyncSession) -> AdminRoutingSettingsOut:
+    from app.services.nine_router.config import get_upstream_gateway_type
     from app.services.tokenfree_gateway import TOKENFREE_CHANNEL_ID
 
     channels, logical_models, defaults, _, app_row = await _compose_runtime_state(db)
@@ -602,6 +607,7 @@ async def get_admin_routing_settings(db: AsyncSession) -> AdminRoutingSettingsOu
         default_models=defaults,
         validation_errors=errors,
         updated_at=app_row.updated_at,
+        gateway_type=get_upstream_gateway_type(),
     )
 
 
@@ -615,6 +621,13 @@ async def patch_admin_model_settings(
     current = _effective_flat(stored_flat if stored_flat else None)
     patch = body.model_dump(exclude_unset=True)
     applied: list[str] = []
+
+    plan_patch = patch.pop("ninerouter_plan_keys", None)
+    if isinstance(plan_patch, dict):
+        from app.services.nine_router.plan_keys import merge_plan_keys
+
+        current["ninerouter_plan_keys"] = merge_plan_keys(current.get("ninerouter_plan_keys"), plan_patch)
+        applied.append("ninerouter_plan_keys")
 
     for field in SECRET_FIELDS:
         clear_flag = f"clear_{field}"
@@ -695,6 +708,28 @@ async def patch_admin_routing_settings(
         row.id: row
         for row in (await db.execute(select(SystemModelChannelRow))).scalars().all()
     }
+    from app.services.nine_router.config import is_9router_active
+    from app.services.media_model_presets import clamp_default_to_preset as _clamp_preset
+
+    # 9Router 模式解锁预设：默认模型可填任意上游模型 id，并并入渠道 models
+    open_models = is_9router_active()
+    custom_models: list[str] = []
+    if open_models and body.default_models is not None:
+        custom_models = [
+            str(v).strip()
+            for v in (
+                body.default_models.text_model,
+                body.default_models.image_model,
+                body.default_models.video_model,
+                body.default_models.audio_model,
+            )
+            if str(v or "").strip()
+        ]
+
+    def clamp_default_to_preset(capability: str, model_id: str | None) -> str:
+        if open_models and str(model_id or "").strip():
+            return str(model_id).strip()
+        return _clamp_preset(capability, model_id)  # type: ignore[arg-type]
 
     if body.system_channels is not None:
         from app.services.tokenfree_gateway import (
@@ -719,13 +754,16 @@ async def patch_admin_routing_settings(
                 api_key = str(incoming.api_key).strip()
         # 渠道 models 固定为站点预设并集，忽略前端自由勾选
         models = all_preset_channel_models()
-        locked = locked_tokenfree_channel(api_key=api_key, models=models, enabled=True)
+        if open_models:
+            prev_models = list(prev.models or []) if prev else []
+            models = list(dict.fromkeys([*models, *prev_models, *custom_models]))
+        locked = locked_tokenfree_channel(api_key=api_key, models=models, enabled=True, force_tokenfree=True)
         row = prev or SystemModelChannelRow(id=TOKENFREE_CHANNEL_ID)
-        row.name = TOKENFREE_CHANNEL_NAME
-        row.base_url = TOKENFREE_BASE_URL
+        row.name = locked.name
+        row.base_url = locked.base_url
         row.api_key_ciphertext = _encrypt_secret(locked.api_key) if locked.api_key else None
         row.api_format = "openai"
-        row.protocol = "auto"
+        row.protocol = locked.protocol
         row.models = locked.models
         row.enabled = True
         row.sort_order = 0
@@ -746,6 +784,8 @@ async def patch_admin_routing_settings(
         prev = existing_rows.get(TOKENFREE_CHANNEL_ID)
         if prev is not None:
             preset = all_preset_channel_models()
+            if open_models:
+                preset = list(dict.fromkeys([*preset, *(prev.models or []), *custom_models]))
             if list(prev.models or []) != preset:
                 prev.models = preset
                 db.add(prev)
@@ -780,8 +820,6 @@ async def patch_admin_routing_settings(
     if body.default_models is not None:
         defaults = body.default_models
         applied.append("default_models")
-    from app.services.media_model_presets import clamp_default_to_preset
-
     # 四类默认强制落在预设内（配音仅 gemini-3.1-flash-tts）
     defaults = defaults.model_copy(
         update={
@@ -797,6 +835,22 @@ async def patch_admin_routing_settings(
         defaults = defaults.model_copy(
             update={"image_model": clamp_default_to_preset("image", image_default)}
         )
+    if open_models:
+        # 自由填写的默认模型：能力由模型名推断，推断不符就明确报错，避免被静默丢弃
+        from app.services.model_routing_config import infer_model_capability
+
+        for cap, value in (
+            ("text", defaults.text_model),
+            ("image", defaults.image_model),
+            ("video", defaults.video_model),
+            ("audio", defaults.audio_model),
+        ):
+            mid = str(value or "").strip()
+            if mid and infer_model_capability(mid) != cap:
+                raise ValueError(
+                    f"模型 {mid} 无法识别为{ {'text': '文本', 'image': '图像', 'video': '视频', 'audio': '语音'}[cap] }模型，"
+                    "请使用名称含 image / video / tts 等关键词的模型 id"
+                )
     defaults = normalize_default_models(defaults, logical_models, channels_after)
     # normalize 可能清空不可解析项；再次钳回预设
     defaults = defaults.model_copy(

@@ -705,6 +705,7 @@ export type AdminRoutingSettings = {
   default_models: AdminDefaultModels;
   validation_errors: string[];
   updated_at?: string | null;
+  gateway_type?: "tokenfree" | "9router";
 };
 
 export type AdminTemplate = {

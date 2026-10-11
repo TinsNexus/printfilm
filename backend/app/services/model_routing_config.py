@@ -46,11 +46,15 @@ def infer_model_capability(model: str) -> LogicalModelCapability:
         or mid.startswith("zh_")
         or "speaker" in mid
         or mid.startswith("s_")
+        or "/aura" in mid  # deepgram/aura-*
+        or "polly" in mid
+        or "edge-tts" in mid
     ):
         return "audio"
     if (
         "seedance" in mid
         or "veo" in mid
+        or "sora" in mid
         or "video" in mid
         or "i2v" in mid
         or mid.startswith("kie-veo")
@@ -65,6 +69,15 @@ def infer_model_capability(model: str) -> LogicalModelCapability:
         or "banana" in mid
         or "dream" in mid
         or mid.startswith("gpt-image")
+        or "dall-e" in mid
+        or "dalle" in mid
+        or "flux" in mid
+        or "imagen" in mid
+        or "midjourney" in mid
+        or "stable-diffusion" in mid
+        or "sdxl" in mid
+        or "recraft" in mid
+        or "ideogram" in mid
         or "grok-imagine" in mid
         or "image" in mid
         or mid.startswith("kie-")

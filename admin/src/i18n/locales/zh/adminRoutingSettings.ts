@@ -2,6 +2,19 @@
 
 export const zhAdminRoutingSettings = {
   routing: {
+    gatewayPlanKeys: "按套餐的 9Router Key",
+    gatewayPlanKeysHint: "每个套餐（用户的 plan，如 free / pro）一把 Key，在 9Router 侧限定该 Key 可用的模型。未配置的套餐使用上面的默认 Key。",
+    gatewayPlanName: "套餐名",
+    gatewayAddPlan: "添加套餐",
+    customModelPlaceholder: "填写上游模型 id，可从建议中选择",
+    gatewayTitle: "上游网关",
+    gatewayDescription: "在 TokenFree 与 9Router 之间切换，保存后立即生效，无需重启。切换不会改动已保存的 TokenFree 配置。",
+    gatewayCurrent: "当前上游",
+    gatewayNoBilling: "使用 9Router 时不拉取官方价目与用量，计费估算仅供参考。",
+    gatewaySave: "保存并切换",
+    gatewaySaving: "保存中…",
+    gatewaySaved: "上游网关已保存",
+    gatewayLoadFailed: "加载上游网关失败",
     textModel: "文本模型",
     imageModel: "图像模型",
     videoModel: "视频模型",

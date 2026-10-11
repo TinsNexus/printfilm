@@ -34,6 +34,10 @@ _SEED_TTS_MARKERS = ("seed-tts",)
 
 def uses_tokenfree_audio(*, base_url: str = "", channel_id: str = "") -> bool:
     """判断 TTS 是否应走 TokenFree（与视频、LLM 同一 Base URL / Key）。"""
+    from app.services.nine_router.config import is_9router_active
+
+    if is_9router_active():
+        return False
     if (channel_id or "").strip().lower() == TOKENFREE_CHANNEL_ID:
         return True
     raw = (base_url or "").strip().lower()

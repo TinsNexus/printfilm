@@ -227,11 +227,10 @@ def _auto_protocol(channel: SystemModelChannel, upstream_model: str) -> str:
     if cap == "audio":
         return "openai"
     if cap in {"image", "video"}:
-        # TokenFree / New API 走 OpenAI 兼容根路径；方舟专有渠道仍用 ark 路径
-        from app.services.tokenfree_gateway import TOKENFREE_CHANNEL_ID, TOKENFREE_BASE_URL
+        # TokenFree / 9Router 走 OpenAI 兼容根路径；方舟专有渠道仍用 ark 路径
+        from app.services.tokenfree_gateway import is_gateway_channel
 
-        base = (channel.base_url or "").rstrip("/").lower()
-        if channel.id == TOKENFREE_CHANNEL_ID or TOKENFREE_BASE_URL.split("://")[-1].lower() in base:
+        if is_gateway_channel(channel.id, channel.base_url):
             return "openai"
         return "ark"
     return "openai"
