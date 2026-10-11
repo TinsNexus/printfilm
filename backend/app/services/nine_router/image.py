@@ -71,6 +71,36 @@ def normalize_image_size(size: str) -> str:
     return "1024x1024"
 
 
+def pick_9router_image_size(size: str | None, aspect_ratio: str | None = None) -> str:
+    """按画幅挑 9Router/OpenAI 通用尺寸：横 1792x1024、竖 1024x1792、方 1024x1024。
+
+    size 为 WxH 时按其宽高比；为 1K/2K 等档位时看 aspect_ratio（如 9:16）；都没有则方图。
+    """
+    ratio: float | None = None
+    raw = (size or "").strip().lower()
+    if "x" in raw:
+        try:
+            w, h = raw.split("x", 1)
+            if int(w) > 0 and int(h) > 0:
+                ratio = int(w) / int(h)
+        except ValueError:
+            ratio = None
+    if ratio is None and ":" in (aspect_ratio or ""):
+        try:
+            a, b = str(aspect_ratio).split(":", 1)
+            if float(a) > 0 and float(b) > 0:
+                ratio = float(a) / float(b)
+        except ValueError:
+            ratio = None
+    if ratio is None:
+        return "1024x1024"
+    if ratio > 1.2:
+        return "1792x1024"
+    if ratio < 0.83:
+        return "1024x1792"
+    return "1024x1024"
+
+
 async def generate_image_via_9router(
     client: NineRouterClient,
     *,

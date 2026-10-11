@@ -825,6 +825,22 @@ async def patch_admin_routing_settings(
         defaults = defaults.model_copy(
             update={"image_model": clamp_default_to_preset("image", image_default)}
         )
+    if open_models:
+        # 自由填写的默认模型：能力由模型名推断，推断不符就明确报错，避免被静默丢弃
+        from app.services.model_routing_config import infer_model_capability
+
+        for cap, value in (
+            ("text", defaults.text_model),
+            ("image", defaults.image_model),
+            ("video", defaults.video_model),
+            ("audio", defaults.audio_model),
+        ):
+            mid = str(value or "").strip()
+            if mid and infer_model_capability(mid) != cap:
+                raise ValueError(
+                    f"模型 {mid} 无法识别为{ {'text': '文本', 'image': '图像', 'video': '视频', 'audio': '语音'}[cap] }模型，"
+                    "请使用名称含 image / video / tts 等关键词的模型 id"
+                )
     defaults = normalize_default_models(defaults, logical_models, channels_after)
     # normalize 可能清空不可解析项；再次钳回预设
     defaults = defaults.model_copy(

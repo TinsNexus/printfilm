@@ -896,13 +896,13 @@ class ArkGateway:
             )
         elif uses_9router_gateway():
             # 9Router：OpenAI 标准 /images/generations，size 用 WxH，参考图走 image / images
-            from app.services.nine_router.image import normalize_image_size
+            from app.services.nine_router.image import pick_9router_image_size
 
             path = "/images/generations"
             body = {
                 "model": upstream_model,
                 "prompt": full_prompt,
-                "size": normalize_image_size(str(resolved_size or "")),
+                "size": pick_9router_image_size(str(resolved_size or ""), aspect_ratio),
                 "response_format": "url",
             }
             if refs:
@@ -1947,8 +1947,8 @@ class ArkGateway:
         except Exception as exc:  # noqa: BLE001
             logger.warning("edge-tts failed: %s", exc)
 
-        # 非 TokenFree 时再试 /audio/speech（方舟等）
-        if not on_tokenfree:
+        # 非 TokenFree（且非 9Router，已在上面试过）时再试 /audio/speech（方舟等）
+        if not on_tokenfree and not uses_9router_gateway():
             try:
                 ok = await self._tts_openai_speech(clean, speaker, dest, model=audio_model)
                 if ok:
