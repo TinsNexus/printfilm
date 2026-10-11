@@ -86,3 +86,31 @@ def test_infer_capability_for_common_9router_models():
     assert f("deepgram/aura-asteria-en") == "audio"
     assert f("cc/claude-sonnet-4") == "text"
     assert f("xai/grok-imagine-video") == "video"
+
+
+def test_video_task_id_carries_9router_connection_id():
+    assert extract_video_task_id({"request_id": "r1", "_9router_connection_id": "c9"}) == "r1|c9"
+    assert extract_video_task_id({"request_id": "r1"}) == "r1"
+    assert extract_video_task_id({"task_id": "t1", "_9router_connection_id": "c9"}) == "t1"
+
+
+def test_poll_request_splits_connection_id():
+    from app.services.ark import ArkGateway
+
+    gw = ArkGateway()
+    with patch(ON, return_value=True):
+        url, headers = gw._video_poll_request("r1|c9")
+    assert url.endswith("/videos/r1")
+    assert headers["x-connection-id"] == "c9"
+    with patch(ON, return_value=True):
+        url, headers = gw._video_poll_request("plain")
+    assert "x-connection-id" not in headers
+
+
+def test_infer_sora_and_veo_video():
+    from app.services.model_routing_config import infer_model_capability as f
+
+    assert f("openai/sora-2") == "video"
+    assert f("gemini/veo-3.0-generate-preview") == "video"
+    assert f("gemini/gemini-2.5-flash-preview-tts") == "audio"
+    assert f("openai/gpt-4o-mini-tts") == "audio"

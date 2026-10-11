@@ -295,7 +295,9 @@ def extract_video_task_id(data: dict[str, Any] | None) -> str | None:
     for key in ("task_id", "taskId", "request_id"):
         found = _scalar_task_id(payload.get(key))
         if found:
-            return found
+            conn = _scalar_task_id(data.get("_9router_connection_id"))
+            # 9Router：任务 id 与 connection id 合并保存，轮询时拆开
+            return f"{found}|{conn}" if conn and key == "request_id" else found
     found = _scalar_task_id(data.get("data"))
     if found:
         return found
@@ -324,7 +326,12 @@ def extract_video_result_url(data: dict[str, Any]) -> str | None:
         value = data.get(key)
         if isinstance(value, str) and value.strip().startswith(("http://", "https://", "/")):
             return value.strip()
-    # 9Router / xAI：{"status":"done","video":{"url":...}}
+    # 9Router：{"status":"done","video":{"url":...}}；兼容 OpenAI 风格 data[0].url
+    items = data.get("data")
+    if isinstance(items, list) and items and isinstance(items[0], dict):
+        value = items[0].get("url")
+        if isinstance(value, str) and value.strip().startswith(("http://", "https://")):
+            return value.strip()
     video = data.get("video")
     if isinstance(video, dict):
         value = video.get("url")
