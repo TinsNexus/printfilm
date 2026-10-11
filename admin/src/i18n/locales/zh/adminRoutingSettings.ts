@@ -2,6 +2,15 @@
 
 export const zhAdminRoutingSettings = {
   routing: {
+    customModelPlaceholder: "填写上游模型 id，可从建议中选择",
+    gatewayTitle: "上游网关",
+    gatewayDescription: "在 TokenFree 与 9Router 之间切换，保存后立即生效，无需重启。切换不会改动已保存的 TokenFree 配置。",
+    gatewayCurrent: "当前上游",
+    gatewayNoBilling: "使用 9Router 时不拉取官方价目与用量，计费估算仅供参考。",
+    gatewaySave: "保存并切换",
+    gatewaySaving: "保存中…",
+    gatewaySaved: "上游网关已保存",
+    gatewayLoadFailed: "加载上游网关失败",
     textModel: "文本模型",
     imageModel: "图像模型",
     videoModel: "视频模型",

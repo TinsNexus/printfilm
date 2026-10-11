@@ -2,6 +2,15 @@
 
 export const enAdminRoutingSettings = {
   routing: {
+    customModelPlaceholder: "Enter an upstream model id or pick a suggestion",
+    gatewayTitle: "Upstream gateway",
+    gatewayDescription: "Switch between TokenFree and 9Router. Takes effect immediately after saving, no restart needed. Saved TokenFree settings are left untouched.",
+    gatewayCurrent: "Active upstream",
+    gatewayNoBilling: "Official pricing and usage are not fetched while 9Router is active; billing estimates are indicative only.",
+    gatewaySave: "Save and switch",
+    gatewaySaving: "Saving…",
+    gatewaySaved: "Upstream gateway saved",
+    gatewayLoadFailed: "Failed to load upstream gateway",
     textModel: "Text model",
     imageModel: "Image model",
     videoModel: "Video model",

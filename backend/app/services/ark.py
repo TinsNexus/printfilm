@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import colorsys
 import hashlib
 import json
 import logging
 import re
+import shutil
+import subprocess
 import time
 import uuid
 from dataclasses import dataclass
@@ -431,14 +434,14 @@ class ArkGateway:
     def _ark_api_key(self) -> str:
         try:
             from app.services.model_settings import get_routing_snapshot
-            from app.services.tokenfree_gateway import TOKENFREE_CHANNEL_ID
+            from app.services.tokenfree_gateway import PRIMARY_GATEWAY_CHANNEL_IDS
 
             channels = get_routing_snapshot().channels
         except Exception:  # noqa: BLE001
             channels = []
-            TOKENFREE_CHANNEL_ID = "tokenfree"
+            PRIMARY_GATEWAY_CHANNEL_IDS = frozenset({"tokenfree", "9router"})
         enabled = [ch for ch in channels if ch.enabled and (ch.api_key or "").strip()]
-        preferred = next((ch for ch in enabled if ch.id == TOKENFREE_CHANNEL_ID), None)
+        preferred = next((ch for ch in enabled if ch.id in PRIMARY_GATEWAY_CHANNEL_IDS), None)
         if preferred is None:
             preferred = enabled[0] if enabled else None
         if preferred is not None:
@@ -2126,37 +2129,61 @@ class ArkGateway:
         return storage.to_public_url(raw)
 
     def _write_mock_image(self, prompt: str, size: str | None = None) -> str:
-        """写出 mock 立绘 SVG；每次唯一文件名，避免重试覆盖。"""
+        """写出 mock 占位 PNG（FFmpeg 无 SVG 解码器，合成会失败）；每次唯一文件名，避免重试覆盖。"""
         digest = uuid.uuid4().hex[:12]
         root = Path(__file__).resolve().parents[2] / "static" / "mock"
         root.mkdir(parents=True, exist_ok=True)
-        path = root / f"image_{digest}.svg"
-        hue = int(digest[:2], 16)
-        label = (prompt[:42] + "…") if len(prompt) > 42 else prompt
-        safe = (
-            label.replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace('"', "&quot;")
-        )
+        path = root / f"image_{digest}.png"
+        hue = int(digest[:2], 16) / 255.0
+
+        def _hex(h: float, s: float, l: float) -> str:
+            r, g, b = colorsys.hls_to_rgb(h % 1.0, l, s)
+            return f"0x{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
+
         # Portrait mock for image_text / 9:16
         portrait = bool(size and ("x" in size.lower()) and self._is_portrait_size(size))
         w, h = (720, 1280) if portrait else (960, 540)
-        svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="hsl({hue},28%,22%)"/>
-      <stop offset="100%" stop-color="hsl({(hue + 40) % 360},22%,38%)"/>
-    </linearGradient>
-  </defs>
-  <rect width="{w}" height="{h}" fill="url(#g)"/>
-  <rect x="{int(w*0.08)}" y="{int(h*0.28)}" width="{int(w*0.4)}" height="{int(h*0.28)}" rx="10" fill="hsl({(hue + 20) % 360},35%,72%)" opacity="0.9"/>
-  <circle cx="{int(w*0.72)}" cy="{int(h*0.38)}" r="{int(w*0.14)}" fill="hsl({(hue + 80) % 360},30%,65%)" opacity="0.55"/>
-  <text x="{int(w*0.08)}" y="{int(h*0.78)}" fill="#f2ebe0" font-family="Georgia, serif" font-size="28">Mock Storyboard</text>
-  <text x="{int(w*0.08)}" y="{int(h*0.84)}" fill="#d7cfc3" font-family="sans-serif" font-size="18">{safe}</text>
-</svg>"""
-        path.write_text(svg, encoding="utf-8")
-        return f"/static/mock/image_{digest}.svg"
+        graph = (
+            f"gradients=s={w}x{h}:c0={_hex(hue, 0.28, 0.22)}:c1={_hex(hue + 0.11, 0.22, 0.38)}"
+            f":x0=0:y0=0:x1={w}:y1={h}:nb_colors=2,"
+            f"drawbox=x={int(w * 0.08)}:y={int(h * 0.28)}:w={int(w * 0.4)}:h={int(h * 0.28)}"
+            f":color={_hex(hue + 0.06, 0.35, 0.72)}@0.9:t=fill,"
+            f"drawbox=x={int(w * 0.58)}:y={int(h * 0.3)}:w={int(w * 0.28)}:h={int(w * 0.28)}"
+            f":color={_hex(hue + 0.22, 0.3, 0.65)}@0.55:t=fill"
+        )
+        ffmpeg = shutil.which(self.settings.ffmpeg_path) or shutil.which("ffmpeg") or "ffmpeg"
+        try:
+            subprocess.run(
+                [ffmpeg, "-y", "-v", "error", "-f", "lavfi", "-i", graph, "-frames:v", "1", str(path)],
+                check=True,
+                capture_output=True,
+                timeout=30,
+            )
+        except (subprocess.SubprocessError, OSError) as exc:
+            # 无 ffmpeg 或 ffmpeg 过旧（缺 gradients 滤镜）时退化为纯色 PNG，保证 mock 模式不中断
+            logger.warning("mock image ffmpeg failed, fallback to solid png: %s", exc)
+            path.write_bytes(self._solid_png(w, h, _hex(hue, 0.28, 0.3)))
+        return f"/static/mock/image_{digest}.png"
+
+    @staticmethod
+    def _solid_png(w: int, h: int, color_hex: str) -> bytes:
+        """纯 Python 生成单色 PNG（无需 ffmpeg/Pillow）。color_hex 形如 0xrrggbb。"""
+        import struct
+        import zlib
+
+        rgb = bytes.fromhex(color_hex[2:])
+        raw = (b"\x00" + rgb * w) * h
+
+        def chunk(tag: bytes, data: bytes) -> bytes:
+            body = tag + data
+            return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+
+        return (
+            b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw, 6))
+            + chunk(b"IEND", b"")
+        )
 
     @staticmethod
     def _is_portrait_size(size: str) -> bool:

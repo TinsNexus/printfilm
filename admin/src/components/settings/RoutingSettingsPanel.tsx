@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api, type AdminRoutingSettings } from "@/api/client";
+import { GatewaySwitchPanel } from "@/components/settings/GatewaySwitchPanel";
 import {
   LabeledControl,
   SettingsLoading,
@@ -39,8 +40,17 @@ function buildReadiness(data: AdminRoutingSettings | null, hasKey: boolean) {
   ] as const;
 }
 
-function normalizeDefaults(raw: AdminRoutingSettings["default_models"] | undefined) {
+function normalizeDefaults(raw: AdminRoutingSettings["default_models"] | undefined, open = false) {
   const base = defaultPresetDefaults();
+  if (open) {
+    // 9Router：默认模型可填任意上游模型 id，不钳到预设
+    return {
+      text_model: raw?.text_model || base.text_model,
+      image_model: raw?.image_model || base.image_model,
+      video_model: raw?.video_model || base.video_model,
+      audio_model: raw?.audio_model || base.audio_model,
+    };
+  }
   return {
     text_model: clampDefaultToPreset("text", raw?.text_model || base.text_model),
     image_model: clampDefaultToPreset("image", raw?.image_model || base.image_model),
@@ -63,6 +73,7 @@ export function RoutingSettingsPanel() {
   const channel = data?.system_channels.find((item) => item.id === TOKENFREE_CHANNEL_ID) ?? data?.system_channels[0];
   const hasSavedKey = Boolean(channel?.has_api_key);
   const hasKey = hasSavedKey || Boolean(apiKeyInput.trim());
+  const openModels = data?.gateway_type === "9router";
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -71,7 +82,7 @@ export function RoutingSettingsPanel() {
       setDefaultRemaps(detectDefaultRemaps(res.default_models));
       setData({
         ...res,
-        default_models: normalizeDefaults(res.default_models),
+        default_models: normalizeDefaults(res.default_models, res.gateway_type === "9router"),
         system_channels: res.system_channels.map((item) =>
           item.id === TOKENFREE_CHANNEL_ID
             ? { ...item, models: allPresetChannelModels() }
@@ -94,7 +105,7 @@ export function RoutingSettingsPanel() {
 
   function setDefaultModel(key: (typeof DEFAULT_KEYS)[number], value: string) {
     const cap = key.replace("_model", "") as ModelCapability;
-    const next = clampDefaultToPreset(cap, value);
+    const next = openModels ? value : clampDefaultToPreset(cap, value);
     setData((prev) =>
       prev
         ? {
@@ -109,7 +120,7 @@ export function RoutingSettingsPanel() {
     if (!data) return;
     setSaving(true);
     try {
-      const defaults = normalizeDefaults(data.default_models);
+      const defaults = normalizeDefaults(data.default_models, openModels);
       const res = await api<{ settings: AdminRoutingSettings }>("/api/admin/settings/routing", {
         method: "PATCH",
         body: JSON.stringify({
@@ -131,7 +142,7 @@ export function RoutingSettingsPanel() {
       });
       setData({
         ...res.settings,
-        default_models: normalizeDefaults(res.settings.default_models),
+        default_models: normalizeDefaults(res.settings.default_models, res.settings.gateway_type === "9router"),
       });
       setDefaultRemaps([]);
       setApiKeyInput("");
@@ -189,6 +200,8 @@ export function RoutingSettingsPanel() {
         </SettingsSurface>
       ) : null}
 
+      <GatewaySwitchPanel onChanged={() => void load()} />
+
       <SettingsPanel
         title="TokenFree New API"
         description={tx("routing.upstreamLockedEnteringApi")}
@@ -240,17 +253,36 @@ export function RoutingSettingsPanel() {
             const options = PRESET_MODELS[cap];
             return (
               <LabeledControl key={key} label={CAPABILITY_LABELS[cap]}>
-                <select
-                  className="settings-select"
-                  value={data?.default_models[key] ?? options[0]?.id ?? ""}
-                  onChange={(e) => setDefaultModel(key, e.target.value)}
-                >
-                  {options.map((row) => (
-                    <option key={row.id} value={row.id}>
-                      {row.label}
-                    </option>
-                  ))}
-                </select>
+                {openModels ? (
+                  <>
+                    <input
+                      className="settings-input"
+                      list={`routing-models-${cap}`}
+                      placeholder={tx("routing.customModelPlaceholder")}
+                      value={data?.default_models[key] ?? ""}
+                      onChange={(e) => setDefaultModel(key, e.target.value)}
+                    />
+                    <datalist id={`routing-models-${cap}`}>
+                      {options.map((row) => (
+                        <option key={row.id} value={row.id}>
+                          {row.label}
+                        </option>
+                      ))}
+                    </datalist>
+                  </>
+                ) : (
+                  <select
+                    className="settings-select"
+                    value={data?.default_models[key] ?? options[0]?.id ?? ""}
+                    onChange={(e) => setDefaultModel(key, e.target.value)}
+                  >
+                    {options.map((row) => (
+                      <option key={row.id} value={row.id}>
+                        {row.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </LabeledControl>
             );
           })}

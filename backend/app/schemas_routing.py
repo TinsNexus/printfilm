@@ -94,6 +94,8 @@ class AdminRoutingSettingsOut(BaseModel):
     default_models: DefaultModels = Field(default_factory=DefaultModels)
     validation_errors: list[str] = Field(default_factory=list)
     updated_at: datetime | None = None
+    # 当前上游：tokenfree 时模型限定预设；9router 时默认模型可自由填写
+    gateway_type: str = "tokenfree"
 
 
 class AdminRoutingSettingsPatch(BaseModel):

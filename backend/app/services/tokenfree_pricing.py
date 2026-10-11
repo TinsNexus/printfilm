@@ -709,7 +709,11 @@ async def fetch_tokenfree_pricing() -> dict[str, Any]:
 
 
 async def ensure_official_rates(settings: Settings | None = None) -> dict[str, OfficialRate]:
-    """有缓存且未过期则复用；失败写短 TTL，预扣不因外网挂掉。"""
+    """有缓存且未过期则复用；失败写短 TTL，预扣不因外网挂掉。9Router 下不拉价目。"""
+    from app.services.nine_router.config import is_9router_active
+
+    if is_9router_active(settings):
+        return cached_rates()
     ttl = _FAIL_TTL_SEC if _cache_failed else _CACHE_TTL_SEC
     if _cache is not None and _cache_at and (time.monotonic() - _cache_at) < ttl:
         return _cache
