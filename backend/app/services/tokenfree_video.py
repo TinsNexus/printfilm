@@ -15,14 +15,25 @@ from app.services.tokenfree_gateway import TOKENFREE_CHANNEL_ID
 ARK_VIDEO_TASK_PREFIX = "/contents/generations/tasks"
 # TokenFree OpenAI Videos 兼容前缀（相对 /v1）
 NEWAPI_VIDEO_TASK_PREFIX = "/videos"
+# 9Router 创建视频任务路径（透传 xAI Grok Imagine）
+NINEROUTER_VIDEO_CREATE_PATH = "/videos/generations"
 # 任务成功态（方舟 + New API / OpenAI Videos）
-VIDEO_SUCCESS_STATUSES = {"succeeded", "success", "completed", "complete"}
+VIDEO_SUCCESS_STATUSES = {"succeeded", "success", "completed", "complete", "done"}
 # 任务失败态
 VIDEO_FAILED_STATUSES = {"failed", "cancelled", "canceled", "expired", "failure"}
 
 
+def uses_9router_gateway() -> bool:
+    """后台开关选了 9Router 时，ark 层的图/视频/TTS 改走 9Router 标准接口（渠道 id 仍是 tokenfree，需先排除）。"""
+    from app.services.nine_router.config import is_9router_active
+
+    return is_9router_active()
+
+
 def uses_tokenfree_video(*, base_url: str = "", channel_id: str = "") -> bool:
     """判断该基址/渠道是否走 New API 视频路径（而非方舟原生）。"""
+    if uses_9router_gateway():
+        return False
     if (channel_id or "").strip().lower() == TOKENFREE_CHANNEL_ID:
         return True
     raw = (base_url or "").strip().lower()
@@ -36,6 +47,13 @@ def uses_tokenfree_video(*, base_url: str = "", channel_id: str = "") -> bool:
 def remap_video_path(path: str, *, base_url: str = "", channel_id: str = "") -> str:
     """TokenFree 上将方舟任务路径改写成 /videos 与 /videos/{id}。"""
     normalized = path if str(path).startswith("/") else f"/{path}"
+    if uses_9router_gateway():
+        # 9Router：POST /videos/generations 创建，GET /videos/{request_id} 查询
+        if normalized == ARK_VIDEO_TASK_PREFIX:
+            return NINEROUTER_VIDEO_CREATE_PATH
+        if normalized.startswith(ARK_VIDEO_TASK_PREFIX + "/"):
+            return NEWAPI_VIDEO_TASK_PREFIX + normalized[len(ARK_VIDEO_TASK_PREFIX) :]
+        return normalized
     if not uses_tokenfree_video(base_url=base_url, channel_id=channel_id):
         return normalized
     if normalized == ARK_VIDEO_TASK_PREFIX or normalized.startswith(ARK_VIDEO_TASK_PREFIX + "/"):
@@ -181,6 +199,50 @@ def wrap_seedance_payload_for_newapi(payload: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def wrap_seedance_payload_for_9router(payload: dict[str, Any]) -> dict[str, Any]:
+    """把方舟 Seedance body 转成 9Router POST /v1/videos/generations 请求体（xAI 风格，字段原样透传）。
+
+    只保留 model / prompt / duration / aspect_ratio / resolution 与首帧图；
+    Seedance 专有字段（metadata、参考图、音频、水印等）上游不认，丢弃。
+    """
+    src = dict(payload)
+    content = src.get("content")
+    texts: list[str] = []
+    first_image: str | None = None
+    if isinstance(content, list):
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") == "text":
+                piece = str(item.get("text") or "").strip()
+                if piece:
+                    texts.append(piece)
+            elif item.get("type") == "image_url":
+                url = _media_url_from_item(item, "image_url")
+                role = str(item.get("role") or "").strip()
+                if url and (role == "first_frame" or first_image is None):
+                    first_image = url
+    out: dict[str, Any] = {
+        "model": src.get("model"),
+        "prompt": "\n".join(texts) or str(src.get("prompt") or "").strip() or ".",
+    }
+    duration = src.get("duration")
+    if duration is not None:
+        try:
+            out["duration"] = int(duration)
+        except (TypeError, ValueError):
+            pass
+    ratio = str(src.get("ratio") or "").strip()
+    if ratio and ratio.lower() != "adaptive":
+        out["aspect_ratio"] = ratio
+    resolution = str(src.get("resolution") or "").strip()
+    if resolution:
+        out["resolution"] = resolution
+    if first_image:
+        out["image"] = {"url": first_image}
+    return out
+
+
 def prepare_video_create_body(
     body: dict[str, Any],
     *,
@@ -188,6 +250,8 @@ def prepare_video_create_body(
     channel_id: str = "",
 ) -> dict[str, Any]:
     """按渠道决定是否包装 Seedance 请求体。"""
+    if uses_9router_gateway():
+        return wrap_seedance_payload_for_9router(body)
     if uses_tokenfree_video(base_url=base_url, channel_id=channel_id):
         return wrap_seedance_payload_for_newapi(body)
     return body
@@ -199,7 +263,7 @@ def unwrap_video_task_payload(data: dict[str, Any] | None) -> dict[str, Any]:
         return {}
     inner = data.get("data")
     if isinstance(inner, dict) and any(
-        key in inner for key in ("status", "url", "content", "task_id", "id", "video_url")
+        key in inner for key in ("status", "url", "content", "task_id", "id", "video_url", "request_id", "video")
     ):
         merged = dict(data)
         merged.update(inner)
@@ -228,7 +292,7 @@ def extract_video_task_id(data: dict[str, Any] | None) -> str | None:
     if not isinstance(data, dict):
         return None
     payload = unwrap_video_task_payload(data)
-    for key in ("task_id", "taskId"):
+    for key in ("task_id", "taskId", "request_id"):
         found = _scalar_task_id(payload.get(key))
         if found:
             return found
@@ -259,6 +323,12 @@ def extract_video_result_url(data: dict[str, Any]) -> str | None:
     for key in ("url", "video_url"):
         value = data.get(key)
         if isinstance(value, str) and value.strip().startswith(("http://", "https://", "/")):
+            return value.strip()
+    # 9Router / xAI：{"status":"done","video":{"url":...}}
+    video = data.get("video")
+    if isinstance(video, dict):
+        value = video.get("url")
+        if isinstance(value, str) and value.strip():
             return value.strip()
     content = data.get("content")
     if isinstance(content, dict):

@@ -63,6 +63,7 @@ from app.services.tokenfree_video import (
     normalize_video_task_status,
     prepare_video_create_body,
     remap_video_path,
+    uses_9router_gateway,
     tokenfree_video_content_url,
     unwrap_video_task_payload,
     uses_tokenfree_video,
@@ -893,6 +894,20 @@ class ArkGateway:
                 ref_urls=subject_refs,
                 style_ref_urls=style_refs,
             )
+        elif uses_9router_gateway():
+            # 9Router：OpenAI 标准 /images/generations，size 用 WxH，参考图走 image / images
+            from app.services.nine_router.image import normalize_image_size
+
+            path = "/images/generations"
+            body = {
+                "model": upstream_model,
+                "prompt": full_prompt,
+                "size": normalize_image_size(str(resolved_size or "")),
+                "response_format": "url",
+            }
+            if refs:
+                body["images"] = refs
+                body["image"] = refs[0]
         else:
             path = "/images/generations"
             body = {
@@ -961,7 +976,14 @@ class ArkGateway:
         dl_headers = None
         if is_tokenfree_image_url(remote) or is_tokenfree_content_url(remote):
             dl_headers = {"Authorization": f"Bearer {self._ark_api_key()}"}
-        await storage.download_to(remote, dest, headers=dl_headers)
+        if remote.startswith("data:") or not remote.startswith(("http://", "https://", "/")):
+            # b64_json（9Router 等）：直接解码落盘
+            import base64
+
+            b64 = remote.split(",", 1)[1] if remote.startswith("data:") else remote
+            dest.write_bytes(base64.b64decode(b64))
+        else:
+            await storage.download_to(remote, dest, headers=dl_headers)
         merged_usage = dict(raw_usage or {})
         if resolved_size:
             merged_usage.setdefault("size", str(resolved_size))
@@ -1737,12 +1759,17 @@ class ArkGateway:
             resp = await client.post(
                 f"{base}/audio/speech",
                 headers=self._headers(),
-                json={
-                    "model": model_id,
-                    "input": text,
-                    "voice": voice,
-                    "response_format": "mp3",
-                },
+                json=(
+                    # 9Router：音色由 model 决定，文档只认 model + input（默认返回 mp3 字节）
+                    {"model": model_id, "input": text}
+                    if uses_9router_gateway()
+                    else {
+                        "model": model_id,
+                        "input": text,
+                        "voice": voice,
+                        "response_format": "mp3",
+                    }
+                ),
             )
         if resp.status_code < 400 and resp.content and len(resp.content) >= 1000:
             dest.write_bytes(resp.content)
@@ -1897,6 +1924,18 @@ class ArkGateway:
                             return url
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("tokenfree speech failed model=%s: %s", model_id, exc)
+
+        # 9Router：标准 /audio/speech，音色由 model 决定
+        elif uses_9router_gateway():
+            try:
+                ok = await self._tts_openai_speech(clean, speaker, dest, model=audio_model)
+                if ok:
+                    url = await _accept_if_audible("9router-speech")
+                    if url:
+                        logger.info("TTS 9router ok shot=%s model=%s", shot_no, audio_model)
+                        return url
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("9router speech failed model=%s: %s", audio_model, exc)
 
         # edge-tts：按 speaker 映射不同 neural，上游都失败时仍能分出角色声线
         try:
