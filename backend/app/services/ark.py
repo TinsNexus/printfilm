@@ -1047,13 +1047,13 @@ class ArkGateway:
 
         if uses_9router_gateway():
             # 9Router：OpenAI 标准 /images/generations，size 用 WxH，参考图走 image / images
-            from app.services.nine_router.image import normalize_image_size
+            from app.services.nine_router.image import pick_9router_image_size
 
             path = "/images/generations"
             body = {
                 "model": upstream_model,
                 "prompt": full_prompt,
-                "size": normalize_image_size(str(resolved_size or "")),
+                "size": pick_9router_image_size(str(resolved_size or ""), aspect_ratio),
                 "response_format": "url",
             }
             all_refs = [*subject_refs, *style_refs]

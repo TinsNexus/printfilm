@@ -64,3 +64,25 @@ def test_video_response_parsing_xai_style():
     assert normalize_video_task_status("done") == "succeeded"
     assert normalize_video_task_status("pending") == "running"
     assert extract_video_result_url({"status": "done", "video": {"url": "https://v/1.mp4"}}) == "https://v/1.mp4"
+
+
+def test_pick_9router_image_size():
+    from app.services.nine_router.image import pick_9router_image_size as pick
+
+    assert pick("2560x1440") == "1792x1024"
+    assert pick("1440x2560") == "1024x1792"
+    assert pick("2K", "9:16") == "1024x1792"
+    assert pick("2K", "16:9") == "1792x1024"
+    assert pick("1K") == "1024x1024"
+    assert pick("1024x1024") == "1024x1024"
+
+
+def test_infer_capability_for_common_9router_models():
+    from app.services.model_routing_config import infer_model_capability as f
+
+    assert f("openai/dall-e-3") == "image"
+    assert f("fal-ai/flux-pro") == "image"
+    assert f("black-forest-labs/flux-1.1") == "image"
+    assert f("deepgram/aura-asteria-en") == "audio"
+    assert f("cc/claude-sonnet-4") == "text"
+    assert f("xai/grok-imagine-video") == "video"
