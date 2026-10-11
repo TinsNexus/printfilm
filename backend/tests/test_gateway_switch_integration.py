@@ -39,6 +39,16 @@ async def test_switch_to_9router_and_back(db_session):
         assert s.openai_base_url == "http://localhost:20128/v1"
         assert s.openai_api_key == "sk-9r-test"
 
+        out_m, _ = await patch_admin_model_settings(
+            db_session, AdminModelSettingsPatch(ninerouter_plan_keys={"free": "sk-free", "pro": "sk-pro"})
+        )
+        assert out_m.ninerouter_plan_names == ["free", "pro"]
+        assert out_m.ninerouter_plan_keys == "" and out_m.has_ninerouter_plan_keys
+        out_m, _ = await patch_admin_model_settings(
+            db_session, AdminModelSettingsPatch(ninerouter_plan_keys={"free": ""})
+        )
+        assert out_m.ninerouter_plan_names == ["pro"]
+
         routing = await get_admin_routing_settings(db_session)
         assert routing.gateway_type == "9router"
 

@@ -175,7 +175,7 @@ async def run_billed_ephemeral(
 
     result: T
     try:
-        async with hold_inline_lease(task), billing_scope(task.id, team_id=task.team_id, snapshot=task.billing_snapshot), upstream_event_session(db):
+        async with hold_inline_lease(task), billing_scope(task.id, team_id=task.team_id, snapshot=task.billing_snapshot, user_plan=getattr(user, "plan", None)), upstream_event_session(db):
             result = await executor()
         task.status = "succeeded"
         task.progress_percent = 100
@@ -298,7 +298,7 @@ async def settle_deferred_video_poll(
     now = datetime.now(UTC)
     if terminal == "succeeded":
         payload = task.payload if isinstance(task.payload, dict) else {}
-        async with billing_scope(task.id, team_id=task.team_id, snapshot=task.billing_snapshot):
+        async with billing_scope(task.id, team_id=task.team_id, snapshot=task.billing_snapshot, user_plan=getattr(user, "plan", None)):
             from app.services.drama.billing_util import record_seedance_video_usage, seedance_billing_key
 
             generate_audio = bool(payload.get("generate_audio", True))

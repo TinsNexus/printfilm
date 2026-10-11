@@ -9,7 +9,11 @@ type GatewayState = {
   upstream_gateway_type: GatewayType;
   ninerouter_base_url: string;
   has_ninerouter_api_key: boolean;
+  ninerouter_plan_names: string[];
 };
+
+// 套餐 Key 行：existing 表示库里已有（Key 留空即保持不变）
+type PlanRow = { plan: string; key: string; existing: boolean };
 
 const DEFAULT_9ROUTER_URL = "http://localhost:20128/v1";
 
@@ -17,6 +21,7 @@ const DEFAULT_9ROUTER_URL = "http://localhost:20128/v1";
 export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
   const [state, setState] = useState<GatewayState | null>(null);
   const [keyInput, setKeyInput] = useState("");
+  const [planRows, setPlanRows] = useState<PlanRow[]>([]);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -26,7 +31,9 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
         upstream_gateway_type: res.upstream_gateway_type === "9router" ? "9router" : "tokenfree",
         ninerouter_base_url: res.ninerouter_base_url || DEFAULT_9ROUTER_URL,
         has_ninerouter_api_key: Boolean(res.has_ninerouter_api_key),
+        ninerouter_plan_names: res.ninerouter_plan_names ?? [],
       });
+      setPlanRows((res.ninerouter_plan_names ?? []).map((plan) => ({ plan, key: "", existing: true })));
       setKeyInput("");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "加载上游网关失败");
@@ -40,12 +47,23 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
   async function save(next: GatewayState) {
     setSaving(true);
     try {
+      // 增量：有新 Key 则设置/覆盖；被删掉的已有套餐传空串删除
+      const planPatch: Record<string, string> = {};
+      for (const row of planRows) {
+        const name = row.plan.trim();
+        if (name && row.key.trim()) planPatch[name] = row.key.trim();
+      }
+      const kept = new Set(planRows.map((r) => r.plan.trim()));
+      for (const name of next.ninerouter_plan_names) {
+        if (!kept.has(name)) planPatch[name] = "";
+      }
       await api("/api/admin/settings/models", {
         method: "PATCH",
         body: JSON.stringify({
           upstream_gateway_type: next.upstream_gateway_type,
           ninerouter_base_url: next.ninerouter_base_url.trim(),
           ninerouter_api_key: keyInput.trim() || undefined,
+          ninerouter_plan_keys: Object.keys(planPatch).length ? planPatch : undefined,
         }),
       });
       toast.success("上游网关已保存");
@@ -64,7 +82,7 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
   return (
     <SettingsPanel title={"上游网关"} description={"在 TokenFree 与 9Router 之间切换，保存后立即生效，无需重启。切换不会改动已保存的 TokenFree 配置。"}>
       <div className="settings-field-grid">
-        <LabeledControl label={"当前上游"} className="settings-field-span-full">
+        <LabeledControl label="当前上游" className="settings-field-span-full">
           <select
             className="settings-select"
             value={state.upstream_gateway_type}
@@ -97,6 +115,51 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
                 onChange={(e) => setKeyInput(e.target.value)}
               />
               <p className="mt-1 text-xs text-[#909399]">{"使用 9Router 时不拉取官方价目与用量，计费估算仅供参考。"}</p>
+            </LabeledControl>
+            <LabeledControl
+              label="按套餐的 9Router Key"
+              hint="每个套餐（用户的 plan，如 free / pro）一把 Key，在 9Router 侧限定该 Key 可用的模型。未配置的套餐使用上面的默认 Key。"
+              className="settings-field-span-full"
+            >
+              <div className="space-y-2">
+                {planRows.map((row, idx) => (
+                  <div key={idx} className="settings-secret-row">
+                    <input
+                      className="settings-input"
+                      style={{ maxWidth: 160 }}
+                      placeholder="套餐名"
+                      value={row.plan}
+                      disabled={row.existing}
+                      onChange={(e) =>
+                        setPlanRows(planRows.map((r, i) => (i === idx ? { ...r, plan: e.target.value } : r)))
+                      }
+                    />
+                    <input
+                      className="settings-input is-secret"
+                      type="password"
+                      placeholder={row.existing ? "已保存，留空则不修改" : "sk-..."}
+                      value={row.key}
+                      onChange={(e) =>
+                        setPlanRows(planRows.map((r, i) => (i === idx ? { ...r, key: e.target.value } : r)))
+                      }
+                    />
+                    <button
+                      type="button"
+                      className="admin-btn admin-btn-secondary settings-mini-btn"
+                      onClick={() => setPlanRows(planRows.filter((_, i) => i !== idx))}
+                    >
+                      {"清除"}
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="admin-btn admin-btn-secondary settings-mini-btn"
+                  onClick={() => setPlanRows([...planRows, { plan: "", key: "", existing: false }])}
+                >
+                  {"添加套餐"}
+                </button>
+              </div>
             </LabeledControl>
           </>
         ) : null}

@@ -31,6 +31,9 @@ class AdminModelSettingsOut(BaseModel):
     ninerouter_base_url: str = Field(default="", description="9Router 网关基础地址")
     ninerouter_api_key: str = Field(default="", description="9Router API 密钥；响应始终为空串，请通过 has_ninerouter_api_key 判断")
     has_ninerouter_api_key: bool = Field(default=False, description="是否已配置 9Router API 密钥")
+    ninerouter_plan_keys: str = Field(default="", description="按套餐区分的 9Router Key；响应始终为空串")
+    has_ninerouter_plan_keys: bool = Field(default=False, description="是否已配置按套餐的 9Router Key")
+    ninerouter_plan_names: list[str] = Field(default_factory=list, description="已配置 Key 的套餐名称列表")
 
     ark_api_key: str = Field(default="", description="图像、视频及语音服务的 API 密钥；响应始终为空串，请通过 has_ark_api_key 判断是否已配置")
     ark_base_url: str = Field(default="", description="图像、视频及语音服务的 API 基础地址，运行时会与当前模型渠道配置统一")
@@ -158,6 +161,8 @@ class AdminModelSettingsPatch(BaseModel):
     ninerouter_base_url: str | None = Field(default=None, description="9Router 网关基础地址；省略或 null 时不修改")
     ninerouter_api_key: str | None = Field(default=None, description="9Router API 密钥；省略、null 或空白字符串时保留原值")
     clear_ninerouter_api_key: bool = Field(default=False, description="是否显式清空 9Router API 密钥")
+    # 套餐 → Key 增量：非空设置/覆盖，空串删除该套餐
+    ninerouter_plan_keys: dict[str, str] | None = Field(default=None, description="套餐到 9Router Key 的增量映射；非空设置或覆盖，空串删除该套餐")
 
     openai_api_key: str | None = Field(default=None, description="OpenAI 兼容文本服务的 API 密钥；省略、null 或空白字符串时保留原值；使用 clear_openai_api_key=true 清空")
     openai_base_url: str | None = Field(default=None, description="OpenAI 兼容文本服务的 API 基础地址，运行时会与当前模型渠道配置统一；省略或 null 时不修改")
@@ -290,6 +295,7 @@ def model_config_field_names() -> tuple[str, ...]:
         "upstream_gateway_type",
         "ninerouter_base_url",
         "ninerouter_api_key",
+        "ninerouter_plan_keys",
         "model_llm",
         "ark_api_key",
         "ark_base_url",
@@ -378,6 +384,7 @@ SECRET_FIELD_FLAGS: dict[str, str] = {
     "openai_api_key": "has_openai_api_key",
     "ark_api_key": "has_ark_api_key",
     "ninerouter_api_key": "has_ninerouter_api_key",
+    "ninerouter_plan_keys": "has_ninerouter_plan_keys",
     "oss_access_key_id": "has_oss_access_key_id",
     "oss_access_key_secret": "has_oss_access_key_secret",
     "tos_access_key": "has_tos_access_key",
