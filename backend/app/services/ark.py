@@ -628,6 +628,17 @@ class ArkGateway:
             request["model"] = route.upstream_model
         return request
 
+    def _video_poll_request(self, task_id: str) -> tuple[str, dict[str, str]]:
+        """轮询 URL 与请求头；9Router 的任务 id 形如 `request_id|connection_id`，需带 x-connection-id。"""
+        route = self._poll_route()
+        headers = self._route_headers(route)
+        real_id = task_id
+        if uses_9router_gateway() and "|" in task_id:
+            real_id, conn = task_id.split("|", 1)
+            if conn:
+                headers["x-connection-id"] = conn
+        return self._route_url(f"/contents/generations/tasks/{real_id}", route), headers
+
     def _finalize_video_result(self, result: TaskResult, task_id: str) -> TaskResult:
         """TokenFree 成功但无公网 URL 时，改用 GET /videos/{id}/content。"""
         result.provider_task_id = task_id
@@ -1483,6 +1494,11 @@ class ArkGateway:
                 if resp.status_code >= 400:
                     raise RuntimeError(_format_seedance_create_error(resp.status_code, resp.text))
                 data = resp.json()
+                if uses_9router_gateway() and isinstance(data, dict):
+                    # 9Router 轮询需回传创建时返回的 connection id（响应头）
+                    conn = resp.headers.get("x-9router-connection-id")
+                    if conn:
+                        data["_9router_connection_id"] = conn
         except httpx.TimeoutException as exc:
             reraise_upstream_timeout(exc, kind="生视频", read_sec=VIDEO_CREATE_READ_SEC)
 
@@ -1614,6 +1630,11 @@ class ArkGateway:
                             )
                         )
                 data = resp.json()
+                if uses_9router_gateway() and isinstance(data, dict):
+                    # 9Router 轮询需回传创建时返回的 connection id（响应头）
+                    conn = resp.headers.get("x-9router-connection-id")
+                    if conn:
+                        data["_9router_connection_id"] = conn
         except httpx.TimeoutException as exc:
             reraise_upstream_timeout(exc, kind="生视频", read_sec=VIDEO_CREATE_READ_SEC)
 
@@ -1668,10 +1689,8 @@ class ArkGateway:
         async with httpx.AsyncClient(timeout=_upstream_timeout(VIDEO_POLL_READ_SEC, connect=15.0)) as client:
             while time.monotonic() < deadline:
                 try:
-                    resp = await observed_request(client, "GET",
-                        self._route_url(f"/contents/generations/tasks/{task_id}", self._poll_route()),
-                        headers=self._route_headers(self._poll_route()),
-                    )
+                    poll_url, poll_headers = self._video_poll_request(task_id)
+                    resp = await observed_request(client, "GET", poll_url, headers=poll_headers)
                 except httpx.HTTPError as exc:
                     # 单次网络抖动：退避后继续轮询，由 deadline 收敛，不直接判失败
                     logger.warning(
@@ -1728,10 +1747,8 @@ class ArkGateway:
             )
         try:
             async with httpx.AsyncClient(timeout=_upstream_timeout(VIDEO_FETCH_READ_SEC, connect=15.0)) as client:
-                resp = await observed_request(client, "GET",
-                    self._route_url(f"/contents/generations/tasks/{task_id}", self._poll_route()),
-                    headers=self._route_headers(self._poll_route()),
-                )
+                poll_url, poll_headers = self._video_poll_request(task_id)
+                resp = await observed_request(client, "GET", poll_url, headers=poll_headers)
         except httpx.HTTPError as exc:
             # 网络抖动对 poller 是下轮重试、对同步端点是继续转圈，均优于 500/误判失败
             logger.warning("Seedance fetch network error task=%s: %s", task_id, exc)
