@@ -7,4 +7,5 @@ ai_movie.db
 *.egg-info/
 .pytest_cache/
 /data/
-static/mock/image_*.svg
+static/mock/image_*
+static/mock/audio_*

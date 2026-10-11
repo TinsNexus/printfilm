@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Eye, EyeOff, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { api, type AdminRoutingSettings } from "@/api/client";
+import { GatewaySwitchPanel } from "@/components/settings/GatewaySwitchPanel";
 import {
   LabeledControl,
   SettingsLoading,
@@ -202,6 +203,8 @@ export function RoutingSettingsPanel() {
           <p className="mt-1 text-xs text-[#909399]">保存后将写入上述预设 id；若需保留历史模型请先改下拉再保存。</p>
         </SettingsSurface>
       ) : null}
+
+      <GatewaySwitchPanel onChanged={() => void load()} />
 
       <SettingsPanel title="连接模型服务" description="使用 TokenFree API Key 连接上游。接口地址已预设，完成授权后再选择默认模型。">
         <LabeledControl label="TokenFree API Key" required={!hasSavedKey} optional={hasSavedKey} error={keyError}

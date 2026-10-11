@@ -8,6 +8,10 @@ export type ModelCapabilityReadiness = {
 };
 
 export type AdminModelSettings = {
+  upstream_gateway_type?: "tokenfree" | "9router";
+  ninerouter_base_url?: string;
+  ninerouter_api_key?: string;
+  has_ninerouter_api_key?: boolean;
   openai_api_key: string;
   openai_base_url: string;
   model_llm: string;
@@ -145,6 +149,7 @@ export type AdminDefaultModels = {
 };
 
 export type AdminRoutingSettings = {
+  gateway_type?: "tokenfree" | "9router";
   system_channels: AdminRoutingChannel[];
   logical_models: AdminLogicalModel[];
   default_models: AdminDefaultModels;

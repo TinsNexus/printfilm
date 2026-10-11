@@ -9,7 +9,7 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.model_routing_config import infer_model_capability, normalize_model_name
-from app.services.tokenfree_gateway import TOKENFREE_BASE_URL
+from app.services.tokenfree_gateway import get_active_base_url
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ async def _resolve_channel_credentials(
                 proto = (channel.protocol or "auto").strip().lower() or "auto"
 
     if proto == "ark" and not base:
-        base = TOKENFREE_BASE_URL.rstrip("/")
+        base = get_active_base_url().rstrip("/")
     return proto, base, key
 
 
@@ -135,11 +135,11 @@ async def list_upstream_models(
         api_key_override=api_key_override,
     )
 
-    # 已下线的方舟 / 豆包协议或 volces 地址不再直连，改拉 TokenFree 目录
+    # 已下线的方舟 / 豆包协议或 volces 地址不再直连，改拉当前网关（TokenFree / 9Router）目录
     if proto in {"ark", "volc_tts"} or "volces.com" in base.lower() or "openspeech.bytedance.com" in base.lower():
-        from app.services.tokenfree_gateway import TOKENFREE_BASE_URL, resolve_tokenfree_api_key
+        from app.services.tokenfree_gateway import get_active_base_url, resolve_tokenfree_api_key
 
-        base = TOKENFREE_BASE_URL
+        base = get_active_base_url()
         key = key or resolve_tokenfree_api_key()
         return await _list_openai_compatible_models(
             base_url=base,
@@ -148,9 +148,9 @@ async def list_upstream_models(
         )
 
     if not base:
-        from app.services.tokenfree_gateway import TOKENFREE_BASE_URL
+        from app.services.tokenfree_gateway import get_active_base_url
 
-        base = TOKENFREE_BASE_URL
+        base = get_active_base_url()
 
     return await _list_openai_compatible_models(
         base_url=base,
