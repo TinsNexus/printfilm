@@ -31,9 +31,11 @@ _SEED_TTS_MARKERS = ("seed-tts",)
 
 
 def uses_tokenfree_audio(*, base_url: str = "", channel_id: str = "") -> bool:
-    """配音模型路由只走 TokenFree。"""
+    """配音模型路由只走 TokenFree；9Router 开启时走 9Router 标准接口。"""
+    from app.services.nine_router.config import is_9router_active
+
     del base_url, channel_id
-    return True
+    return not is_9router_active()
 
 
 def resolve_tokenfree_tts_model(model: str | None) -> str:
