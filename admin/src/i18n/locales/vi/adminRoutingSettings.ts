@@ -2,6 +2,10 @@
 
 export const viAdminRoutingSettings = {
   routing: {
+    gatewayPlanKeys: "Key 9Router theo gói",
+    gatewayPlanKeysHint: "Mỗi gói (plan của user, ví dụ free / pro) một key, giới hạn model của key đó ở phía 9Router. Gói chưa cấu hình sẽ dùng key mặc định ở trên.",
+    gatewayPlanName: "Tên gói",
+    gatewayAddPlan: "Thêm gói",
     customModelPlaceholder: "Nhập model id của upstream hoặc chọn gợi ý",
     gatewayTitle: "Gateway upstream",
     gatewayDescription: "Chuyển đổi giữa TokenFree và 9Router. Có hiệu lực ngay sau khi lưu, không cần khởi động lại. Cấu hình TokenFree đã lưu được giữ nguyên.",

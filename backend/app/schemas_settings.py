@@ -30,6 +30,9 @@ class AdminModelSettingsOut(BaseModel):
     ninerouter_base_url: str = ""
     ninerouter_api_key: str = ""
     has_ninerouter_api_key: bool = False
+    ninerouter_plan_keys: str = ""
+    has_ninerouter_plan_keys: bool = False
+    ninerouter_plan_names: list[str] = Field(default_factory=list)
 
     ark_api_key: str = ""
     ark_base_url: str = ""
@@ -160,6 +163,8 @@ class AdminModelSettingsPatch(BaseModel):
     ninerouter_base_url: str | None = None
     ninerouter_api_key: str | None = None
     clear_ninerouter_api_key: bool = False
+    # 套餐 → Key 增量：非空设置/覆盖，空串删除该套餐
+    ninerouter_plan_keys: dict[str, str] | None = None
 
     ark_api_key: str | None = None
     ark_base_url: str | None = None
@@ -291,6 +296,7 @@ def model_config_field_names() -> tuple[str, ...]:
         "upstream_gateway_type",
         "ninerouter_base_url",
         "ninerouter_api_key",
+        "ninerouter_plan_keys",
         "model_llm",
         "ark_api_key",
         "ark_base_url",
@@ -384,6 +390,7 @@ SECRET_FIELD_FLAGS: dict[str, str] = {
     "openai_api_key": "has_openai_api_key",
     "ark_api_key": "has_ark_api_key",
     "ninerouter_api_key": "has_ninerouter_api_key",
+    "ninerouter_plan_keys": "has_ninerouter_plan_keys",
     "volc_tts_access_key": "has_volc_tts_access_key",
     "volc_tts_api_key": "has_volc_tts_api_key",
     "oss_access_key_id": "has_oss_access_key_id",

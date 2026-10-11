@@ -576,6 +576,9 @@ def _to_admin_flat_out(flat: dict[str, Any], *, source: str, updated_at, channel
     for field, flag in SECRET_FIELD_FLAGS.items():
         payload[field] = ""
         payload[flag] = bool(str(flat.get(field) or "").strip())
+    from app.services.nine_router.plan_keys import parse_plan_keys
+
+    payload["ninerouter_plan_names"] = sorted(parse_plan_keys(str(flat.get("ninerouter_plan_keys") or "")))
     payload["source"] = source
     payload["updated_at"] = updated_at
     payload["readiness"] = _build_readiness(channels, logical_models, defaults)
@@ -618,6 +621,13 @@ async def patch_admin_model_settings(
     current = _effective_flat(stored_flat if stored_flat else None)
     patch = body.model_dump(exclude_unset=True)
     applied: list[str] = []
+
+    plan_patch = patch.pop("ninerouter_plan_keys", None)
+    if isinstance(plan_patch, dict):
+        from app.services.nine_router.plan_keys import merge_plan_keys
+
+        current["ninerouter_plan_keys"] = merge_plan_keys(current.get("ninerouter_plan_keys"), plan_patch)
+        applied.append("ninerouter_plan_keys")
 
     for field in SECRET_FIELDS:
         clear_flag = f"clear_{field}"

@@ -433,6 +433,11 @@ class ArkGateway:
 
     # 优先后台 TokenFree / 方舟渠道 Key，env 仅作空渠道时的兜底
     def _ark_api_key(self) -> str:
+        from app.services.nine_router.plan_keys import plan_api_key_override
+
+        plan_key = plan_api_key_override()
+        if plan_key:
+            return plan_key
         try:
             from app.services.model_settings import get_routing_snapshot
             from app.services.tokenfree_gateway import PRIMARY_GATEWAY_CHANNEL_IDS
@@ -474,8 +479,10 @@ class ArkGateway:
 
     def _route_headers(self, route: ResolvedModelRoute | None = None) -> dict[str, str]:
         if route and route.api_key:
+            from app.services.nine_router.plan_keys import plan_api_key_override
+
             return {
-                "Authorization": f"Bearer {route.api_key}",
+                "Authorization": f"Bearer {plan_api_key_override() or route.api_key}",
                 "Content-Type": "application/json",
             }
         return self._headers()

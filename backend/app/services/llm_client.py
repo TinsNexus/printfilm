@@ -76,7 +76,9 @@ async def chat_completions(
     logical_id = resolve_logical_model_id("text", None)
     route = resolve_logical_model("text", logical_id)
     if route:
-        api_key = route.api_key
+        from app.services.nine_router.plan_keys import plan_api_key_override
+
+        api_key = plan_api_key_override() or route.api_key
         model = (route.upstream_model or "").strip()
         base = route.base_url.rstrip("/") or resolve_llm_base_url()
     else:
