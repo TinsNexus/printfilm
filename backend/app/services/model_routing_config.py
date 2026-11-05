@@ -212,11 +212,14 @@ def normalize_default_models(
     logical_models: list[LogicalModel],
     channels: list[SystemModelChannel],
 ) -> DefaultModels:
+    from app.services.nine_router.config import is_9router_active
+
     raw = defaults or DefaultModels()
     normalized = DefaultModels()
+    open_models = is_9router_active()  # 9Router：默认模型可填任意上游模型 id
     for capability, attr in CAPABILITY_DEFAULT_KEYS.items():
         model_id = getattr(raw, attr, "") or ""
-        if model_id and is_logical_model_resolvable(logical_models, channels, capability, model_id):
+        if model_id and (open_models or is_logical_model_resolvable(logical_models, channels, capability, model_id)):
             setattr(normalized, attr, model_id)
             continue
         fallback = next(

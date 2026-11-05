@@ -509,16 +509,18 @@ async def _compose_runtime_state(db: AsyncSession) -> tuple[list[SystemModelChan
     if image_default:
         default_models = default_models.model_copy(update={"image_model": image_default})
     from app.services.media_model_presets import clamp_default_to_preset
+    from app.services.nine_router.config import is_9router_active
 
-    # 启动/读缓存时钳回预设（配音 gemini→qwen；非法图模→Seedream Pro 等）
-    default_models = default_models.model_copy(
-        update={
-            "text_model": clamp_default_to_preset("text", default_models.text_model),
-            "image_model": clamp_default_to_preset("image", default_models.image_model),
-            "video_model": clamp_default_to_preset("video", default_models.video_model),
-            "audio_model": clamp_default_to_preset("audio", default_models.audio_model),
-        }
-    )
+    # 启动/读缓存时钳回预设（配音 gemini→qwen；非法图模→Seedream Pro 等）；9Router 下放开任意上游模型 id
+    if not is_9router_active():
+        default_models = default_models.model_copy(
+            update={
+                "text_model": clamp_default_to_preset("text", default_models.text_model),
+                "image_model": clamp_default_to_preset("image", default_models.image_model),
+                "video_model": clamp_default_to_preset("video", default_models.video_model),
+                "audio_model": clamp_default_to_preset("audio", default_models.audio_model),
+            }
+        )
     default_models = normalize_default_models(default_models, logical_models, channels)
     flat = _effective_flat(_decrypt_flat_config(config))
     from app.services.tokenfree_gateway import apply_gateway_to_channels, apply_tokenfree_flat_overlay
@@ -864,9 +866,7 @@ async def patch_admin_routing_settings(
     if body.default_models is not None:
         defaults = body.default_models
         applied.append("default_models")
-    from app.services.media_model_presets import clamp_default_to_preset
-
-    # 四类默认强制落在预设内（配音仅 qwen-tts-2025-05-22）
+    # 四类默认强制落在预设内（配音仅 qwen-tts-2025-05-22）；9Router 下放开
     defaults = defaults.model_copy(
         update={
             "text_model": clamp_default_to_preset("text", defaults.text_model),
