@@ -42,8 +42,8 @@ export function stripeSettingsReady(settings: StripeSettings, drafts: StripeSecr
 export function stripeRateInputError(value: string | undefined): string | undefined {
   const raw = (value || "").trim();
   if (!raw) return undefined;
-  if (!/^\d+(?:\.\d{1,6})?$/.test(raw)) return "请输入最多六位小数的正数汇率。";
+  if (!/^\d+(?:\.\d{1,6})?$/.test(raw)) return "Vui lòng nhập tỷ giá dương với tối đa sáu chữ số thập phân.";
   const amount = Number(raw);
-  if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) return "汇率须大于 0 且不超过 1000000。";
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) return "Tỷ giá phải lớn hơn 0 và không vượt quá 1000000.";
   return undefined;
 }

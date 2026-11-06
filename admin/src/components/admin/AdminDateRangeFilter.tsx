@@ -12,10 +12,10 @@ type AdminDateRangeFilterProps = {
 /** 日期范围筛选（ISO date 字符串 YYYY-MM-DD） */
 export function AdminDateRangeFilter({ from, to, onChange, className }: AdminDateRangeFilterProps) {
   return (
-    <div className={cn("admin-date-range admin-range-control", className)} role="group" aria-label="日期范围">
+    <div className={cn("admin-date-range admin-range-control", className)} role="group" aria-label="Khoảng ngày">
       <CalendarDays size={16} className="admin-range-icon" aria-hidden="true" />
       <label className="admin-field">
-        <span className="sr-only">开始日期</span>
+        <span className="sr-only">Ngày bắt đầu</span>
         <input
           type="date"
           className="admin-input"
@@ -24,9 +24,9 @@ export function AdminDateRangeFilter({ from, to, onChange, className }: AdminDat
           onChange={(e) => onChange({ from: e.target.value, to })}
         />
       </label>
-      <span className="admin-date-range-sep" aria-hidden="true">至</span>
+      <span className="admin-date-range-sep" aria-hidden="true">đến</span>
       <label className="admin-field">
-        <span className="sr-only">结束日期</span>
+        <span className="sr-only">Ngày kết thúc</span>
         <input
           type="date"
           className="admin-input"

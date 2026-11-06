@@ -29,10 +29,10 @@ export const PRESET_MODELS: Record<ModelCapability, PresetModelOption[]> = {
 export const CAPABILITY_ORDER: ModelCapability[] = ["text", "image", "video", "audio"];
 
 export const CAPABILITY_LABELS: Record<ModelCapability, string> = {
-  text: "文本",
-  image: "图像",
-  video: "视频",
-  audio: "配音",
+  text: "Văn bản",
+  image: "Hình ảnh",
+  video: "Video",
+  audio: "Lồng tiếng",
 };
 
 /** 写入 TokenFree 渠道的全部预设 id */

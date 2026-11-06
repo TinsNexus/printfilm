@@ -21,7 +21,7 @@ export function useTaskEventPage(taskId: number, refreshToken: string, eventType
     void api<AdminTaskEventPage>(taskEventPagePath(taskId, page, pageSize, eventTypePrefix), { signal: controller.signal })
       .then((result) => { if (!cancelled) setData(result); })
       .catch((reason: unknown) => {
-        if (!cancelled) setError(redactTaskText(reason instanceof Error ? reason.message : "事件加载失败"));
+        if (!cancelled) setError(redactTaskText(reason instanceof Error ? reason.message : "Tải sự kiện thất bại"));
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => {

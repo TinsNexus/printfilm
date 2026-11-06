@@ -12,7 +12,7 @@ export function useAdminTeamQuery<T>(path: string) {
     void api<T>(path, { signal: controller.signal }).then((data) => {
       if (!controller.signal.aborted) setResult({ path, data, error: "", loading: false });
     }).catch((cause: unknown) => {
-      if (!controller.signal.aborted) setResult({ path, data: null, error: cause instanceof Error ? cause.message : "加载失败", loading: false });
+      if (!controller.signal.aborted) setResult({ path, data: null, error: cause instanceof Error ? cause.message : "Tải thất bại", loading: false });
     });
     return () => controller.abort();
   }, [path, version]);

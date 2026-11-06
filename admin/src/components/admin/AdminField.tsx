@@ -51,7 +51,7 @@ export function AdminField({ label, hint, htmlFor, className, children, required
   const errorId = `${generatedId}-error`;
   return (
     <div className={cn("admin-field admin-form-field", error && "has-error", className)}>
-      {label ? <label htmlFor={controlId} className="admin-field-label">{label}{required ? <span className="admin-field-required">必填</span> : optional ? <span className="admin-field-optional">选填</span> : null}</label> : null}
+      {label ? <label htmlFor={controlId} className="admin-field-label">{label}{required ? <span className="admin-field-required">Bắt buộc</span> : optional ? <span className="admin-field-optional">Tùy chọn</span> : null}</label> : null}
       {connectControl(children, { id: controlId, required, "aria-invalid": error ? true : undefined, "aria-describedby": [hint ? hintId : "", error ? errorId : ""].filter(Boolean).join(" ") || undefined })}
       {hint ? <p id={hintId} className="admin-field-hint">{hint}</p> : null}
       {error ? <p id={errorId} role="alert" className="admin-field-error">{error}</p> : null}

@@ -90,19 +90,19 @@ export function Select({ className, children, value, defaultValue, onChange, ref
         <SelectPrimitive.Trigger
           ref={triggerRef}
           id={props.id} className={cn("admin-control admin-select admin-select-trigger", className)} title={props.title}
-          aria-label={props["aria-label"] ?? (props.id ? undefined : rows.find((row) => row.value === selectedValue)?.text ?? "选择选项")}
+          aria-label={props["aria-label"] ?? (props.id ? undefined : rows.find((row) => row.value === selectedValue)?.text ?? "Chọn tùy chọn")}
           aria-labelledby={props["aria-labelledby"]} aria-describedby={props["aria-describedby"]} aria-invalid={props["aria-invalid"]}
           aria-required={props.required}
           tabIndex={props.tabIndex} autoFocus={props.autoFocus} style={props.style}
         >
-          <SelectPrimitive.Value>{rows.find((row) => row.value === selectedValue)?.label ?? "请选择"}</SelectPrimitive.Value>
+          <SelectPrimitive.Value>{rows.find((row) => row.value === selectedValue)?.label ?? "Vui lòng chọn"}</SelectPrimitive.Value>
           <SelectPrimitive.Icon className="admin-select-chevron"><ChevronDown size={15} /></SelectPrimitive.Icon>
         </SelectPrimitive.Trigger>
         <SelectPrimitive.Portal>
           <SelectPrimitive.Content ref={contentRef} className="admin-select-popover" position="popper" sideOffset={6} collisionPadding={12}>
             {searchable ? <div className="admin-select-search-wrap">
               <Search size={14} aria-hidden="true" />
-              <input ref={searchRef} className="admin-select-search-input" aria-label="搜索选项" placeholder="搜索选项…" value={search}
+              <input ref={searchRef} className="admin-select-search-input" aria-label="Tìm tùy chọn" placeholder="Tìm tùy chọn…" value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Escape") return;
@@ -120,7 +120,7 @@ export function Select({ className, children, value, defaultValue, onChange, ref
                   }
                 }}
               />
-              {search ? <button type="button" aria-label="清除选项搜索" className="admin-select-search-clear" onPointerDown={(event) => event.preventDefault()} onClick={() => { setSearch(""); searchRef.current?.focus(); }}><X size={13} /></button> : null}
+              {search ? <button type="button" aria-label="Xóa tìm kiếm tùy chọn" className="admin-select-search-clear" onPointerDown={(event) => event.preventDefault()} onClick={() => { setSearch(""); searchRef.current?.focus(); }}><X size={13} /></button> : null}
             </div> : null}
             <SelectPrimitive.ScrollUpButton className="admin-select-scroll"><ChevronUp size={14} /></SelectPrimitive.ScrollUpButton>
             <SelectPrimitive.Viewport className="admin-select-viewport">
@@ -133,7 +133,7 @@ export function Select({ className, children, value, defaultValue, onChange, ref
                   </SelectPrimitive.Item>
                 </React.Fragment>
               ))}
-              {visibleRows.length === 0 ? <div className="admin-select-empty">{search ? "没有匹配的选项" : "暂无可选项"}</div> : null}
+              {visibleRows.length === 0 ? <div className="admin-select-empty">{search ? "Không có tùy chọn phù hợp" : "Chưa có tùy chọn"}</div> : null}
             </SelectPrimitive.Viewport>
             <SelectPrimitive.ScrollDownButton className="admin-select-scroll"><ChevronDown size={14} /></SelectPrimitive.ScrollDownButton>
           </SelectPrimitive.Content>

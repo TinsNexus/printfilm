@@ -1,102 +1,102 @@
 /** Project pipeline status → Chinese label */
 export const PROJECT_STATUS_LABELS: Record<string, string> = {
-  DRAFT: "草稿",
-  SCRIPTING: "脚本生成中",
-  SCRIPT_READY: "脚本就绪",
-  IMAGING: "分镜图生成中",
-  IMAGE_READY: "分镜图就绪",
-  VIDEOING: "视频生成中",
-  VIDEO_READY: "视频就绪",
-  AUDIOING: "配音中",
-  COMPOSING: "合成中",
-  AUDITING: "审核中",
-  DONE: "已完成",
-  REJECTED: "已拒绝",
-  FAILED: "失败",
-  CANCELLED: "已取消",
+  DRAFT: "Bản nháp",
+  SCRIPTING: "Đang tạo kịch bản",
+  SCRIPT_READY: "Kịch bản sẵn sàng",
+  IMAGING: "Đang tạo ảnh phân cảnh",
+  IMAGE_READY: "Ảnh phân cảnh sẵn sàng",
+  VIDEOING: "Đang tạo video",
+  VIDEO_READY: "Video sẵn sàng",
+  AUDIOING: "Đang lồng tiếng",
+  COMPOSING: "Đang ghép phim",
+  AUDITING: "Đang duyệt",
+  DONE: "Đã hoàn tất",
+  REJECTED: "Đã từ chối",
+  FAILED: "Thất bại",
+  CANCELLED: "Đã hủy",
 };
 
 /** Order payment status → Chinese */
 export const ORDER_STATUS_LABELS: Record<string, string> = {
-  pending: "待支付",
-  paid: "已支付",
-  closed: "已关闭",
+  pending: "Chờ thanh toán",
+  paid: "Đã thanh toán",
+  closed: "Đã tắt",
 };
 
 /** Work audit / visibility → Chinese */
 export const AUDIT_STATUS_LABELS: Record<string, string> = {
-  pending: "待审核",
-  passed: "已通过",
-  rejected: "已拒绝",
+  pending: "Chờ duyệt",
+  passed: "Đã duyệt",
+  rejected: "Đã từ chối",
 };
 
 export const VISIBILITY_LABELS: Record<string, string> = {
-  public: "公开",
-  private: "私密",
-  unlisted: "不公开列出",
+  public: "Công khai",
+  private: "Riêng tư",
+  unlisted: "Không liệt kê công khai",
 };
 
 /** Wallet ledger kind → Chinese */
 export const LEDGER_KIND_LABELS: Record<string, string> = {
-  topup: "充值",
-  grant: "赠送",
-  adjust: "调账",
-  freeze: "冻结",
-  unfreeze: "解冻",
-  settle: "结算",
-  refund: "退款",
+  topup: "Nạp tiền",
+  grant: "Tặng",
+  adjust: "Điều chỉnh",
+  freeze: "Đóng băng",
+  unfreeze: "Mở băng",
+  settle: "Quyết toán",
+  refund: "Hoàn tiền",
 };
 
 /** Payment channel → Chinese */
 export const PAY_TYPE_LABELS: Record<string, string> = {
-  alipay: "支付宝",
-  wxpay: "微信",
-  stripe: "银行卡 · Stripe",
+  alipay: "Alipay",
+  wxpay: "WeChat",
+  stripe: "Thẻ ngân hàng · Stripe",
 };
 
 /** Unified task platform status → Chinese */
 export const TASK_STATUS_LABELS: Record<string, string> = {
-  pending: "排队中",
-  leased: "已租约",
-  running: "执行中",
-  awaiting_poll: "等待轮询",
-  awaiting_review: "待审核",
-  cancel_requested: "取消中",
-  succeeded: "已成功",
-  failed: "失败",
-  cancelled: "已取消",
+  pending: "Đang xếp hàng",
+  leased: "Đã thuê",
+  running: "Đang thực thi",
+  awaiting_poll: "Chờ thăm dò",
+  awaiting_review: "Chờ duyệt",
+  cancel_requested: "Đang hủy",
+  succeeded: "Đã thành công",
+  failed: "Thất bại",
+  cancelled: "Đã hủy",
 };
 
 /** Task domain → Chinese */
 export const TASK_DOMAIN_LABELS: Record<string, string> = {
-  drama: "漫剧",
-  kepu: "AI短视频",
-  tools: "工具",
-  studio: "工作室",
+  drama: "Phim truyện",
+  kepu: "Video ngắn AI",
+  tools: "Công cụ",
+  studio: "Studio",
 };
 
 /** Task type → Chinese（轻量同步 + 平台任务） */
 export const TASK_TYPE_LABELS: Record<string, string> = {
-  agent_chat: "漫剧助手聊天",
-  skill_optimize: "Skill 优化提示词",
-  voice_prompt: "角色音色描述",
-  content_expand: "选题扩写",
-  script_summary: "剧本摘要",
-  episode_script: "分集剧本",
-  fragment_plan: "AI 分镜",
-  fragment_video: "分镜视频",
-  seed_assets: "资产抽取",
-  asset_image: "资产生图",
-  asset_video: "资产视频",
-  voice_synthesis: "配音合成",
-  project_pipeline: "科普流水线",
-  shot_regen_image: "单镜重绘",
-  shot_regen_video: "单镜视频",
-  shot_regen_audio: "单镜配音",
-  project_regen_audio: "全片配音",
-  project_compose_only: "仅合成",
-  tool_image: "工具生图",
-  tool_video: "工具生视频",
+  agent_chat: "Trò chuyện trợ lý phim truyện",
+  skill_optimize: "Prompt tối ưu Skill",
+  voice_prompt: "Mô tả giọng nhân vật",
+  content_expand: "Mở rộng chủ đề",
+  script_summary: "Tóm tắt kịch bản",
+  episode_script: "Kịch bản tập",
+  fragment_plan: "Phân cảnh AI",
+  fragment_video: "Video phân cảnh",
+  seed_assets: "Trích xuất tài sản",
+  asset_image: "Tạo ảnh tài sản",
+  asset_video: "Video tài sản",
+  voice_synthesis: "Tổng hợp lồng tiếng",
+  project_pipeline: "Pipeline khoa học",
+  shot_regen_image: "Vẽ lại một cảnh",
+  shot_regen_video: "Video một cảnh",
+  shot_regen_audio: "Lồng tiếng một cảnh",
+  project_regen_audio: "Lồng tiếng toàn phim",
+  project_compose_only: "Chỉ ghép phim",
+  tool_image: "Tạo ảnh bằng công cụ",
+  tool_video: "Tạo video bằng công cụ",
 };
 
 // Resolve project status display text
@@ -146,6 +146,6 @@ export function taskTypeLabel(taskType: string): string {
 
 /** Filter options for project status select (value stays English for API) */
 export const PROJECT_STATUS_OPTIONS: { value: string; label: string }[] = [
-  { value: "", label: "全部状态" },
+  { value: "", label: "Tất cả trạng thái" },
   ...Object.entries(PROJECT_STATUS_LABELS).map(([value, label]) => ({ value, label })),
 ];

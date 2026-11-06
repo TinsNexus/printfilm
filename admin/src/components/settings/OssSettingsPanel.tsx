@@ -26,7 +26,7 @@ export function OssSettingsPanel() {
       oss_access_key_secret: clearOssSecret ? undefined : ossKeySecretInput.trim() || undefined,
       clear_oss_access_key_id: clearOssId,
       clear_oss_access_key_secret: clearOssSecret,
-    }, "存储配置已保存");
+    }, "Đã lưu cấu hình lưu trữ");
     if (!saved) return;
     setOssKeyIdInput("");
     setOssKeySecretInput("");
@@ -38,18 +38,18 @@ export function OssSettingsPanel() {
 
   const endpoint = form.oss_endpoint.trim().replace(/^https?:\/\//i, "").replace(/\/$/, "");
   const endpointError = form.oss_endpoint.trim() && !/^[a-z\d.-]+(?::\d+)?$/i.test(endpoint)
-    ? "填写 OSS 服务域名，不包含 Bucket 名称或文件路径。" : undefined;
+    ? "Nhập tên miền dịch vụ OSS, không bao gồm tên Bucket hoặc đường dẫn tệp." : undefined;
   const bucketError = form.oss_bucket.trim() && !/^[a-z\d-]+$/.test(form.oss_bucket.trim())
-    ? "仅使用小写字母、数字和短横线；填写名称，不填写网址。" : undefined;
+    ? "Chỉ dùng chữ thường, số và dấu gạch ngang; nhập tên, không nhập địa chỉ web." : undefined;
   const publicBase = form.oss_public_base.trim();
   let publicBaseError: string | undefined;
   if (publicBase) {
     try {
       const url = new URL(publicBase);
       if (!["https:", "http:"].includes(url.protocol) || url.search || url.hash) {
-        publicBaseError = "使用 http:// 或 https:// 公网地址，不附带查询参数或锚点。";
+        publicBaseError = "Dùng địa chỉ công khai http:// hoặc https://, không kèm tham số truy vấn hoặc neo.";
       }
-    } catch { publicBaseError = "填写完整访问地址，例如 https://cdn.example.com。"; }
+    } catch { publicBaseError = "Nhập địa chỉ truy cập đầy đủ, ví dụ https://cdn.example.com."; }
   }
   const hasId = !clearOssId && (form.has_oss_access_key_id || Boolean(ossKeyIdInput.trim()));
   const hasSecret = !clearOssSecret && (form.has_oss_access_key_secret || Boolean(ossKeySecretInput.trim()));
@@ -59,73 +59,73 @@ export function OssSettingsPanel() {
   const accessPreview = publicBase || generatedBase;
   const folder = form.oss_folder.trim().replace(/^\/+|\/+$/g, "") || "kepu";
 
-  return <SettingsTabShell onSave={handleSave} saving={saving} saveLabel="保存存储设置">
-    <SettingsStatusBar title="存储配置状态" items={[
-      { id: "oss", label: "阿里云 OSS", ready: ossReady, readyText: "配置完整", pendingText: form.oss_enabled ? "请补全连接与凭证" : "未启用" },
-      { id: "public", label: "公网访问", ready: Boolean(accessPreview && !publicBaseError), readyText: publicBase ? "自定义地址" : "Bucket 默认地址", pendingText: "待配置" },
-      { id: "async", label: "上传方式", ready: form.oss_enabled && form.oss_upload_async, readyText: "异步上传", pendingText: form.oss_enabled ? "同步上传" : "依赖 OSS 启用" },
-    ]} extra={<span className="settings-status-extra">配置来源：{form.source === "db" ? "管理端" : "环境变量"}</span>} />
+  return <SettingsTabShell onSave={handleSave} saving={saving} saveLabel="Lưu cài đặt lưu trữ">
+    <SettingsStatusBar title="Trạng thái cấu hình lưu trữ" items={[
+      { id: "oss", label: "Alibaba Cloud OSS", ready: ossReady, readyText: "Cấu hình đầy đủ", pendingText: form.oss_enabled ? "Vui lòng bổ sung kết nối và thông tin xác thực" : "Chưa bật" },
+      { id: "public", label: "Truy cập công khai", ready: Boolean(accessPreview && !publicBaseError), readyText: publicBase ? "Địa chỉ tùy chỉnh" : "Địa chỉ mặc định của Bucket", pendingText: "Chờ cấu hình" },
+      { id: "async", label: "Cách tải lên", ready: form.oss_enabled && form.oss_upload_async, readyText: "Tải lên bất đồng bộ", pendingText: form.oss_enabled ? "Tải lên đồng bộ" : "Cần bật OSS" },
+    ]} extra={<span className="settings-status-extra">Nguồn cấu hình:{form.source === "db" ? "Trang quản trị" : "Biến môi trường"}</span>} />
 
-    <SettingsPanel title="存储连接" description="生成业务与数字资产市场共用此处的 Bucket 和凭证。Endpoint 决定上传到哪里，Bucket 是存储空间名称。">
+    <SettingsPanel title="Kết nối lưu trữ" description="Nghiệp vụ tạo và chợ tài sản số dùng chung Bucket và thông tin xác thực ở đây. Endpoint quyết định nơi tải lên, Bucket là tên không gian lưu trữ.">
       <div className="settings-toggle-row">
-        <div><strong>启用阿里云 OSS</strong><span>关闭后生成业务使用本地目录；数字资产市场文件上传与播放不可用。</span></div>
-        <Switch aria-label="启用阿里云 OSS" checked={form.oss_enabled} onCheckedChange={(value) => patchField("oss_enabled", value)} />
+        <div><strong>Bật Alibaba Cloud OSS</strong><span>Khi tắt, nghiệp vụ tạo dùng thư mục cục bộ; tải lên và phát tệp của chợ tài sản số không khả dụng.</span></div>
+        <Switch aria-label="Bật Alibaba Cloud OSS" checked={form.oss_enabled} onCheckedChange={(value) => patchField("oss_enabled", value)} />
       </div>
       <p className="mt-3 text-sm text-muted-foreground">
-        数字资产市场固定使用 marketplace/ 目录，不受下方生成业务目录设置影响。
-        市场文件以私有权限上传，通过短时签名访问，不使用公开域名。
-        Bucket 须为私有且不得存在匿名 Allow 策略；此页保存配置不会自动修改 Bucket 权限。
-        “配置完整”仅表示配置项已填写，实际权限仍需云端验证。
+        Chợ tài sản số luôn dùng thư mục marketplace/, không bị ảnh hưởng bởi cài đặt thư mục nghiệp vụ tạo bên dưới.
+        Tệp của chợ được tải lên với quyền riêng tư, truy cập qua chữ ký ngắn hạn, không dùng tên miền công khai.
+        Bucket phải ở chế độ riêng tư và không có chính sách Allow ẩn danh; lưu cấu hình ở trang này sẽ không tự sửa quyền của Bucket.
+        “Cấu hình đầy đủ” chỉ cho biết các mục đã được điền, quyền thực tế vẫn cần xác minh trên đám mây.
       </p>
       <div className="settings-field-grid mt-5">
-        <LabeledControl label="服务域名 Endpoint" required={form.oss_enabled} error={endpointError} hint="如 oss-cn-beijing.aliyuncs.com；不要填写 Bucket 访问地址。">
+        <LabeledControl label="Tên miền dịch vụ Endpoint" required={form.oss_enabled} error={endpointError} hint="Ví dụ oss-cn-beijing.aliyuncs.com; đừng nhập địa chỉ truy cập Bucket.">
           <input className="settings-input" placeholder="oss-cn-beijing.aliyuncs.com" value={form.oss_endpoint} onChange={(event) => patchField("oss_endpoint", event.target.value)} autoCapitalize="none" spellCheck={false} />
         </LabeledControl>
-        <LabeledControl label="存储空间 Bucket" required={form.oss_enabled} error={bucketError} hint="与 OSS 控制台名称一致，例如 printfilm-media。">
+        <LabeledControl label="Không gian lưu trữ Bucket" required={form.oss_enabled} error={bucketError} hint="Trùng với tên trong bảng điều khiển OSS, ví dụ printfilm-media.">
           <input className="settings-input" placeholder="printfilm-media" value={form.oss_bucket} onChange={(event) => patchField("oss_bucket", event.target.value)} autoCapitalize="none" spellCheck={false} maxLength={63} />
         </LabeledControl>
-        <LabeledControl label="地域 Region" optional hint="如 cn-beijing，应与 Endpoint 所属地域一致。">
+        <LabeledControl label="Khu vực Region" optional hint="Ví dụ cn-beijing, phải cùng khu vực với Endpoint.">
           <input className="settings-input" placeholder="cn-beijing" value={form.oss_region} onChange={(event) => patchField("oss_region", event.target.value)} autoCapitalize="none" spellCheck={false} />
         </LabeledControl>
-        <LabeledControl label="文件目录前缀" optional hint="仅用于生成业务，不含域名；例如 kepu。留空使用默认目录 kepu。">
+        <LabeledControl label="Tiền tố thư mục tệp" optional hint="Chỉ dùng cho nghiệp vụ tạo, không chứa tên miền; ví dụ kepu. Để trống dùng thư mục mặc định kepu.">
           <input className="settings-input" placeholder="kepu" value={form.oss_folder} onChange={(event) => patchField("oss_folder", event.target.value)} spellCheck={false} />
         </LabeledControl>
       </div>
     </SettingsPanel>
 
-    <SettingsPanel title="访问凭证" description="只接收新凭证，不显示已有密钥。启用 OSS 时需要完整的 AccessKey ID 和 Secret。">
+    <SettingsPanel title="Thông tin truy cập" description="Chỉ nhận thông tin xác thực mới, không hiển thị khóa hiện có. Khi bật OSS cần đủ AccessKey ID và Secret.">
       <div className="settings-field-grid">
-        <SecretField label="AccessKey ID" placeholder="输入 AccessKey ID" value={ossKeyIdInput} configured={form.has_oss_access_key_id} required={form.oss_enabled}
+        <SecretField label="AccessKey ID" placeholder="Nhập AccessKey ID" value={ossKeyIdInput} configured={form.has_oss_access_key_id} required={form.oss_enabled}
           clearPending={clearOssId} onUndoClear={() => setClearOssId(false)}
-          error={form.oss_enabled && clearOssId ? "请先关闭 OSS 再清除凭证，或撤销清除。" : undefined}
+          error={form.oss_enabled && clearOssId ? "Vui lòng tắt OSS trước khi xóa thông tin xác thực, hoặc hủy thao tác xóa." : undefined}
           onChange={(value) => { setOssKeyIdInput(value); setClearOssId(false); }} onClear={() => setClearOssId(true)} />
-        <SecretField label="AccessKey Secret" placeholder="输入 AccessKey Secret" value={ossKeySecretInput} configured={form.has_oss_access_key_secret} required={form.oss_enabled}
+        <SecretField label="AccessKey Secret" placeholder="Nhập AccessKey Secret" value={ossKeySecretInput} configured={form.has_oss_access_key_secret} required={form.oss_enabled}
           clearPending={clearOssSecret} onUndoClear={() => setClearOssSecret(false)}
-          error={form.oss_enabled && clearOssSecret ? "请先关闭 OSS 再清除凭证，或撤销清除。" : undefined}
+          error={form.oss_enabled && clearOssSecret ? "Vui lòng tắt OSS trước khi xóa thông tin xác thực, hoặc hủy thao tác xóa." : undefined}
           onChange={(value) => { setOssKeySecretInput(value); setClearOssSecret(false); }} onClear={() => setClearOssSecret(true)} />
       </div>
     </SettingsPanel>
 
-    <SettingsPanel title="公网访问与 CDN" description="生成业务通过这个地址预览和下载媒体；它与上传使用的 Endpoint 分开配置。数字资产市场使用签名访问，不使用此地址。">
-      <LabeledControl label="自定义访问地址" optional error={publicBaseError} hint="绑定 CDN 或自定义域名时填写完整 https:// 地址；留空使用 Bucket 的公网地址。">
+    <SettingsPanel title="Truy cập công khai và CDN" description="Nghiệp vụ tạo xem trước và tải phương tiện qua địa chỉ này; nó được cấu hình tách biệt với Endpoint dùng để tải lên. Chợ tài sản số dùng truy cập có chữ ký, không dùng địa chỉ này.">
+      <LabeledControl label="Địa chỉ truy cập tùy chỉnh" optional error={publicBaseError} hint="Khi gắn CDN hoặc tên miền tùy chỉnh, nhập địa chỉ https:// đầy đủ; để trống dùng địa chỉ công khai của Bucket.">
         <input className="settings-input" type="url" placeholder="https://cdn.example.com" value={form.oss_public_base} onChange={(event) => patchField("oss_public_base", event.target.value)} autoCapitalize="none" spellCheck={false} />
       </LabeledControl>
       <div className="admin-form-preview mt-4" aria-live="polite">
-        <strong>媒体访问路径预览</strong>
-        <div className="mt-1 break-all font-mono">{accessPreview && !publicBaseError ? `${accessPreview.replace(/\/$/, "")}/${folder}/generated/…` : "填写 Endpoint 与 Bucket 后显示默认访问路径。"}</div>
+        <strong>Xem trước đường dẫn truy cập phương tiện</strong>
+        <div className="mt-1 break-all font-mono">{accessPreview && !publicBaseError ? `${accessPreview.replace(/\/$/, "")}/${folder}/generated/…` : "Nhập Endpoint và Bucket để hiển thị đường dẫn truy cập mặc định."}</div>
       </div>
     </SettingsPanel>
 
     <details className="settings-advanced">
-      <summary>高级上传选项 · 上传方式与队列</summary>
+      <summary>Tùy chọn tải lên nâng cao · Cách tải lên và hàng đợi</summary>
       <div>
         <div className="settings-toggle-row">
-          <div><strong>异步上传</strong><span>{form.oss_enabled ? "先返回本地 URL，再由后台队列上传；关闭时同步上传。" : "先启用 OSS 后可调整上传方式。"}</span></div>
-          <Switch aria-label="启用异步上传" checked={form.oss_upload_async} disabled={!form.oss_enabled} onCheckedChange={(value) => patchField("oss_upload_async", value)} />
+          <div><strong>Tải lên bất đồng bộ</strong><span>{form.oss_enabled ? "Trả về URL cục bộ trước, rồi hàng đợi nền tải lên; khi tắt thì tải lên đồng bộ." : "Hãy bật OSS trước để điều chỉnh cách tải lên."}</span></div>
+          <Switch aria-label="Bật tải lên bất đồng bộ" checked={form.oss_upload_async} disabled={!form.oss_enabled} onCheckedChange={(value) => patchField("oss_upload_async", value)} />
         </div>
         <div className="settings-field-grid mt-5">
-          <LabeledControl label="上传队列名称" required={form.oss_enabled && form.oss_upload_async} hint="仅异步上传使用；保留与本地 Worker 配置一致的队列名称。">
-            <input className="settings-input" placeholder="例如 oss_upload" value={form.oss_upload_queue} disabled={!form.oss_enabled || !form.oss_upload_async} onChange={(event) => patchField("oss_upload_queue", event.target.value)} spellCheck={false} />
+          <LabeledControl label="Tên hàng đợi tải lên" required={form.oss_enabled && form.oss_upload_async} hint="Chỉ dùng cho tải lên bất đồng bộ; giữ tên hàng đợi khớp với cấu hình Worker cục bộ.">
+            <input className="settings-input" placeholder="Ví dụ oss_upload" value={form.oss_upload_queue} disabled={!form.oss_enabled || !form.oss_upload_async} onChange={(event) => patchField("oss_upload_queue", event.target.value)} spellCheck={false} />
           </LabeledControl>
         </div>
       </div>

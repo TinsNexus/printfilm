@@ -35,15 +35,15 @@ function defaultLabel(kind: EntityKind, id: number): string {
     case "user":
       return `ID：${formatAccountId(id)}`;
     case "project":
-      return `科普#${id}`;
+      return `Khoa học#${id}`;
     case "drama":
-      return `漫剧#${id}`;
+      return `Phim truyện#${id}`;
     case "drama_asset":
-      return `资产#${id}`;
+      return `Tài sản#${id}`;
     case "task":
-      return `任务#${id}`;
+      return `Tác vụ#${id}`;
     case "order":
-      return `订单#${id}`;
+      return `Đơn hàng#${id}`;
     default:
       return String(id);
   }

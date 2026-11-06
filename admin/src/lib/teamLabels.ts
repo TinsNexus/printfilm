@@ -4,4 +4,4 @@ export function teamDate(value: string): string {
 }
 
 /** 平台管理员查看的团队内角色名称。 */
-export const teamRoleLabels = { owner: "所有者", admin: "管理员", member: "成员" };
+export const teamRoleLabels = { owner: "Chủ sở hữu", admin: "Quản trị viên", member: "Thành viên" };

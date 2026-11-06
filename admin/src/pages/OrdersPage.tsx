@@ -64,7 +64,7 @@ export function OrdersPage() {
     try {
       setOrders(await listAdminOrders(page, { status: orderStatus, userId: orderUserId }));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "加载订单失败");
+      toast.error(err instanceof Error ? err.message : "Tải đơn hàng thất bại");
     }
   }
 
@@ -73,7 +73,7 @@ export function OrdersPage() {
     try {
       setLedger(await listAdminLedger(page, { kind: ledgerKind, userId: ledgerUserId }));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "加载流水失败");
+      toast.error(err instanceof Error ? err.message : "Tải biến động thất bại");
     }
   }
 
@@ -95,7 +95,7 @@ export function OrdersPage() {
         dateTo: usageDateTo,
       }));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "加载用量失败");
+      toast.error(err instanceof Error ? err.message : "Tải mức dùng thất bại");
     }
   }
 
@@ -154,20 +154,20 @@ export function OrdersPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader title="订单流水" description="查看充值单、钱包流水与 AI 用量明细" />
+      <PageHeader title="Giao dịch đơn hàng" description="Xem đơn nạp tiền, biến động ví và chi tiết mức dùng AI" />
       <Tabs value={tab} onValueChange={onTabChange}>
         <TabsList>
-          <TabsTrigger value="orders">充值订单</TabsTrigger>
-          <TabsTrigger value="ledger">钱包流水</TabsTrigger>
-          <TabsTrigger value="usage">用量明细</TabsTrigger>
+          <TabsTrigger value="orders">Đơn nạp tiền</TabsTrigger>
+          <TabsTrigger value="ledger">Biến động ví</TabsTrigger>
+          <TabsTrigger value="usage">Chi tiết mức dùng</TabsTrigger>
         </TabsList>
         <TabsContent value="orders" className="space-y-4">
           <AdminFilterBar>
             <Select value={orderStatus} onChange={(e) => setOrderStatus(e.target.value)}>
-              <option value="">全部状态</option>
-              <option value="pending">待支付</option>
-              <option value="paid">已支付</option>
-              <option value="closed">已关闭</option>
+              <option value="">Tất cả trạng thái</option>
+              <option value="pending">Chờ thanh toán</option>
+              <option value="paid">Đã thanh toán</option>
+              <option value="closed">Đã tắt</option>
             </Select>
             <AdminUserSearchSelect value={orderUserId} onChange={(id) => setOrderUserId(id)} />
             <Button
@@ -179,7 +179,7 @@ export function OrdersPage() {
                 void loadOrders(1);
               }}
             >
-              筛选
+              Lọc
             </Button>
           </AdminFilterBar>
           <div className="rounded-lg border bg-background">
@@ -187,16 +187,16 @@ export function OrdersPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>ID</TableHead>
-                  <TableHead>商户单号</TableHead>
-                  <TableHead>用户</TableHead>
+                  <TableHead>Mã đơn merchant</TableHead>
+                  <TableHead>Người dùng</TableHead>
                   <TableHead>SKU</TableHead>
-                  <TableHead>支付金额</TableHead>
-                  <TableHead>入账（CNY）</TableHead>
-                  <TableHead>支付</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead>渠道单号</TableHead>
-                  <TableHead>支付时间</TableHead>
-                  <TableHead>创建时间</TableHead>
+                  <TableHead>Số tiền thanh toán</TableHead>
+                  <TableHead>Ghi có (CNY)</TableHead>
+                  <TableHead>Thanh toán</TableHead>
+                  <TableHead>Trạng thái</TableHead>
+                  <TableHead>Mã đơn kênh</TableHead>
+                  <TableHead>Thời gian thanh toán</TableHead>
+                  <TableHead>Thời gian tạo</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -247,14 +247,14 @@ export function OrdersPage() {
         <TabsContent value="ledger" className="space-y-4">
           <AdminFilterBar>
             <Select value={ledgerKind} onChange={(e) => setLedgerKind(e.target.value)}>
-              <option value="">全部类型</option>
-              <option value="topup">充值</option>
-              <option value="grant">赠送</option>
-              <option value="adjust">调账</option>
-              <option value="freeze">冻结</option>
-              <option value="unfreeze">解冻</option>
-              <option value="settle">结算</option>
-              <option value="refund">退款</option>
+              <option value="">Tất cả loại</option>
+              <option value="topup">Nạp tiền</option>
+              <option value="grant">Tặng</option>
+              <option value="adjust">Điều chỉnh</option>
+              <option value="freeze">Đóng băng</option>
+              <option value="unfreeze">Mở băng</option>
+              <option value="settle">Quyết toán</option>
+              <option value="refund">Hoàn tiền</option>
             </Select>
             <AdminUserSearchSelect value={ledgerUserId} onChange={(id) => setLedgerUserId(id)} />
             <Button
@@ -266,7 +266,7 @@ export function OrdersPage() {
                 void loadLedger(1);
               }}
             >
-              筛选
+              Lọc
             </Button>
           </AdminFilterBar>
           <div className="rounded-lg border bg-background">
@@ -274,13 +274,13 @@ export function OrdersPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>ID</TableHead>
-                  <TableHead>用户</TableHead>
-                  <TableHead>变动</TableHead>
-                  <TableHead>余额后</TableHead>
-                  <TableHead>类型</TableHead>
-                  <TableHead>关联</TableHead>
-                  <TableHead>备注</TableHead>
-                  <TableHead>时间</TableHead>
+                  <TableHead>Người dùng</TableHead>
+                  <TableHead>Biến động</TableHead>
+                  <TableHead>Số dư sau</TableHead>
+                  <TableHead>Loại</TableHead>
+                  <TableHead>Liên quan</TableHead>
+                  <TableHead>Ghi chú</TableHead>
+                  <TableHead>Thời gian</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -320,12 +320,12 @@ export function OrdersPage() {
         <TabsContent value="usage" className="space-y-4">
           <AdminFilterBar>
             <AdminUserSearchSelect value={usageUserId} onChange={(id) => setUsageUserId(id)} />
-            <Input placeholder="任务 ID" value={usageTaskId} onChange={(e) => setUsageTaskId(e.target.value)} />
+            <Input placeholder="ID tác vụ" value={usageTaskId} onChange={(e) => setUsageTaskId(e.target.value)} />
             <Select value={usageDomain} onChange={(e) => setUsageDomain(e.target.value)}>
-              <option value="">全部领域</option>
-              <option value="kepu">科普</option>
-              <option value="drama">漫剧</option>
-              <option value="studio">工作室</option>
+              <option value="">Tất cả lĩnh vực</option>
+              <option value="kepu">Khoa học</option>
+              <option value="drama">Phim truyện</option>
+              <option value="studio">Studio</option>
             </Select>
             <Input
               placeholder="billing_key"
@@ -333,23 +333,23 @@ export function OrdersPage() {
               onChange={(e) => setUsageBillingKey(e.target.value)}
             />
             <Select value={usageCapability} onChange={(e) => setUsageCapability(e.target.value)}>
-              <option value="">全部能力</option>
-              <option value="llm">LLM 文本</option>
-              <option value="image">生图</option>
-              <option value="video">视频</option>
-              <option value="tts">配音</option>
+              <option value="">Tất cả năng lực</option>
+              <option value="llm">LLM văn bản</option>
+              <option value="image">Tạo ảnh</option>
+              <option value="video">Video</option>
+              <option value="tts">Lồng tiếng</option>
             </Select>
             <Input
-              placeholder="模型（如 seedance-2.5）"
+              placeholder="Model (như seedance-2.5)"
               value={usageModel}
               onChange={(e) => setUsageModel(e.target.value)}
             />
             <Select value={usageBasis} onChange={(e) => setUsageBasis(e.target.value)}>
-              <option value="">全部计费依据</option>
-              <option value="estimate">估算</option>
-              <option value="upstream">实测</option>
-              <option value="upstream_usage">实测(token)</option>
-              <option value="upstream_cost">实测(费用)</option>
+              <option value="">Tất cả căn cứ tính phí</option>
+              <option value="estimate">Ước tính</option>
+              <option value="upstream">Đo thực tế</option>
+              <option value="upstream_usage">Đo thực tế (token)</option>
+              <option value="upstream_cost">Đo thực tế (chi phí)</option>
             </Select>
             <AdminDateRangeFilter
               from={usageDateFrom}
@@ -371,7 +371,7 @@ export function OrdersPage() {
                 void loadUsage(1, { billing_key: "llm_chat", capability: "llm", model: "" });
               }}
             >
-              LLM 用量
+              Mức dùng LLM
             </Button>
             <Button
               size="sm"
@@ -396,23 +396,23 @@ export function OrdersPage() {
                 void loadUsage(1);
               }}
             >
-              筛选
+              Lọc
             </Button>
           </AdminFilterBar>
           <div className="rounded-lg border bg-background">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>时间</TableHead>
-                  <TableHead>用户</TableHead>
-                  <TableHead>任务</TableHead>
-                  <TableHead>项目</TableHead>
-                  <TableHead>领域</TableHead>
-                  <TableHead>能力</TableHead>
-                  <TableHead>模型</TableHead>
+                  <TableHead>Thời gian</TableHead>
+                  <TableHead>Người dùng</TableHead>
+                  <TableHead>Tác vụ</TableHead>
+                  <TableHead>Dự án</TableHead>
+                  <TableHead>Lĩnh vực</TableHead>
+                  <TableHead>Năng lực</TableHead>
+                  <TableHead>Model</TableHead>
                   <TableHead>Tokens</TableHead>
-                  <TableHead>扣费</TableHead>
-                  <TableHead>计费依据</TableHead>
+                  <TableHead>Trừ phí</TableHead>
+                  <TableHead>Căn cứ tính phí</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -428,7 +428,7 @@ export function OrdersPage() {
                       {row.task_run_id ? (
                         <AdminEntityLink kind="task" id={row.task_run_id} />
                       ) : (
-                        "历史/未关联"
+                        "Lịch sử/chưa liên kết"
                       )}
                     </TableCell>
                     <TableCell className="text-xs">
@@ -454,13 +454,13 @@ export function OrdersPage() {
                         }
                         title={
                           row.billing_basis === "upstream_cost"
-                            ? "按记录的实际费用扣费"
+                            ? "Trừ phí theo chi phí thực tế đã ghi"
                             : row.billing_basis === "upstream_usage"
-                              ? "按实际 Token 用量与配置单价扣费"
-                              : "按配置估算 Token 扣费"
+                              ? "Trừ phí theo lượng Token thực tế và đơn giá đã cấu hình"
+                              : "Trừ phí theo Token ước tính từ cấu hình"
                         }
                       >
-                        {row.billing_basis_label ?? (row.estimated ? "估算" : "实测")}
+                        {row.billing_basis_label ?? (row.estimated ? "Ước tính" : "Đo thực tế")}
                       </Badge>
                     </TableCell>
                   </TableRow>

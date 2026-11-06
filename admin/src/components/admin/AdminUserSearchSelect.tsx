@@ -18,7 +18,7 @@ type AdminUserSearchSelectProps = {
 export function AdminUserSearchSelect({
   value,
   onChange,
-  placeholder = "搜索用户邮箱 / 账号 ID",
+  placeholder = "Tìm email người dùng / ID tài khoản",
   className,
 }: AdminUserSearchSelectProps) {
   const [query, setQuery] = useState("");
@@ -145,18 +145,18 @@ export function AdminUserSearchSelect({
             setOpen(true);
             inputRef.current?.focus();
           }}
-          aria-label="清除用户"
+          aria-label="Xóa người dùng"
         >
           <X size={13} />
         </button>
       ) : null}
       {open ? (
         <div className="admin-user-search-dropdown admin-user-combobox-popover">
-          <div className="admin-user-combobox-heading"><Search size={13} aria-hidden="true" /><span>{query.trim() ? "匹配用户" : "查找用户"}</span>{options.length ? <span className="admin-user-combobox-count">{options.length} 位</span> : null}</div>
-          <div id={listId} role="listbox" aria-label="搜索用户" className="admin-user-combobox-list" aria-busy={loading}>
-          {loading ? <div className="admin-user-search-empty" role="status"><LoaderCircle size={17} className="admin-control-spinner" />正在查找用户…</div> : null}
+          <div className="admin-user-combobox-heading"><Search size={13} aria-hidden="true" /><span>{query.trim() ? "Người dùng khớp" : "Tìm người dùng"}</span>{options.length ? <span className="admin-user-combobox-count">{options.length} người</span> : null}</div>
+          <div id={listId} role="listbox" aria-label="Tìm người dùng" className="admin-user-combobox-list" aria-busy={loading}>
+          {loading ? <div className="admin-user-search-empty" role="status"><LoaderCircle size={17} className="admin-control-spinner" />Đang tìm người dùng…</div> : null}
           {!loading && options.length === 0 ? (
-            <div className="admin-user-search-empty" role="status">{error ? "搜索失败，请重新输入后重试" : query.trim() ? "没有找到匹配用户" : "输入邮箱、昵称或账号 ID 搜索"}</div>
+            <div className="admin-user-search-empty" role="status">{error ? "Tìm kiếm thất bại, vui lòng nhập lại và thử lại" : query.trim() ? "Không tìm thấy người dùng phù hợp" : "Nhập email, biệt danh hoặc ID tài khoản để tìm"}</div>
           ) : null}
           {options.map((u, index) => (
             <button
@@ -182,7 +182,7 @@ export function AdminUserSearchSelect({
             </button>
           ))}
           </div>
-          <div className="admin-user-combobox-footer"><span><kbd>↑</kbd><kbd>↓</kbd> 选择</span><span><kbd>Enter</kbd> 确认</span></div>
+          <div className="admin-user-combobox-footer"><span><kbd>↑</kbd><kbd>↓</kbd> Chọn</span><span><kbd>Enter</kbd> Xác nhận</span></div>
         </div>
       ) : null}
     </div>

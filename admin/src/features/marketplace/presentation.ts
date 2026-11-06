@@ -1,19 +1,19 @@
 const reviewStatuses: Record<string, string> = {
-  draft: '草稿', pending: '待审核', processing: '正在生成短试看', preview_failed: '短试看生成失败', approved: '已通过', rejected: '已驳回',
+  draft: 'Bản nháp', pending: 'Chờ duyệt', processing: 'Đang tạo bản xem thử ngắn', preview_failed: 'Tạo xem thử ngắn thất bại', approved: 'Đã duyệt', rejected: 'Đã từ chối',
 }
 const taskStatuses: Record<string, string> = {
-  pending: '排队中', running: '处理中', processing: '处理中', done: '已完成', ready: '已就绪', failed: '处理失败', cancelled: '已取消', missing: '未生成', none: '未生成',
+  pending: 'Đang xếp hàng', running: 'Đang xử lý', processing: 'Đang xử lý', done: 'Đã hoàn tất', ready: 'Đã sẵn sàng', failed: 'Xử lý thất bại', cancelled: 'Đã hủy', missing: 'Chưa tạo', none: 'Chưa tạo',
 }
 const domainStatuses: Record<string, Record<string, string>> = {
   works: reviewStatuses,
   series: reviewStatuses,
-  recruits: { draft: '草稿', pending: '待审核', approved: '已通过', rejected: '已驳回' },
-  previews: { pending: '排队中', running: '处理中', done: '已完成', failed: '处理失败', cancelled: '已取消' },
-  jobs: { pending: '排队中', running: '处理中', done: '已完成', failed: '处理失败' },
-  orders: { pending: '待支付', paid: '已支付', failed: '支付失败' },
-  payouts: { pending: '待打款', paid: '已打款', failed: '打款失败' },
-  reports: { pending: '待处理', resolved: '已处理' },
-  entitlements: { active: '有效权益', inactive: '已停用' },
+  recruits: { draft: 'Bản nháp', pending: 'Chờ duyệt', approved: 'Đã duyệt', rejected: 'Đã từ chối' },
+  previews: { pending: 'Đang xếp hàng', running: 'Đang xử lý', done: 'Đã hoàn tất', failed: 'Xử lý thất bại', cancelled: 'Đã hủy' },
+  jobs: { pending: 'Đang xếp hàng', running: 'Đang xử lý', done: 'Đã hoàn tất', failed: 'Xử lý thất bại' },
+  orders: { pending: 'Chờ thanh toán', paid: 'Đã thanh toán', failed: 'Thanh toán thất bại' },
+  payouts: { pending: 'Chờ chi trả', paid: 'Đã chi trả', failed: 'Chi trả thất bại' },
+  reports: { pending: 'Chờ xử lý', resolved: 'Đã xử lý' },
+  entitlements: { active: 'Quyền lợi hiệu lực', inactive: 'Đã tắt' },
 }
 
 // 每种记录只提供服务端支持的状态筛选，避免把收益方式当作状态。
@@ -22,8 +22,8 @@ export function statusOptions(kind: string): [string, string][] {
 }
 
 export function statusLabel(kind: string, status: unknown): string {
-  if (kind === 'ledger') return ({ pending: '待结算', settled: '已结算' } as Record<string, string>)[String(status)] || '结算状态待确认'
-  return domainStatuses[kind]?.[String(status)] || '状态待确认'
+  if (kind === 'ledger') return ({ pending: 'Chờ quyết toán', settled: 'Đã quyết toán' } as Record<string, string>)[String(status)] || 'Trạng thái quyết toán chờ xác nhận'
+  return domainStatuses[kind]?.[String(status)] || 'Trạng thái chờ xác nhận'
 }
 
 export function recordStatus(kind: string, item: Record<string, unknown>): string {
@@ -41,7 +41,7 @@ export function fieldStatusLabel(field: string, value: unknown): string | undefi
 
 export function recordDetailsTitle(kind: string): string {
   return ({
-    works: '作品与版权信息', series: '短剧与版权信息', recruits: '招募需求详情', reports: '举报详情', previews: '短试看任务详情',
-    jobs: '历史媒体任务详情', submissions: '历史投稿详情', orders: '订单详情', entitlements: '播放权益详情', ledger: '收益明细', payouts: '打款详情', events: '操作详情',
-  } as Record<string, string>)[kind] || '记录详情'
+    works: 'Thông tin tác phẩm và bản quyền', series: 'Thông tin phim ngắn và bản quyền', recruits: 'Chi tiết nhu cầu tuyển dụng', reports: 'Chi tiết báo cáo', previews: 'Chi tiết tác vụ xem thử ngắn',
+    jobs: 'Chi tiết tác vụ phương tiện lịch sử', submissions: 'Chi tiết đóng góp lịch sử', orders: 'Chi tiết đơn hàng', entitlements: 'Chi tiết quyền phát', ledger: 'Chi tiết doanh thu', payouts: 'Chi tiết chi trả', events: 'Chi tiết thao tác',
+  } as Record<string, string>)[kind] || 'Chi tiết bản ghi'
 }

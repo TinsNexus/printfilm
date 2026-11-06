@@ -21,7 +21,7 @@ export function SiteSettingsPanel() {
         ffprobe_path: form.ffprobe_path,
         marketplace_enabled: form.marketplace_enabled,
       },
-      "站点配置已保存",
+      "Đã lưu cấu hình site",
     );
   }
 
@@ -34,37 +34,37 @@ export function SiteSettingsPanel() {
   const hasFfprobe = Boolean(form.ffprobe_path?.trim());
 
   return (
-    <SettingsTabShell onSave={handleSave} saving={saving} saveLabel="保存站点设置">
+    <SettingsTabShell onSave={handleSave} saving={saving} saveLabel="Lưu cài đặt site">
       <SettingsStatusBar
-        title="站点工具状态"
+        title="Trạng thái công cụ site"
         items={[
           {
             id: "public",
-            label: "公网地址",
+            label: "Địa chỉ công khai",
             ready: hasPublic,
-            readyText: "已配置",
-            pendingText: "未填写",
+            readyText: "Đã cấu hình",
+            pendingText: "Chưa nhập",
           },
           {
             id: "ffmpeg",
             label: "ffmpeg",
             ready: hasFfmpeg,
-            readyText: form.ffmpeg_path || "已配置",
-            pendingText: "使用默认 PATH",
+            readyText: form.ffmpeg_path || "Đã cấu hình",
+            pendingText: "Dùng PATH mặc định",
           },
           {
             id: "ffprobe",
             label: "ffprobe",
             ready: hasFfprobe,
-            readyText: form.ffprobe_path || "已配置",
-            pendingText: "使用默认 PATH",
+            readyText: form.ffprobe_path || "Đã cấu hình",
+            pendingText: "Dùng PATH mặc định",
           },
           {
             id: "marketplace",
-            label: "数字资产市场",
+            label: "Chợ tài sản số",
             ready: form.marketplace_enabled,
-            readyText: "已启用",
-            pendingText: "未启用",
+            readyText: "Đã bật",
+            pendingText: "Chưa bật",
           },
         ]}
       />
@@ -72,13 +72,13 @@ export function SiteSettingsPanel() {
       <div className="settings-routing-grid">
         <SettingsPanel
           className="settings-panel--compact"
-          title="站点访问地址"
-          description="供支付回调、分享链接和媒体地址回填使用，填写可从公网访问的后端地址。"
+          title="Địa chỉ truy cập site"
+          description="Dùng cho callback thanh toán, liên kết chia sẻ và điền lại địa chỉ phương tiện; nhập địa chỉ backend có thể truy cập từ internet."
         >
           <div className="settings-field-grid">
             <LabeledControl
-              label="后端公网基址"
-              hint="例如 https://www.printfilm.com；留空使用服务器默认配置。"
+              label="Địa chỉ backend công khai"
+              hint="Ví dụ https://www.printfilm.com; để trống dùng cấu hình mặc định của máy chủ."
               optional
               className="settings-field-span-full"
             >
@@ -93,17 +93,17 @@ export function SiteSettingsPanel() {
             </LabeledControl>
           </div>
           <p className="settings-panel-footnote">
-            数据库、Redis、SECRET_KEY 等基础设施仍通过服务器环境变量配置，不在此页修改。
+            Cơ sở dữ liệu, Redis, SECRET_KEY và hạ tầng khác vẫn cấu hình qua biến môi trường máy chủ, không sửa ở trang này.
           </p>
         </SettingsPanel>
 
         <SettingsPanel
           className="settings-panel--compact"
-          title="媒体处理工具"
-          description="视频合成与抽帧使用服务器上的工具。已加入服务器 PATH 时，可保持默认名称。"
+          title="Công cụ xử lý phương tiện"
+          description="Ghép video và tách khung hình dùng công cụ trên máy chủ. Nếu đã thêm vào PATH của máy chủ, có thể giữ tên mặc định."
         >
           <div className="settings-field-grid">
-            <LabeledControl label="视频处理工具（ffmpeg）" hint="可填写命令名或服务器上的完整路径。" optional>
+            <LabeledControl label="Công cụ xử lý video (ffmpeg)" hint="Có thể nhập tên lệnh hoặc đường dẫn đầy đủ trên máy chủ." optional>
               <input
                 className="settings-input"
                 placeholder="ffmpeg"
@@ -111,7 +111,7 @@ export function SiteSettingsPanel() {
                 onChange={(e) => patchField("ffmpeg_path", e.target.value)}
               />
             </LabeledControl>
-            <LabeledControl label="媒体信息工具（ffprobe）" hint="与 ffmpeg 使用同一安装目录。" optional>
+            <LabeledControl label="Công cụ thông tin phương tiện (ffprobe)" hint="Dùng cùng thư mục cài đặt với ffmpeg." optional>
               <input
                 className="settings-input"
                 placeholder="ffprobe"
@@ -124,13 +124,13 @@ export function SiteSettingsPanel() {
 
         <SettingsPanel
           className="settings-panel--compact"
-          title="3. 数字资产市场"
-          description="线上没有环境文件时，在这里打开入口"
+          title="3. Chợ tài sản số"
+          description="Khi môi trường thật không có tệp môi trường, mở lối vào tại đây"
         >
           <div className="settings-toggle-row">
             <div>
-              <strong>启用数字资产市场</strong>
-              <span>保存后用户端出现「数字资产市场」，管理端「业务」出现「数字资产平台运营」。上传仍使用「存储 OSS」。</span>
+              <strong>Bật chợ tài sản số</strong>
+              <span>Sau khi lưu, trang người dùng sẽ có “Chợ tài sản số”, mục “Nghiệp vụ” của trang quản trị sẽ có “Vận hành nền tảng tài sản số”. Tải lên vẫn dùng “Lưu trữ OSS”.</span>
             </div>
             <Switch
               checked={form.marketplace_enabled}

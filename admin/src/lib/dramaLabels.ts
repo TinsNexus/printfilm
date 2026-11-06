@@ -11,13 +11,13 @@ export const DRAMA_GENERATION_STATUSES = [
 /** 漫剧生成状态中文标签（idle 仅用于分镜等无 params.generation 时的展示回退） */
 export function dramaGenerationStatusLabel(status: string): string {
   const map: Record<string, string> = {
-    queued: "排队中",
-    running: "生成中",
-    generating: "生成中",
-    done: "已完成",
-    failed: "失败",
-    cancelled: "已取消",
-    idle: "未开始",
+    queued: "Đang xếp hàng",
+    running: "Đang tạo",
+    generating: "Đang tạo",
+    done: "Đã hoàn tất",
+    failed: "Thất bại",
+    cancelled: "Đã hủy",
+    idle: "Chưa bắt đầu",
   };
   return map[status] ?? status;
 }
@@ -31,15 +31,15 @@ export function formatDramaGenerationStatus(status: string | null | undefined): 
 /** 漫剧资产类型中文标签 */
 export function dramaAssetTypeLabel(type: string): string {
   const map: Record<string, string> = {
-    character: "角色",
-    scene: "场景",
-    prop: "道具",
-    material: "素材",
-    narration: "旁白",
-    video: "视频",
-    audio: "音频",
-    text: "文本",
-    none: "未分类",
+    character: "Vai trò",
+    scene: "Bối cảnh",
+    prop: "Đạo cụ",
+    material: "Tư liệu",
+    narration: "Lời dẫn",
+    video: "Video",
+    audio: "Âm thanh",
+    text: "Văn bản",
+    none: "Chưa phân loại",
   };
   return map[type] ?? type;
 }

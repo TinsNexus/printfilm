@@ -11,10 +11,10 @@ import { fenToYuan } from "@/lib/utils";
 type FinanceDays = "7" | "14" | "30" | "90";
 
 const DAY_OPTIONS = [
-  { value: "7", label: "近 7 日" },
-  { value: "14", label: "近 14 日" },
-  { value: "30", label: "近 30 日" },
-  { value: "90", label: "近 90 日" },
+  { value: "7", label: "7 ngày qua" },
+  { value: "14", label: "14 ngày qua" },
+  { value: "30", label: "30 ngày qua" },
+  { value: "90", label: "90 ngày qua" },
 ];
 
 /** 管理端财务列表：按日展示用户扣费与用量。 */
@@ -30,7 +30,7 @@ export function FinanceListPage() {
       setData(res);
     } catch (err) {
       setData(null);
-      toast.error(err instanceof Error ? err.message : "财务列表加载失败");
+      toast.error(err instanceof Error ? err.message : "Tải danh sách tài chính thất bại");
     } finally {
       setLoading(false);
     }
@@ -46,11 +46,11 @@ export function FinanceListPage() {
 
   return (
     <div className="admin-page">
-      <PageHeader title="财务列表" description="按日汇总用户扣费、调用次数与 Token 用量" />
+      <PageHeader title="Danh sách tài chính" description="Tổng hợp theo ngày phí trừ người dùng, số lần gọi và lượng Token" />
 
       <AdminFilterBar>
         <AdminChipFilter
-          label="时间范围"
+          label="Khoảng thời gian"
           value={days}
           options={DAY_OPTIONS}
           onChange={(v) => setDays(v as FinanceDays)}
@@ -59,11 +59,11 @@ export function FinanceListPage() {
       </AdminFilterBar>
 
       <PageSection
-        title="财务列表"
+        title="Danh sách tài chính"
         description={
           rangeMismatch
-            ? "数据与当前时间范围不一致，请重新加载"
-            : `近 ${days} 日 · 用户扣费与用量汇总`
+            ? "Dữ liệu không khớp với khoảng thời gian hiện tại, vui lòng tải lại"
+            : `$ ngày qua{days} ngày · Tổng hợp phí trừ và mức dùng của người dùng`
         }
         bodyClassName="!pt-0"
       >
@@ -71,9 +71,9 @@ export function FinanceListPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>日期</TableHead>
-                <TableHead>扣费金额</TableHead>
-                <TableHead>调用次数</TableHead>
+                <TableHead>Ngày</TableHead>
+                <TableHead>Số tiền trừ</TableHead>
+                <TableHead>Số lần gọi</TableHead>
                 <TableHead>Token</TableHead>
               </TableRow>
             </TableHeader>
@@ -81,13 +81,13 @@ export function FinanceListPage() {
               {loading ? (
                 <TableRow>
                   <TableCell colSpan={4} className="!text-center text-[var(--admin-muted)]">
-                    加载中…
+                    Đang tải…
                   </TableCell>
                 </TableRow>
               ) : rows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={4} className="!text-center text-[var(--admin-muted)]">
-                    暂无数据
+                    Chưa có dữ liệu
                   </TableCell>
                 </TableRow>
               ) : (
@@ -102,7 +102,7 @@ export function FinanceListPage() {
                   ))}
                   {totals ? (
                     <TableRow className="bg-[rgba(15,45,32,0.04)] font-medium">
-                      <TableCell>合计</TableCell>
+                      <TableCell>Tổng cộng</TableCell>
                       <TableCell>¥{fenToYuan(totals.charge_fen)}</TableCell>
                       <TableCell>{totals.calls.toLocaleString()}</TableCell>
                       <TableCell>{totals.tokens.toLocaleString()}</TableCell>

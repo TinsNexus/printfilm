@@ -37,16 +37,16 @@ export function PaginationBar({
     >
       <div className="flex flex-wrap items-center gap-3">
         <span className="admin-ui-pagination-summary">
-          共 <em className="not-italic font-semibold text-[var(--admin-text)]">{total}</em> 条
+          Tổng <em className="not-italic font-semibold text-[var(--admin-text)]">{total}</em> mục
           <span className="mx-1.5 text-[var(--admin-border)]">·</span>
           {from}-{to}
         </span>
         {onPageSizeChange && (
           <label className="admin-ui-pagination-size flex items-center gap-2 text-xs">
-            <span>每页</span>
+            <span>mỗi trang</span>
             <Select
               className="admin-ui-pagination-select !h-9 !min-w-[4.5rem] !text-xs"
-              aria-label="每页显示条数"
+              aria-label="Số mục hiển thị mỗi trang"
               value={pageSize}
               onChange={(e) => onPageSizeChange(Number(e.target.value))}
             >
@@ -56,18 +56,18 @@ export function PaginationBar({
                 </option>
               ))}
             </Select>
-            <span>条</span>
+            <span>mục</span>
           </label>
         )}
       </div>
 
-      <nav className="admin-ui-pagination-pages flex items-center gap-1" aria-label="分页导航">
+      <nav className="admin-ui-pagination-pages flex items-center gap-1" aria-label="Điều hướng phân trang">
         <button
           type="button"
           className="admin-page-btn"
           disabled={page <= 1}
           onClick={() => onPageChange(page - 1)}
-          aria-label="上一页"
+          aria-label="Trang trước"
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
@@ -82,7 +82,7 @@ export function PaginationBar({
               type="button"
               className={cn("admin-page-btn", n === page && "is-active")}
               aria-current={n === page ? "page" : undefined}
-              aria-label={`第 ${n} 页`}
+              aria-label={`Trang ${n} `}
               onClick={() => onPageChange(n)}
             >
               {n}
@@ -94,7 +94,7 @@ export function PaginationBar({
           className="admin-page-btn"
           disabled={page >= totalPages}
           onClick={() => onPageChange(page + 1)}
-          aria-label="下一页"
+          aria-label="Trang sau"
         >
           <ChevronRight className="h-4 w-4" />
         </button>

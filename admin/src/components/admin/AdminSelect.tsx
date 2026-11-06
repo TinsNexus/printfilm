@@ -33,7 +33,7 @@ export function AdminSelect({
     <div className={cn("admin-select-container", className)}>
       <Select
         id={id}
-        aria-label={label || placeholder || "筛选选项"}
+        aria-label={label || placeholder || "Tùy chọn lọc"}
         value={value}
         onChange={(e) => onChange(e.target.value)}
       >

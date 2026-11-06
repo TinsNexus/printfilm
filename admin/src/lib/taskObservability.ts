@@ -64,11 +64,11 @@ export function shortEndpoint(endpoint: string): string {
 }
 
 export function formatTaskDuration(milliseconds: number | null | undefined): string {
-  if (milliseconds == null || !Number.isFinite(milliseconds)) return "未记录";
+  if (milliseconds == null || !Number.isFinite(milliseconds)) return "Chưa ghi nhận";
   const seconds = Math.max(0, Math.floor(milliseconds / 1000));
-  if (seconds < 60) return `${seconds}秒`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}分${seconds % 60}秒`;
-  return `${Math.floor(seconds / 3600)}小时${Math.floor((seconds % 3600) / 60)}分`;
+  if (seconds < 60) return `${seconds}giây`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}phút${seconds % 60}giây`;
+  return `${Math.floor(seconds / 3600)}giờ${Math.floor((seconds % 3600) / 60)}phút`;
 }
 
 function timestamp(value: string | null | undefined): number | null {
@@ -92,9 +92,9 @@ export function taskDurations(task: Pick<AdminTaskRow, "status" | "created_at" |
 
 export function taskBilling(task: Pick<AdminTaskRow, "billing_status" | "billing_estimate_fen" | "billing_charged_fen" | "billing_refunded_fen">) {
   const status = task.billing_status;
-  const labels: Record<string, string> = { none: "未预扣 · 尚未结算", frozen: "已冻结 · 尚未结算", settled: "已结算", skipped: "已跳过预扣 · 尚未结算" };
+  const labels: Record<string, string> = { none: "Chưa giữ trước · chưa quyết toán", frozen: "Đã đóng băng · chưa quyết toán", settled: "Đã quyết toán", skipped: "Đã bỏ qua giữ trước · chưa quyết toán" };
   return {
-    label: status ? labels[status] || status : "计费状态未记录",
+    label: status ? labels[status] || status : "Chưa ghi nhận trạng thái tính phí",
     settled: status === "settled",
     estimateFen: task.billing_estimate_fen,
     frozenFen: status === "frozen" ? task.billing_estimate_fen : status ? 0 : undefined,
@@ -158,18 +158,18 @@ export function upstreamRecords(events: AdminTaskEvent[] | undefined): UpstreamR
 }
 
 export const UPSTREAM_PHASE_LABELS: Record<UpstreamPhase, string> = {
-  started: "开始请求", accepted: "上游响应", failed: "请求失败", poll: "查询结果",
-  simulated: "本地模拟 · 参数已记录",
+  started: "Bắt đầu yêu cầu", accepted: "Phản hồi upstream", failed: "Yêu cầu thất bại", poll: "Kết quả truy vấn",
+  simulated: "Mô phỏng cục bộ · đã ghi lại tham số",
 };
 
 export function upstreamStateLabel(status: string): string {
   const labels: Record<string, string> = {
-    pending: "上游排队", queued: "上游排队", submitted: "上游排队", waiting: "上游排队",
-    running: "上游生成中", processing: "上游生成中", generating: "上游生成中", in_progress: "上游生成中",
-    succeeded: "上游完成", success: "上游完成", completed: "上游完成", done: "上游完成", finished: "上游完成",
-    failed: "上游失败", error: "上游失败", failure: "上游失败", cancelled: "上游已取消", canceled: "上游已取消",
+    pending: "Upstream xếp hàng", queued: "Upstream xếp hàng", submitted: "Upstream xếp hàng", waiting: "Upstream xếp hàng",
+    running: "Upstream đang tạo", processing: "Upstream đang tạo", generating: "Upstream đang tạo", in_progress: "Upstream đang tạo",
+    succeeded: "Upstream hoàn tất", success: "Upstream hoàn tất", completed: "Upstream hoàn tất", done: "Upstream hoàn tất", finished: "Upstream hoàn tất",
+    failed: "Upstream thất bại", error: "Upstream thất bại", failure: "Upstream thất bại", cancelled: "Upstream đã hủy", canceled: "Upstream đã hủy",
   };
-  return labels[status.toLowerCase()] || `上游状态：${redactTaskText(status)}`;
+  return labels[status.toLowerCase()] || `Trạng thái upstream: ${redactTaskText(status)}`;
 }
 
 export function groupUpstreamRecords(records: UpstreamRecord[]) {
@@ -216,6 +216,6 @@ export function taskUpstream(task: Pick<AdminTaskRow, "events" | "upstream_event
     modelFromRequest: Boolean(modelRecord),
     provider: providerRecord?.provider || textField(providerStep?.provider_name),
     providerTaskId,
-    phase: latest?.upstreamStatus ? upstreamStateLabel(latest.upstreamStatus) : latest ? UPSTREAM_PHASE_LABELS[latest.phase] : providerTaskId ? "已有上游任务 · HTTP未记录" : "尚无上游请求记录",
+    phase: latest?.upstreamStatus ? upstreamStateLabel(latest.upstreamStatus) : latest ? UPSTREAM_PHASE_LABELS[latest.phase] : providerTaskId ? "Đã có tác vụ upstream · chưa ghi nhận HTTP" : "Chưa có bản ghi yêu cầu upstream",
   };
 }

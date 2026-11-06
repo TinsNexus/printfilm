@@ -57,7 +57,7 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
         setLedger(ledgerRes.items);
         setUsage(usageRes.items);
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "加载用户明细失败");
+        toast.error(err instanceof Error ? err.message : "Tải chi tiết người dùng thất bại");
       } finally {
         setLoading(false);
       }
@@ -69,12 +69,12 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
       open={open}
       onOpenChange={onOpenChange}
       size="xl"
-      title="用户明细"
+      title="Chi tiết người dùng"
       subtitle={
         user
           ? `${user.email} · ID：${formatAccountId(user.id)}`
           : loading
-            ? "加载中…"
+            ? "Đang tải…"
             : "—"
       }
       bodyClassName="!pt-2"
@@ -82,22 +82,22 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
       {user ? (
         <Tabs defaultValue="info" className="admin-detail-tabs">
           <TabsList>
-            <TabsTrigger value="info">基本信息</TabsTrigger>
-            <TabsTrigger value="orders">最近订单</TabsTrigger>
-            <TabsTrigger value="ledger">钱包流水</TabsTrigger>
-            <TabsTrigger value="usage">用量摘要</TabsTrigger>
+            <TabsTrigger value="info">Thông tin cơ bản</TabsTrigger>
+            <TabsTrigger value="orders">Đơn hàng gần đây</TabsTrigger>
+            <TabsTrigger value="ledger">Biến động ví</TabsTrigger>
+            <TabsTrigger value="usage">Tóm tắt mức dùng</TabsTrigger>
           </TabsList>
           <TabsContent value="info">
             <AdminDetailSection>
               <AdminDetailMeta
                 items={[
-                  { label: "昵称", value: user.nickname || "—" },
-                  { label: "手机", value: user.phone || "—" },
-                  { label: "角色", value: user.role },
-                  { label: "余额", value: `¥${fenToYuan(user.balance_fen)}` },
-                  { label: "冻结", value: `¥${fenToYuan(user.frozen_fen)}` },
+                  { label: "Biệt danh", value: user.nickname || "—" },
+                  { label: "Điện thoại", value: user.phone || "—" },
+                  { label: "Vai trò", value: user.role },
+                  { label: "Số dư", value: `¥${fenToYuan(user.balance_fen)}` },
+                  { label: "Đóng băng", value: `¥${fenToYuan(user.frozen_fen)}` },
                   {
-                    label: "注册时间",
+                    label: "Thời gian đăng ký",
                     value: user.created_at ? new Date(user.created_at).toLocaleString() : "—",
                     full: true,
                   },
@@ -110,17 +110,17 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
               <table>
                 <thead>
                   <tr>
-                    <th>单号</th>
-                    <th>金额</th>
-                    <th>状态</th>
-                    <th>时间</th>
+                    <th>Mã đơn</th>
+                    <th>Số tiền</th>
+                    <th>Trạng thái</th>
+                    <th>Thời gian</th>
                   </tr>
                 </thead>
                 <tbody>
                   {orders.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="!text-center text-[var(--admin-muted)]">
-                        暂无订单
+                        Chưa có đơn hàng
                       </td>
                     </tr>
                   ) : (
@@ -142,17 +142,17 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
               <table>
                 <thead>
                   <tr>
-                    <th>类型</th>
-                    <th>变动</th>
-                    <th>余额后</th>
-                    <th>备注</th>
+                    <th>Loại</th>
+                    <th>Biến động</th>
+                    <th>Số dư sau</th>
+                    <th>Ghi chú</th>
                   </tr>
                 </thead>
                 <tbody>
                   {ledger.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="!text-center text-[var(--admin-muted)]">
-                        暂无流水
+                        Chưa có biến động
                       </td>
                     </tr>
                   ) : (
@@ -174,17 +174,17 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
               <table>
                 <thead>
                   <tr>
-                    <th>时间</th>
-                    <th>能力</th>
-                    <th>扣费</th>
-                    <th>任务</th>
+                    <th>Thời gian</th>
+                    <th>Năng lực</th>
+                    <th>Trừ phí</th>
+                    <th>Tác vụ</th>
                   </tr>
                 </thead>
                 <tbody>
                   {usage.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="!text-center text-[var(--admin-muted)]">
-                        暂无用量
+                        Chưa có mức dùng
                       </td>
                     </tr>
                   ) : (
@@ -211,7 +211,7 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
           </TabsContent>
         </Tabs>
       ) : loading ? (
-        <div className="py-10 text-center text-sm text-[var(--admin-muted)]">加载中…</div>
+        <div className="py-10 text-center text-sm text-[var(--admin-muted)]">Đang tải…</div>
       ) : null}
     </AdminModal>
   );

@@ -33,7 +33,7 @@ export function RuntimeSettingsPanel() {
       setForm(data);
       setNumberDrafts({});
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "加载失败");
+      toast.error(err instanceof Error ? err.message : "Tải thất bại");
     } finally {
       setLoading(false);
     }
@@ -49,8 +49,8 @@ export function RuntimeSettingsPanel() {
         id: item.capability,
         label: item.label,
         ready: item.ready,
-        readyText: item.model || "就绪",
-        pendingText: "未就绪",
+        readyText: item.model || "Sẵn sàng",
+        pendingText: "Chưa sẵn sàng",
       })),
     [form?.readiness],
   );
@@ -65,17 +65,17 @@ export function RuntimeSettingsPanel() {
       const raw = numberDrafts[key] ?? String(form[key]);
       const value = Number(raw);
       const seconds = key === "ark_video_poll_interval" || key === "ark_video_poll_timeout";
-      if (!raw.trim() || !Number.isFinite(value) || value <= 0) errors[key] = seconds ? "请输入大于 0 的秒数" : "请输入不小于 1 的整数";
-      else if (!seconds && !Number.isInteger(value)) errors[key] = "请输入整数";
+      if (!raw.trim() || !Number.isFinite(value) || value <= 0) errors[key] = seconds ? "Vui lòng nhập số giây lớn hơn 0" : "Vui lòng nhập số nguyên không nhỏ hơn 1";
+      else if (!seconds && !Number.isInteger(value)) errors[key] = "Vui lòng nhập số nguyên";
     });
     if (!errors.seedance_duration_min && !errors.seedance_duration_max && form.seedance_duration_min > form.seedance_duration_max) {
-      errors.seedance_duration_max = "最大时长不能小于最小时长";
+      errors.seedance_duration_max = "Thời lượng tối đa không được nhỏ hơn thời lượng tối thiểu";
     }
     if (!errors.ark_video_poll_interval && !errors.ark_video_poll_timeout && form.ark_video_poll_timeout <= form.ark_video_poll_interval) {
-      errors.ark_video_poll_timeout = "超时应大于轮询间隔";
+      errors.ark_video_poll_timeout = "Thời gian chờ phải lớn hơn khoảng thời gian thăm dò";
     }
     (["ark_image_size", "ark_video_resolution", "ark_video_ratio"] as const).forEach((key) => {
-      if (!form[key].trim()) errors[key] = "请填写默认值";
+      if (!form[key].trim()) errors[key] = "Vui lòng nhập giá trị mặc định";
     });
   }
   const hasErrors = Object.keys(errors).length > 0;
@@ -127,9 +127,9 @@ export function RuntimeSettingsPanel() {
       };
       await api("/api/admin/settings/models", { method: "PATCH", body: JSON.stringify(body) });
       await load();
-      toast.success("运行参数已保存");
+      toast.success("Đã lưu tham số chạy");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "保存失败");
+      toast.error(err instanceof Error ? err.message : "Lưu thất bại");
     } finally {
       setSaving(false);
     }
@@ -140,72 +140,72 @@ export function RuntimeSettingsPanel() {
   }
 
   return (
-    <SettingsTabShell onSave={handleSave} saving={saving} disabled={hasErrors} saveLabel="保存运行设置">
+    <SettingsTabShell onSave={handleSave} saving={saving} disabled={hasErrors} saveLabel="Lưu cài đặt chạy">
       <SettingsStatusBar
-        title="路由就绪状态"
+        title="Trạng thái sẵn sàng của route"
         items={
           statusItems.length > 0
             ? statusItems
-            : [{ id: "empty", label: "能力路由", ready: false, pendingText: "请先在「模型」填写 Key 并选择模型" }]
+            : [{ id: "empty", label: "Route năng lực", ready: false, pendingText: "Vui lòng nhập Key ở “Model” và chọn model trước" }]
         }
         extra={
           <span className="settings-status-extra">
-            {form.readiness?.length && form.readiness.every((item) => item.ready) ? "四类能力已就绪" : "请在「模型」填写 TokenFree Key 并选择模型"}
+            {form.readiness?.length && form.readiness.every((item) => item.ready) ? "Bốn loại năng lực đã sẵn sàng" : "Vui lòng nhập TokenFree Key ở “Model” và chọn model"}
           </span>
         }
       />
 
-      <SettingsPanel title="生成默认值" description="设置新生成任务的默认画质、画幅和时长；具体支持范围仍由所选模型决定。">
+      <SettingsPanel title="Giá trị mặc định khi tạo" description="Đặt chất lượng, tỷ lệ khung hình và thời lượng mặc định cho tác vụ tạo mới; phạm vi hỗ trợ cụ thể vẫn do model được chọn quyết định.">
         <div className="settings-field-grid settings-field-grid--3">
-          <LabeledControl label="生图尺寸" hint="沿用上游支持的尺寸，例如 2K 或 1024x1024。" error={errors.ark_image_size} required>
-            <input className="settings-input" required placeholder="例如 2K" aria-invalid={Boolean(errors.ark_image_size)} value={form.ark_image_size} onChange={(e) => patchField("ark_image_size", e.target.value)} />
+          <LabeledControl label="Kích thước tạo ảnh" hint="Dùng kích thước upstream hỗ trợ, ví dụ 2K hoặc 1024x1024." error={errors.ark_image_size} required>
+            <input className="settings-input" required placeholder="Ví dụ 2K" aria-invalid={Boolean(errors.ark_image_size)} value={form.ark_image_size} onChange={(e) => patchField("ark_image_size", e.target.value)} />
           </LabeledControl>
-          <LabeledControl label="视频清晰度" hint="例如 480p、720p；以当前模型支持值为准。" error={errors.ark_video_resolution} required>
-            <input className="settings-input" required placeholder="例如 720p" aria-invalid={Boolean(errors.ark_video_resolution)} value={form.ark_video_resolution} onChange={(e) => patchField("ark_video_resolution", e.target.value)} />
+          <LabeledControl label="Độ nét video" hint="Ví dụ 480p, 720p; lấy theo giá trị model hiện tại hỗ trợ." error={errors.ark_video_resolution} required>
+            <input className="settings-input" required placeholder="Ví dụ 720p" aria-invalid={Boolean(errors.ark_video_resolution)} value={form.ark_video_resolution} onChange={(e) => patchField("ark_video_resolution", e.target.value)} />
           </LabeledControl>
-          <LabeledControl label="视频画幅" hint="宽:高，例如 16:9 或 9:16。" error={errors.ark_video_ratio} required>
-            <input className="settings-input" required placeholder="例如 16:9" aria-invalid={Boolean(errors.ark_video_ratio)} value={form.ark_video_ratio} onChange={(e) => patchField("ark_video_ratio", e.target.value)} />
+          <LabeledControl label="Tỷ lệ khung video" hint="Rộng:cao, ví dụ 16:9 hoặc 9:16." error={errors.ark_video_ratio} required>
+            <input className="settings-input" required placeholder="Ví dụ 16:9" aria-invalid={Boolean(errors.ark_video_ratio)} value={form.ark_video_ratio} onChange={(e) => patchField("ark_video_ratio", e.target.value)} />
           </LabeledControl>
         </div>
         <div className="settings-field-grid settings-field-grid--2 mt-5">
-          {numberField("seedance_duration_min", "Seedance 最小时长", "不小于 1 秒，与最大时长一起限制单段生成时长。", "秒")}
-          {numberField("seedance_duration_max", "Seedance 最大时长", "不小于最小时长；最终仍受模型时长范围限制。", "秒")}
+          {numberField("seedance_duration_min", "Thời lượng tối thiểu Seedance", "Không nhỏ hơn 1 giây, cùng với thời lượng tối đa giới hạn độ dài mỗi đoạn tạo.", "giây")}
+          {numberField("seedance_duration_max", "Thời lượng tối đa Seedance", "Không nhỏ hơn thời lượng tối thiểu; cuối cùng vẫn bị giới hạn bởi phạm vi thời lượng của model.", "giây")}
         </div>
       </SettingsPanel>
 
-      <SettingsPanel title="任务并发" description="控制同时执行的任务数量，以及单个用户可占用的资源。">
+      <SettingsPanel title="Đồng thời tác vụ" description="Kiểm soát số tác vụ chạy cùng lúc và tài nguyên một người dùng có thể chiếm.">
         <div className="settings-field-grid settings-field-grid--3">
-          {numberField("task_runtime_max_concurrency", "全站执行槽位", "全站可同时运行的 Worker 任务数，不小于 1。", "个")}
-          {numberField("task_user_max_concurrency", "单用户执行槽位", "单个用户可占用的任务数，仍受全站槽位约束。", "个")}
-          {numberField("drama_user_video_job_limit", "单用户漫剧视频在途上限", "限制排队与处理中的视频任务总数，不小于 1。", "个")}
+          {numberField("task_runtime_max_concurrency", "Khe thực thi toàn site", "Số tác vụ Worker toàn site có thể chạy đồng thời, không nhỏ hơn 1.", "")}
+          {numberField("task_user_max_concurrency", "Khe thực thi mỗi người dùng", "Số tác vụ một người dùng có thể chiếm, vẫn bị giới hạn bởi khe toàn site.", "")}
+          {numberField("drama_user_video_job_limit", "Giới hạn video phim truyện đang chạy mỗi người dùng", "Giới hạn tổng số tác vụ video đang xếp hàng và đang xử lý, không nhỏ hơn 1.", "")}
         </div>
         <div className="settings-runtime-note mt-5">
           <Activity className="h-4 w-4 shrink-0 text-[var(--admin-forest)]" />
-          <span>当前草稿：全站 <strong>{form.task_runtime_max_concurrency}</strong> 个执行槽位，单用户最多 <strong>{form.task_user_max_concurrency}</strong> 个；等待上游轮询的任务不占 Worker 槽位。</span>
+          <span>Bản nháp hiện tại: toàn site <strong>{form.task_runtime_max_concurrency}</strong> khe thực thi, mỗi người dùng tối đa <strong>{form.task_user_max_concurrency}</strong> ; tác vụ đang chờ upstream thăm dò không chiếm khe Worker.</span>
         </div>
       </SettingsPanel>
 
       <details className="settings-advanced">
-        <summary><span>高级运行参数</span><span>管线分配、轮询与模拟模式</span></summary>
-        <SettingsPanel title="生成管线" description="分别控制各类媒体任务的并行处理数；均为不小于 1 的整数。">
+        <summary><span>Tham số chạy nâng cao</span><span>Phân bổ pipeline, thăm dò và chế độ mô phỏng</span></summary>
+        <SettingsPanel title="Pipeline tạo" description="Kiểm soát riêng số xử lý song song của từng loại tác vụ phương tiện; đều là số nguyên không nhỏ hơn 1.">
           <div className="settings-field-grid settings-field-grid--3">
-            {numberField("pipeline_image_concurrency", "生图并发", "同时处理的图像任务数。", "路")}
-            {numberField("pipeline_video_concurrency", "视频并发", "同时处理的视频任务数。", "路")}
-            {numberField("pipeline_audio_concurrency", "配音并发", "同时处理的配音任务数。", "路")}
+            {numberField("pipeline_image_concurrency", "Đồng thời tạo ảnh", "Số tác vụ hình ảnh xử lý cùng lúc.", "luồng")}
+            {numberField("pipeline_video_concurrency", "Đồng thời video", "Số tác vụ video xử lý cùng lúc.", "luồng")}
+            {numberField("pipeline_audio_concurrency", "Đồng thời lồng tiếng", "Số tác vụ lồng tiếng xử lý cùng lúc.", "luồng")}
           </div>
         </SettingsPanel>
-        <SettingsPanel title="上游轮询与重试" description="在查询频率和等待时长之间取得平衡；超时应大于查询间隔。">
+        <SettingsPanel title="Thăm dò và thử lại upstream" description="Cân bằng giữa tần suất truy vấn và thời gian chờ; thời gian chờ phải lớn hơn khoảng truy vấn.">
           <div className="settings-field-grid settings-field-grid--2">
-            {numberField("ark_video_poll_interval", "视频轮询间隔", "大于 0 秒；间隔越短，上游查询频率越高。", "秒")}
-            {numberField("ark_video_poll_timeout", "视频轮询超时", "大于轮询间隔；超过此时长后结束等待。", "秒")}
-            {numberField("task_poll_max_concurrency", "每轮上游查询并发", "Selector 每轮非阻塞查询的最大路数，不小于 1。", "路")}
-            {numberField("drama_fragment_max_attempts", "分镜视频最大尝试次数", "包含首次生成与失败后的重试，不小于 1。", "次")}
+            {numberField("ark_video_poll_interval", "Khoảng thăm dò video", "Lớn hơn 0 giây; khoảng càng ngắn thì tần suất truy vấn upstream càng cao.", "giây")}
+            {numberField("ark_video_poll_timeout", "Hết thời gian thăm dò video", "Lớn hơn khoảng thăm dò; quá thời gian này sẽ ngừng chờ.", "giây")}
+            {numberField("task_poll_max_concurrency", "Đồng thời truy vấn upstream mỗi vòng", "Số luồng tối đa Selector truy vấn không chặn mỗi vòng, không nhỏ hơn 1.", "luồng")}
+            {numberField("drama_fragment_max_attempts", "Số lần thử tối đa của video phân cảnh", "Gồm lần tạo đầu và các lần thử lại sau khi thất bại, không nhỏ hơn 1.", "lần")}
           </div>
         </SettingsPanel>
-        <SettingsPanel title="开发与调试" description="切换生成请求的运行方式。">
+        <SettingsPanel title="Phát triển và gỡ lỗi" description="Chuyển cách chạy của yêu cầu tạo.">
           <div className="settings-toggle-row">
-            <div><strong>ARK Mock 模式</strong><span>使用模拟结果调试 ARK 接口，开启后不调用对应真实上游。</span></div>
-            <Switch aria-label="ARK Mock 模式" checked={form.ark_mock} onCheckedChange={(v) => patchField("ark_mock", v)} />
+            <div><strong>Chế độ ARK Mock</strong><span>Dùng kết quả mô phỏng để gỡ lỗi giao diện ARK, khi bật sẽ không gọi upstream thật tương ứng.</span></div>
+            <Switch aria-label="Chế độ ARK Mock" checked={form.ark_mock} onCheckedChange={(v) => patchField("ark_mock", v)} />
           </div>
         </SettingsPanel>
       </details>

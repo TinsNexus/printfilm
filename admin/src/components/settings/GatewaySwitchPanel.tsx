@@ -36,7 +36,7 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
       setPlanRows((res.ninerouter_plan_names ?? []).map((plan) => ({ plan, key: "", existing: true })));
       setKeyInput("");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "加载上游网关失败");
+      toast.error(err instanceof Error ? err.message : "Tải cổng upstream thất bại");
     }
   }, []);
 
@@ -66,11 +66,11 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
           ninerouter_plan_keys: Object.keys(planPatch).length ? planPatch : undefined,
         }),
       });
-      toast.success("上游网关已保存");
+      toast.success("Đã lưu cổng upstream");
       await load();
       onChanged?.();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "保存失败");
+      toast.error(err instanceof Error ? err.message : "Lưu thất bại");
     } finally {
       setSaving(false);
     }
@@ -80,9 +80,9 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
   const is9router = state.upstream_gateway_type === "9router";
 
   return (
-    <SettingsPanel title={"上游网关"} description={"在 TokenFree 与 9Router 之间切换，保存后立即生效，无需重启。切换不会改动已保存的 TokenFree 配置。"}>
+    <SettingsPanel title={"Cổng upstream"} description={"Chuyển giữa TokenFree và 9Router, lưu xong có hiệu lực ngay, không cần khởi động lại. Việc chuyển không thay đổi cấu hình TokenFree đã lưu."}>
       <div className="settings-field-grid">
-        <LabeledControl label="当前上游" className="settings-field-span-full">
+        <LabeledControl label="Upstream hiện tại" className="settings-field-span-full">
           <select
             className="settings-select"
             value={state.upstream_gateway_type}
@@ -104,21 +104,21 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
             </LabeledControl>
             <LabeledControl
               label="9Router API Key"
-              hint={state.has_ninerouter_api_key ? "已保存，留空不修改" : undefined}
+              hint={state.has_ninerouter_api_key ? "Đã lưu, để trống để giữ nguyên" : undefined}
               className="settings-field-span-full"
             >
               <input
                 className="settings-input is-secret"
                 type="password"
-                placeholder={state.has_ninerouter_api_key ? "已保存，留空则不修改" : "sk-..."}
+                placeholder={state.has_ninerouter_api_key ? "Đã lưu, để trống sẽ không thay đổi" : "sk-..."}
                 value={keyInput}
                 onChange={(e) => setKeyInput(e.target.value)}
               />
-              <p className="mt-1 text-xs text-[#909399]">{"使用 9Router 时不拉取官方价目与用量，计费估算仅供参考。"}</p>
+              <p className="mt-1 text-xs text-[#909399]">{"Khi dùng 9Router sẽ không lấy bảng giá và mức dùng chính thức, ước tính chi phí chỉ mang tính tham khảo."}</p>
             </LabeledControl>
             <LabeledControl
-              label="按套餐的 9Router Key"
-              hint="每个套餐（用户的 plan，如 free / pro）一把 Key，在 9Router 侧限定该 Key 可用的模型。未配置的套餐使用上面的默认 Key。"
+              label="Key 9Router theo gói"
+              hint="Mỗi gói (plan của người dùng, như free / pro) một Key, giới hạn các model Key đó dùng được ở phía 9Router. Gói chưa cấu hình sẽ dùng Key mặc định ở trên."
               className="settings-field-span-full"
             >
               <div className="space-y-2">
@@ -127,7 +127,7 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
                     <input
                       className="settings-input"
                       style={{ maxWidth: 160 }}
-                      placeholder="套餐名"
+                      placeholder="Tên gói"
                       value={row.plan}
                       disabled={row.existing}
                       onChange={(e) =>
@@ -137,7 +137,7 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
                     <input
                       className="settings-input is-secret"
                       type="password"
-                      placeholder={row.existing ? "已保存，留空则不修改" : "sk-..."}
+                      placeholder={row.existing ? "Đã lưu, để trống sẽ không thay đổi" : "sk-..."}
                       value={row.key}
                       onChange={(e) =>
                         setPlanRows(planRows.map((r, i) => (i === idx ? { ...r, key: e.target.value } : r)))
@@ -148,7 +148,7 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
                       className="admin-btn admin-btn-secondary settings-mini-btn"
                       onClick={() => setPlanRows(planRows.filter((_, i) => i !== idx))}
                     >
-                      {"清除"}
+                      {"Xóa"}
                     </button>
                   </div>
                 ))}
@@ -157,7 +157,7 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
                   className="admin-btn admin-btn-secondary settings-mini-btn"
                   onClick={() => setPlanRows([...planRows, { plan: "", key: "", existing: false }])}
                 >
-                  {"添加套餐"}
+                  {"Thêm gói"}
                 </button>
               </div>
             </LabeledControl>
@@ -165,7 +165,7 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
         ) : null}
         <div className="settings-field-span-full">
           <button type="button" className="admin-btn admin-btn-primary" disabled={saving} onClick={() => void save(state)}>
-            {saving ? "保存中…" : "保存并切换"}
+            {saving ? "Đang lưu…" : "Lưu và chuyển"}
           </button>
         </div>
       </div>

@@ -32,25 +32,25 @@ export function TeamMembersTable({ teamId }: { teamId: number }) {
   return <div className="space-y-4">
     <form onSubmit={(event) => { event.preventDefault(); setQ(draft.trim()); setPage(1); reload(); }}>
       <AdminFilterBar>
-        <AdminSearchInput value={draft} onChange={setDraft} placeholder="搜索成员昵称或邮箱" />
-        <AdminFilterField label="角色"><Select value={role} onChange={(event) => { setRole(event.target.value); setPage(1); }}><option value="">全部角色</option><option value="owner">所有者</option><option value="admin">管理员</option><option value="member">成员</option></Select></AdminFilterField>
-        <AdminFilterField label="状态"><Select value={state} onChange={(event) => { setState(event.target.value); setPage(1); }}><option value="all">全部成员</option><option value="active">在队成员</option><option value="removed">已退出成员</option></Select></AdminFilterField>
-        <AdminFilterField label="消费月份"><Input type="month" value={period} onChange={(event) => { setPeriod(event.target.value); setPage(1); }} /></AdminFilterField>
-        <Button type="submit" size="sm" disabled={loading}>搜索</Button>
+        <AdminSearchInput value={draft} onChange={setDraft} placeholder="Tìm biệt danh hoặc email thành viên" />
+        <AdminFilterField label="Vai trò"><Select value={role} onChange={(event) => { setRole(event.target.value); setPage(1); }}><option value="">Tất cả vai trò</option><option value="owner">Chủ sở hữu</option><option value="admin">Quản trị viên</option><option value="member">Thành viên</option></Select></AdminFilterField>
+        <AdminFilterField label="Trạng thái"><Select value={state} onChange={(event) => { setState(event.target.value); setPage(1); }}><option value="all">Tất cả thành viên</option><option value="active">Thành viên đang trong nhóm</option><option value="removed">Thành viên đã rời</option></Select></AdminFilterField>
+        <AdminFilterField label="Tháng chi tiêu"><Input type="month" value={period} onChange={(event) => { setPeriod(event.target.value); setPage(1); }} /></AdminFilterField>
+        <Button type="submit" size="sm" disabled={loading}>Tìm kiếm</Button>
       </AdminFilterBar>
     </form>
-    <p className="text-xs text-[var(--admin-muted)]">消费月份：{data?.period || period || "本月"}（上海时区）。退出成员保留历史消费，额度显示当前设置。</p>
+    <p className="text-xs text-[var(--admin-muted)]">Tháng chi tiêu:{data?.period || period || "Tháng này"}(múi giờ Thượng Hải). Thành viên đã rời vẫn giữ chi tiêu lịch sử, hạn mức hiển thị theo cài đặt hiện tại.</p>
     <TeamQueryFeedback loading={loading} error={error} empty={!data?.items.length} onRetry={reload} />
     {data && data.items.length > 0 && <Table><TableHeader><TableRow>
-      <TableHead>成员</TableHead><TableHead>角色</TableHead><TableHead>状态</TableHead><TableHead>月度额度</TableHead><TableHead>已消费 / 预留</TableHead><TableHead>加入时间</TableHead><TableHead>操作</TableHead>
+      <TableHead>Thành viên</TableHead><TableHead>Vai trò</TableHead><TableHead>Trạng thái</TableHead><TableHead>Hạn mức hằng tháng</TableHead><TableHead>Đã chi / giữ chỗ</TableHead><TableHead>Thời gian tham gia</TableHead><TableHead>Thao tác</TableHead>
     </TableRow></TableHeader><TableBody>{data.items.map((member) => <TableRow key={member.user_id}>
       <TableCell><div className="font-semibold">{member.nickname || "—"}</div><div className="mt-1 text-xs text-[var(--admin-muted)]">{member.email} · #{member.user_id}</div></TableCell>
       <TableCell><Badge variant={member.role === "owner" ? "success" : "info"}>{teamRoleLabels[member.role]}</Badge></TableCell>
-      <TableCell><Badge variant={member.active ? "success" : "default"}>{member.active ? "在队" : "已退出"}</Badge></TableCell>
-      <TableCell className="tabular-nums">{member.monthly_limit_fen === null ? "不限额" : `¥${fenToYuan(member.monthly_limit_fen)}`}</TableCell>
-      <TableCell className="tabular-nums"><div>¥{fenToYuan(member.spent_fen)}</div><div className="mt-1 text-xs text-[var(--admin-muted)]">预留 ¥{fenToYuan(member.reserved_fen)}</div></TableCell>
+      <TableCell><Badge variant={member.active ? "success" : "default"}>{member.active ? "Trong nhóm" : "Đã rời"}</Badge></TableCell>
+      <TableCell className="tabular-nums">{member.monthly_limit_fen === null ? "Không giới hạn" : `¥${fenToYuan(member.monthly_limit_fen)}`}</TableCell>
+      <TableCell className="tabular-nums"><div>¥{fenToYuan(member.spent_fen)}</div><div className="mt-1 text-xs text-[var(--admin-muted)]">Giữ chỗ ¥{fenToYuan(member.reserved_fen)}</div></TableCell>
       <TableCell className="whitespace-nowrap text-xs">{teamDate(member.joined_at)}</TableCell>
-      <TableCell>{member.active && <Button type="button" variant="ghost" size="sm" onClick={() => setTarget(member)}>设置额度</Button>}<Button type="button" asChild variant="outline" size="sm"><Link to={`/teams/${teamId}?tab=usage&member_id=${member.user_id}`}>消费记录</Link></Button></TableCell>
+      <TableCell>{member.active && <Button type="button" variant="ghost" size="sm" onClick={() => setTarget(member)}>Đặt hạn mức</Button>}<Button type="button" asChild variant="outline" size="sm"><Link to={`/teams/${teamId}?tab=usage&member_id=${member.user_id}`}>Bản ghi chi tiêu</Link></Button></TableCell>
     </TableRow>)}</TableBody></Table>}
     {target && <TeamBudgetModal key={target.user_id} teamId={teamId} memberId={target.user_id} name={target.nickname || target.email} limit={target.monthly_limit_fen} onClose={() => setTarget(null)} onSaved={reload} />}
     {data && <PaginationBar page={page} pageSize={pageSize} total={data.meta.total} onPageChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1); }} />}

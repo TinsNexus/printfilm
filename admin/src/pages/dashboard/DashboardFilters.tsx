@@ -30,37 +30,37 @@ export const PROJECTS_DASHBOARD_FILTERS: DashboardFilterState = {
 };
 
 const DAY_OPTIONS = [
-  { value: "1", label: "今日" },
-  { value: "7", label: "近 7 日" },
-  { value: "14", label: "近 14 日" },
-  { value: "30", label: "近 30 日" },
+  { value: "1", label: "Hôm nay" },
+  { value: "7", label: "7 ngày qua" },
+  { value: "14", label: "14 ngày qua" },
+  { value: "30", label: "30 ngày qua" },
 ];
 
 /** 图表 / 区块标题用的时间范围文案 */
 export function dashboardRangeLabel(days: DashboardDays): string {
-  if (days === "1") return "今日";
-  return `近 ${days} 日`;
+  if (days === "1") return "Hôm nay";
+  return `$ ngày qua{days} Ngày`;
 }
 
 const DOMAIN_OPTIONS = [
-  { value: "all", label: "全部领域" },
-  { value: "drama", label: "漫剧" },
-  { value: "kepu", label: "AI短视频" },
-  { value: "tools", label: "工具" },
-  { value: "studio", label: "工作室" },
+  { value: "all", label: "Tất cả lĩnh vực" },
+  { value: "drama", label: "Phim truyện" },
+  { value: "kepu", label: "Video ngắn AI" },
+  { value: "tools", label: "Công cụ" },
+  { value: "studio", label: "Studio" },
 ];
 
 const CAPABILITY_OPTIONS = [
-  { value: "all", label: "全部能力" },
+  { value: "all", label: "Tất cả năng lực" },
   { value: "llm", label: "LLM" },
-  { value: "image", label: "生图" },
-  { value: "video", label: "视频" },
-  { value: "tts", label: "配音" },
+  { value: "image", label: "Tạo ảnh" },
+  { value: "video", label: "Video" },
+  { value: "tts", label: "Lồng tiếng" },
 ];
 
 const METRIC_OPTIONS = [
-  { value: "charge", label: "扣费" },
-  { value: "calls", label: "调用" },
+  { value: "charge", label: "Trừ phí" },
+  { value: "calls", label: "Lượt gọi" },
 ];
 
 type DashboardFiltersProps = {
@@ -75,28 +75,28 @@ export function DashboardFilters({ value, onChange }: DashboardFiltersProps) {
   return (
     <AdminFilterBar className="admin-dashboard-filters">
       <AdminChipFilter
-        label="时间维度"
+        label="Chiều thời gian"
         value={value.days}
         options={DAY_OPTIONS}
         onChange={(days) => patch({ days: days as DashboardDays })}
         className="admin-chip-filter--segment"
       />
       <AdminChipFilter
-        label="业务领域"
+        label="Lĩnh vực nghiệp vụ"
         value={value.domain}
         options={DOMAIN_OPTIONS}
         onChange={(domain) => patch({ domain: domain as DashboardDomain })}
         className="admin-chip-filter--segment"
       />
       <AdminChipFilter
-        label="能力类型"
+        label="Loại năng lực"
         value={value.capability}
         options={CAPABILITY_OPTIONS}
         onChange={(capability) => patch({ capability: capability as DashboardCapability })}
         className="admin-chip-filter--segment"
       />
       <AdminChipFilter
-        label="统计指标"
+        label="Chỉ số thống kê"
         value={value.metric}
         options={METRIC_OPTIONS}
         onChange={(metric) => patch({ metric: metric as DashboardMetric })}

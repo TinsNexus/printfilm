@@ -58,11 +58,11 @@ export function UsersPage() {
     ? editing.balance_fen + (form.balance_dir === "decrease" ? -amountFen : amountFen)
     : editing?.balance_fen ?? 0;
   const amountError = !adjustBalance ? "" : !form.balance_amount_yuan.trim()
-    ? "请输入需要调整的金额"
-    : amountFen === null ? "请输入有效金额，最多保留两位小数"
-    : amountFen === 0 ? "调账金额须大于 0 元"
-    : !Number.isSafeInteger(balanceAfterFen) ? "调整后金额过大，请减少调账金额"
-    : balanceAfterFen < 0 ? "减少金额不能超过当前余额"
+    ? "Vui lòng nhập số tiền cần điều chỉnh"
+    : amountFen === null ? "Vui lòng nhập số tiền hợp lệ, tối đa hai chữ số thập phân"
+    : amountFen === 0 ? "Số tiền điều chỉnh phải lớn hơn 0 tệ"
+    : !Number.isSafeInteger(balanceAfterFen) ? "Số tiền sau điều chỉnh quá lớn, vui lòng giảm số tiền điều chỉnh"
+    : balanceAfterFen < 0 ? "Số tiền giảm không được vượt quá số dư hiện tại"
     : "";
   const visibleAmountError = amountTouched || submitAttempted ? amountError : "";
   const roleChanged = editing !== null && form.role !== editing.role;
@@ -80,7 +80,7 @@ export function UsersPage() {
       const res = await api<ListRes>(`/api/admin/users?${params}`);
       setData(res);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "加载失败");
+      toast.error(err instanceof Error ? err.message : "Tải thất bại");
     } finally {
       setLoading(false);
     }
@@ -96,7 +96,7 @@ export function UsersPage() {
       .then(setStats)
       .catch((err) => {
         setStats(null);
-        toast.error(err instanceof Error ? err.message : "统计加载失败");
+        toast.error(err instanceof Error ? err.message : "Tải thống kê thất bại");
       });
   }, []);
 
@@ -144,11 +144,11 @@ export function UsersPage() {
         method: "PATCH",
         body: JSON.stringify(payload),
       });
-      toast.success(payload.balance_delta_fen ? "已调账并保存" : "已保存");
+      toast.success(payload.balance_delta_fen ? "Đã điều chỉnh và lưu" : "Đã lưu");
       setEditing(null);
       await load();
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "保存失败，请重试");
+      setSaveError(err instanceof Error ? err.message : "Lưu thất bại, vui lòng thử lại");
     } finally {
       pendingSave.current = false;
       setSaving(false);
@@ -162,37 +162,37 @@ export function UsersPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader title="用户管理" description="搜索用户，调整角色与余额" />
+      <PageHeader title="Quản lý người dùng" description="Tìm người dùng, điều chỉnh vai trò và số dư" />
 
       <AdminFilterBar>
         <AdminSearchInput
           value={q}
           onChange={setQ}
-          placeholder="搜索邮箱 / 昵称 / 账号 ID"
+          placeholder="Tìm email / biệt danh / ID tài khoản"
           onKeyDown={(e) => {
             if (e.key === "Enter") applyFilters();
           }}
         />
         <Select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
-          <option value="">全部角色</option>
-          <option value="user">普通用户</option>
-          <option value="admin">管理员</option>
+          <option value="">Tất cả vai trò</option>
+          <option value="user">Người dùng thường</option>
+          <option value="admin">Quản trị viên</option>
         </Select>
         <Button size="sm" className="admin-filter-action" onClick={applyFilters} disabled={loading}>
-          {loading ? "加载中…" : "搜索"}
+          {loading ? "Đang tải…" : "Tìm kiếm"}
         </Button>
       </AdminFilterBar>
 
       <AdminListStats
         items={[
-          { label: "总用户数", value: stats?.user_count ?? (loading ? "…" : "—") },
+          { label: "Tổng số người dùng", value: stats?.user_count ?? (loading ? "…" : "—") },
           {
-            label: "本月调用",
+            label: "Lượt gọi tháng này",
             value: stats != null ? (stats.usage_calls_month ?? 0) : loading ? "…" : "—",
-            hint: stats ? `今日 ${stats.usage_calls_today ?? 0} 次` : undefined,
+            hint: stats ? `Hôm nay ${stats.usage_calls_today ?? 0} lần` : undefined,
           },
           {
-            label: "累计调用",
+            label: "Tổng lượt gọi",
             value: stats != null ? (stats.usage_calls_total ?? 0) : loading ? "…" : "—",
           },
         ]}
@@ -202,15 +202,15 @@ export function UsersPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>账号 ID</TableHead>
-              <TableHead>邮箱</TableHead>
-              <TableHead>昵称</TableHead>
-              <TableHead>手机</TableHead>
-              <TableHead>余额</TableHead>
-              <TableHead>冻结</TableHead>
-              <TableHead>角色</TableHead>
-              <TableHead>注册时间</TableHead>
-              <TableHead className="w-[140px]">操作</TableHead>
+              <TableHead>ID tài khoản</TableHead>
+              <TableHead>Email</TableHead>
+              <TableHead>Biệt danh</TableHead>
+              <TableHead>Điện thoại</TableHead>
+              <TableHead>Số dư</TableHead>
+              <TableHead>Đóng băng</TableHead>
+              <TableHead>Vai trò</TableHead>
+              <TableHead>Thời gian đăng ký</TableHead>
+              <TableHead className="w-[140px]">Thao tác</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -223,7 +223,7 @@ export function UsersPage() {
                 <TableCell className="tabular-nums">¥{fenToYuan(u.balance_fen)}</TableCell>
                 <TableCell className="tabular-nums">¥{fenToYuan(u.frozen_fen)}</TableCell>
                 <TableCell>
-                  <Badge variant={u.role === "admin" ? "success" : "secondary"}>{u.role === "admin" ? "管理员" : "普通用户"}</Badge>
+                  <Badge variant={u.role === "admin" ? "success" : "secondary"}>{u.role === "admin" ? "Quản trị viên" : "Người dùng thường"}</Badge>
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">
                   {u.created_at ? new Date(u.created_at).toLocaleString() : "—"}
@@ -238,10 +238,10 @@ export function UsersPage() {
                         userDetail.open(u.id);
                       }}
                     >
-                      查看
+                      Xem
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => openEdit(u)}>
-                      编辑
+                      Chỉnh sửa
                     </Button>
                   </div>
                 </TableCell>
@@ -250,7 +250,7 @@ export function UsersPage() {
             {!loading && (data?.items.length ?? 0) === 0 && (
               <TableRow>
                 <TableCell colSpan={9} className="p-0">
-                  <EmptyState title="暂无用户" description="试试换个关键词搜索" />
+                  <EmptyState title="Chưa có người dùng" description="Thử đổi từ khóa tìm kiếm" />
                 </TableCell>
               </TableRow>
             )}
@@ -284,53 +284,53 @@ export function UsersPage() {
         open={!!editing}
         onOpenChange={(open) => { if (!open && !pendingSave.current) setEditing(null); }}
         size="lg"
-        title="编辑用户"
+        title="Chỉnh sửa người dùng"
         subtitle={editing?.email}
         footer={
           <>
-            <Button type="button" variant="outline" disabled={saving} onClick={() => setEditing(null)}>取消</Button>
+            <Button type="button" variant="outline" disabled={saving} onClick={() => setEditing(null)}>Hủy</Button>
             <Button type="submit" form={editFormId} disabled={saving || !hasChanges} aria-busy={saving}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-              {saving ? "正在保存…" : adjustBalance ? "确认调账并保存" : "保存权限修改"}
+              {saving ? "Đang lưu…" : adjustBalance ? "Xác nhận điều chỉnh và lưu" : "Lưu thay đổi quyền"}
             </Button>
           </>
         }
       >
         <form id={editFormId} noValidate onSubmit={(event) => { event.preventDefault(); void saveEdit(); }} className="space-y-6">
           <div className="admin-form-summary grid gap-4 rounded-xl border border-[var(--admin-border)] bg-[#f7f9f4] p-4 sm:grid-cols-2">
-            <div className="admin-form-summary-item"><div className="text-xs text-[var(--admin-muted)]">当前账户余额</div><div className="mt-1.5 text-2xl font-semibold tabular-nums text-[var(--admin-text)]">¥{fenToYuan(editing?.balance_fen ?? 0)}</div></div>
-            <div className="admin-form-summary-item"><div className="text-xs text-[var(--admin-muted)]">已冻结金额</div><div className="mt-1.5 text-lg font-medium tabular-nums text-[var(--admin-text)]">¥{fenToYuan(editing?.frozen_fen ?? 0)}</div><p className="mt-1 text-xs leading-relaxed text-[var(--admin-muted)]">调账不会修改任务已冻结的金额</p></div>
+            <div className="admin-form-summary-item"><div className="text-xs text-[var(--admin-muted)]">Số dư tài khoản hiện tại</div><div className="mt-1.5 text-2xl font-semibold tabular-nums text-[var(--admin-text)]">¥{fenToYuan(editing?.balance_fen ?? 0)}</div></div>
+            <div className="admin-form-summary-item"><div className="text-xs text-[var(--admin-muted)]">Số tiền đã đóng băng</div><div className="mt-1.5 text-lg font-medium tabular-nums text-[var(--admin-text)]">¥{fenToYuan(editing?.frozen_fen ?? 0)}</div><p className="mt-1 text-xs leading-relaxed text-[var(--admin-muted)]">Điều chỉnh sẽ không thay đổi số tiền đã đóng băng của tác vụ</p></div>
           </div>
           <fieldset disabled={saving} className="admin-form-section min-w-0 space-y-4">
-            <legend className="admin-form-section-title mb-1 text-sm font-semibold text-[var(--admin-text)]">账号权限</legend>
-            <AdminField label="账号角色" required hint="管理员可进入管理端，查看和管理全部业务数据。">
+            <legend className="admin-form-section-title mb-1 text-sm font-semibold text-[var(--admin-text)]">Quyền tài khoản</legend>
+            <AdminField label="Vai trò tài khoản" required hint="Quản trị viên có thể vào trang quản trị, xem và quản lý toàn bộ dữ liệu nghiệp vụ.">
               <Select value={form.role} onChange={(e) => { setSaveError(""); setForm((f) => ({ ...f, role: e.target.value })); }} disabled={saving}>
-                <option value="user">普通用户</option><option value="admin">管理员</option>
+                <option value="user">Người dùng thường</option><option value="admin">Quản trị viên</option>
               </Select>
             </AdminField>
           </fieldset>
           <section className="admin-form-section space-y-4 border-t border-[var(--admin-border)] pt-5">
             <div className="flex items-start justify-between gap-4">
-              <div><label htmlFor={adjustmentToggleId} className="text-sm font-semibold text-[var(--admin-text)]">调整账户余额</label><p className="mt-1 text-xs leading-relaxed text-[var(--admin-muted)]">按需开启；仅修改角色时，账户余额保持不变。</p></div>
+              <div><label htmlFor={adjustmentToggleId} className="text-sm font-semibold text-[var(--admin-text)]">Điều chỉnh số dư tài khoản</label><p className="mt-1 text-xs leading-relaxed text-[var(--admin-muted)]">Bật khi cần; nếu chỉ sửa vai trò thì số dư tài khoản giữ nguyên.</p></div>
               <Switch id={adjustmentToggleId} checked={adjustBalance} disabled={saving} onCheckedChange={(checked) => { setAdjustBalance(checked); setSaveError(""); }} />
             </div>
             {adjustBalance ? <fieldset disabled={saving} className="min-w-0 space-y-4">
               <div className="admin-form-grid admin-form-grid--2">
-                <AdminField label="调整方向" required>
+                <AdminField label="Hướng điều chỉnh" required>
                   <Select value={form.balance_dir} disabled={saving} onChange={(e) => { setSaveError(""); setForm((f) => ({ ...f, balance_dir: e.target.value === "decrease" ? "decrease" : "increase" })); }}>
-                    <option value="increase">增加余额</option><option value="decrease">减少余额</option>
+                    <option value="increase">Tăng số dư</option><option value="decrease">Giảm số dư</option>
                   </Select>
                 </AdminField>
-                <AdminField label="调整金额（元）" required hint="大于 0，最多两位小数。" error={visibleAmountError}>
-                  <Input inputMode="decimal" value={form.balance_amount_yuan} disabled={saving} placeholder="例如 100.00" onBlur={() => setAmountTouched(true)} onChange={(e) => { setSaveError(""); setForm((f) => ({ ...f, balance_amount_yuan: e.target.value })); }} />
+                <AdminField label="Số tiền điều chỉnh (tệ)" required hint="Lớn hơn 0, tối đa hai chữ số thập phân." error={visibleAmountError}>
+                  <Input inputMode="decimal" value={form.balance_amount_yuan} disabled={saving} placeholder="Ví dụ 100.00" onBlur={() => setAmountTouched(true)} onChange={(e) => { setSaveError(""); setForm((f) => ({ ...f, balance_amount_yuan: e.target.value })); }} />
                 </AdminField>
               </div>
-              <AdminField label="调账备注" optional hint="备注会写入账户流水，便于后续核对。">
-                <Input value={form.balance_note} disabled={saving} onChange={(e) => setForm((f) => ({ ...f, balance_note: e.target.value }))} placeholder="例如：活动奖励补发、退款扣回" />
+              <AdminField label="Ghi chú điều chỉnh" optional hint="Ghi chú sẽ được ghi vào biến động tài khoản, thuận tiện cho việc đối chiếu sau này.">
+                <Input value={form.balance_note} disabled={saving} onChange={(e) => setForm((f) => ({ ...f, balance_note: e.target.value }))} placeholder="Ví dụ: cấp bù thưởng sự kiện, thu hồi hoàn tiền" />
               </AdminField>
               {!amountError && amountFen !== null ? <div className="admin-form-preview rounded-xl border border-[#d5e6d1] bg-[var(--admin-accent-soft)] p-4" aria-live="polite">
-                <div className="mb-2 flex items-center gap-2 text-xs font-medium text-[var(--admin-forest)]"><Wallet className="h-4 w-4" aria-hidden="true" />保存后的账户余额</div>
-                <div className="flex flex-wrap items-center gap-3 text-lg font-semibold tabular-nums text-[var(--admin-text)]"><span className="text-[var(--admin-muted)]">¥{fenToYuan(editing?.balance_fen ?? 0)}</span><ArrowRight className="h-4 w-4 text-[var(--admin-muted)]" aria-hidden="true" /><span>¥{fenToYuan(balanceAfterFen)}</span><span className="text-xs font-medium text-[var(--admin-forest)]">{form.balance_dir === "decrease" ? "减少" : "增加"} ¥{fenToYuan(amountFen)}</span></div>
+                <div className="mb-2 flex items-center gap-2 text-xs font-medium text-[var(--admin-forest)]"><Wallet className="h-4 w-4" aria-hidden="true" />Số dư tài khoản sau khi lưu</div>
+                <div className="flex flex-wrap items-center gap-3 text-lg font-semibold tabular-nums text-[var(--admin-text)]"><span className="text-[var(--admin-muted)]">¥{fenToYuan(editing?.balance_fen ?? 0)}</span><ArrowRight className="h-4 w-4 text-[var(--admin-muted)]" aria-hidden="true" /><span>¥{fenToYuan(balanceAfterFen)}</span><span className="text-xs font-medium text-[var(--admin-forest)]">{form.balance_dir === "decrease" ? "Giảm" : "Tăng"} ¥{fenToYuan(amountFen)}</span></div>
               </div> : null}
             </fieldset> : null}
           </section>

@@ -35,5 +35,5 @@ export function projectScaleHint(stats: AdminStats | null): string | undefined {
   if (!stats) return undefined;
   const kepu = sumProjectStatuses(stats.project_status_counts);
   const drama = stats.drama_project_count ?? 0;
-  return `科普 ${kepu} · 漫剧 ${drama}`;
+  return `Khoa học ${kepu} · Phim truyện ${drama}`;
 }

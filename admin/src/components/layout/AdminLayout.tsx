@@ -76,31 +76,31 @@ const navGroups: NavGroup[] = [
 
   {
 
-    label: "概览",
+    label: "Tổng quan",
 
-    items: [{ to: "/", label: "仪表盘", icon: LayoutDashboard, end: true }],
+    items: [{ to: "/", label: "Bảng điều khiển", icon: LayoutDashboard, end: true }],
 
   },
 
   {
 
-    label: "业务",
+    label: "Nghiệp vụ",
 
     items: [
 
-      { to: "/users", label: "用户管理", icon: Users },
+      { to: "/users", label: "Quản lý người dùng", icon: Users },
 
-      { to: "/teams", label: "团队管理", icon: Users, matchPrefix: true },
+      { to: "/teams", label: "Quản lý nhóm", icon: Users, matchPrefix: true },
 
-      { to: "/orders", label: "订单流水", icon: Receipt },
+      { to: "/orders", label: "Giao dịch đơn hàng", icon: Receipt },
 
-      { to: "/adjustments", label: "手动调账", icon: Scale },
+      { to: "/adjustments", label: "Điều chỉnh thủ công", icon: Scale },
 
-      { to: "/finance", label: "财务列表", icon: Wallet },
+      { to: "/finance", label: "Danh sách tài chính", icon: Wallet },
 
-      { to: "/projects", label: "科普项目", icon: Clapperboard },
+      { to: "/projects", label: "Dự án khoa học", icon: Clapperboard },
 
-      { to: "/works", label: "作品审核", icon: FileVideo },
+      { to: "/works", label: "Duyệt tác phẩm", icon: FileVideo },
 
     ],
 
@@ -108,17 +108,17 @@ const navGroups: NavGroup[] = [
 
   {
 
-    label: "漫剧",
+    label: "Phim truyện",
 
     items: [
 
-      { to: "/drama-projects", label: "漫剧项目", icon: Film, matchPrefix: true },
+      { to: "/drama-projects", label: "Dự án phim truyện", icon: Film, matchPrefix: true },
 
-      { to: "/drama-assets", label: "资产库", icon: Image, matchPrefix: true },
+      { to: "/drama-assets", label: "Thư viện tài sản", icon: Image, matchPrefix: true },
 
-      { to: "/drama-episodes", label: "分集管理", icon: ListVideo, matchPrefix: true },
+      { to: "/drama-episodes", label: "Quản lý tập", icon: ListVideo, matchPrefix: true },
 
-      { to: "/drama-fragments", label: "分镜管理", icon: Layers, matchPrefix: true },
+      { to: "/drama-fragments", label: "Quản lý phân cảnh", icon: Layers, matchPrefix: true },
 
     ],
 
@@ -126,13 +126,13 @@ const navGroups: NavGroup[] = [
 
   {
 
-    label: "资源",
+    label: "Tài nguyên",
 
     items: [
 
-      { to: "/templates", label: "模板管理", icon: Shapes },
+      { to: "/templates", label: "Quản lý mẫu", icon: Shapes },
 
-      { to: "/queues", label: "任务中心", icon: Layers },
+      { to: "/queues", label: "Trung tâm tác vụ", icon: Layers },
 
     ],
 
@@ -140,70 +140,70 @@ const navGroups: NavGroup[] = [
 
   {
 
-    label: "系统",
+    label: "Hệ thống",
 
-    items: [{ to: "/settings", label: "系统设置", icon: Settings }],
+    items: [{ to: "/settings", label: "Cài đặt hệ thống", icon: Settings }],
 
   },
 
 ];
 
 const titles: Record<string, string> = {
-  "/marketplace": "数字资产平台运营",
+  "/marketplace": "Vận hành nền tảng tài sản số",
 
-  "/": "仪表盘",
+  "/": "Bảng điều khiển",
 
-  "/users": "用户管理",
+  "/users": "Quản lý người dùng",
 
-  "/teams": "团队管理",
+  "/teams": "Quản lý nhóm",
 
-  "/orders": "订单流水",
+  "/orders": "Giao dịch đơn hàng",
 
-  "/adjustments": "手动调账",
+  "/adjustments": "Điều chỉnh thủ công",
 
-  "/finance": "财务列表",
+  "/finance": "Danh sách tài chính",
 
-  "/projects": "科普项目",
+  "/projects": "Dự án khoa học",
 
-  "/drama-projects": "漫剧项目",
+  "/drama-projects": "Dự án phim truyện",
 
-  "/drama-assets": "资产库",
+  "/drama-assets": "Thư viện tài sản",
 
-  "/drama-episodes": "分集管理",
+  "/drama-episodes": "Quản lý tập",
 
-  "/drama-fragments": "分镜管理",
+  "/drama-fragments": "Quản lý phân cảnh",
 
-  "/works": "作品审核",
+  "/works": "Duyệt tác phẩm",
 
-  "/templates": "模板管理",
+  "/templates": "Quản lý mẫu",
 
-  "/settings": "系统设置",
+  "/settings": "Cài đặt hệ thống",
 
-  "/queues": "任务中心",
+  "/queues": "Trung tâm tác vụ",
 
 };
 
 function resolveTitle(pathname: string): string {
 
-  if (pathname.startsWith("/teams/")) return "团队详情";
+  if (pathname.startsWith("/teams/")) return "Chi tiết nhóm";
 
-  if (pathname.startsWith("/drama-projects/")) return "漫剧项目详情";
+  if (pathname.startsWith("/drama-projects/")) return "Chi tiết dự án phim truyện";
 
-  if (pathname.startsWith("/drama-assets/")) return "资产详情";
+  if (pathname.startsWith("/drama-assets/")) return "Chi tiết tài sản";
 
-  if (pathname.startsWith("/drama-episodes/")) return "分集详情";
+  if (pathname.startsWith("/drama-episodes/")) return "Chi tiết tập";
 
-  if (pathname.startsWith("/drama-fragments/")) return "分镜详情";
+  if (pathname.startsWith("/drama-fragments/")) return "Chi tiết phân cảnh";
 
-  return titles[pathname] ?? "管理后台";
+  return titles[pathname] ?? "Quản trị";
 
 }
 
 /** 统一运营工作台：桌面折叠导航、移动抽屉与可搜索入口。 */
 export function AdminLayout() {
   const marketplaceEnabled = useMarketplaceEnabled();
-  const visibleNavGroups = navGroups.map((group) => group.label === "业务" && marketplaceEnabled
-    ? { ...group, items: [...group.items, { to: "/marketplace", label: "数字资产平台运营", icon: FileVideo } satisfies NavItem] }
+  const visibleNavGroups = navGroups.map((group) => group.label === "Nghiệp vụ" && marketplaceEnabled
+    ? { ...group, items: [...group.items, { to: "/marketplace", label: "Vận hành nền tảng tài sản số", icon: FileVideo } satisfies NavItem] }
     : group);
   const navigate = useNavigate();
   const location = useLocation();
@@ -298,17 +298,17 @@ export function AdminLayout() {
 
   return (
     <div className={cn("admin-app", collapsed && "is-collapsed", mobileDrawerOpen && "is-mobile-open")}>
-      <a className="admin-skip-link" href="#admin-main-content">跳至页面内容</a>
-      {mobileDrawerOpen && <button type="button" className="admin-sidebar-scrim" tabIndex={-1} aria-label="关闭导航" onClick={() => setMobileOpen(false)} />}
-      <aside ref={sidebarRef} className="admin-sidebar" id="admin-sidebar" aria-label="管理导航"
+      <a className="admin-skip-link" href="#admin-main-content">Chuyển đến nội dung trang</a>
+      {mobileDrawerOpen && <button type="button" className="admin-sidebar-scrim" tabIndex={-1} aria-label="Đóng điều hướng" onClick={() => setMobileOpen(false)} />}
+      <aside ref={sidebarRef} className="admin-sidebar" id="admin-sidebar" aria-label="Điều hướng quản trị"
         role={mobileDrawerOpen ? "dialog" : undefined} aria-modal={mobileDrawerOpen ? true : undefined}
         aria-hidden={isMobile && !mobileOpen ? true : undefined} inert={isMobile && !mobileOpen}>
         <div className="admin-brand">
           <div className="admin-brand-mark"><Aperture size={23} strokeWidth={1.7} /></div>
-          <div className="admin-brand-copy"><div className="admin-brand-name">PRINTFILM<span>®</span></div><div className="admin-brand-sub">运营控制台</div></div>
-          <button ref={sidebarCloseRef} type="button" className="admin-icon-btn admin-sidebar-close" aria-label="关闭导航" onClick={() => setMobileOpen(false)}><X size={18} /></button>
+          <div className="admin-brand-copy"><div className="admin-brand-name">PRINTFILM<span>®</span></div><div className="admin-brand-sub">Bảng điều khiển vận hành</div></div>
+          <button ref={sidebarCloseRef} type="button" className="admin-icon-btn admin-sidebar-close" aria-label="Đóng điều hướng" onClick={() => setMobileOpen(false)}><X size={18} /></button>
         </div>
-        <nav className="admin-nav" aria-label="主导航">
+        <nav className="admin-nav" aria-label="Điều hướng chính">
           {visibleNavGroups.map((group) => (
             <div key={group.label} className="admin-nav-group">
               <div className="admin-nav-group-label">{group.label}</div>
@@ -326,24 +326,24 @@ export function AdminLayout() {
         <div className="admin-sidebar-footnote"><span />PRINTFILM OPERATIONS</div>
         <div className="admin-user-card">
           <div className="admin-avatar">{initial}</div>
-          <div className="admin-user-copy"><strong>{user?.nickname || "管理员"}</strong><span title={user?.email}>{user?.email}</span></div>
-          <button type="button" className="admin-icon-btn admin-logout" onClick={handleLogout} title="退出登录" aria-label="退出登录"><LogOut size={16} /></button>
+          <div className="admin-user-copy"><strong>{user?.nickname || "Quản trị viên"}</strong><span title={user?.email}>{user?.email}</span></div>
+          <button type="button" className="admin-icon-btn admin-logout" onClick={handleLogout} title="Đăng xuất" aria-label="Đăng xuất"><LogOut size={16} /></button>
         </div>
       </aside>
       <div className="admin-main" inert={mobileDrawerOpen}>
         <header className="admin-topbar">
           <div className="admin-topbar-leading">
             <button ref={navigationToggleRef} type="button" className="admin-icon-btn" onClick={toggleNavigation}
-              aria-label={isMobile ? (mobileOpen ? "关闭导航" : "展开导航") : (collapsed ? "展开导航" : "折叠导航")}
+              aria-label={isMobile ? (mobileOpen ? "Đóng điều hướng" : "Mở rộng điều hướng") : (collapsed ? "Mở rộng điều hướng" : "Thu gọn điều hướng")}
               aria-controls="admin-sidebar" aria-expanded={isMobile ? mobileOpen : !collapsed}>
               <PanelLeftClose size={19} />
             </button>
-            <div className="admin-topbar-breadcrumb"><span>控制台</span><ChevronRight size={13} /><strong>{title}</strong></div>
+            <div className="admin-topbar-breadcrumb"><span>Bảng điều khiển</span><ChevronRight size={13} /><strong>{title}</strong></div>
           </div>
           <div className="admin-topbar-actions">
-            <button type="button" className="admin-command-trigger" aria-label="搜索管理功能" aria-keyshortcuts="Control+K Meta+K" onClick={() => setSearchOpen(true)}><Search size={15} /><span>搜索功能…</span><kbd>Ctrl K</kbd></button>
-            <a className="admin-site-link" href={import.meta.env.DEV ? "http://127.0.0.1:5173" : "/"} target="_blank" rel="noreferrer">用户端<ArrowUpRight size={14} /></a>
-            <button type="button" className="admin-icon-btn admin-fullscreen" title="切换全屏" aria-label="切换全屏" onClick={() => {
+            <button type="button" className="admin-command-trigger" aria-label="Tìm chức năng quản trị" aria-keyshortcuts="Control+K Meta+K" onClick={() => setSearchOpen(true)}><Search size={15} /><span>Tìm chức năng…</span><kbd>Ctrl K</kbd></button>
+            <a className="admin-site-link" href={import.meta.env.DEV ? "http://127.0.0.1:5173" : "/"} target="_blank" rel="noreferrer">Trang người dùng<ArrowUpRight size={14} /></a>
+            <button type="button" className="admin-icon-btn admin-fullscreen" title="Bật/tắt toàn màn hình" aria-label="Bật/tắt toàn màn hình" onClick={() => {
               if (!document.fullscreenElement) void document.documentElement.requestFullscreen().catch(() => undefined);
               else void document.exitFullscreen().catch(() => undefined);
             }}><Maximize2 size={17} /></button>

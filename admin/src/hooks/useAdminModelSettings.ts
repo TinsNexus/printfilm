@@ -14,7 +14,7 @@ export function useAdminModelSettings() {
     try {
       setForm(await api<AdminModelSettings>("/api/admin/settings/models"));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "加载配置失败");
+      toast.error(err instanceof Error ? err.message : "Tải cấu hình thất bại");
     } finally {
       setLoading(false);
     }
@@ -28,7 +28,7 @@ export function useAdminModelSettings() {
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
   }
 
-  async function save(body: Record<string, unknown>, successMessage = "配置已保存"): Promise<boolean> {
+  async function save(body: Record<string, unknown>, successMessage = "Đã lưu cấu hình"): Promise<boolean> {
     if (pendingSave.current) return false;
     pendingSave.current = true;
     setSaving(true);
@@ -38,7 +38,7 @@ export function useAdminModelSettings() {
       toast.success(successMessage);
       return true;
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "保存失败");
+      toast.error(err instanceof Error ? err.message : "Lưu thất bại");
       return false;
     } finally {
       pendingSave.current = false;

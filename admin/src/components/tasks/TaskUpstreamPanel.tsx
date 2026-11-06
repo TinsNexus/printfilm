@@ -10,14 +10,14 @@ import { groupUpstreamRecords, redactTaskData, redactTaskText, shortEndpoint, ta
 import { cn } from "@/lib/utils";
 
 function time(value?: string | null) {
-  return value ? new Date(value).toLocaleString() : "未记录";
+  return value ? new Date(value).toLocaleString() : "Chưa ghi nhận";
 }
 
 function JsonRecord({ title, value, paginated = false }: { title: string; value: unknown; paginated?: boolean }) {
   return (
     <details className="task-json-toggle">
-      <summary>{title}<span>脱敏</span></summary>
-      {value === undefined ? <p className="mt-3 text-xs text-[var(--admin-muted)]">{paginated ? "本页未包含，可翻页查看历史记录" : "未记录"}</p> : <pre className="task-detail-json mt-3">{prettyJson(redactTaskData(value))}</pre>}
+      <summary>{title}<span>Đã ẩn</span></summary>
+      {value === undefined ? <p className="mt-3 text-xs text-[var(--admin-muted)]">{paginated ? "Trang này không có, có thể lật trang xem bản ghi lịch sử" : "Chưa ghi nhận"}</p> : <pre className="task-detail-json mt-3">{prettyJson(redactTaskData(value))}</pre>}
     </details>
   );
 }
@@ -33,16 +33,16 @@ export function TaskUpstreamPanel({ task }: { task: AdminTaskDetail }) {
     <div className="space-y-3">
       <div className="task-upstream-toolbar">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-          <span><span className="text-[var(--admin-muted)]">最近阶段</span> <strong>{summary.phase}</strong></span>
-          <span className="text-[var(--admin-muted)]">本页 {pageRecords.length} 条 · 历史 {history.data?.total ?? task.upstream_events_total ?? "—"} 条</span>
+          <span><span className="text-[var(--admin-muted)]">Giai đoạn gần nhất</span> <strong>{summary.phase}</strong></span>
+          <span className="text-[var(--admin-muted)]">Trang này {pageRecords.length} mục · lịch sử {history.data?.total ?? task.upstream_events_total ?? "—"} mục</span>
         </div>
-        <Button variant="outline" size="sm" disabled={history.loading} onClick={history.refresh}>刷新上游记录</Button>
+        <Button variant="outline" size="sm" disabled={history.loading} onClick={history.refresh}>Làm mới bản ghi upstream</Button>
       </div>
-      <p className="text-[11px] leading-5 text-[var(--admin-muted)]">按事件 ID 倒序分页，本页内按请求 ID 关联提交与响应；同一请求可能跨页，查询事件可能为采样记录。</p>
-      {history.error ? <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700" role="alert">{history.error}<Button className="ml-3" variant="outline" size="sm" onClick={history.refresh}>重试</Button></div> : null}
+      <p className="text-[11px] leading-5 text-[var(--admin-muted)]">Phân trang theo ID sự kiện giảm dần, trong trang này liên kết yêu cầu và phản hồi theo ID yêu cầu; cùng một yêu cầu có thể nằm ở nhiều trang, sự kiện truy vấn có thể là bản ghi lấy mẫu.</p>
+      {history.error ? <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700" role="alert">{history.error}<Button className="ml-3" variant="outline" size="sm" onClick={history.refresh}>Thử lại</Button></div> : null}
 
-      {history.loading ? <p className="py-8 text-center text-sm text-[var(--admin-muted)]" role="status">正在加载本页上游事件…</p> : history.error ? null : requests.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-[var(--admin-border)] px-5 py-8 text-sm text-[var(--admin-muted)]">本页未记录上游 HTTP 请求或模拟请求参数。已有上游任务 ID 或任务已完成，也不能据此还原实际请求体。</div>
+      {history.loading ? <p className="py-8 text-center text-sm text-[var(--admin-muted)]" role="status">Đang tải sự kiện upstream của trang này…</p> : history.error ? null : requests.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-[var(--admin-border)] px-5 py-8 text-sm text-[var(--admin-muted)]">Trang này không ghi nhận yêu cầu HTTP upstream hoặc tham số yêu cầu mô phỏng. Dù đã có ID tác vụ upstream hoặc tác vụ đã hoàn tất, cũng không thể khôi phục nội dung yêu cầu thực tế từ đó.</div>
       ) : requests.map((request) => {
         const failed = request.latest.phase === "failed" || (request.httpStatus ?? 0) >= 400;
         const simulated = request.latest.phase === "simulated";
@@ -52,18 +52,18 @@ export function TaskUpstreamPanel({ task }: { task: AdminTaskDetail }) {
               <Badge variant={failed ? "destructive" : request.latest.phase === "started" ? "warning" : "info"}>{UPSTREAM_PHASE_LABELS[request.latest.phase]}</Badge>
               {request.latest.upstreamStatus ? <Badge variant="secondary">{upstreamStateLabel(request.latest.upstreamStatus)}</Badge> : null}
               <code className="task-upstream-endpoint" title={request.endpoint}>
-                <strong>{request.method || (simulated ? "本地模拟" : "METHOD?")}</strong> {request.endpoint ? shortEndpoint(request.endpoint) : simulated ? request.operation || "媒体生成" : "Endpoint未记录"}
+                <strong>{request.method || (simulated ? "Mô phỏng cục bộ" : "METHOD?")}</strong> {request.endpoint ? shortEndpoint(request.endpoint) : simulated ? request.operation || "Tạo phương tiện" : "Chưa ghi nhận Endpoint"}
               </code>
               <span className="ml-auto flex items-center gap-3 text-xs tabular-nums">
-                <span className={cn("task-http-chip", failed && "is-fail")}>{simulated ? "未发送 HTTP" : request.httpStatus ?? "—"}</span>
+                <span className={cn("task-http-chip", failed && "is-fail")}>{simulated ? "Chưa gửi HTTP" : request.httpStatus ?? "—"}</span>
                 <span>{request.elapsedMs == null ? "—" : `${Math.round(request.elapsedMs)} ms`}</span>
                 <span className="text-[var(--admin-muted)]">{time(request.latest.createdAt)}</span>
               </span>
             </header>
             <div className="task-upstream-meta">
-              <span><span className="text-[var(--admin-muted)]">模型</span> {request.model || "未记录"} / {request.provider || "未记录"}</span>
-              <span className="flex min-w-0 items-center gap-1"><span className="text-[var(--admin-muted)]">上游任务</span> {request.providerTaskId ? <CopyText value={request.providerTaskId} /> : "未记录"}</span>
-              <span className="flex min-w-0 items-center gap-1"><span className="text-[var(--admin-muted)]">请求 ID</span> {request.requestId ? <CopyText value={request.requestId} /> : `事件 #${request.latest.id}`}</span>
+              <span><span className="text-[var(--admin-muted)]">Model</span> {request.model || "Chưa ghi nhận"} / {request.provider || "Chưa ghi nhận"}</span>
+              <span className="flex min-w-0 items-center gap-1"><span className="text-[var(--admin-muted)]">Tác vụ upstream</span> {request.providerTaskId ? <CopyText value={request.providerTaskId} /> : "Chưa ghi nhận"}</span>
+              <span className="flex min-w-0 items-center gap-1"><span className="text-[var(--admin-muted)]">ID yêu cầu</span> {request.requestId ? <CopyText value={request.requestId} /> : `Sự kiện #${request.latest.id}`}</span>
             </div>
             {request.records.length > 1 ? (
               <ol className="task-upstream-steps">
@@ -77,12 +77,12 @@ export function TaskUpstreamPanel({ task }: { task: AdminTaskDetail }) {
                 ))}
               </ol>
             ) : null}
-            {simulated ? <p className="mb-3 text-sm text-[var(--admin-muted)]">{request.endpoint ? "以下为完成渠道路由、模型映射和协议转换后，准备发送的实际 URL、请求头和 JSON 请求体（凭据已脱敏）。在 HTTP 发送前拦截，使用默认媒体结果。" : "历史记录仅保存了业务输入参数，不是最终 HTTP 请求体；之后新建的模拟任务会记录最终请求参数。"}</p> : null}
+            {simulated ? <p className="mb-3 text-sm text-[var(--admin-muted)]">{request.endpoint ? "Dưới đây là URL, header và JSON body thực tế chuẩn bị gửi sau khi hoàn tất định tuyến kênh, ánh xạ model và chuyển đổi giao thức (thông tin xác thực đã ẩn). Bị chặn trước khi gửi HTTP, dùng kết quả phương tiện mặc định." : "Bản ghi lịch sử chỉ lưu tham số đầu vào nghiệp vụ, không phải body HTTP cuối cùng; các tác vụ mô phỏng tạo sau này sẽ ghi lại tham số yêu cầu cuối cùng."}</p> : null}
             <div className={cn("grid items-start gap-2", !simulated && "xl:grid-cols-2")}>
-              <JsonRecord title={simulated ? "模拟请求参数" : "请求"} value={request.request} paginated />
-              {!simulated ? <JsonRecord title="响应" value={request.response} paginated /> : null}
+              <JsonRecord title={simulated ? "Tham số yêu cầu mô phỏng" : "Yêu cầu"} value={request.request} paginated />
+              {!simulated ? <JsonRecord title="Phản hồi" value={request.response} paginated /> : null}
             </div>
-            {request.error !== undefined ? <div className="mt-2"><JsonRecord title="错误" value={request.error} paginated /></div> : null}
+            {request.error !== undefined ? <div className="mt-2"><JsonRecord title="Lỗi" value={request.error} paginated /></div> : null}
           </section>
         );
       })}
@@ -91,9 +91,9 @@ export function TaskUpstreamPanel({ task }: { task: AdminTaskDetail }) {
 
       {(task.steps || []).some((step) => step.input_payload || step.output_payload) ? (
         <details className="task-detail-section">
-          <summary className="cursor-pointer text-sm font-semibold">已有步骤数据（内部执行记录）</summary>
-          <p className="my-3 text-xs text-[var(--admin-muted)]">以下是步骤输入与结果，不代表实际发往上游的 HTTP 请求体。</p>
-          <div className="space-y-4">{task.steps.filter((step) => step.input_payload || step.output_payload).map((step) => <section key={step.id}><h5 className="mb-2 text-xs font-semibold">{step.step_key}{step.provider_name ? ` · ${redactTaskText(step.provider_name)}` : ""}</h5><div className="grid items-start gap-3 xl:grid-cols-2"><JsonRecord title="步骤输入" value={step.input_payload ?? undefined} /><JsonRecord title="步骤结果" value={step.output_payload ?? undefined} /></div></section>)}</div>
+          <summary className="cursor-pointer text-sm font-semibold">Dữ liệu bước hiện có (bản ghi thực thi nội bộ)</summary>
+          <p className="my-3 text-xs text-[var(--admin-muted)]">Dưới đây là đầu vào và kết quả của bước, không đại diện cho body HTTP thực sự gửi tới upstream.</p>
+          <div className="space-y-4">{task.steps.filter((step) => step.input_payload || step.output_payload).map((step) => <section key={step.id}><h5 className="mb-2 text-xs font-semibold">{step.step_key}{step.provider_name ? ` · ${redactTaskText(step.provider_name)}` : ""}</h5><div className="grid items-start gap-3 xl:grid-cols-2"><JsonRecord title="Đầu vào bước" value={step.input_payload ?? undefined} /><JsonRecord title="Kết quả bước" value={step.output_payload ?? undefined} /></div></section>)}</div>
         </details>
       ) : null}
     </div>

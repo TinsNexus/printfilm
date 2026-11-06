@@ -21,7 +21,7 @@ type DirectionFilter = "" | "credit" | "debit";
 
 /** 调账方向文案：正数为调增，负数为调减 */
 function directionLabel(deltaFen: number): string {
-  return deltaFen >= 0 ? "调增" : "调减";
+  return deltaFen >= 0 ? "Tăng" : "Giảm";
 }
 
 /** 管理端手动调账记录：仅展示 ref_type=admin 的钱包流水 */
@@ -48,7 +48,7 @@ export function AdjustRecordsPage() {
         }));
       } catch (err) {
         setData(null);
-        toast.error(err instanceof Error ? err.message : "加载调账记录失败");
+        toast.error(err instanceof Error ? err.message : "Tải bản ghi điều chỉnh thất bại");
       } finally {
         setLoading(false);
       }
@@ -64,7 +64,7 @@ export function AdjustRecordsPage() {
 
   return (
     <div className="admin-page">
-      <PageHeader title="手动调账" description="用户管理里手动改余额产生的调账流水，含操作人与备注" />
+      <PageHeader title="Điều chỉnh thủ công" description="Biến động do điều chỉnh số dư thủ công trong quản lý người dùng, kèm người thao tác và ghi chú" />
 
       <AdminFilterBar>
         <AdminUserSearchSelect value={userId} onChange={setUserId} />
@@ -72,9 +72,9 @@ export function AdjustRecordsPage() {
           value={direction}
           onChange={(e) => setDirection(e.target.value as DirectionFilter)}
         >
-          <option value="">全部方向</option>
-          <option value="credit">调增</option>
-          <option value="debit">调减</option>
+          <option value="">Tất cả hướng</option>
+          <option value="credit">Tăng</option>
+          <option value="debit">Giảm</option>
         </Select>
         <AdminDateRangeFilter
           from={dateFrom}
@@ -93,13 +93,13 @@ export function AdjustRecordsPage() {
             void load(1);
           }}
         >
-          筛选
+          Lọc
         </Button>
       </AdminFilterBar>
 
       <PageSection
-        title="手动调账记录"
-        description={data ? `共 ${data.meta.total} 条` : undefined}
+        title="Bản ghi điều chỉnh thủ công"
+        description={data ? `Tổng ${data.meta.total} mục` : undefined}
         bodyClassName="!pt-0"
       >
         <div className="admin-table-wrap">
@@ -107,26 +107,26 @@ export function AdjustRecordsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>ID</TableHead>
-                <TableHead>时间</TableHead>
-                <TableHead>用户</TableHead>
-                <TableHead>方向</TableHead>
-                <TableHead>变动</TableHead>
-                <TableHead>余额后</TableHead>
-                <TableHead>操作人</TableHead>
-                <TableHead>备注</TableHead>
+                <TableHead>Thời gian</TableHead>
+                <TableHead>Người dùng</TableHead>
+                <TableHead>Hướng</TableHead>
+                <TableHead>Biến động</TableHead>
+                <TableHead>Số dư sau</TableHead>
+                <TableHead>Người thao tác</TableHead>
+                <TableHead>Ghi chú</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
                   <TableCell colSpan={8} className="!text-center text-[var(--admin-muted)]">
-                    加载中…
+                    Đang tải…
                   </TableCell>
                 </TableRow>
               ) : rows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={8} className="!text-center text-[var(--admin-muted)]">
-                    暂无手动调账记录
+                    Chưa có bản ghi điều chỉnh thủ công
                   </TableCell>
                 </TableRow>
               ) : (

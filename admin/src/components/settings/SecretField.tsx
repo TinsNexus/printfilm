@@ -35,14 +35,14 @@ export function SecretField({
 }: SecretFieldProps) {
   const [visible, setVisible] = useState(false);
   const hasDraft = value.trim().length > 0;
-  const status = clearPending ? "保存后清除" : hasDraft ? "新凭证待保存" : configured ? "已配置" : "未配置";
+  const status = clearPending ? "Xóa sau khi lưu" : hasDraft ? "Thông tin xác thực mới chờ lưu" : configured ? "Đã cấu hình" : "Chưa cấu hình";
   const inputRequired = required && !configured && !clearPending;
-  const fieldError = error ?? (value.length > 0 && !hasDraft && !clearPending ? "凭证不能只包含空格。" : undefined);
+  const fieldError = error ?? (value.length > 0 && !hasDraft && !clearPending ? "Thông tin xác thực không được chỉ chứa khoảng trắng." : undefined);
   const guidance = clearPending
-    ? "当前只是标记清除，保存后生效；可撤销清除。"
+    ? "Hiện chỉ đánh dấu xóa, có hiệu lực sau khi lưu; có thể hủy việc xóa."
     : configured
-      ? "已有凭证不会回显；留空保留，输入新值后保存以替换。"
-      : "填写新凭证后保存；显示按钮仅展示本次输入。";
+      ? "Thông tin xác thực hiện có không hiển thị lại; để trống để giữ, nhập giá trị mới rồi lưu để thay thế."
+      : "Nhập thông tin xác thực mới rồi lưu; nút hiển thị chỉ hiện nội dung vừa nhập.";
   return (
     <LabeledControl
       label={label}
@@ -55,7 +55,7 @@ export function SecretField({
           <input
             type={visible && !clearPending ? "text" : "password"}
             className="settings-input is-secret"
-            placeholder={clearPending ? "已标记清除" : placeholder ?? (configured ? "留空保留已有凭证" : "输入新凭证")}
+            placeholder={clearPending ? "Đã đánh dấu xóa" : placeholder ?? (configured ? "Để trống để giữ thông tin xác thực hiện có" : "Nhập thông tin xác thực mới")}
             value={clearPending ? "" : value}
             disabled={disabled || clearPending}
             required={inputRequired}
@@ -65,14 +65,14 @@ export function SecretField({
             spellCheck={false}
           />
           <Button type="button" variant="outline" size="icon" disabled={disabled || clearPending || !hasDraft}
-            aria-label={`${visible ? "隐藏" : "显示"}新${label}`} aria-pressed={visible}
-            title={visible ? "隐藏本次输入" : "显示本次输入"} onClick={() => setVisible((current) => !current)}>
+            aria-label={`${visible ? "Ẩn" : "Hiện"}Mới ${label}`} aria-pressed={visible}
+            title={visible ? "Ẩn nội dung vừa nhập" : "Hiện nội dung vừa nhập"} onClick={() => setVisible((current) => !current)}>
             {visible ? <EyeOff size={16} /> : <Eye size={16} />}
           </Button>
           {clearPending && onUndoClear ? <Button type="button" variant="outline" disabled={disabled} onClick={onUndoClear}>
-            <RotateCcw size={14} />撤销
+            <RotateCcw size={14} />Hoàn tác
           </Button> : (configured || hasDraft) && onClear ? <Button type="button" variant="outline" disabled={disabled} onClick={() => { setVisible(false); onClear(); }}>
-            <Trash2 size={14} />清除
+            <Trash2 size={14} />Xóa
           </Button> : null}
         </div>
         <span className="admin-secret-status inline-flex items-center gap-1" role="status">

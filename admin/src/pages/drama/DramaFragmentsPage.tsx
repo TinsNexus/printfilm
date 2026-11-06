@@ -39,7 +39,7 @@ export function DramaFragmentsPage() {
       if (generationStatus.trim()) params.set("generation_status", generationStatus.trim());
       setData(await api<ListRes>(`/api/admin/drama-fragments?${params}`));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "加载失败");
+      toast.error(err instanceof Error ? err.message : "Tải thất bại");
     }
   }
 
@@ -50,18 +50,18 @@ export function DramaFragmentsPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader title="分镜管理" description="全站漫剧分镜：按项目、分集筛选，查看生成状态与资产引用" />
+      <PageHeader title="Quản lý phân cảnh" description="Phân cảnh phim truyện toàn site: lọc theo dự án, tập, xem trạng thái tạo và tham chiếu tài sản" />
       <AdminFilterBar>
-        <Input placeholder="内容 / 集名 / 项目" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Input placeholder="Nội dung / tên tập / dự án" value={q} onChange={(e) => setQ(e.target.value)} />
         <AdminUserSearchSelect value={userId} onChange={setUserId} />
-        <Input placeholder="项目 ID" value={projectId} onChange={(e) => setProjectId(e.target.value)} />
-        <Input placeholder="分集 ID" value={episodeId} onChange={(e) => setEpisodeId(e.target.value)} />
+        <Input placeholder="ID dự án" value={projectId} onChange={(e) => setProjectId(e.target.value)} />
+        <Input placeholder="ID tập" value={episodeId} onChange={(e) => setEpisodeId(e.target.value)} />
         <Select
           className="admin-native-select"
           value={generationStatus}
           onChange={(e) => setGenerationStatus(e.target.value)}
         >
-          <option value="">全部生成状态</option>
+          <option value="">Tất cả trạng thái tạo</option>
           {DRAMA_GENERATION_STATUSES.map((s) => (
             <option key={s} value={s}>
               {formatDramaGenerationStatus(s)}
@@ -77,7 +77,7 @@ export function DramaFragmentsPage() {
             void load(1);
           }}
         >
-          筛选
+          Lọc
         </Button>
       </AdminFilterBar>
 
@@ -86,13 +86,13 @@ export function DramaFragmentsPage() {
           <thead>
             <tr>
               <th>ID</th>
-              <th>序号</th>
-              <th>内容</th>
-              <th>分集</th>
-              <th>项目</th>
-              <th>时长</th>
-              <th>生成</th>
-              <th>资产</th>
+              <th>Số thứ tự</th>
+              <th>Nội dung</th>
+              <th>Tập</th>
+              <th>Dự án</th>
+              <th>Thời lượng</th>
+              <th>Tạo</th>
+              <th>Tài sản</th>
               <th></th>
             </tr>
           </thead>
@@ -113,7 +113,7 @@ export function DramaFragmentsPage() {
                 <td>{row.asset_ref_count}</td>
                 <td>
                   <Button size="sm" variant="outline" asChild>
-                    <Link to={`/drama-fragments/${row.id}`}>查看</Link>
+                    <Link to={`/drama-fragments/${row.id}`}>Xem</Link>
                   </Button>
                 </td>
               </tr>
@@ -121,7 +121,7 @@ export function DramaFragmentsPage() {
             {(data?.items.length ?? 0) === 0 ? (
               <tr>
                 <td colSpan={9} className="!text-center text-[var(--admin-muted)]">
-                  暂无分镜
+                  Chưa có phân cảnh
                 </td>
               </tr>
             ) : null}

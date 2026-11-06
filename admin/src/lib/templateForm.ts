@@ -4,11 +4,11 @@ type TemplateDraft = {
 
 export function validateTemplateDraft(draft: TemplateDraft, creating: boolean) {
   const errors: Partial<Record<keyof TemplateDraft, string>> = {};
-  if (creating && (!draft.id.trim() || draft.id.trim().length > 64)) errors.id = "请填写 1–64 个字符的模板 ID";
-  if (!draft.name.trim() || draft.name.trim().length > 128) errors.name = "请填写 1–128 个字符的模板名称";
-  if (!Number.isSafeInteger(draft.shot_duration_min) || draft.shot_duration_min <= 0) errors.shot_duration_min = "最短时长须为大于 0 的整数秒";
-  if (!Number.isSafeInteger(draft.shot_duration_max) || draft.shot_duration_max <= 0) errors.shot_duration_max = "最长时长须为大于 0 的整数秒";
-  if (!errors.shot_duration_min && !errors.shot_duration_max && draft.shot_duration_max < draft.shot_duration_min) errors.shot_duration_max = "最长时长不能小于最短时长";
-  if (!Number.isSafeInteger(draft.sort_order)) errors.sort_order = "排序值须为整数";
+  if (creating && (!draft.id.trim() || draft.id.trim().length > 64)) errors.id = "Vui lòng nhập ID mẫu từ 1–64 ký tự";
+  if (!draft.name.trim() || draft.name.trim().length > 128) errors.name = "Vui lòng nhập tên mẫu từ 1–128 ký tự";
+  if (!Number.isSafeInteger(draft.shot_duration_min) || draft.shot_duration_min <= 0) errors.shot_duration_min = "Thời lượng ngắn nhất phải là số giây nguyên lớn hơn 0";
+  if (!Number.isSafeInteger(draft.shot_duration_max) || draft.shot_duration_max <= 0) errors.shot_duration_max = "Thời lượng dài nhất phải là số giây nguyên lớn hơn 0";
+  if (!errors.shot_duration_min && !errors.shot_duration_max && draft.shot_duration_max < draft.shot_duration_min) errors.shot_duration_max = "Thời lượng dài nhất không được nhỏ hơn thời lượng ngắn nhất";
+  if (!Number.isSafeInteger(draft.sort_order)) errors.sort_order = "Giá trị sắp xếp phải là số nguyên";
   return errors;
 }

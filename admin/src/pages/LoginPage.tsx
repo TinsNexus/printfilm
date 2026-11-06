@@ -21,10 +21,10 @@ export function LoginPage() {
     setLoading(true);
     try {
       await loginAsAdmin(email.trim(), password);
-      toast.success("登录成功");
+      toast.success("Đăng nhập thành công");
       navigate("/", { replace: true });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "登录失败");
+      toast.error(err instanceof Error ? err.message : "Đăng nhập thất bại");
     } finally {
       setLoading(false);
     }
@@ -34,7 +34,7 @@ export function LoginPage() {
 
   return (
     <div className="login-shell">
-      <section className="login-brand" aria-label="品牌">
+      <section className="login-brand" aria-label="Thương hiệu">
         <div className="login-sprocket" aria-hidden>
           {sprocketOffsets.map((top) => (
             <span key={top} style={{ top }} />
@@ -50,10 +50,10 @@ export function LoginPage() {
 
       <section className="login-panel">
         <div className="login-form-wrap">
-          <h2>登录后台</h2>
+          <h2>Đăng nhập trang quản trị</h2>
           <form onSubmit={onSubmit}>
             <div className="login-field">
-              <label htmlFor="email">邮箱</label>
+              <label htmlFor="email">Email</label>
               <input
                 id="email"
                 type="email"
@@ -64,7 +64,7 @@ export function LoginPage() {
               />
             </div>
             <div className="login-field">
-              <label htmlFor="password">密码</label>
+              <label htmlFor="password">Mật khẩu</label>
               <input
                 id="password"
                 type="password"
@@ -75,7 +75,7 @@ export function LoginPage() {
               />
             </div>
             <button className="login-submit" type="submit" disabled={loading}>
-              {loading ? "验证中…" : "进入控制台"}
+              {loading ? "Đang xác minh…" : "Vào bảng điều khiển"}
             </button>
           </form>
         </div>

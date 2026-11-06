@@ -44,15 +44,15 @@ type TemplateEditorDialogProps = {
 type EditorTab = "basic" | "prompts" | "publish";
 
 const TABS: { id: EditorTab; label: string }[] = [
-  { id: "basic", label: "基础信息" },
-  { id: "prompts", label: "提示词" },
-  { id: "publish", label: "发布设置" },
+  { id: "basic", label: "Thông tin cơ bản" },
+  { id: "prompts", label: "Prompt" },
+  { id: "publish", label: "Cài đặt phát hành" },
 ];
 
 const RATIO_OPTIONS = [
-  { value: "16:9", label: "16:9 横屏" },
-  { value: "9:16", label: "9:16 竖屏" },
-  { value: "1:1", label: "1:1 方形" },
+  { value: "16:9", label: "16:9 ngang" },
+  { value: "9:16", label: "9:16 dọc" },
+  { value: "1:1", label: "1:1 vuông" },
   { value: "4:3", label: "4:3" },
   { value: "3:4", label: "3:4" },
 ];
@@ -111,16 +111,16 @@ export function TemplateEditorDialog({
       size="full"
       className="template-editor-dialog max-h-[92vh] overflow-hidden"
       bodyClassName="p-0 overflow-hidden"
-      title={editing ? `编辑模板 · ${editing.name}` : "新建模板"}
-      subtitle={editing ? editing.id : "先填写展示信息与生成默认值，再按需配置提示词和上架状态"}
+      title={editing ? `Chỉnh sửa mẫu · ${editing.name}` : "Tạo mẫu mới"}
+      subtitle={editing ? editing.id : "Điền thông tin hiển thị và giá trị mặc định khi tạo trước, rồi cấu hình prompt và trạng thái đăng nếu cần"}
       footer={
         <>
           <Button variant="outline" disabled={saving} onClick={() => handleOpenChange(false)}>
-            取消
+            Hủy
           </Button>
           <Button disabled={saving} onClick={requestSave}>
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-            {saving ? "保存中…" : "保存模板"}
+            {saving ? "Đang lưu…" : "Lưu mẫu"}
           </Button>
         </>
       }
@@ -129,16 +129,16 @@ export function TemplateEditorDialog({
         <aside className="template-editor-preview">
           <div className="template-editor-preview-frame">
             {previewSrc ? (
-              <img src={previewSrc} alt="封面预览" className="template-editor-preview-img" />
+              <img src={previewSrc} alt="Xem trước ảnh bìa" className="template-editor-preview-img" />
             ) : (
               <div className="template-editor-preview-empty">
                 <ImageOff className="h-10 w-10 text-[#c0c4cc]" />
-                <span>封面预览</span>
+                <span>Xem trước ảnh bìa</span>
               </div>
             )}
           </div>
-          <div className="settings-price-note"><strong>{form.name || "未命名模板"}</strong><br />{form.default_ratio} · {form.shot_duration_min}–{form.shot_duration_max} 秒 / 镜<br />{form.is_active ? "保存后上架展示" : "保存为下架状态"}</div>
-          <AdminField label="封面 URL" hint="支持相对路径（/static）或 HTTPS；建议 16:9 横图。">
+          <div className="settings-price-note"><strong>{form.name || "Mẫu chưa đặt tên"}</strong><br />{form.default_ratio} · {form.shot_duration_min}–{form.shot_duration_max} giây / cảnh<br />{form.is_active ? "Lưu rồi đăng hiển thị" : "Lưu ở trạng thái gỡ"}</div>
+          <AdminField label="URL ảnh bìa" hint="Hỗ trợ đường dẫn tương đối (/static) hoặc HTTPS; nên dùng ảnh ngang 16:9.">
             <Input
               className="admin-input h-9"
               placeholder="/static/templates/covers/xxx.png"
@@ -165,22 +165,22 @@ export function TemplateEditorDialog({
           </div>
 
           <div className="template-editor-panel">
-            {attempted && Object.keys(errors).length ? <div role="alert" className="template-editor-validation">请先完善基础信息：{Object.values(errors).join("；")}。</div> : null}
+            {attempted && Object.keys(errors).length ? <div role="alert" className="template-editor-validation">Vui lòng hoàn thiện thông tin cơ bản trước:{Object.values(errors).join("；")}。</div> : null}
             {tab === "basic" ? (
               <div className="template-editor-grid">
-                <h3 className="template-editor-section-title">展示信息</h3>
+                <h3 className="template-editor-section-title">Thông tin hiển thị</h3>
                 {!editing ? (
-                  <AdminField label="模板 ID" required error={attempted ? errors.id : undefined} hint="模板的唯一标识，创建后不可修改。" className="template-editor-field--full">
+                  <AdminField label="ID mẫu" required error={attempted ? errors.id : undefined} hint="Định danh duy nhất của mẫu, không thể sửa sau khi tạo." className="template-editor-field--full">
                     <Input
                       className="admin-input h-9"
-                      placeholder="例如 live_street_interview"
+                      placeholder="Ví dụ live_street_interview"
                       maxLength={64}
                       value={form.id}
                       onChange={(e) => onChange({ id: e.target.value })}
                     />
                   </AdminField>
                 ) : null}
-                <AdminField label="模板名称" required error={attempted ? errors.name : undefined} hint="显示在用户选择模板的列表中。" className="template-editor-field--full">
+                <AdminField label="Tên mẫu" required error={attempted ? errors.name : undefined} hint="Hiển thị trong danh sách mẫu người dùng chọn." className="template-editor-field--full">
                   <Input
                     className="admin-input h-9"
                     maxLength={128}
@@ -188,7 +188,7 @@ export function TemplateEditorDialog({
                     onChange={(e) => onChange({ name: e.target.value })}
                   />
                 </AdminField>
-                <AdminField label="模板简介" optional hint="简要说明适合的题材与视觉效果。" className="template-editor-field--full">
+                <AdminField label="Giới thiệu mẫu" optional hint="Mô tả ngắn chủ đề và hiệu ứng hình ảnh phù hợp." className="template-editor-field--full">
                   <Textarea
                     value={form.description}
                     onChange={(e) => onChange({ description: e.target.value })}
@@ -196,16 +196,16 @@ export function TemplateEditorDialog({
                   />
                 </AdminField>
                 <AdminField
-                  label="分类标签"
+                  label="Nhãn phân loại"
                   hint={
                     categorySuggestions.length
-                      ? `常用：${categorySuggestions.slice(0, 8).join("、")}${categorySuggestions.length > 8 ? "…" : ""}`
-                      : "多个标签用英文逗号分隔。"
+                      ? `Thường dùng: ${categorySuggestions.slice(0, 8).join("、")}${categorySuggestions.length > 8 ? "…" : ""}`
+                      : "Nhiều nhãn cách nhau bằng dấu phẩy tiếng Anh."
                   }
                 >
                   <Input
                     className="admin-input h-9"
-                    placeholder="真人感,电影感,商业"
+                    placeholder="Chân thực,Điện ảnh,Thương mại"
                     value={form.category}
                     onChange={(e) => onChange({ category: e.target.value })}
                   />
@@ -214,14 +214,14 @@ export function TemplateEditorDialog({
                     if (!current.includes(category)) onChange({ category: [...current, category].join(",") });
                   }}>+ {category}</button>)}</div> : null}
                 </AdminField>
-                <h3 className="template-editor-section-title">生成默认值</h3>
+                <h3 className="template-editor-section-title">Giá trị mặc định khi tạo</h3>
                 <AdminSelect
-                  label="默认画幅"
+                  label="Tỷ lệ khung mặc định"
                   value={form.default_ratio}
                   options={RATIO_OPTIONS}
                   onChange={(v) => onChange({ default_ratio: v })}
                 />
-                <AdminField label="展示排序" error={attempted ? errors.sort_order : undefined} hint="数值越小越靠前，可使用负数。">
+                <AdminField label="Thứ tự hiển thị" error={attempted ? errors.sort_order : undefined} hint="Số càng nhỏ càng đứng trước, có thể dùng số âm.">
                   <Input
                     className="admin-input h-9"
                     type="number"
@@ -229,7 +229,7 @@ export function TemplateEditorDialog({
                     onChange={(e) => onChange({ sort_order: Number(e.target.value) })}
                   />
                 </AdminField>
-                <AdminField label="最短镜头时长（秒）" required error={attempted ? errors.shot_duration_min : undefined}>
+                <AdminField label="Thời lượng cảnh quay ngắn nhất (giây)" required error={attempted ? errors.shot_duration_min : undefined}>
                   <Input
                     className="admin-input h-9"
                     type="number"
@@ -239,7 +239,7 @@ export function TemplateEditorDialog({
                     onChange={(e) => onChange({ shot_duration_min: Number(e.target.value) })}
                   />
                 </AdminField>
-                <AdminField label="最长镜头时长（秒）" required error={attempted ? errors.shot_duration_max : undefined} hint="不得小于最短时长。">
+                <AdminField label="Thời lượng cảnh quay dài nhất (giây)" required error={attempted ? errors.shot_duration_max : undefined} hint="Không được nhỏ hơn thời lượng ngắn nhất.">
                   <Input
                     className="admin-input h-9"
                     type="number"
@@ -254,35 +254,35 @@ export function TemplateEditorDialog({
 
             {tab === "prompts" ? (
               <div className="template-editor-grid template-editor-grid--prompts">
-                <AdminField label="风格提示词" optional hint="描述画面风格、光线与色彩，会作为生成的基础风格。" className="template-editor-field--full">
+                <AdminField label="Prompt phong cách" optional hint="Mô tả phong cách hình ảnh, ánh sáng và màu sắc, sẽ làm phong cách nền cho việc tạo." className="template-editor-field--full">
                   <Textarea
                     value={form.style_prefix}
                     onChange={(e) => onChange({ style_prefix: e.target.value })}
                     className="min-h-[100px] font-mono text-[13px]"
                   />
                 </AdminField>
-                <AdminField label="角色提示词" optional hint="用于角色图像的外观与服饰要求。" className="template-editor-field--full">
+                <AdminField label="Prompt nhân vật" optional hint="Dùng cho yêu cầu ngoại hình và trang phục trong ảnh nhân vật." className="template-editor-field--full">
                   <Textarea
                     value={form.character_prompt}
                     onChange={(e) => onChange({ character_prompt: e.target.value })}
                     className="min-h-[88px] font-mono text-[13px]"
                   />
                 </AdminField>
-                <AdminField label="额外提示词" optional hint="补充图片生成的统一要求。" className="template-editor-field--full">
+                <AdminField label="Prompt bổ sung" optional hint="Bổ sung yêu cầu thống nhất cho việc tạo ảnh." className="template-editor-field--full">
                   <Textarea
                     value={form.extra_prompt}
                     onChange={(e) => onChange({ extra_prompt: e.target.value })}
                     className="min-h-[88px] font-mono text-[13px]"
                   />
                 </AdminField>
-                <AdminField label="文本模型附加说明" optional hint="追加给文本模型的脚本与规划说明。" className="template-editor-field--full">
+                <AdminField label="Ghi chú bổ sung cho model văn bản" optional hint="Ghi chú kịch bản và lập kế hoạch bổ sung cho model văn bản." className="template-editor-field--full">
                   <Textarea
                     value={form.llm_system_addon}
                     onChange={(e) => onChange({ llm_system_addon: e.target.value })}
                     className="min-h-[88px] font-mono text-[13px]"
                   />
                 </AdminField>
-                <AdminField label="负面提示词" optional hint="列出希望避免出现的画面内容或效果。" className="template-editor-field--full">
+                <AdminField label="Prompt phủ định" optional hint="Liệt kê nội dung hình ảnh hoặc hiệu ứng muốn tránh xuất hiện." className="template-editor-field--full">
                   <Textarea
                     value={form.negative_prompt}
                     onChange={(e) => onChange({ negative_prompt: e.target.value })}
@@ -296,21 +296,21 @@ export function TemplateEditorDialog({
               <div className="template-editor-publish">
                 <div className="template-editor-publish-row">
                   <div>
-                    <strong>上架展示</strong>
-                    <p>关闭后用户端选模板列表不可见，已有项目不受影响。</p>
+                    <strong>Đăng hiển thị</strong>
+                    <p>Khi tắt, người dùng sẽ không thấy trong danh sách chọn mẫu, các dự án hiện có không bị ảnh hưởng.</p>
                   </div>
                   <Switch checked={form.is_active} onCheckedChange={(v) => onChange({ is_active: v })} />
                 </div>
                 <div className="template-editor-publish-row">
                   <div>
-                    <strong>Premium 模板</strong>
-                    <p>标记为高级模板，可用于权限或计费策略区分。</p>
+                    <strong>Mẫu Premium</strong>
+                    <p>Đánh dấu là mẫu cao cấp, có thể dùng để phân biệt quyền hạn hoặc chính sách tính phí.</p>
                   </div>
                   <Switch checked={form.is_premium} onCheckedChange={(v) => onChange({ is_premium: v })} />
                 </div>
                 {editing ? (
                   <details className="mt-4 rounded-lg border p-3">
-                    <summary className="cursor-pointer text-sm font-medium">高级配置（只读）</summary>
+                    <summary className="cursor-pointer text-sm font-medium">Cấu hình nâng cao (chỉ đọc)</summary>
                     <div className="mt-3 space-y-3">
                       <div>
                         <div className="mb-1 text-xs text-[var(--admin-muted)]">seedance_config</div>

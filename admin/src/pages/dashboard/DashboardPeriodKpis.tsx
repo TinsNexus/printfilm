@@ -20,23 +20,23 @@ export function DashboardPeriodKpis({ stats, filters, loading }: DashboardPeriod
   return (
     <div className="admin-dashboard-kpi-grid admin-dashboard-kpi-grid--secondary min-[1401px]:!grid-cols-3">
       <DashboardKpiCard
-        label={`${rangeLabel}调用`}
+        label={`${rangeLabel}Lượt gọi`}
         value={stats ? period.calls.toLocaleString() : placeholder}
-        hint={stats ? `累计 ${stats.usage_calls_total ?? 0} 次` : "调用次数"}
+        hint={stats ? `Tổng ${stats.usage_calls_total ?? 0} lần` : "Số lần gọi"}
         icon={Activity}
         tone="mint"
       />
       <DashboardKpiCard
-        label={`${rangeLabel}扣费`}
+        label={`${rangeLabel}Trừ phí`}
         value={stats ? `¥${fenToYuan(period.charge_fen)}` : placeholder}
-        hint={stats ? `本月 ¥${fenToYuan(stats.usage_charge_month_fen ?? 0)}` : "用户扣费"}
+        hint={stats ? `Tháng này ¥${fenToYuan(stats.usage_charge_month_fen ?? 0)}` : "Phí trừ người dùng"}
         icon={TrendingUp}
         tone="blue"
       />
       <DashboardKpiCard
-        label="漫剧项目"
+        label="Dự án phim truyện"
         value={stats ? stats.drama_project_count ?? 0 : placeholder}
-        hint={stats ? `用户 ${stats.user_count}` : "项目规模"}
+        hint={stats ? `Người dùng ${stats.user_count}` : "Quy mô dự án"}
         icon={Film}
         tone="slate"
       />

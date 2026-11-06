@@ -14,7 +14,7 @@ export function LedgerRefLink({ row }: { row: AdminLedger }) {
   if (row.ref_type === "order" && row.ref_id) {
     const id = Number(row.ref_id);
     if (Number.isFinite(id) && id > 0) {
-      return <AdminEntityLink kind="order" id={id} label={`订单#${id}`} />;
+      return <AdminEntityLink kind="order" id={id} label={`Đơn hàng#${id}`} />;
     }
     return (
       <Link
@@ -43,9 +43,9 @@ export function OrderDetailDialog({
   async function copyText(text: string) {
     try {
       await navigator.clipboard.writeText(text);
-      toast.success("已复制");
+      toast.success("Đã sao chép");
     } catch {
-      toast.error("复制失败");
+      toast.error("Sao chép thất bại");
     }
   }
 
@@ -54,12 +54,12 @@ export function OrderDetailDialog({
       open={open && !!orderDetail}
       onOpenChange={(nextOpen) => !nextOpen && onClose()}
       size="md"
-      title={orderDetail ? `订单明细 #${orderDetail.id}` : "订单明细"}
+      title={orderDetail ? `Chi tiết đơn hàng #${orderDetail.id}` : "Chi tiết đơn hàng"}
       subtitle={orderDetail?.out_trade_no}
       footer={
         orderDetail ? (
           <Button size="sm" variant="outline" onClick={() => void copyText(orderDetail.out_trade_no)}>
-            复制商户单号
+            Sao chép mã đơn của merchant
           </Button>
         ) : undefined
       }
@@ -69,7 +69,7 @@ export function OrderDetailDialog({
           <AdminDetailMeta
             items={[
               {
-                label: "用户",
+                label: "Người dùng",
                 value: (
                   <AdminEntityLink
                     kind="user"
@@ -79,18 +79,18 @@ export function OrderDetailDialog({
                 ),
               },
               { label: "SKU", value: orderDetail.sku_id },
-              { label: "支付金额", value: orderPaymentLabel(orderDetail) },
-              { label: "入账（CNY）", value: `¥${fenToYuan(orderDetail.credit_fen)}` },
-              ...(orderDetail.payment_currency && orderDetail.payment_currency !== "cny" ? [{ label: "订单汇率", value: `1 ${orderDetail.payment_currency.toUpperCase()} = ${orderDetail.payment_exchange_rate || "—"} CNY` }] : []),
-              { label: "支付方式", value: payTypeLabel(orderDetail.pay_type) },
-              { label: "状态", value: orderStatusLabel(orderDetail.status) },
-              { label: "渠道单号", value: orderDetail.trade_no || "—" },
+              { label: "Số tiền thanh toán", value: orderPaymentLabel(orderDetail) },
+              { label: "Ghi có (CNY)", value: `¥${fenToYuan(orderDetail.credit_fen)}` },
+              ...(orderDetail.payment_currency && orderDetail.payment_currency !== "cny" ? [{ label: "Tỷ giá đơn hàng", value: `1 ${orderDetail.payment_currency.toUpperCase()} = ${orderDetail.payment_exchange_rate || "—"} CNY` }] : []),
+              { label: "Phương thức thanh toán", value: payTypeLabel(orderDetail.pay_type) },
+              { label: "Trạng thái", value: orderStatusLabel(orderDetail.status) },
+              { label: "Mã đơn kênh", value: orderDetail.trade_no || "—" },
               {
-                label: "支付时间",
+                label: "Thời gian thanh toán",
                 value: orderDetail.paid_at ? new Date(orderDetail.paid_at).toLocaleString() : "—",
               },
               {
-                label: "创建时间",
+                label: "Thời gian tạo",
                 value: new Date(orderDetail.created_at).toLocaleString(),
                 full: true,
               },
@@ -112,14 +112,14 @@ export function LedgerDetailDialog({
       open={!!ledgerDetail}
       onOpenChange={(nextOpen) => !nextOpen && onClose()}
       size="md"
-      title={ledgerDetail ? `流水明细 #${ledgerDetail.id}` : "流水明细"}
+      title={ledgerDetail ? `Chi tiết biến động #${ledgerDetail.id}` : "Chi tiết biến động"}
     >
       {ledgerDetail ? (
         <AdminDetailSection>
           <AdminDetailMeta
             items={[
               {
-                label: "用户",
+                label: "Người dùng",
                 value: (
                   <AdminEntityLink
                     kind="user"
@@ -128,13 +128,13 @@ export function LedgerDetailDialog({
                   />
                 ),
               },
-              { label: "类型", value: ledgerKindLabel(ledgerDetail.kind) },
-              { label: "变动", value: `¥${fenToYuan(ledgerDetail.delta_fen)}` },
-              { label: "余额后", value: `¥${fenToYuan(ledgerDetail.balance_after)}` },
-              { label: "关联", value: <LedgerRefLink row={ledgerDetail} /> },
-              { label: "备注", value: ledgerDetail.note || "—" },
+              { label: "Loại", value: ledgerKindLabel(ledgerDetail.kind) },
+              { label: "Biến động", value: `¥${fenToYuan(ledgerDetail.delta_fen)}` },
+              { label: "Số dư sau", value: `¥${fenToYuan(ledgerDetail.balance_after)}` },
+              { label: "Liên quan", value: <LedgerRefLink row={ledgerDetail} /> },
+              { label: "Ghi chú", value: ledgerDetail.note || "—" },
               {
-                label: "时间",
+                label: "Thời gian",
                 value: new Date(ledgerDetail.created_at).toLocaleString(),
                 full: true,
               },

@@ -15,7 +15,7 @@ type AdminSearchInputProps = {
 export function AdminSearchInput({
   value,
   onChange,
-  placeholder = "搜索…",
+  placeholder = "Tìm kiếm…",
   className,
   onKeyDown,
 }: AdminSearchInputProps) {
@@ -37,7 +37,7 @@ export function AdminSearchInput({
           }
         }}
       />
-      {value ? <button type="button" className="admin-control-clear" aria-label="清除搜索" onMouseDown={(event) => event.preventDefault()} onClick={() => onChange("")}><X size={13} /></button> : null}
+      {value ? <button type="button" className="admin-control-clear" aria-label="Xóa tìm kiếm" onMouseDown={(event) => event.preventDefault()} onClick={() => onChange("")}><X size={13} /></button> : null}
     </div>
   );
 }

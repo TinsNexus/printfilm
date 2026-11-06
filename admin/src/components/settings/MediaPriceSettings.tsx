@@ -11,8 +11,8 @@ type PriceData = {
 };
 function priceError(value: string) {
   if (!value.trim()) return "";
-  if (!/^\d+(?:\.\d{1,4})?$/.test(value.trim())) return "请输入金额，最多保留 4 位小数";
-  return Number(value) < 0.0001 || Number(value) > 10000 ? "单价范围为 0.0001–10000 元" : "";
+  if (!/^\d+(?:\.\d{1,4})?$/.test(value.trim())) return "Vui lòng nhập số tiền, tối đa 4 chữ số thập phân";
+  return Number(value) < 0.0001 || Number(value) > 10000 ? "Đơn giá trong khoảng 0,0001–10000 tệ" : "";
 }
 
 /** Price publishing is independent from the surrounding payment settings save. */
@@ -29,7 +29,7 @@ export function MediaPriceSettings() {
     try {
       const loaded = await api<PriceData>("/api/admin/settings/billing/media-prices");
       baseline.current = JSON.stringify(loaded.prices); setData(loaded); setError(""); return true;
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "价格加载失败"); return false; }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Tải giá thất bại"); return false; }
   }
   useEffect(() => { void load(); }, []);
   async function reload() {
@@ -43,8 +43,8 @@ export function MediaPriceSettings() {
     try {
       await api("/api/admin/settings/billing/media-prices/activation", { method: "PATCH", body: JSON.stringify({ enabled: !data.enabled, expected_version: data.active_version }) });
       setData(current => current ? { ...current, enabled: !data.enabled } : current);
-      setNotice("计费模式已切换，仅影响新任务，在途任务保持原规则。");
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "切换失败"); }
+      setNotice("Đã chuyển chế độ tính phí, chỉ ảnh hưởng tác vụ mới, tác vụ đang chạy giữ quy tắc cũ.");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Chuyển thất bại"); }
     finally { setOperation(""); }
   }
   async function publish() {
@@ -56,25 +56,25 @@ export function MediaPriceSettings() {
       ]));
       await api("/api/admin/settings/billing/media-prices", { method: "POST", body: JSON.stringify({ prices, expected_version: data.active_version }) });
       const refreshed = await load();
-      setNotice(refreshed ? "价格已发布，新任务立即生效，在途任务保持原价格。" : "价格已发布，最新版本读取失败，请重新加载后继续编辑。");
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "发布失败"); }
+      setNotice(refreshed ? "Đã phát hành giá, tác vụ mới có hiệu lực ngay, tác vụ đang chạy giữ giá cũ." : "Đã phát hành giá, đọc phiên bản mới nhất thất bại, vui lòng tải lại rồi tiếp tục chỉnh sửa.");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Phát hành thất bại"); }
     finally { setOperation(""); }
   }
-  return <SettingsPanel title="图片与视频价格" description="图片按张收费，视频按提交秒数收费。本区独立发布，修改支付配置不会发布价格。">
-    <div className="admin-form-notice">{data?.active_version ? `当前价格版本 #${data.active_version} · ${data.enabled ? "固定计费已启用" : "固定计费已停用"}` : "尚未发布价格版本"}{dirty ? " · 有未发布修改" : ""}</div>
-    <p className="settings-price-note">单价使用人民币，最多 4 位小数。留空表示该档位不可生成；视频总价 = 单价 × 提交秒数。</p>
+  return <SettingsPanel title="Giá hình ảnh và video" description="Hình ảnh tính theo ảnh, video tính theo số giây gửi. Phần này phát hành riêng, sửa cấu hình thanh toán sẽ không phát hành giá.">
+    <div className="admin-form-notice">{data?.active_version ? `Phiên bản giá hiện tại #${data.active_version} · ${data.enabled ? "Đã bật tính phí cố định" : "Đã tắt tính phí cố định"}` : "Chưa phát hành phiên bản giá"}{dirty ? " · Có thay đổi chưa phát hành" : ""}</div>
+    <p className="settings-price-note">Đơn giá tính bằng nhân dân tệ, tối đa 4 chữ số thập phân. Để trống nghĩa là mức này không thể tạo; tổng giá video = đơn giá × số giây gửi.</p>
     {error ? <p role="alert" className="admin-field-error">{error}</p> : null}
     {notice ? <p role="status" className="settings-price-note">{notice}</p> : null}
-    {!data && !error ? <p className="settings-price-note" role="status">正在加载价格…</p> : null}
+    {!data && !error ? <p className="settings-price-note" role="status">Đang tải giá…</p> : null}
     {data && ["image", "video"].map(kind => <details key={kind} className="settings-advanced mt-4" open={kind === "image" ? true : undefined}>
-      <summary>{kind === "image" ? "图片价格 · 元 / 张" : "视频价格 · 元 / 秒"}</summary>
-      <div className="settings-price-table admin-table-wrap"><table><thead><tr><th>模型 / 支持范围</th><th>分辨率与单价</th></tr></thead><tbody>
+      <summary>{kind === "image" ? "Giá hình ảnh · tệ / ảnh" : "Giá video · tệ / giây"}</summary>
+      <div className="settings-price-table admin-table-wrap"><table><thead><tr><th>Model / phạm vi hỗ trợ</th><th>Độ phân giải và đơn giá</th></tr></thead><tbody>
         {data.strategies.filter(strategy => strategy.capability === kind).map(strategy => <tr key={strategy.id}>
-          <td><strong className="text-xs">{strategy.id}</strong><p className="settings-price-note">{strategy.duration_max ? `${strategy.duration_min}–${strategy.duration_max} 秒` : "按成功交付张数计费"}</p></td>
+          <td><strong className="text-xs">{strategy.id}</strong><p className="settings-price-note">{strategy.duration_max ? `${strategy.duration_min}–${strategy.duration_max} giây` : "Tính theo số ảnh giao thành công"}</p></td>
           <td><div className="settings-price-cell">{strategy.allowed_resolutions.map(resolution => {
             const value = data.prices[strategy.id]?.[resolution] ?? "";
-            return <AdminField key={resolution} label={resolution} error={priceError(value)} hint={value ? `元 / ${kind === "image" ? "张" : "秒"}` : "未配置，不可生成"}>
-              <Input type="text" inputMode="decimal" disabled={busy} aria-label={`${strategy.id} ${resolution} 单价`} placeholder="未配置" value={value}
+            return <AdminField key={resolution} label={resolution} error={priceError(value)} hint={value ? `tệ / ${kind === "image" ? "ảnh" : "giây"}` : "Chưa cấu hình, không thể tạo"}>
+              <Input type="text" inputMode="decimal" disabled={busy} aria-label={`${strategy.id} ${resolution} Đơn giá`} placeholder="Chưa cấu hình" value={value}
                 onChange={event => { setNotice(""); setData({ ...data, prices: { ...data.prices, [strategy.id]: { ...data.prices[strategy.id], [resolution]: event.target.value } } }); }} />
             </AdminField>;
           })}</div></td>
@@ -82,9 +82,9 @@ export function MediaPriceSettings() {
       </tbody></table></div>
     </details>)}
     <div className="settings-price-actions">
-      <Button disabled={!data || busy || invalidPrices} onClick={() => void publish()}>{operation === "publish" ? "发布中…" : "发布价格版本"}</Button>
-      <Button variant="outline" disabled={busy} onClick={() => void reload()}>{operation === "load" ? "加载中…" : dirty ? "放弃修改并重载" : "重新加载"}</Button>
-      {data?.active_version ? <Button variant="outline" disabled={busy} onClick={() => void toggle()}>{operation === "toggle" ? "切换中…" : data.enabled ? "停用固定计费" : "启用固定计费"}</Button> : null}
+      <Button disabled={!data || busy || invalidPrices} onClick={() => void publish()}>{operation === "publish" ? "Đang phát hành…" : "Phát hành phiên bản giá"}</Button>
+      <Button variant="outline" disabled={busy} onClick={() => void reload()}>{operation === "load" ? "Đang tải…" : dirty ? "Hủy thay đổi và tải lại" : "Tải lại"}</Button>
+      {data?.active_version ? <Button variant="outline" disabled={busy} onClick={() => void toggle()}>{operation === "toggle" ? "Đang chuyển…" : data.enabled ? "Tắt tính phí cố định" : "Bật tính phí cố định"}</Button> : null}
     </div>
   </SettingsPanel>;
 }

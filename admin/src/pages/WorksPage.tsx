@@ -46,7 +46,7 @@ export function WorksPage() {
       if (userId) params.set("user_id", String(userId));
       setData(await api<ListRes>(`/api/admin/works?${params}`));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "加载失败");
+      toast.error(err instanceof Error ? err.message : "Tải thất bại");
     }
   }
 
@@ -64,10 +64,10 @@ export function WorksPage() {
   async function patchWork(id: number, body: { visibility?: string; audit_status?: string }) {
     try {
       await api(`/api/admin/works/${id}`, { method: "PATCH", body: JSON.stringify(body) });
-      toast.success("已更新");
+      toast.success("Đã cập nhật");
       await load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "更新失败");
+      toast.error(err instanceof Error ? err.message : "Cập nhật thất bại");
     }
   }
 
@@ -78,12 +78,12 @@ export function WorksPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader title="作品审核" description="调整可见性与审核状态" />
+      <PageHeader title="Duyệt tác phẩm" description="Điều chỉnh khả năng hiển thị và trạng thái duyệt" />
       <AdminFilterBar>
         <AdminSearchInput
           value={q}
           onChange={setQ}
-          placeholder="搜索标题"
+          placeholder="Tìm tiêu đề"
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               setPage(1);
@@ -93,16 +93,16 @@ export function WorksPage() {
         />
         <AdminUserSearchSelect value={userId} onChange={(id) => setUserId(id)} />
         <Select value={auditStatus} onChange={(e) => setAuditStatus(e.target.value)}>
-          <option value="">全部审核</option>
-          <option value="pending">待审核</option>
-          <option value="passed">已通过</option>
-          <option value="rejected">已拒绝</option>
+          <option value="">Tất cả trạng thái duyệt</option>
+          <option value="pending">Chờ duyệt</option>
+          <option value="passed">Đã duyệt</option>
+          <option value="rejected">Đã từ chối</option>
         </Select>
         <Select value={visibility} onChange={(e) => setVisibility(e.target.value)}>
-          <option value="">全部可见性</option>
-          <option value="public">公开</option>
-          <option value="private">私密</option>
-          <option value="unlisted">不公开列出</option>
+          <option value="">Tất cả mức hiển thị</option>
+          <option value="public">Công khai</option>
+          <option value="private">Riêng tư</option>
+          <option value="unlisted">Không liệt kê công khai</option>
         </Select>
         <Button
           size="sm"
@@ -113,21 +113,21 @@ export function WorksPage() {
             void load(1);
           }}
         >
-          筛选
+          Lọc
         </Button>
       </AdminFilterBar>
       <div className="rounded-lg border bg-background">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>封面</TableHead>
+              <TableHead>Ảnh bìa</TableHead>
               <TableHead>ID</TableHead>
-              <TableHead>标题</TableHead>
-              <TableHead>用户</TableHead>
-              <TableHead>可见性</TableHead>
-              <TableHead>审核</TableHead>
-              <TableHead>发布时间</TableHead>
-              <TableHead>操作</TableHead>
+              <TableHead>Tiêu đề</TableHead>
+              <TableHead>Người dùng</TableHead>
+              <TableHead>Khả năng hiển thị</TableHead>
+              <TableHead>Duyệt</TableHead>
+              <TableHead>Thời gian đăng</TableHead>
+              <TableHead>Thao tác</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -173,17 +173,17 @@ export function WorksPage() {
                 <TableCell>
                   <div className="flex flex-wrap gap-1">
                     <Button size="sm" variant="outline" onClick={() => openWork(w)}>
-                      详情
+                      Chi tiết
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => void patchWork(w.id, { audit_status: "passed" })}>
-                      通过
+                      Duyệt qua
                     </Button>
                     <Button
                       size="sm"
                       variant="outline"
                       onClick={() => void patchWork(w.id, { audit_status: "rejected" })}
                     >
-                      拒绝
+                      Từ chối
                     </Button>
                     <Button
                       size="sm"
@@ -194,7 +194,7 @@ export function WorksPage() {
                         })
                       }
                     >
-                      {w.visibility === "public" ? "设私密" : "设公开"}
+                      {w.visibility === "public" ? "Đặt riêng tư" : "Đặt công khai"}
                     </Button>
                   </div>
                 </TableCell>
@@ -221,13 +221,13 @@ export function WorksPage() {
           }
         }}
         size="lg"
-        title={detail?.title ?? "作品详情"}
-        subtitle={detail ? `作品 #${detail.id}` : undefined}
+        title={detail?.title ?? "Chi tiết tác phẩm"}
+        subtitle={detail ? `Tác phẩm #${detail.id}` : undefined}
       >
         {detail ? (
           <>
             {(detail.cover_url || detail.video_url) ? (
-              <AdminDetailSection title="媒体预览">
+              <AdminDetailSection title="Xem trước phương tiện">
                 <div className="admin-detail-media">
                   {detail.cover_url ? (
                     <img src={coverSrc(detail.cover_url)} alt={detail.title} />
@@ -238,11 +238,11 @@ export function WorksPage() {
                 </div>
               </AdminDetailSection>
             ) : null}
-            <AdminDetailSection title="基本信息">
+            <AdminDetailSection title="Thông tin cơ bản">
               <AdminDetailMeta
                 items={[
                   {
-                    label: "用户",
+                    label: "Người dùng",
                     value: (
                       <AdminEntityLink
                         kind="user"
@@ -252,17 +252,17 @@ export function WorksPage() {
                     ),
                   },
                   {
-                    label: "关联项目",
+                    label: "Dự án liên quan",
                     value: detail.project_id ? (
                       <AdminEntityLink kind="project" id={detail.project_id} />
                     ) : (
                       "—"
                     ),
                   },
-                  { label: "可见性", value: visibilityLabel(detail.visibility) },
-                  { label: "审核", value: auditStatusLabel(detail.audit_status) },
+                  { label: "Khả năng hiển thị", value: visibilityLabel(detail.visibility) },
+                  { label: "Duyệt", value: auditStatusLabel(detail.audit_status) },
                   {
-                    label: "发布时间",
+                    label: "Thời gian đăng",
                     value: new Date(detail.published_at).toLocaleString(),
                     full: true,
                   },
@@ -272,7 +272,7 @@ export function WorksPage() {
             {detail.video_url ? (
               <Button size="sm" variant="outline" asChild>
                 <a href={detail.video_url} target="_blank" rel="noreferrer">
-                  新窗口打开视频
+                  Mở video trong cửa sổ mới
                 </a>
               </Button>
             ) : null}
