@@ -56,7 +56,7 @@ function MethodCta({
 /** 获客短视频宣传页主体：方法论章节 + 双 CTA */
 export default function MethodPage() {
   const { locale } = useI18n()
-  const copy = METHOD_LANDING[locale]
+  const copy = METHOD_LANDING[locale === 'zh' ? 'zh' : 'en'] // 越南语暂用英文版
   useMethodMeta(copy)
 
   const jsonLd = {
@@ -64,7 +64,7 @@ export default function MethodPage() {
     '@type': 'Article',
     headline: copy.jsonLdHeadline,
     description: copy.metaDescription,
-    inLanguage: locale === 'zh' ? 'zh-CN' : 'en',
+    inLanguage: locale === 'zh' ? 'zh-CN' : locale === 'vi' ? 'vi' : 'en',
     author: { '@type': 'Organization', name: 'PRINTFILM' },
     publisher: { '@type': 'Organization', name: 'PRINTFILM' },
     mainEntityOfPage: { '@type': 'WebPage', '@id': PAGE_URL },

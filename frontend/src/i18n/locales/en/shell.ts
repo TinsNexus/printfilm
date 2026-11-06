@@ -83,6 +83,7 @@ export const enShell = {
     language: 'Language',
     langZh: '中',
     langEn: 'EN',
+    langVi: 'VI',
   },
   footer: {
     terms: 'Terms',

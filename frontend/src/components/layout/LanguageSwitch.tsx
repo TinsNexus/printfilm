@@ -1,7 +1,7 @@
 import { LOCALES, type Locale } from '../../i18n/detect'
 import { useI18n } from '../../i18n'
 
-/** 顶栏中/英切换：点击后写入偏好，覆盖浏览器语言 */
+/** 顶栏中/英/越切换：点击后写入偏好，覆盖浏览器语言 */
 export default function LanguageSwitch() {
   const { locale, setLocale, t } = useI18n()
 
@@ -15,7 +15,7 @@ export default function LanguageSwitch() {
           aria-pressed={locale === code}
           onClick={() => setLocale(code)}
         >
-          {code === 'zh' ? t('nav.langZh') : t('nav.langEn')}
+          {code === 'zh' ? t('nav.langZh') : code === 'vi' ? t('nav.langVi') : t('nav.langEn')}
         </button>
       ))}
     </div>

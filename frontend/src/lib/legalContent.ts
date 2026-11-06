@@ -298,7 +298,7 @@ export const LEGAL_DOCS_EN: Record<'terms' | 'privacy', LegalDoc> = {
 
 // 按界面语言取用户协议 / 隐私政策
 export function getLegalDoc(slug: 'terms' | 'privacy', locale: string): LegalDoc {
-  const pack = locale === 'en' ? LEGAL_DOCS_EN : LEGAL_DOCS
+  const pack = locale === 'zh' ? LEGAL_DOCS : LEGAL_DOCS_EN // 越南语暂用英文版
   return pack[slug]
 }
 

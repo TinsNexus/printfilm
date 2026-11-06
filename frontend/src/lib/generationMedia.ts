@@ -8,5 +8,6 @@ export const mediaIcons = { video: Video, image: Image, audio: AudioLines }
 
 export function useGenerationText() {
   const { locale } = useI18n()
-  return useCallback((zh: string, en: string) => locale === 'en' ? en : zh, [locale])
+  // 三语取文案：越南语缺省时回退英文
+  return useCallback((zh: string, en: string, vi?: string) => locale === 'vi' ? (vi ?? en) : locale === 'en' ? en : zh, [locale])
 }

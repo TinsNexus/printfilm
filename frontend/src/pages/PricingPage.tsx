@@ -105,7 +105,7 @@ export default function PricingPage() {
     setSkusError(false)
     setStripeUnavailable(false)
     try {
-      const result = await api.billingSkus(locale)
+      const result = await api.billingSkus(locale === 'zh' ? 'zh' : 'en')
       if (requestId !== skuRequest.current) return
       setStripeUnavailable(result.stripe_unavailable_reason === 'usd_rate_missing')
       setSkuLocale(locale)
@@ -181,7 +181,7 @@ export default function PricingPage() {
     setBusy(sku.id)
     setError('')
     try {
-      const order = await api.createBillingOrder(sku.id, payType, locale)
+      const order = await api.createBillingOrder(sku.id, payType, locale === 'zh' ? 'zh' : 'en')
       if (order.pay_type === 'stripe') {
         const url = stripeCheckoutUrl(order.payurl)
         if (!url) throw new Error(t('pricing.paymentLinkFailed'))
