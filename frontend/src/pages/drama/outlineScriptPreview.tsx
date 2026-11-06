@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Pencil } from 'lucide-react'
 import Modal from '../../components/ui/Modal'
+import { tv } from '../../i18n/tv'
 
 export type OutlineSceneBlock = {
   /** 原始整段（含场头行），写回时原样拼接 */
@@ -59,13 +60,13 @@ export function parseOutlineSceneBlocks(text: string): OutlineSceneBlock[] {
   if (!raw) return []
   const parts = raw.split(/(?=^#{1,3}\s*场)/m).map((p) => p.trim()).filter(Boolean)
   if (parts.length <= 1 && !/^#{1,3}\s*场/.test(raw)) {
-    return [{ raw, label: '全文', title: '', body: raw }]
+    return [{ raw, label: tv('全文', 'Toàn văn'), title: '', body: raw }]
   }
   return parts.map((part, index) => {
     const lines = part.split(/\r?\n/)
     const head = (lines[0] || '').replace(/^#+\s*/, '').trim()
     const labelMatch = head.match(/^场\s*([^\s：:]+)/)
-    const label = labelMatch ? `场 ${labelMatch[1]}` : `场 ${index + 1}`
+    const label = labelMatch ? tv(`场 ${labelMatch[1]}`, `Hồi ${labelMatch[1]}`) : tv(`场 ${index + 1}`, `Hồi ${index + 1}`)
     const title = head.replace(/^场\s*[^\s：:]+[：:\s]*/, '').trim()
     const body = lines.slice(1).join('\n').trim()
     return { raw: part, label, title, body }
@@ -205,12 +206,12 @@ function formatClockDuration(sec: number): string {
   if (sec < 60) return `${sec}s`
   const m = Math.floor(sec / 60)
   const s = sec % 60
-  return s ? `${m}分${s}秒` : `${m}分钟`
+  return s ? tv(`${m}分${s}秒`, `${m} phút ${s} giây`) : tv(`${m}分钟`, `${m} phút`)
 }
 
 function formatEstimateDuration(sec: number): string {
-  if (sec <= 0) return '约 —'
-  return `约 ${formatClockDuration(sec)}`
+  if (sec <= 0) return tv('约 —', 'Khoảng —')
+  return tv(`约 ${formatClockDuration(sec)}`, `Khoảng ${formatClockDuration(sec)}`)
 }
 
 // 渲染解析后的剧本行
@@ -262,13 +263,13 @@ function ScriptLines({ text }: { text: string }) {
 /** 场次信息条：对白 / 动作 / 内外景 / 出场 */
 function SceneStatsBar({ stats }: { stats: OutlineSceneStats }) {
   const items: string[] = []
-  if (stats.dialogueCount > 0) items.push(`${stats.dialogueCount} 句对白`)
-  if (stats.actionCount > 0) items.push(`${stats.actionCount} 段动作`)
+  if (stats.dialogueCount > 0) items.push(tv(`${stats.dialogueCount} 句对白`, `${stats.dialogueCount} câu thoại`))
+  if (stats.actionCount > 0) items.push(tv(`${stats.actionCount} 段动作`, `${stats.actionCount} đoạn hành động`))
   if (stats.location) items.push(stats.location)
   if (stats.cast.length) items.push(stats.cast.slice(0, 6).join('、'))
   if (!items.length) return null
   return (
-    <div className="drama-outline-scene-stats" aria-label="本场解析信息">
+    <div className="drama-outline-scene-stats" aria-label={tv("本场解析信息", "Thông tin phân tích của hồi này")}>
       {items.map((item) => (
         <span key={item} className="drama-outline-scene-stat">
           {item}
@@ -346,20 +347,20 @@ export function OutlineScriptPreview({
   const summaryBar =
     blocks.length > 0 ? (
       <div className="drama-outline-script-summary">
-        <span>{blocks[0].label === '全文' ? '1 段' : `${blocks.length} 场`}</span>
+        <span>{blocks[0].label === '全文' ? tv('1 段', '1 đoạn') : tv(`${blocks.length} 场`, `${blocks.length} hồi`)}</span>
         {hasShotDuration ? (
           <span>
-            {shotStats!.fragmentCount} 镜 · 合计 {formatClockDuration(displayTotalSec)}
+            {shotStats!.fragmentCount} {tv("镜 · 合计", "cảnh · Tổng cộng")} {formatClockDuration(displayTotalSec)}
           </span>
         ) : displayTotalSec > 0 ? (
-          <span>合计 {formatClockDuration(displayTotalSec)}</span>
+          <span>{tv("合计", "Tổng cộng")} {formatClockDuration(displayTotalSec)}</span>
         ) : null}
         <span className="drama-outline-script-summary-hint">
           {hasShotDuration
-            ? '时长取自已切分镜头'
+            ? tv('时长取自已切分镜头', 'Thời lượng lấy từ các cảnh đã chia')
             : shotStats?.scriptChanged
-              ? '时长为当前剧本估算；已有分镜仍为旧稿'
-              : '时长为解析估算，进分镜后以镜头为准'}
+              ? tv('时长为当前剧本估算；已有分镜仍为旧稿', 'Thời lượng là ước tính từ kịch bản hiện tại; phân cảnh hiện có vẫn là bản cũ')
+              : tv('时长为解析估算，进分镜后以镜头为准', 'Thời lượng là ước tính khi phân tích, sau khi vào phân cảnh lấy theo cảnh quay')}
         </span>
       </div>
     ) : null
@@ -377,7 +378,7 @@ export function OutlineScriptPreview({
               onClick={() => startEdit(0)}
             >
               <Pencil size={13} />
-              编辑本段
+              {tv("编辑本段", "Chỉnh sửa đoạn này")}
             </button>
           ) : null}
         </div>
@@ -420,7 +421,7 @@ export function OutlineScriptPreview({
                 onClick={() => startEdit(i)}
               >
                 <Pencil size={13} />
-                编辑本场
+                {tv("编辑本场", "Chỉnh sửa hồi này")}
               </button>
             ) : null}
           </header>
@@ -468,10 +469,10 @@ function SceneEditBox({
       />
       <div className="drama-ep-section-edit-actions">
         <button type="button" className="drama-btn-ghost" disabled={saving} onClick={onCancel}>
-          取消
+          {tv("取消", "Hủy")}
         </button>
         <button type="button" className="drama-btn-primary" disabled={saving} onClick={onSave}>
-          {saving ? '保存中…' : '保存本段'}
+          {saving ? tv('保存中…', 'Đang lưu…') : tv('保存本段', 'Lưu đoạn này')}
         </button>
       </div>
     </div>
@@ -493,7 +494,7 @@ export function OutlineScriptParseModal({
   return (
     <Modal open={open} onClose={onClose} title={title} size="xl" className="drama-outline-script-modal">
       <div className="drama-outline-script-modal-body">
-        <OutlineScriptPreview text={text} empty="暂无剧本内容" />
+        <OutlineScriptPreview text={text} empty={tv("暂无剧本内容", "Chưa có nội dung kịch bản")} />
       </div>
     </Modal>
   )

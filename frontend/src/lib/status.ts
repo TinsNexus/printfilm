@@ -1,6 +1,7 @@
 import { getActiveLocale } from '../i18n/detect'
 import { messages } from '../i18n/messages'
 import { IMAGE_TEXT_STEPS, imageTextBoardStep } from './imageTextStoryboard'
+import { tv } from '../i18n/tv'
 
 export const RUNNING = new Set([
   'SCRIPTING',
@@ -210,12 +211,12 @@ export function formatMmSs(seconds: number) {
 
 /** 科普全链路步骤：建项 / 风格 / 分镜台共用 */
 export const KEPU_STEPS = [
-  { key: 'topic', label: '选题' },
-  { key: 'style', label: '风格' },
-  { key: 'confirm', label: '确认分镜' },
-  { key: 'assets', label: '参考图画面' },
-  { key: 'videos', label: '镜头视频' },
-  { key: 'compose', label: '合成预览' },
+  { key: 'topic', label: tv('选题', 'Chủ đề') },
+  { key: 'style', label: tv('风格', 'Phong cách') },
+  { key: 'confirm', label: tv('确认分镜', 'Xác nhận phân cảnh') },
+  { key: 'assets', label: tv('参考图画面', 'Hình ảnh tham chiếu') },
+  { key: 'videos', label: tv('镜头视频', 'Video cảnh quay') },
+  { key: 'compose', label: tv('合成预览', 'Xem trước ghép phim') },
 ]
 
 export const CREATE_STEPS = KEPU_STEPS
@@ -299,18 +300,18 @@ export function kepuPhaseHint(project: {
   shots?: Array<{ image_url?: string | null; audio_url?: string | null; video_url?: string | null }>
 }): string {
   if (project.pipeline_mode === 'image_text') {
-    if (isRunning(effectiveStatus(project))) return '当前步骤正在制作，完成后可查看结果并继续下一步。'
+    if (isRunning(effectiveStatus(project))) return tv('当前步骤正在制作，完成后可查看结果并继续下一步。', 'Bước hiện tại đang được thực hiện, xong sẽ xem được kết quả và tiếp tục bước sau.')
     const phase = kepuBillingPhase(project)
-    if (phase === 'script') return '保存文案后生成分镜，确认每张卡片里的旁白和画面。'
-    if (phase === 'assets') return '确认分镜后生成图片与配音；已完成的素材会继续保留。'
-    return '图片与配音已齐，可以试听后合成带运镜和字幕的成片。'
+    if (phase === 'script') return tv('保存文案后生成分镜，确认每张卡片里的旁白和画面。', 'Lưu lời dẫn rồi tạo phân cảnh, xác nhận lời dẫn và hình ảnh trong từng thẻ.')
+    if (phase === 'assets') return tv('确认分镜后生成图片与配音；已完成的素材会继续保留。', 'Sau khi xác nhận phân cảnh sẽ tạo hình ảnh và lồng tiếng; tư liệu đã hoàn tất sẽ tiếp tục được giữ.')
+    return tv('图片与配音已齐，可以试听后合成带运镜和字幕的成片。', 'Hình ảnh và lồng tiếng đã đủ, có thể nghe thử rồi ghép thành phim có chuyển động máy và phụ đề.')
   }
   if (isRunning(effectiveStatus(project))) {
-    return '生成进行中，可在右侧查看各阶段进度。'
+    return tv('生成进行中，可在右侧查看各阶段进度。', 'Đang tạo, có thể xem tiến độ từng giai đoạn ở bên phải.')
   }
   const phase = kepuBillingPhase(project)
-  if (phase === 'script') return '先在风格页点「生成故事板」，本步只拆分镜脚本（预扣文字模型）。'
-  if (phase === 'assets') return '确认分镜后，使用画风参考图逐镜生成图片，并参考前镜画面保持角色与风格一致。'
-  if (phase === 'videos') return '图片已齐。使用每镜图片生成视频与声音，后镜参考上一镜尾帧延续画面。'
-  return '镜头视频已齐。检查各镜头画面与声音后，即可合成成片。'
+  if (phase === 'script') return tv('先在风格页点「生成故事板」，本步只拆分镜脚本（预扣文字模型）。', 'Trước tiên bấm “Tạo storyboard” ở trang phong cách, bước này chỉ tách kịch bản phân cảnh (giữ trước phí model văn bản).')
+  if (phase === 'assets') return tv('确认分镜后，使用画风参考图逐镜生成图片，并参考前镜画面保持角色与风格一致。', 'Sau khi xác nhận phân cảnh, dùng ảnh tham chiếu phong cách tạo hình ảnh từng cảnh, tham chiếu hình của cảnh trước để giữ nhân vật và phong cách nhất quán.')
+  if (phase === 'videos') return tv('图片已齐。使用每镜图片生成视频与声音，后镜参考上一镜尾帧延续画面。', 'Hình ảnh đã đủ. Dùng hình của từng cảnh tạo video và âm thanh, cảnh sau tham chiếu khung cuối cảnh trước để nối tiếp hình.')
+  return tv('镜头视频已齐。检查各镜头画面与声音后，即可合成成片。', 'Video cảnh quay đã đủ. Kiểm tra hình và âm thanh từng cảnh xong là có thể ghép thành phim.')
 }

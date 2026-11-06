@@ -13,6 +13,7 @@ import {
 } from './dramaEpisodePromptEditor'
 import { extractDurations, sumDuration } from './segmentDuration'
 import { DRAMA_VOICE_BINDING_ENABLED } from './dramaVoiceBinding'
+import { tv } from '../i18n/tv'
 
 /** 漫剧字幕 cue（与后端 DRAMA_SUBTITLE_CUE 一致） */
 export const DRAMA_SUBTITLE_CUE = '【字幕：底部居中·简体中文·逐句轮换·与口播同步】'
@@ -138,24 +139,24 @@ export function validateDramaFragmentScript(content: string): DramaScriptIssue[]
   if (badSegment != null) {
     issues.push({
       level: 'error',
-      message: `单个 @duration 需在 ${DRAMA_SEGMENT_DURATION_MIN}–${DRAMA_SEGMENT_DURATION_HARD_MAX} 秒之间`,
+      message: tv(`单个 @duration 需在 ${DRAMA_SEGMENT_DURATION_MIN}–${DRAMA_SEGMENT_DURATION_HARD_MAX} 秒之间`, `Mỗi @duration phải nằm trong khoảng ${DRAMA_SEGMENT_DURATION_MIN}–${DRAMA_SEGMENT_DURATION_HARD_MAX} giây`),
     })
   } else if (durations.some((value) => value > DRAMA_SEGMENT_DURATION_MAX)) {
     issues.push({
       level: 'warn',
-      message: `部分 @duration 超过新分镜建议 ${DRAMA_SEGMENT_DURATION_MAX}s，旧稿可继续生成`,
+      message: tv(`部分 @duration 超过新分镜建议 ${DRAMA_SEGMENT_DURATION_MAX}s，旧稿可继续生成`, `Một số @duration vượt quá ${DRAMA_SEGMENT_DURATION_MAX}s gợi ý của phân cảnh mới, bản cũ vẫn tạo được`),
     })
   }
 
   if (total > DRAMA_SHOT_DURATION_HARD_MAX) {
     issues.push({
       level: 'error',
-      message: `本镜 @duration 合计 ${total}s，超过 Seedance 上限 ${DRAMA_SHOT_DURATION_HARD_MAX}s`,
+      message: tv(`本镜 @duration 合计 ${total}s，超过 Seedance 上限 ${DRAMA_SHOT_DURATION_HARD_MAX}s`, `Tổng @duration của cảnh này ${total}s, vượt giới hạn Seedance ${DRAMA_SHOT_DURATION_HARD_MAX}s`),
     })
   } else if (total > FRAGMENT_CONTENT_DURATION_MAX) {
     issues.push({
       level: 'warn',
-      message: `本镜 @duration 合计 ${total}s，超过新分镜建议 ${FRAGMENT_CONTENT_DURATION_MAX}s（旧稿可继续生成）`,
+      message: tv(`本镜 @duration 合计 ${total}s，超过新分镜建议 ${FRAGMENT_CONTENT_DURATION_MAX}s（旧稿可继续生成）`, `Tổng @duration của cảnh này ${total}s, vượt quá ${FRAGMENT_CONTENT_DURATION_MAX}s gợi ý của phân cảnh mới (bản cũ vẫn tạo được)`),
     })
   }
 
@@ -169,7 +170,7 @@ export function validateDramaFragmentScript(content: string): DramaScriptIssue[]
       issues.push({
         level: 'error',
         message:
-          '检测到「空镜/景别」被标成对白或旁白（会口播并烧字幕）。请改为「【画面·无配音仅环境音】」或「空镜：…」纯画面行',
+          tv('检测到「空镜/景别」被标成对白或旁白（会口播并烧字幕）。请改为「【画面·无配音仅环境音】」或「空镜：…」纯画面行', 'Phát hiện “空镜/景别” bị đánh dấu thành thoại hoặc lời dẫn (sẽ đọc và đốt phụ đề). Vui lòng đổi thành dòng thuần hình “【画面·无配音仅环境音】” hoặc “空镜：…”'),
       })
       break
     }
@@ -211,14 +212,14 @@ export function validateDramaFragmentAssets(
   if (missingImage.length > 0) {
     issues.push({
       level: 'error',
-      message: `以下关联资产缺少参考图，请先生成或上传后再生成视频：${missingImage.slice(0, 5).join('、')}${missingImage.length > 5 ? '…' : ''}`,
+      message: tv(`以下关联资产缺少参考图，请先生成或上传后再生成视频：${missingImage.slice(0, 5).join('、')}${missingImage.length > 5 ? '…' : ''}`, `Các tài sản liên quan sau thiếu ảnh tham chiếu, vui lòng tạo hoặc tải lên trước rồi mới tạo video: ${missingImage.slice(0, 5).join('、')}${missingImage.length > 5 ? '…' : ''}`),
     })
   }
 
   if (missingVoice.length > 0) {
     issues.push({
       level: 'warn',
-      message: `脚本含对白，但以下角色尚未绑定音色：${missingVoice.slice(0, 5).join('、')}${missingVoice.length > 5 ? '…' : ''}`,
+      message: tv(`脚本含对白，但以下角色尚未绑定音色：${missingVoice.slice(0, 5).join('、')}${missingVoice.length > 5 ? '…' : ''}`, `Kịch bản có thoại, nhưng các nhân vật sau chưa gắn giọng nói: ${missingVoice.slice(0, 5).join('、')}${missingVoice.length > 5 ? '…' : ''}`),
     })
   }
 
@@ -247,10 +248,10 @@ export function formatDramaGateMessage(
 ): string {
   const parts = [baseMessage]
   if (blocking.length > 0) {
-    parts.push('', '【须先修复】', ...blocking.map((i) => `· ${i.message}`))
+    parts.push('', tv('【须先修复】', '【Phải sửa trước】'), ...blocking.map((i) => `· ${i.message}`))
   }
   if (warnings.length > 0) {
-    parts.push('', '【建议处理，仍可继续】', ...warnings.map((i) => `· ${i.message}`))
+    parts.push('', tv('【建议处理，仍可继续】', '【Nên xử lý, vẫn có thể tiếp tục】'), ...warnings.map((i) => `· ${i.message}`))
   }
   return parts.join('\n')
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import Modal from '../ui/Modal'
 import { api, type BillingOrder } from '../../api'
 import { billingOrderChargeLabel, cnyAmountDisplay } from '../../lib/billingPayments'
+import { tv } from '../../i18n/tv'
 
 type Props = {
   open: boolean
@@ -9,19 +10,19 @@ type Props = {
 }
 
 const SKU_LABELS: Record<string, string> = {
-  topup_10: '体验充值',
-  topup_49: '基础充值',
-  topup_99: '进阶充值',
-  topup_199: '专业充值',
+  topup_10: tv('体验充值', 'Nạp thử'),
+  topup_49: tv('基础充值', 'Nạp cơ bản'),
+  topup_99: tv('进阶充值', 'Nạp nâng cao'),
+  topup_199: tv('专业充值', 'Nạp chuyên nghiệp'),
 }
 
 const STATUS_CN: Record<string, string> = {
-  pending: '待支付',
-  paid: '已到账',
-  closed: '已关闭',
+  pending: tv('待支付', 'Chờ thanh toán'),
+  paid: tv('已到账', 'Đã ghi có'),
+  closed: tv('已关闭', 'Đã đóng'),
 }
 
-const PAY_LABELS: Record<string, string> = { alipay: '支付宝', wxpay: '微信支付', stripe: 'Stripe' }
+const PAY_LABELS: Record<string, string> = { alipay: tv('支付宝', 'Alipay'), wxpay: tv('微信支付', 'WeChat Pay'), stripe: 'Stripe' }
 
 function formatTime(iso?: string | null) {
   if (!iso) return '—'
@@ -53,7 +54,7 @@ export default function TopupHistoryModal({ open, onClose }: Props) {
         if (!cancelled) setOrders(r.orders || [])
       })
       .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : '加载失败')
+        if (!cancelled) setError(e instanceof Error ? e.message : tv('加载失败', 'Tải thất bại'))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -64,11 +65,11 @@ export default function TopupHistoryModal({ open, onClose }: Props) {
   }, [open])
 
   return (
-    <Modal open={open} onClose={onClose} title="充值记录" size="lg" className="pf-topup-history-modal">
-      {loading ? <p className="pf-muted">加载中…</p> : null}
+    <Modal open={open} onClose={onClose} title={tv("充值记录", "Lịch sử nạp tiền")} size="lg" className="pf-topup-history-modal">
+      {loading ? <p className="pf-muted">{tv("加载中…", "Đang tải…")}</p> : null}
       {error ? <p className="pf-error">{error}</p> : null}
       {!loading && !error && orders.length === 0 ? (
-        <p className="pf-muted">暂无充值记录</p>
+        <p className="pf-muted">{tv("暂无充值记录", "Chưa có lịch sử nạp tiền")}</p>
       ) : null}
       {!loading && orders.length > 0 ? (
         <ul className="pf-topup-list">
@@ -80,7 +81,7 @@ export default function TopupHistoryModal({ open, onClose }: Props) {
               </div>
               <div className="pf-topup-meta">
                 <em>{billingOrderChargeLabel(o)}</em>
-                <span className="pf-muted">到账 {cnyAmountDisplay(o.credit_fen)}</span>
+                <span className="pf-muted">{tv("到账", "Tiền về")} {cnyAmountDisplay(o.credit_fen)}</span>
                 <span className="pf-muted">{PAY_LABELS[o.pay_type] || o.pay_type}</span>
                 <span className={`pf-topup-status is-${o.status}`}>
                   {STATUS_CN[o.status] || o.status}

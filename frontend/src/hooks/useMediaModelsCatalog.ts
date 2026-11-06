@@ -1,6 +1,7 @@
 /** 拉取并缓存前台 TokenFree 图/视频模型目录。 */
 import { useEffect, useState } from 'react'
 import { api, type MediaModelOption, type MediaModelsCatalog } from '../api'
+import { tv } from '../i18n/tv'
 export { resolveCatalogModelSelection } from '../lib/mediaCatalogSelection'
 
 let cached: MediaModelsCatalog | null = null
@@ -65,7 +66,7 @@ export function catalogImageModels(catalog: MediaModelsCatalog | null): MediaMod
 export function catalogModelLabel(
   modelId: string | undefined | null,
   models: Array<{ id: string; label: string }>,
-  fallback = '模型',
+  fallback = tv('模型', 'Model'),
 ): string {
   const id = (modelId || '').trim()
   if (!id) return fallback

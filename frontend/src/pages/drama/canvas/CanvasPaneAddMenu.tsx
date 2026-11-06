@@ -1,6 +1,7 @@
 /** 画布空白处双击：弹出新建节点类型菜单 */
 import { useEffect, useRef } from 'react'
 import { ADD_NODE_OPTIONS, type CanvasNodeKind } from './canvasTypes'
+import { tv } from '../../../i18n/tv'
 
 type CanvasPaneAddMenuProps = {
   /** 相对视口的屏幕坐标 */
@@ -40,7 +41,7 @@ export function CanvasPaneAddMenu({ screen, onSelect, onClose }: CanvasPaneAddMe
       className="fc-pane-add-menu"
       style={{ left, top }}
       role="menu"
-      aria-label="双击新建节点"
+      aria-label={tv("双击新建节点", "Nhấp đúp để tạo nút mới")}
     >
       {ADD_NODE_OPTIONS.map((option) => {
         const Icon = option.icon

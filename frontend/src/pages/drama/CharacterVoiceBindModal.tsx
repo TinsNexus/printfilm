@@ -5,6 +5,7 @@ import Modal from '../../components/ui/Modal'
 import { AssetCard, AssetEmpty, AssetGrid, AssetTypeFilter } from '../../components/assets/AssetLibrary'
 import { useCharacterVoiceGenerationEnabled } from '../../hooks/usePublicCapabilities'
 import { VOICE_GENERATION_DISABLED_MESSAGE } from '../../lib/publicCapabilities'
+import { tv } from '../../i18n/tv'
 
 const AUDIO_ACCEPT = 'audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/m4a,.mp3,.wav,.m4a'
 
@@ -64,7 +65,7 @@ export function readAssetVoiceBinding(asset: Pick<DramaAsset, 'params'>): VoiceB
       return {
         sourceAssetId,
         url,
-        label: typeof data.label === 'string' ? data.label : '音色',
+        label: typeof data.label === 'string' ? data.label : tv('音色', 'Giọng nói'),
         voicePrompt: typeof data.voicePrompt === 'string' ? data.voicePrompt : undefined,
       }
     }
@@ -77,7 +78,7 @@ export function readAssetVoiceBinding(asset: Pick<DramaAsset, 'params'>): VoiceB
       const sourceAssetId = typeof data.sourceAssetId === 'number' ? data.sourceAssetId : null
       const url = typeof data.url === 'string' ? data.url : ''
       if (sourceAssetId && url) {
-        return { sourceAssetId, url, label: '音色' }
+        return { sourceAssetId, url, label: tv('音色', 'Giọng nói') }
       }
     }
   }
@@ -90,7 +91,7 @@ export function buildBoundParams(asset: DramaAsset, voice: DramaAsset): Record<s
   const binding: VoiceBinding = {
     sourceAssetId: voice.id,
     url,
-    label: voice.name || '音色',
+    label: voice.name || tv('音色', 'Giọng nói'),
     voicePrompt: readVoicePrompt(voice) || undefined,
   }
   const prev = (asset.params || {}) as Record<string, unknown>
@@ -157,7 +158,7 @@ export function CharacterVoiceBindModal({
         setNewPrompt(result.voice_prompt || '')
         setSuggestedSpeaker(result.speaker || '')
       } catch (err) {
-        onError(err instanceof Error ? err.message : 'AI 生成音色描述失败')
+        onError(err instanceof Error ? err.message : tv('AI 生成音色描述失败', 'AI tạo mô tả giọng nói thất bại'))
       } finally {
         setPromptBusy(false)
       }
@@ -173,7 +174,7 @@ export function CharacterVoiceBindModal({
     setSelectedId(bound?.sourceAssetId ?? null)
     setNewPrompt('')
     setSuggestedSpeaker('')
-    setNewName(`${asset.name || '角色'}音色`)
+    setNewName(tv(`${asset.name || '角色'}音色`, `Giọng ${asset.name || '角色'}`))
     setMode('pick')
     promptRequestedRef.current = false
 
@@ -189,7 +190,7 @@ export function CharacterVoiceBindModal({
           setMode('upload')
         }
       })
-      .catch((err) => onError(err instanceof Error ? err.message : '加载音色失败'))
+      .catch((err) => onError(err instanceof Error ? err.message : tv('加载音色失败', 'Tải giọng nói thất bại')))
   }, [open, asset, projectId, bound?.sourceAssetId, onError])
 
   // 进入「AI 合成」时自动生成音色描述
@@ -211,7 +212,7 @@ export function CharacterVoiceBindModal({
   async function handleUploadAudio(file: File) {
     if (uploadBusy) return
     if (!file.type.startsWith('audio/') && !/\.(mp3|wav|m4a)$/i.test(file.name)) {
-      onError('请上传 mp3 / wav / m4a 音频文件')
+      onError(tv('请上传 mp3 / wav / m4a 音频文件', 'Vui lòng tải tệp âm thanh mp3 / wav / m4a'))
       return
     }
     setUploadBusy(true)
@@ -221,19 +222,19 @@ export function CharacterVoiceBindModal({
         project_id: projectId,
         type: 'voice',
         asset_type: 'audio',
-        name: baseName || `${asset.name || '角色'}音色`,
+        name: baseName || tv(`${asset.name || '角色'}音色`, `Giọng ${asset.name || '角色'}`),
         params: {
           source: 'upload',
           originalFilename: file.name,
         },
       })
       const uploaded = await dramaApi.uploadAssetMedia(created.id, file)
-      if (!(uploaded.url || '').trim()) throw new Error('上传成功但未得到可播放地址')
+      if (!(uploaded.url || '').trim()) throw new Error(tv('上传成功但未得到可播放地址', 'Tải lên thành công nhưng chưa có địa chỉ phát được'))
       setVoiceAssets((prev) => [uploaded, ...prev.filter((v) => v.id !== uploaded.id)])
       setSelectedId(uploaded.id)
       setMode('pick')
     } catch (err) {
-      onError(err instanceof Error ? err.message : '上传失败')
+      onError(err instanceof Error ? err.message : tv('上传失败', 'Tải lên thất bại'))
     } finally {
       setUploadBusy(false)
       if (uploadInputRef.current) uploadInputRef.current.value = ''
@@ -255,12 +256,12 @@ export function CharacterVoiceBindModal({
         character_asset_id: asset.id,
       })
       const created = result.asset
-      if (!created) throw new Error('合成失败')
+      if (!created) throw new Error(tv('合成失败', 'Tổng hợp thất bại'))
       setVoiceAssets((prev) => [...prev, created])
       setSelectedId(created.id)
       setMode('pick')
     } catch (err) {
-      onError(err instanceof Error ? err.message : '音色合成失败')
+      onError(err instanceof Error ? err.message : tv('音色合成失败', 'Tổng hợp giọng nói thất bại'))
     } finally {
       setSynthBusy(false)
     }
@@ -284,7 +285,7 @@ export function CharacterVoiceBindModal({
         setVoiceAssets((prev) => prev.map((v) => (v.id === voice.id ? result.asset! : v)))
       }
     } catch (err) {
-      onError(err instanceof Error ? err.message : '重新合成失败')
+      onError(err instanceof Error ? err.message : tv('重新合成失败', 'Tổng hợp lại thất bại'))
     } finally {
       setSynthBusy(false)
     }
@@ -293,7 +294,7 @@ export function CharacterVoiceBindModal({
   // 确认绑定到角色
   async function handleConfirm() {
     if (!selectedVoice?.url || busy) {
-      onError('请先选择或上传一段可试听的音频')
+      onError(tv('请先选择或上传一段可试听的音频', 'Vui lòng chọn hoặc tải lên một đoạn âm thanh nghe thử được trước'))
       return
     }
     setBusy(true)
@@ -304,7 +305,7 @@ export function CharacterVoiceBindModal({
       onBound(updated)
       onClose()
     } catch (err) {
-      onError(err instanceof Error ? err.message : '绑定失败')
+      onError(err instanceof Error ? err.message : tv('绑定失败', 'Gắn thất bại'))
     } finally {
       setBusy(false)
     }
@@ -327,7 +328,7 @@ export function CharacterVoiceBindModal({
       onBound(updated)
       onClose()
     } catch (err) {
-      onError(err instanceof Error ? err.message : '解绑失败')
+      onError(err instanceof Error ? err.message : tv('解绑失败', 'Gỡ gắn thất bại'))
     } finally {
       setBusy(false)
     }
@@ -337,14 +338,14 @@ export function CharacterVoiceBindModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="绑定音色"
+      title={tv("绑定音色", "Gắn giọng nói")}
       size="lg"
       dismissible={!anyBusy}
       className="drama-voice-bind-modal"
       footer={
         <>
           <button type="button" className="pf-btn" onClick={onClose} disabled={anyBusy}>
-            取消
+            {tv("取消", "Hủy")}
           </button>
           {bound ? (
             <button
@@ -353,7 +354,7 @@ export function CharacterVoiceBindModal({
               onClick={() => void handleUnbind()}
               disabled={anyBusy}
             >
-              解除绑定
+              {tv("解除绑定", "Gỡ gắn")}
             </button>
           ) : null}
           <button
@@ -362,25 +363,24 @@ export function CharacterVoiceBindModal({
             onClick={() => void handleConfirm()}
             disabled={!selectedVoice?.url || anyBusy}
           >
-            {busy ? '绑定中…' : '确认绑定'}
+            {busy ? tv('绑定中…', 'Đang gắn…') : tv('确认绑定', 'Xác nhận gắn')}
           </button>
         </>
       }
     >
       <p className="drama-muted">
-        给「{asset.name || '角色'}」配上说话声音。选择已有音色或上传录音{voiceGenerationEnabled ? '，也可用 AI 合成' : ''}。
-        之后生成带对白的镜头时，会尽量按这段声音来念。
+        {tv("给「", "Gắn cho “")}{asset.name || tv('角色', 'Nhân vật')}{tv("」配上说话声音。选择已有音色或上传录音", "” giọng nói để nói. Chọn giọng có sẵn hoặc tải bản ghi âm lên")}{voiceGenerationEnabled ? tv('，也可用 AI 合成', ', cũng có thể dùng AI tổng hợp') : ''}{tv("。 之后生成带对白的镜头时，会尽量按这段声音来念。", ". Sau đó khi tạo cảnh có thoại, hệ thống sẽ cố gắng đọc theo giọng này.")}
       </p>
       <p className="drama-muted" style={{ marginTop: -6, fontSize: 12 }}>
-        画布里也可以把「音频」节点连到角色，效果一样。
+        {tv("画布里也可以把「音频」节点连到角色，效果一样。", "Trên canvas cũng có thể nối nút “Âm thanh” vào nhân vật, hiệu quả như nhau.")}
       </p>
 
       <div className="pf-library-toolbar">
         <AssetTypeFilter
-          options={[{ value: 'pick', label: '选择已有' }, { value: 'upload', label: '上传音频' }, ...(voiceGenerationEnabled ? [{ value: 'create' as const, label: 'AI 合成' }] : [])] as const}
+          options={[{ value: 'pick', label: tv('选择已有', 'Chọn có sẵn') }, { value: 'upload', label: tv('上传音频', 'Tải âm thanh lên') }, ...(voiceGenerationEnabled ? [{ value: 'create' as const, label: tv('AI 合成', 'AI tổng hợp') }] : [])] as const}
           value={mode}
           disabled={anyBusy}
-          ariaLabel="音色来源"
+          ariaLabel={tv("音色来源", "Nguồn giọng nói")}
           onChange={(value) => { setMode(value); if (value === 'create' && !newPrompt.trim() && !promptBusy) promptRequestedRef.current = false }}
         />
       </div>
@@ -388,23 +388,23 @@ export function CharacterVoiceBindModal({
       {mode === 'pick' ? (
         <AssetGrid picker>
           {voiceAssets.length === 0 ? (
-            <AssetEmpty>还没有可用音色，请先「上传音频」{voiceGenerationEnabled ? '或「AI 合成」' : ''}。</AssetEmpty>
+            <AssetEmpty>{tv("还没有可用音色，请先「上传音频」", "Chưa có giọng nói dùng được, vui lòng “Tải âm thanh lên” trước")}{voiceGenerationEnabled ? tv('或「AI 合成」', 'hoặc “AI tổng hợp”') : ''}。</AssetEmpty>
           ) : (
             voiceAssets.map((voice) => {
               const hasAudio = Boolean(voice.url)
               const canResynth = Boolean(readVoicePrompt(voice))
               const statusLabel = !hasAudio
-                ? '待生成'
+                ? tv('待生成', 'Chờ tạo')
                 : canResynth
-                  ? '已合成'
-                  : '已上传'
+                  ? tv('已合成', 'Đã tổng hợp')
+                  : tv('已上传', 'Đã tải lên')
               return (
                 <AssetCard
                   key={voice.id}
                   asset={voice}
                   selected={selectedId === voice.id}
                   subtitle={statusLabel}
-                  footer="项目音色"
+                  footer={tv("项目音色", "Giọng nói dự án")}
                   onOpen={() => setSelectedId(voice.id)}
                   actions={voiceGenerationEnabled && hasAudio && canResynth ? <>
                     <button
@@ -416,7 +416,7 @@ export function CharacterVoiceBindModal({
                         void handleResynth(voice)
                       }}
                     >
-                      重合成
+                      {tv("重合成", "Tổng hợp lại")}
                     </button>
                   </> : undefined}
                 />
@@ -427,7 +427,7 @@ export function CharacterVoiceBindModal({
       ) : mode === 'upload' ? (
         <div className="drama-voice-create-form">
           <p className="drama-muted" style={{ margin: 0 }}>
-            支持 mp3 / wav / m4a。建议 2 秒以上的清晰人声，效果更稳。
+            {tv("支持 mp3 / wav / m4a。建议 2 秒以上的清晰人声，效果更稳。", "Hỗ trợ mp3 / wav / m4a. Gợi ý giọng người rõ ràng từ 2 giây trở lên, hiệu quả ổn định hơn.")}
           </p>
           <input
             ref={uploadInputRef}
@@ -445,47 +445,47 @@ export function CharacterVoiceBindModal({
             disabled={uploadBusy}
             onClick={() => uploadInputRef.current?.click()}
           >
-            {uploadBusy ? '上传中…' : '选择音频文件'}
+            {uploadBusy ? tv('上传中…', 'Đang tải lên…') : tv('选择音频文件', 'Chọn tệp âm thanh')}
           </button>
         </div>
       ) : voiceGenerationEnabled ? (
         <div className="drama-voice-create-form">
           <label className="drama-field">
-            <span>音色名称</span>
+            <span>{tv("音色名称", "Tên giọng nói")}</span>
             <input
               type="text"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              placeholder="例如：沉稳男声、俏皮少女"
+              placeholder={tv("例如：沉稳男声、俏皮少女", "Ví dụ: giọng nam trầm ổn, giọng thiếu nữ tinh nghịch")}
             />
           </label>
           <label className="drama-field">
             <span className="drama-voice-prompt-label">
-              声音什么样（随便写）
+              {tv("声音什么样（随便写）", "Giọng nói như thế nào (viết tùy ý)")}
               <button
                 type="button"
                 className="pf-btn pf-btn-sm"
                 disabled={promptBusy || synthBusy}
                 onClick={() => void fetchVoicePrompt(true)}
               >
-                {promptBusy ? '生成中…' : '按角色设定帮我写'}
+                {promptBusy ? tv('生成中…', 'Đang tạo…') : tv('按角色设定帮我写', 'Viết giúp tôi theo thiết lập nhân vật')}
               </button>
             </span>
             <textarea
               rows={4}
               value={
                 promptBusy && !newPrompt
-                  ? '正在根据角色设定写一段声音描述…'
+                  ? tv('正在根据角色设定写一段声音描述…', 'Đang viết mô tả giọng nói theo thiết lập nhân vật…')
                   : newPrompt
               }
               readOnly={promptBusy && !newPrompt}
               onChange={(e) => setNewPrompt(e.target.value)}
-              placeholder="例如：三十岁左右男性，声音沉稳偏磁性，语速不急…"
+              placeholder={tv("例如：三十岁左右男性，声音沉稳偏磁性，语速不急…", "Ví dụ: nam khoảng ba mươi tuổi, giọng trầm ổn hơi từ tính, tốc độ không vội…")}
             />
           </label>
           {suggestedSpeaker ? (
             <p className="drama-muted" style={{ margin: 0, fontSize: 12 }}>
-              已匹配声线：{suggestedSpeaker}
+              {tv("已匹配声线：", "Đã khớp giọng:")}{suggestedSpeaker}
             </p>
           ) : null}
           <button
@@ -494,7 +494,7 @@ export function CharacterVoiceBindModal({
             disabled={!newPrompt.trim() || synthBusy || promptBusy}
             onClick={() => void handleCreateAndSynth()}
           >
-            {synthBusy ? '合成中…' : '合成试听'}
+            {synthBusy ? tv('合成中…', 'Đang tổng hợp…') : tv('合成试听', 'Tổng hợp nghe thử')}
           </button>
         </div>
       ) : null}

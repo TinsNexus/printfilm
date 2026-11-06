@@ -5,6 +5,7 @@ import { tasksApi, type TaskRunOut } from '../../api/tasks'
 import { formatDramaGenError, pickRootDramaGenError } from '../../lib/dramaGenError'
 import BillingTopupLink from '../billing/BillingTopupLink'
 import type { DramaGenJob } from '../../lib/dramaGenQueue'
+import { tv } from '../../i18n/tv'
 
 type Props = {
   job: DramaGenJob
@@ -12,10 +13,10 @@ type Props = {
 }
 
 const STATUS_LABEL: Record<DramaGenJob['status'], string> = {
-  queued: '排队中',
-  running: '生成中',
-  done: '已完成',
-  failed: '失败',
+  queued: tv('排队中', 'Đang xếp hàng'),
+  running: tv('生成中', 'Đang tạo'),
+  done: tv('已完成', 'Đã hoàn tất'),
+  failed: tv('失败', 'Thất bại'),
 }
 
 // 拉取该目标相关的多条历史任务（用于挖出被「重试超限」覆盖的根因）
@@ -55,9 +56,9 @@ async function listRelatedTasks(job: DramaGenJob): Promise<TaskRunOut[]> {
 // 进行中任务的进度说明
 function activeJobHint(job: DramaGenJob): string {
   if (job.message?.trim()) return job.message.trim()
-  if (job.status === 'queued') return '任务已入队，等待调度器领取。'
-  if (job.kind === 'video') return '正在生成分镜视频，完成后会自动更新封面与成片。'
-  return '正在生成图片，完成后会自动写回资产。'
+  if (job.status === 'queued') return tv('任务已入队，等待调度器领取。', 'Tác vụ đã vào hàng đợi, chờ bộ điều phối nhận.')
+  if (job.kind === 'video') return tv('正在生成分镜视频，完成后会自动更新封面与成片。', 'Đang tạo video phân cảnh, hoàn tất sẽ tự động cập nhật ảnh bìa và phim.')
+  return tv('正在生成图片，完成后会自动写回资产。', 'Đang tạo ảnh, hoàn tất sẽ tự động ghi lại vào tài sản.')
 }
 
 // 任务详情抽屉（进行中=进度；失败=错误文案）
@@ -134,7 +135,7 @@ export function DramaGenTaskDetail({ job, onClose }: Props) {
   }, [job, isFailed])
 
   const errView = isFailed ? formatDramaGenError(rawError || job.message) : null
-  const panelTitle = isFailed ? '失败原因' : isActive ? '任务进度' : '任务详情'
+  const panelTitle = isFailed ? tv('失败原因', 'Nguyên nhân thất bại') : isActive ? tv('任务进度', 'Tiến độ tác vụ') : tv('任务详情', 'Chi tiết tác vụ')
 
   return (
     <div className="drama-gen-detail" role="dialog" aria-label={panelTitle}>
@@ -143,7 +144,7 @@ export function DramaGenTaskDetail({ job, onClose }: Props) {
           <strong>{panelTitle}</strong>
           <span>{job.title}</span>
         </div>
-        <button type="button" className="drama-gen-fab-icon-btn" onClick={onClose} aria-label="关闭">
+        <button type="button" className="drama-gen-fab-icon-btn" onClick={onClose} aria-label={tv("关闭", "Đóng")}>
           <X size={18} />
         </button>
       </header>
@@ -152,7 +153,7 @@ export function DramaGenTaskDetail({ job, onClose }: Props) {
         {loading ? (
           <div className="drama-gen-detail-loading">
             <Loader2 size={18} className="drama-gen-detail-spin" />
-            <span>正在解析错误…</span>
+            <span>{tv("正在解析错误…", "Đang phân tích lỗi…")}</span>
           </div>
         ) : null}
 
@@ -162,7 +163,7 @@ export function DramaGenTaskDetail({ job, onClose }: Props) {
             <p>{errView.message}</p>
             {errView.suggestion ? (
               <p className="drama-gen-detail-tip">
-                <strong>建议：</strong>
+                <strong>{tv("建议：", "Gợi ý:")}</strong>
                 {errView.suggestion}
                 {errView.billingBlocked ? (
                   <>
@@ -171,7 +172,7 @@ export function DramaGenTaskDetail({ job, onClose }: Props) {
                   </>
                 ) : null}
                 {errView.upstreamAccountBlocked ? (
-                  <> 需管理员充值 TokenFree Seedream 账户。</>
+                  <> {tv("需管理员充值 TokenFree Seedream 账户。", "Cần quản trị viên nạp tài khoản TokenFree Seedream.")}</>
                 ) : null}
               </p>
             ) : errView.billingBlocked ? (
@@ -179,7 +180,7 @@ export function DramaGenTaskDetail({ job, onClose }: Props) {
                 <BillingTopupLink />
               </p>
             ) : errView.upstreamAccountBlocked ? (
-              <p className="drama-gen-detail-tip">需管理员充值 TokenFree Seedream 账户，用户端充值无法解决。</p>
+              <p className="drama-gen-detail-tip">{tv("需管理员充值 TokenFree Seedream 账户，用户端充值无法解决。", "Cần quản trị viên nạp tài khoản TokenFree Seedream, nạp ở trang người dùng không giải quyết được.")}</p>
             ) : null}
             {rawError ? (
               <button
@@ -187,7 +188,7 @@ export function DramaGenTaskDetail({ job, onClose }: Props) {
                 className="drama-gen-detail-raw-toggle"
                 onClick={() => setShowRaw((v) => !v)}
               >
-                {showRaw ? '收起原始错误' : '查看原始错误'}
+                {showRaw ? tv('收起原始错误', 'Thu gọn lỗi gốc') : tv('查看原始错误', 'Xem lỗi gốc')}
               </button>
             ) : null}
             {showRaw && rawError ? <pre className="drama-gen-detail-raw">{rawError}</pre> : null}
@@ -197,7 +198,7 @@ export function DramaGenTaskDetail({ job, onClose }: Props) {
             <h4>{STATUS_LABEL[job.status]}</h4>
             <p>{activeJobHint(job)}</p>
             {job.status === 'done' ? (
-              <p className="drama-gen-detail-tip">成片已写回分镜，可在时间轴预览。</p>
+              <p className="drama-gen-detail-tip">{tv("成片已写回分镜，可在时间轴预览。", "Phim đã được ghi lại vào phân cảnh, có thể xem trước trên dòng thời gian.")}</p>
             ) : null}
           </section>
         )}

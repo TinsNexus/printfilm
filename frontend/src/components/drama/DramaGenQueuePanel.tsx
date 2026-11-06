@@ -15,22 +15,23 @@ import {
   type DramaGenJob,
 } from '../../lib/dramaGenQueue'
 import '../../pages/drama/drama.css'
+import { tv } from '../../i18n/tv'
 
 const OPEN_STORAGE_KEY = 'drama-gen-queue-fab-open'
 const POS_STORAGE_KEY = 'drama-gen-queue-fab-pos'
 
 const STATUS_LABEL: Record<string, string> = {
-  queued: '待处理',
-  running: '生成中',
-  done: '已完成',
-  failed: '失败',
+  queued: tv('待处理', 'Chờ xử lý'),
+  running: tv('生成中', 'Đang tạo'),
+  done: tv('已完成', 'Đã hoàn tất'),
+  failed: tv('失败', 'Thất bại'),
 }
 
 const IMAGE_SUBTYPE_LABEL: Record<string, string> = {
-  character: '角色图',
-  scene: '场景图',
-  prop: '道具图',
-  material: '素材图',
+  character: tv('角色图', 'Ảnh nhân vật'),
+  scene: tv('场景图', 'Ảnh bối cảnh'),
+  prop: tv('道具图', 'Ảnh đạo cụ'),
+  material: tv('素材图', 'Ảnh tư liệu'),
 }
 
 // 读取折叠偏好
@@ -44,8 +45,8 @@ function readOpenPreference(): boolean {
 
 // 任务类型展示
 function jobTypeLabel(job: DramaGenJob): string {
-  if (job.kind === 'video') return job.subtype || '分镜视频'
-  return IMAGE_SUBTYPE_LABEL[job.subtype] || job.subtype || '图片'
+  if (job.kind === 'video') return job.subtype || tv('分镜视频', 'Video phân cảnh')
+  return IMAGE_SUBTYPE_LABEL[job.subtype] || job.subtype || tv('图片', 'Hình ảnh')
 }
 
 // 任务图标
@@ -139,7 +140,7 @@ export function DramaGenQueuePanel() {
   return (
     <div className="drama-gen-fab-root is-draggable" style={fabStyle}>
       {open ? (
-        <div className="drama-gen-fab-panel" role="dialog" aria-label="生成队列">
+        <div className="drama-gen-fab-panel" role="dialog" aria-label={tv("生成队列", "Hàng đợi tạo")}>
           {detailJob ? (
             <DramaGenTaskDetail job={detailJob} onClose={() => setDetailJob(null)} />
           ) : (
@@ -148,14 +149,14 @@ export function DramaGenQueuePanel() {
                 <div className="drama-gen-fab-title">
                   <Layers size={18} strokeWidth={1.75} aria-hidden />
                   <div>
-                    <strong>生成队列</strong>
+                    <strong>{tv("生成队列", "Hàng đợi tạo")}</strong>
                     <span>
                       {active.length > 0
-                        ? `${active.length} 项进行中`
+                        ? tv(`${active.length} 项进行中`, `${active.length} mục đang chạy`)
                         : failed.length > 0
-                          ? `${failed.length} 项失败`
+                          ? tv(`${failed.length} 项失败`, `${failed.length} mục thất bại`)
                           : finished.length > 0
-                            ? '全部完成'
+                            ? tv('全部完成', 'Hoàn tất tất cả')
                             : ''}
                     </span>
                   </div>
@@ -166,8 +167,8 @@ export function DramaGenQueuePanel() {
                       type="button"
                       className="drama-gen-fab-icon-btn"
                       onClick={cancelAllVideo}
-                      title="取消全部视频任务"
-                      aria-label="取消全部视频任务"
+                      title={tv("取消全部视频任务", "Hủy tất cả tác vụ video")}
+                      aria-label={tv("取消全部视频任务", "Hủy tất cả tác vụ video")}
                     >
                       <Octagon size={16} />
                     </button>
@@ -177,8 +178,8 @@ export function DramaGenQueuePanel() {
                       type="button"
                       className="drama-gen-fab-icon-btn"
                       onClick={clearFinishedDramaGenJobs}
-                      title="清空已结束"
-                      aria-label="清空已结束"
+                      title={tv("清空已结束", "Xóa các mục đã kết thúc")}
+                      aria-label={tv("清空已结束", "Xóa các mục đã kết thúc")}
                     >
                       <Trash2 size={16} />
                     </button>
@@ -187,8 +188,8 @@ export function DramaGenQueuePanel() {
                     type="button"
                     className="drama-gen-fab-icon-btn"
                     onClick={close}
-                    title="关闭队列"
-                    aria-label="关闭队列"
+                    title={tv("关闭队列", "Đóng hàng đợi")}
+                    aria-label={tv("关闭队列", "Đóng hàng đợi")}
                   >
                     <X size={18} />
                   </button>
@@ -209,7 +210,7 @@ export function DramaGenQueuePanel() {
                           <div className="drama-gen-fab-item-main">
                             <span className="drama-gen-fab-kind">
                               <JobKindIcon kind={job.kind} />
-                              <em>{job.kind === 'video' ? '视频' : '图片'}</em>
+                              <em>{job.kind === 'video' ? tv('视频', 'Video') : tv('图片', 'Hình ảnh')}</em>
                             </span>
                             <span className="drama-gen-fab-name">{job.title}</span>
                             <span className="drama-gen-fab-type">{jobTypeLabel(job)}</span>
@@ -235,13 +236,13 @@ export function DramaGenQueuePanel() {
                             ) : null}
                             {errView.upstreamAccountBlocked ? (
                               <p className="drama-gen-fab-error-tip drama-gen-fab-upstream-tip">
-                                需管理员充值 TokenFree Seedream 账户，用户端充值无法解决。
+                                {tv("需管理员充值 TokenFree Seedream 账户，用户端充值无法解决。", "Cần quản trị viên nạp tài khoản TokenFree Seedream, nạp ở trang người dùng không giải quyết được.")}
                               </p>
                             ) : null}
-                            <span className="drama-gen-fab-open-hint">查看原因</span>
+                            <span className="drama-gen-fab-open-hint">{tv("查看原因", "Xem nguyên nhân")}</span>
                           </div>
                         ) : (
-                          <span className="drama-gen-fab-open-hint">查看详情</span>
+                          <span className="drama-gen-fab-open-hint">{tv("查看详情", "Xem chi tiết")}</span>
                         )}
                         {(job.status === 'queued' || job.status === 'running') && (
                           <div className="drama-gen-fab-bar" aria-hidden />
@@ -266,9 +267,9 @@ export function DramaGenQueuePanel() {
         type="button"
         className={`drama-gen-fab-btn is-draggable${active.length > 0 ? ' is-busy' : ''}${failed.length > 0 && active.length === 0 ? ' is-failed' : ''}`}
         onClick={toggleOpen}
-        title={open ? '收起生成队列（可拖动）' : '展开生成队列（可拖动）'}
+        title={open ? tv('收起生成队列（可拖动）', 'Thu gọn hàng đợi tạo (có thể kéo)') : tv('展开生成队列（可拖动）', 'Mở rộng hàng đợi tạo (có thể kéo)')}
         aria-expanded={open}
-        aria-label="生成队列"
+        aria-label={tv("生成队列", "Hàng đợi tạo")}
         {...bindDrag}
       >
         <Layers size={22} strokeWidth={1.75} aria-hidden />

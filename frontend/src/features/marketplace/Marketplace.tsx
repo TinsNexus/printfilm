@@ -12,6 +12,7 @@ import SeriesEditor from './SeriesEditor'
 import SeriesDetail from './SeriesDetail'
 import FromPrintfilm from './FromPrintfilm'
 import './marketplace.css'
+import { tv } from '../../i18n/tv'
 
 // 独立下游路由壳；不替换原 studio、作品或个人设置页面。
 export default function Marketplace() {
@@ -33,6 +34,6 @@ export default function Marketplace() {
     <Route path="mine" element={<NeedLogin><Workspace /></NeedLogin>} />
     <Route path="authorization" element={<NeedLogin><AuthorizationPanel /></NeedLogin>} />
     <Route path="assets/:id/rights" element={<NeedLogin><RightsPage /></NeedLogin>} />
-    <Route path="*" element={<p>页面不存在</p>} />
+    <Route path="*" element={<p>{tv("页面不存在", "Trang không tồn tại")}</p>} />
   </Routes></Gate></div></AppShell></div>
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type UsageSummary } from '../../api'
+import { tv } from '../../i18n/tv'
 
 /** 格式化 token 数量，过大时用 k/M 缩写 */
 function formatTokens(n: number) {
@@ -40,12 +41,12 @@ export default function MonthlyUsageCard({
   return (
     <div className={`pf-usage-card${variant === 'compact' ? ' is-compact' : ''}`}>
       <header className="pf-usage-card-head">
-        <h3>本月使用情况</h3>
-        <p>按上游 token 实际用量计费</p>
+        <h3>{tv("本月使用情况", "Tình hình sử dụng tháng này")}</h3>
+        <p>{tv("按上游 token 实际用量计费", "Tính phí theo lượng token upstream thực tế")}</p>
       </header>
 
       <div className="pf-usage-row">
-        <span>Token 用量</span>
+        <span>{tv("Token 用量", "Lượng Token")}</span>
         <span className="pf-usage-val">{formatTokens(usage?.tokens ?? 0)}</span>
       </div>
       <div className="pf-meter">
@@ -53,7 +54,7 @@ export default function MonthlyUsageCard({
       </div>
 
       <div className="pf-usage-row">
-        <span>本月费用</span>
+        <span>{tv("本月费用", "Chi phí tháng này")}</span>
         <span className="pf-usage-val">¥{(usage?.charge_yuan ?? 0).toFixed(2)}</span>
       </div>
       <div className="pf-meter">
@@ -61,21 +62,21 @@ export default function MonthlyUsageCard({
       </div>
 
       <div className="pf-usage-row">
-        <span>可用余额</span>
+        <span>{tv("可用余额", "Số dư khả dụng")}</span>
         <span className="pf-usage-val">¥{(usage?.balance_yuan ?? 0).toFixed(2)}</span>
       </div>
       {(usage?.frozen_fen ?? 0) > 0 ? (
         <div className="pf-usage-row">
-          <span>冻结中</span>
+          <span>{tv("冻结中", "Đang đóng băng")}</span>
           <span className="pf-muted">¥{(usage?.frozen_yuan ?? 0).toFixed(2)}</span>
         </div>
       ) : null}
 
       <div className="pf-usage-foot">
-        <span className="pf-muted">调用 {usage?.calls ?? 0} 次</span>
+        <span className="pf-muted">{tv("调用", "Lượt gọi")} {usage?.calls ?? 0} {tv("次", "lần")}</span>
         {showTopup ? (
           <Link to="/pricing" className="pf-btn pf-btn-lime pf-btn-sm">
-            去充值
+            {tv("去充值", "Đi nạp tiền")}
           </Link>
         ) : null}
       </div>

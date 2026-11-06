@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { estimateStudioTool, type StudioToolEstimate, type StudioToolEstimatePayload } from '../api/tools'
 import { isRequestAborted } from '../api/http'
+import { tv } from '../i18n/tv'
 
 /** 对当前视频参数取得服务端报价，旧参数的迟到结果不能用于提交。 */
 export function useGenerationEstimate(payload: StudioToolEstimatePayload | null) {
@@ -16,7 +17,7 @@ export function useGenerationEstimate(payload: StudioToolEstimatePayload | null)
     const timer = window.setTimeout(() => {
       void estimateStudioTool(JSON.parse(key) as StudioToolEstimatePayload, controller.signal).then(
         (quote) => { if (!disposed) setState({ key, quote }) },
-        (cause) => { if (!disposed && !isRequestAborted(cause)) setState({ key, error: cause instanceof Error ? cause.message : '预计消耗暂不可用，请重试' }) },
+        (cause) => { if (!disposed && !isRequestAborted(cause)) setState({ key, error: cause instanceof Error ? cause.message : tv('预计消耗暂不可用，请重试', 'Chi phí dự kiến tạm thời không khả dụng, vui lòng thử lại') }) },
       )
     }, 300)
     return () => { disposed = true; clearTimeout(timer); controller.abort() }

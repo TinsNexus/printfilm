@@ -1,6 +1,7 @@
 import { AudioLines, Image, Video } from 'lucide-react'
 import type { MediaLibraryGenerationStatus } from '../../api/drama'
 import { AssetTypeFilter } from './AssetLibrary'
+import { tv } from '../../i18n/tv'
 
 export type MediaLibraryFilter = {
   kind: 'image' | 'video' | 'audio'
@@ -9,20 +10,20 @@ export type MediaLibraryFilter = {
 }
 
 const MEDIA_TYPES = [
-  { value: 'image', label: '图片', icon: Image },
-  { value: 'video', label: '视频', icon: Video },
-  { value: 'audio', label: '音频', icon: AudioLines },
+  { value: 'image', label: tv('图片', 'Hình ảnh'), icon: Image },
+  { value: 'video', label: tv('视频', 'Video'), icon: Video },
+  { value: 'audio', label: tv('音频', 'Âm thanh'), icon: AudioLines },
 ] as const
 const IMAGE_TYPES = [
-  { value: 'all', label: '全部图片' },
-  { value: 'character', label: '角色' },
-  { value: 'scene', label: '场景' },
-  { value: 'prop', label: '道具' },
+  { value: 'all', label: tv('全部图片', 'Tất cả hình ảnh') },
+  { value: 'character', label: tv('角色', 'Nhân vật') },
+  { value: 'scene', label: tv('场景', 'Bối cảnh') },
+  { value: 'prop', label: tv('道具', 'Đạo cụ') },
 ] as const
 const GENERATION_STATUSES = [
-  { value: 'all', label: '全部' },
-  { value: 'generated', label: '已生成' },
-  { value: 'ungenerated', label: '未生成' },
+  { value: 'all', label: tv('全部', 'Tất cả') },
+  { value: 'generated', label: tv('已生成', 'Đã tạo') },
+  { value: 'ungenerated', label: tv('未生成', 'Chưa tạo') },
 ] as const
 
 /** 先选媒体大类，业务分类仅用于图片；切换大类时清空图片分类。 */
@@ -31,7 +32,7 @@ export default function MediaLibraryFilters({ value, onChange }: {
   onChange: (value: MediaLibraryFilter) => void
 }) {
   return <div className="pf-library-filter-stack">
-    <div className="pf-library-media-tabs" role="group" aria-label="按媒体大类筛选">
+    <div className="pf-library-media-tabs" role="group" aria-label={tv("按媒体大类筛选", "Lọc theo nhóm phương tiện")}>
       {MEDIA_TYPES.map(({ value: kind, label, icon: Icon }) => <button key={kind} type="button"
         className={`pf-library-pill${value.kind === kind ? ' is-active' : ''}`}
         aria-pressed={value.kind === kind}
@@ -40,13 +41,13 @@ export default function MediaLibraryFilters({ value, onChange }: {
       </button>)}
     </div>
     {value.kind === 'image' && <div className="pf-library-image-categories">
-      <span>图片分类</span>
-      <AssetTypeFilter options={IMAGE_TYPES} value={value.imageType} ariaLabel="按图片分类筛选"
+      <span>{tv("图片分类", "Phân loại ảnh")}</span>
+      <AssetTypeFilter options={IMAGE_TYPES} value={value.imageType} ariaLabel={tv("按图片分类筛选", "Lọc theo phân loại ảnh")}
         onChange={imageType => onChange({ ...value, kind: 'image', imageType })} />
     </div>}
     <div className="pf-library-generation-status">
-      <span>生成状态</span>
-      <AssetTypeFilter options={GENERATION_STATUSES} value={value.generationStatus} ariaLabel="按生成状态筛选"
+      <span>{tv("生成状态", "Trạng thái tạo")}</span>
+      <AssetTypeFilter options={GENERATION_STATUSES} value={value.generationStatus} ariaLabel={tv("按生成状态筛选", "Lọc theo trạng thái tạo")}
         onChange={generationStatus => onChange({ ...value, generationStatus })} />
     </div>
   </div>

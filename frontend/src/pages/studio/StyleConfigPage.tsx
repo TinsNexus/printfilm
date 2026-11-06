@@ -11,13 +11,14 @@ import { IconChevronLeft, IconPlay } from '../../components/ui/Icons'
 import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import { handleBillingError } from '../../lib/billingError'
 import { kepuStepIndex, kepuSteps } from '../../lib/status'
+import { tv } from '../../i18n/tv'
 
 const OUTPUT_MODES: { id: PipelineMode; label: string; desc: string; image: string }[] = [
-  { id: 'full', label: 'AI 视频', desc: '图→视频→配音→合成', image: '/mode-presets/full.jpg' },
+  { id: 'full', label: tv('AI 视频', 'Video AI'), desc: tv('图→视频→配音→合成', 'Ảnh → video → lồng tiếng → ghép phim'), image: '/mode-presets/full.jpg' },
   {
     id: 'image_text',
-    label: '静图成片',
-    desc: '静图+叠字+配音，不生成 AI 视频',
+    label: tv('静图成片', 'Phim từ ảnh tĩnh'),
+    desc: tv('静图+叠字+配音，不生成 AI 视频', 'Ảnh tĩnh + chữ chèn + lồng tiếng, không tạo video AI'),
     image: '/mode-presets/image_text.jpg',
   },
 ]
@@ -104,7 +105,7 @@ export default function StyleConfigPage() {
         if (p.image_resolution) setImageResolution(p.image_resolution)
         if (p.video_resolution) setVideoResolution(p.video_resolution)
       })
-      .catch((err) => setError(err instanceof Error ? err.message : '加载失败'))
+      .catch((err) => setError(err instanceof Error ? err.message : tv('加载失败', 'Tải thất bại')))
   }, [nav, projectId])
 
   useEffect(() => {
@@ -181,12 +182,12 @@ export default function StyleConfigPage() {
       audio.onended = () => setPlayingId(null)
       audio.onerror = () => {
         setPlayingId(null)
-        setError('试听播放失败')
+        setError(tv('试听播放失败', 'Phát nghe thử thất bại'))
       }
       setPlayingId(vid)
       await audio.play()
     } catch (err) {
-      setError(err instanceof Error ? err.message : '试听失败')
+      setError(err instanceof Error ? err.message : tv('试听失败', 'Nghe thử thất bại'))
       setPlayingId(null)
     } finally {
       setPreviewBusy(null)
@@ -199,7 +200,7 @@ export default function StyleConfigPage() {
     const video = mediaCatalog?.video_models.find(item => item.id === videoModel)
     if (!image || image.available === false || !(image.available_resolutions ?? image.allowed_resolutions ?? []).includes(imageResolution) || !image.allowed_aspect_ratios?.includes(ratio) ||
         (pipelineMode === 'full' && (!video || video.available === false || !(video.available_resolutions ?? video.allowed_resolutions ?? []).includes(videoResolution) || !video.allowed_aspect_ratios?.includes(ratio)))) {
-      setError('所选模型不支持当前参数或尚未配置价格，请检查模型、分辨率和画幅。')
+      setError(tv('所选模型不支持当前参数或尚未配置价格，请检查模型、分辨率和画幅。', 'Model đã chọn không hỗ trợ tham số hiện tại hoặc chưa cấu hình giá, vui lòng kiểm tra model, độ phân giải và tỷ lệ khung.'))
       return
     }
     stopPreview()
@@ -230,14 +231,14 @@ export default function StyleConfigPage() {
       const started = await api.generate(project.id)
       nav(`/studio/${started.id}`)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '生成失败'
+      const msg = err instanceof Error ? err.message : tv('生成失败', 'Tạo thất bại')
       if (msg.includes('合成成片')) {
         try {
           const composed = await api.compose(project.id)
           nav(`/studio/${composed.id}`)
           return
         } catch (e2) {
-          setError(e2 instanceof Error ? e2.message : '合成失败')
+          setError(e2 instanceof Error ? e2.message : tv('合成失败', 'Tổng hợp thất bại'))
           return
         }
       }
@@ -252,7 +253,7 @@ export default function StyleConfigPage() {
   if (!project) {
     return (
       <AppShell active="studio">
-        {error ? <BillingErrorNotice message={error} /> : <p className="pf-muted">加载中…</p>}
+        {error ? <BillingErrorNotice message={error} /> : <p className="pf-muted">{tv("加载中…", "Đang tải…")}</p>}
       </AppShell>
     )
   }
@@ -264,9 +265,9 @@ export default function StyleConfigPage() {
           <div>
             <button type="button" className="pf-back" onClick={() => nav('/studio/new')}>
               <IconChevronLeft size={18} />
-              返回创作台
+              {tv("返回创作台", "Quay lại bàn sáng tạo")}
             </button>
-            <h1 className="pf-page-title">{project?.title || '风格配置'}</h1>
+            <h1 className="pf-page-title">{project?.title || tv('风格配置', 'Cấu hình phong cách')}</h1>
           </div>
           <Stepper
             steps={kepuSteps(pipelineMode)}
@@ -278,7 +279,7 @@ export default function StyleConfigPage() {
 
       <div className="pf-style-layout">
         <aside className="pf-create-col">
-          <h3>项目信息</h3>
+          <h3>{tv("项目信息", "Thông tin dự án")}</h3>
           {currentTpl ? (
             <div>
               <div
@@ -301,31 +302,30 @@ export default function StyleConfigPage() {
           ) : null}
           <ul className="pf-meta-list" style={{ marginTop: '0.85rem' }}>
             <li>
-              <span>主题</span>
+              <span>{tv("主题", "Chủ đề")}</span>
               <span style={{ maxWidth: '55%', textAlign: 'right' }}>
                 {(project?.source_text || '').slice(0, 40)}
               </span>
             </li>
             <li>
-              <span>时长</span>
-              <span>~1–3 分钟</span>
+              <span>{tv("时长", "Thời lượng")}</span>
+              <span>{tv("~1–3 分钟", "~1–3 phút")}</span>
             </li>
             <li>
-              <span>分镜数</span>
-              <span>AI 自动</span>
+              <span>{tv("分镜数", "Số phân cảnh")}</span>
+              <span>{tv("AI 自动", "AI tự động")}</span>
             </li>
           </ul>
           <button type="button" className="pf-btn pf-btn-ghost pf-btn-block pf-btn-sm" disabled>
-            预览模板 <ComingSoon />
+            {tv("预览模板", "Xem trước mẫu")} <ComingSoon />
           </button>
         </aside>
 
         <section className="pf-create-col">
           <div className="pf-style-block">
-            <h3>画面风格</h3>
+            <h3>{tv("画面风格", "Phong cách hình ảnh")}</h3>
             <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0 0 0.65rem' }}>
-              已由选题时选择的模板锁定，出图与出视频会自动带上画风。是否出角色由模板规则和主题让 AI
-              决定，不必再选一套人设。
+              {tv("已由选题时选择的模板锁定，出图与出视频会自动带上画风。是否出角色由模板规则和主题让 AI 决定，不必再选一套人设。", "Đã bị khóa theo mẫu chọn khi chọn chủ đề, tạo ảnh và video sẽ tự mang phong cách hình ảnh. Có tạo nhân vật hay không do quy tắc mẫu và chủ đề để AI quyết định, không cần chọn thêm bộ nhân vật.")}
             </p>
             {currentTpl ? (
               <div
@@ -345,11 +345,11 @@ export default function StyleConfigPage() {
                   ) : null}
                 </span>
                 <div className="cap">{currentTpl.name}</div>
-                <div className="cap-sub">模板画风</div>
+                <div className="cap-sub">{tv("模板画风", "Phong cách hình ảnh của mẫu")}</div>
               </div>
             ) : null}
             <label className="pf-field" style={{ marginTop: '0.75rem' }}>
-              <span className="pf-field-label">风格提示词（可选覆盖）</span>
+              <span className="pf-field-label">{tv("风格提示词（可选覆盖）", "Prompt phong cách (tùy chọn ghi đè)")}</span>
               <textarea
                 className="pf-field-input"
                 value={stylePrompt}
@@ -362,9 +362,9 @@ export default function StyleConfigPage() {
 
           <div className="pf-style-block">
             <h3>
-              配音音色
+              {tv("配音音色", "Giọng lồng tiếng")}
               <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" disabled>
-                更多音色 <ComingSoon />
+                {tv("更多音色", "Thêm giọng nói")} <ComingSoon />
               </button>
             </h3>
             <div className="pf-voice-row">
@@ -389,7 +389,7 @@ export default function StyleConfigPage() {
                   >
                     <strong className="pf-voice-name">{v.label}</strong>
                     <span className="pf-voice-meta">
-                      {v.gender === 'female' ? '女声' : v.gender === 'male' ? '男声' : v.gender}
+                      {v.gender === 'female' ? tv('女声', 'Giọng nữ') : v.gender === 'male' ? tv('男声', 'Giọng nam') : v.gender}
                     </span>
                     <button
                       type="button"
@@ -404,13 +404,13 @@ export default function StyleConfigPage() {
                       onClick={(e) => previewVoice(v, e)}
                     >
                       {loading ? (
-                        '生成中…'
+                        tv('生成中…', 'Đang tạo…')
                       ) : playing ? (
-                        '播放中'
+                        tv('播放中', 'Đang phát')
                       ) : (
                         <>
                           <IconPlay size={12} />
-                          试听
+                          {tv("试听", "Nghe thử")}
                         </>
                       )}
                     </button>
@@ -420,15 +420,15 @@ export default function StyleConfigPage() {
             </div>
             {selectedVoice ? (
               <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0.55rem 0 0' }}>
-                当前：{selectedVoice.label} · 成片用该音色整片配音；点击「试听」可听约 5 秒样例
+                {tv("当前：", "Hiện tại:")}{selectedVoice.label} {tv("· 成片用该音色整片配音；点击「试听」可听约 5 秒样例", "· Phim dùng giọng này lồng tiếng toàn phim; bấm “Nghe thử” để nghe mẫu khoảng 5 giây")}
               </p>
             ) : null}
           </div>
 
           <div className="pf-style-block">
-            <h3>成片方式</h3>
+            <h3>{tv("成片方式", "Cách làm phim")}</h3>
             <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0 0 0.65rem' }}>
-              任意模板都可选择是否生成 AI 视频，与画幅无关。
+              {tv("任意模板都可选择是否生成 AI 视频，与画幅无关。", "Mọi mẫu đều có thể chọn có tạo video AI hay không, không liên quan tỷ lệ khung.")}
             </p>
             <div className="pf-style-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
               {OUTPUT_MODES.map((m) => (
@@ -448,13 +448,13 @@ export default function StyleConfigPage() {
 
           {mediaCatalog ? (
             <div className="pf-style-block">
-              <h3>图片模型</h3>
-              <label>分辨率 <select value={imageResolution} onChange={event => setImageResolution(event.target.value)}>
+              <h3>{tv("图片模型", "Model hình ảnh")}</h3>
+              <label>{tv("分辨率", "Độ phân giải")} <select value={imageResolution} onChange={event => setImageResolution(event.target.value)}>
                 {(mediaCatalog.image_models.find(item => item.id === imageModel)?.available_resolutions ?? mediaCatalog.image_models.find(item => item.id === imageModel)?.allowed_resolutions ?? []).map(value => <option key={value} value={value}>{value}</option>)}
               </select></label>
               <MediaCostNotice modelId={imageModel} resolution={imageResolution} />
               <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0 0 0.65rem' }}>
-                使用管理后台「模型」中已勾选的 TokenFree 模型。
+                {tv("使用管理后台「模型」中已勾选的 TokenFree 模型。", "Dùng các model TokenFree đã tích chọn trong “Model” của trang quản trị.")}
               </p>
               <div className="pf-model-grid">
                 {mediaCatalog.image_models.map((m: MediaModelOption) => (
@@ -467,10 +467,10 @@ export default function StyleConfigPage() {
                   >
                     <div className="pf-model-opt-title">
                       <span>{m.label}</span>
-                      {m.recommended ? <span className="pf-model-badge">推荐</span> : null}
+                      {m.recommended ? <span className="pf-model-badge">{tv("推荐", "Đề xuất")}</span> : null}
                     </div>
                     <div className="pf-model-opt-desc">{m.description}</div>
-                    <div className="pf-model-opt-provider">{Object.entries(m.prices ?? {}).map(([resolution, price]) => `${resolution} ¥${price}/张`).join(' · ') || m.pricing_hint}</div>
+                    <div className="pf-model-opt-provider">{Object.entries(m.prices ?? {}).map(([resolution, price]) => tv(`${resolution} ¥${price}/张`, `${resolution} ¥${price}/ảnh`)).join(' · ') || m.pricing_hint}</div>
                   </button>
                 ))}
               </div>
@@ -479,13 +479,13 @@ export default function StyleConfigPage() {
 
           {mediaCatalog && pipelineMode === 'full' ? (
             <div className="pf-style-block">
-              <h3>视频模型</h3>
-              <label>分辨率 <select value={videoResolution} onChange={event => setVideoResolution(event.target.value)}>
+              <h3>{tv("视频模型", "Model video")}</h3>
+              <label>{tv("分辨率", "Độ phân giải")} <select value={videoResolution} onChange={event => setVideoResolution(event.target.value)}>
                 {(mediaCatalog.video_models.find(item => item.id === videoModel)?.available_resolutions ?? mediaCatalog.video_models.find(item => item.id === videoModel)?.allowed_resolutions ?? []).map(value => <option key={value} value={value}>{value}</option>)}
               </select></label>
               <MediaCostNotice modelId={videoModel} resolution={videoResolution} seconds={1} />
               <p className="pf-muted" style={{ fontSize: '0.78rem', margin: '0 0 0.65rem' }}>
-                图生视频所用模型；静图成片模式不调用。
+                {tv("图生视频所用模型；静图成片模式不调用。", "Model dùng cho ảnh thành video; chế độ phim ảnh tĩnh không gọi.")}
               </p>
               <div className="pf-model-grid">
                 {mediaCatalog.video_models.map((m: MediaModelOption) => (
@@ -498,10 +498,10 @@ export default function StyleConfigPage() {
                   >
                     <div className="pf-model-opt-title">
                       <span>{m.label}</span>
-                      {m.recommended ? <span className="pf-model-badge">推荐</span> : null}
+                      {m.recommended ? <span className="pf-model-badge">{tv("推荐", "Đề xuất")}</span> : null}
                     </div>
                     <div className="pf-model-opt-desc">{m.description}</div>
-                    <div className="pf-model-opt-provider">{Object.entries(m.prices ?? {}).map(([resolution, price]) => `${resolution} ¥${price}/秒`).join(' · ') || m.pricing_hint}</div>
+                    <div className="pf-model-opt-provider">{Object.entries(m.prices ?? {}).map(([resolution, price]) => tv(`${resolution} ¥${price}/秒`, `${resolution} ¥${price}/giây`)).join(' · ') || m.pricing_hint}</div>
                   </button>
                 ))}
               </div>
@@ -509,7 +509,7 @@ export default function StyleConfigPage() {
           ) : null}
 
           <div className="pf-style-block">
-            <h3>输出比例</h3>
+            <h3>{tv("输出比例", "Tỷ lệ đầu ra")}</h3>
             <div className="pf-ratio-row">
               {RATIOS.map((r) => (
                 <button
@@ -527,7 +527,7 @@ export default function StyleConfigPage() {
         </section>
 
         <aside className="pf-create-col">
-          <h3>实时预览</h3>
+          <h3>{tv("实时预览", "Xem trước thời gian thực")}</h3>
           <div
             className={[
               'pf-editor-preview',
@@ -540,33 +540,33 @@ export default function StyleConfigPage() {
             {currentTpl ? (
               <img src={api.assetUrl(currentTpl.preview_cover)} alt="" />
             ) : (
-              <span className="empty">预览占位</span>
+              <span className="empty">{tv("预览占位", "Giữ chỗ xem trước")}</span>
             )}
           </div>
           <p className="pf-muted" style={{ fontSize: '0.8rem' }}>
-            生成后可在分镜台查看真实画面。当前为模板预览。
+            {tv("生成后可在分镜台查看真实画面。当前为模板预览。", "Sau khi tạo có thể xem hình thật ở bàn phân cảnh. Hiện là bản xem trước mẫu.")}
           </p>
-          <h3 style={{ marginTop: '1rem' }}>当前配置概览</h3>
+          <h3 style={{ marginTop: '1rem' }}>{tv("当前配置概览", "Tổng quan cấu hình hiện tại")}</h3>
           <ul className="pf-meta-list">
             <li>
-              <span>风格</span>
+              <span>{tv("风格", "Phong cách")}</span>
               <span>{currentTpl?.name || '—'}</span>
             </li>
             <li>
-              <span>角色</span>
-              <span>AI 按模板与主题决定</span>
+              <span>{tv("角色", "Nhân vật")}</span>
+              <span>{tv("AI 按模板与主题决定", "AI quyết định theo mẫu và chủ đề")}</span>
             </li>
             <li>
-              <span>配音</span>
-              <span>{selectedVoice?.label || '默认'}</span>
+              <span>{tv("配音", "Lồng tiếng")}</span>
+              <span>{selectedVoice?.label || tv('默认', 'Mặc định')}</span>
             </li>
             <li>
-              <span>比例</span>
+              <span>{tv("比例", "Tỷ lệ")}</span>
               <span>{ratio}</span>
             </li>
             <li>
-              <span>成片</span>
-              <span>{pipelineMode === 'image_text' ? '静图成片' : 'AI 视频'}</span>
+              <span>{tv("成片", "Phim")}</span>
+              <span>{pipelineMode === 'image_text' ? tv('静图成片', 'Phim từ ảnh tĩnh') : tv('AI 视频', 'Video AI')}</span>
             </li>
           </ul>
           {selectedVoice ? (
@@ -579,8 +579,8 @@ export default function StyleConfigPage() {
             >
               <IconPlay size={14} />
               {playingId === voiceKey(selectedVoice)
-                ? '停止试听'
-                : `试听「${selectedVoice.label}」`}
+                ? tv('停止试听', 'Dừng nghe thử')
+                : tv(`试听「${selectedVoice.label}」`, `Nghe thử “${selectedVoice.label}”`)}
             </button>
           ) : null}
           {error ? <BillingErrorNotice message={error} style={{ marginTop: '0.75rem' }} /> : null}
@@ -591,11 +591,11 @@ export default function StyleConfigPage() {
             disabled={busy || Boolean(previewBusy)}
             onClick={generate}
           >
-            {busy ? '启动中…' : project.shots?.length ? '保存并继续' : '生成故事板'}
+            {busy ? tv('启动中…', 'Đang khởi động…') : project.shots?.length ? tv('保存并继续', 'Lưu và tiếp tục') : tv('生成故事板', 'Tạo storyboard')}
             {!busy ? <span aria-hidden>→</span> : null}
           </button>
           <p className="pf-muted" style={{ fontSize: '0.78rem', marginTop: '0.5rem' }}>
-            先生成分镜脚本，确认修改后再手动开始出图与配音。
+            {tv("先生成分镜脚本，确认修改后再手动开始出图与配音。", "Trước tiên tạo kịch bản phân cảnh, xác nhận chỉnh sửa rồi tự bắt đầu tạo ảnh và lồng tiếng.")}
           </p>
         </aside>
       </div>

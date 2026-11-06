@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { MoreHorizontal } from 'lucide-react'
+import { tv } from '../../i18n/tv'
 
 type Props = {
   onRename: () => void
@@ -88,7 +89,7 @@ export function DramaProjectCardMenu({ onRename, onDelete, onPublish }: Props) {
       <button
         type="button"
         className="drama-project-row-more-btn"
-        aria-label="更多操作"
+        aria-label={tv("更多操作", "Thao tác khác")}
         aria-expanded={open}
         aria-haspopup="menu"
         onClick={(event) => {
@@ -105,7 +106,7 @@ export function DramaProjectCardMenu({ onRename, onDelete, onPublish }: Props) {
           {onPublish && <button type="button" role="menuitem"
             onPointerDown={event => { event.preventDefault(); event.stopPropagation(); closeThenRun(onPublish) }}
             onClick={event => { event.stopPropagation(); if (!ignoreToggleRef.current) closeThenRun(onPublish) }}
-          >发布到数字资产市场</button>}
+          >{tv("发布到数字资产市场", "Đăng lên chợ tài sản số")}</button>}
           <button
             type="button"
             role="menuitem"
@@ -120,7 +121,7 @@ export function DramaProjectCardMenu({ onRename, onDelete, onPublish }: Props) {
               closeThenRun(onRename)
             }}
           >
-            重命名
+            {tv("重命名", "Đổi tên")}
           </button>
           <button
             type="button"
@@ -137,7 +138,7 @@ export function DramaProjectCardMenu({ onRename, onDelete, onPublish }: Props) {
               closeThenRun(onDelete)
             }}
           >
-            删除
+            {tv("删除", "Xóa")}
           </button>
         </div>
       ) : null}

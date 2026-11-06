@@ -1,3 +1,4 @@
+import { tv } from '../../i18n/tv'
 /** 当前请求空间只存在内存中，切换时取消旧请求，避免响应串入新空间。 */
 let controller = new AbortController()
 export const workspaceScope = { teamId: null as number | null, signal: controller.signal, epoch: 0 }
@@ -5,7 +6,7 @@ const listeners = new Set<() => void>()
 /** 切换团队；个人空间始终使用 null。 */
 export function setWorkspaceTeam(teamId: number | null, reset = false): void {
   if (workspaceScope.teamId === teamId && !reset) return
-  controller.abort(new DOMException('创作空间或登录身份已切换', 'AbortError')); controller = new AbortController()
+  controller.abort(new DOMException(tv('创作空间或登录身份已切换', 'Không gian sáng tạo hoặc danh tính đăng nhập đã chuyển'), 'AbortError')); controller = new AbortController()
   workspaceScope.teamId = teamId; workspaceScope.signal = controller.signal
   workspaceScope.epoch += 1
   listeners.forEach((listener) => listener())

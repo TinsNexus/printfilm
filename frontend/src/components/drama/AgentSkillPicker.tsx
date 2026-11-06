@@ -3,6 +3,7 @@ import { useRef, useState, type MouseEvent } from 'react'
 import { Download, Eye, X } from 'lucide-react'
 import type { AgentSkill } from '../../api/agentSkills'
 import { triggerBlobDownload } from '../../lib/clientDownload'
+import { tv } from '../../i18n/tv'
 
 type AgentSkillPickerProps = {
   skills: AgentSkill[]
@@ -56,7 +57,7 @@ export function AgentSkillPicker({
   onUpload,
   uploading = false,
   uploadError = '',
-  emptyText = '暂无可用 Skill',
+  emptyText = tv('暂无可用 Skill', 'Chưa có Skill khả dụng'),
   compact = false,
 }: AgentSkillPickerProps) {
   const selected = new Set(selectedIds)
@@ -84,12 +85,12 @@ export function AgentSkillPicker({
       <div className={`${rootClass}-toolbar`}>
         {onSelectAll ? (
           <button type="button" className={`${rootClass}-link`} onClick={onSelectAll}>
-            全选
+            {tv("全选", "Chọn tất cả")}
           </button>
         ) : null}
         {onSelectNone ? (
           <button type="button" className={`${rootClass}-link`} onClick={onSelectNone}>
-            不使用
+            {tv("不使用", "Không dùng")}
           </button>
         ) : null}
         {onUpload ? (
@@ -99,7 +100,7 @@ export function AgentSkillPicker({
             disabled={uploading}
             onClick={() => fileRef.current?.click()}
           >
-            {uploading ? '上传中…' : '上传 .md'}
+            {uploading ? tv('上传中…', 'Đang tải lên…') : tv('上传 .md', 'Tải lên .md')}
           </button>
         ) : null}
       </div>
@@ -126,8 +127,8 @@ export function AgentSkillPicker({
                   <button
                     type="button"
                     className={`${rootClass}-action`}
-                    title="预览"
-                    aria-label={`预览 ${skill.name}`}
+                    title={tv("预览", "Xem trước")}
+                    aria-label={tv(`预览 ${skill.name}`, `Xem trước ${skill.name}`)}
                     onClick={(event) => handlePreview(skill, event)}
                   >
                     <Eye size={14} strokeWidth={1.8} />
@@ -135,8 +136,8 @@ export function AgentSkillPicker({
                   <button
                     type="button"
                     className={`${rootClass}-action`}
-                    title="下载 .md"
-                    aria-label={`下载 ${skill.name}`}
+                    title={tv("下载 .md", "Tải xuống .md")}
+                    aria-label={tv(`下载 ${skill.name}`, `Tải xuống ${skill.name}`)}
                     onClick={(event) => handleDownload(skill, event)}
                   >
                     <Download size={14} strokeWidth={1.8} />
@@ -163,7 +164,7 @@ export function AgentSkillPicker({
       {uploadError ? <p className={`${rootClass}-error`}>{uploadError}</p> : null}
 
       {previewSkill ? (
-        <div className={`${rootClass}-preview`} role="dialog" aria-label={`预览 ${previewSkill.name}`}>
+        <div className={`${rootClass}-preview`} role="dialog" aria-label={tv(`预览 ${previewSkill.name}`, `Xem trước ${previewSkill.name}`)}>
           <div className={`${rootClass}-preview-head`}>
             <div>
               <strong>{previewSkill.name}</strong>
@@ -175,12 +176,12 @@ export function AgentSkillPicker({
                 className={`${rootClass}-link`}
                 onClick={(event) => handleDownload(previewSkill, event)}
               >
-                下载 .md
+                {tv("下载 .md", "Tải xuống .md")}
               </button>
               <button
                 type="button"
                 className={`${rootClass}-action`}
-                aria-label="关闭预览"
+                aria-label={tv("关闭预览", "Đóng xem trước")}
                 onClick={() => setPreviewSkill(null)}
               >
                 <X size={16} />

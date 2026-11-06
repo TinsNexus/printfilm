@@ -13,7 +13,12 @@ export default function LanguageSwitch() {
           type="button"
           className={locale === code ? 'is-active' : undefined}
           aria-pressed={locale === code}
-          onClick={() => setLocale(code)}
+          onClick={() => {
+            if (code === locale) return
+            setLocale(code)
+            // 顶层常量里的 tv() 只在加载时取值，进出越南语时刷新页面使其生效
+            if ((code === 'vi' || locale === 'vi') && typeof window !== 'undefined') window.location.reload()
+          }}
         >
           {code === 'zh' ? t('nav.langZh') : code === 'vi' ? t('nav.langVi') : t('nav.langEn')}
         </button>

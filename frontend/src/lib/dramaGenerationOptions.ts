@@ -1,6 +1,7 @@
 /** 漫剧生图：模型 / 比例 / 清晰度选项（模型列表与参数来自后台 TokenFree 目录） */
 
 import type { MediaModelOption, MediaModelsCatalog } from '../api'
+import { tv } from '../i18n/tv'
 
 export type ImageGenerationModelId = string
 
@@ -34,7 +35,7 @@ export const GENERATION_ASPECT_RATIO_OPTIONS: Array<{
   id: GenerationAspectRatioId
   label: string
 }> = [
-  { id: 'auto', label: '自动' },
+  { id: 'auto', label: tv('自动', 'Tự động') },
   { id: '16:9', label: '16:9' },
   { id: '21:9', label: '21:9' },
   { id: '9:16', label: '9:16' },
@@ -94,14 +95,14 @@ export function formatOutputSettingsLabel(
   aspectRatio: GenerationAspectRatioId,
   resolution: GenerationResolution,
 ): string {
-  if (aspectRatio === 'auto') return `自动 · ${resolution}`
+  if (aspectRatio === 'auto') return tv(`自动 · ${resolution}`, `Tự động · ${resolution}`)
   return `${aspectRatio} · ${resolution}`
 }
 
 /** 解析模型展示名（无目录时回退 id） */
 export function getImageModelLabel(modelId: string | undefined | null): string {
   const id = (modelId || '').trim()
-  return id || '图片模型'
+  return id || tv('图片模型', 'Model hình ảnh')
 }
 
 /** 任意非空字符串均可作为生图模型 id */

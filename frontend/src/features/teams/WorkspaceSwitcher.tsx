@@ -4,6 +4,7 @@ import { Check, ChevronDown, Plus, Settings2, UserRound, UsersRound } from 'luci
 import { CreateTeamModal } from './TeamForms'
 import { useTeamPreview } from './useTeamPreview'
 import { TEAM_ROLE_LABELS, viewerRole } from './types'
+import { tv } from '../../i18n/tv'
 
 /** 顶部入口同步真实个人/团队请求范围。 */
 export default function WorkspaceSwitcher() {
@@ -31,10 +32,10 @@ export default function WorkspaceSwitcher() {
 
   return <>
     <details ref={detailsRef} className="pf-team-switcher">
-      <summary aria-label="切换个人或团队空间"><span className="pf-team-switcher-icon" style={current ? { background: current.color, color: '#fff' } : undefined}>{current ? <UsersRound size={15} /> : <UserRound size={15} />}</span><span className="pf-team-switcher-label">{current?.name ?? '个人空间'}</span><ChevronDown size={13} /></summary>
-      <div className="pf-team-switcher-menu"><div className="pf-team-switcher-caption">切换空间</div><button type="button" onClick={() => switchTo(null)}><UserRound size={17} /><span>个人空间<small>你的个人创作</small></span>{!current && <Check size={15} />}</button>
-        <div className="pf-team-switcher-caption">我的团队</div>{teams.map((team) => <button type="button" key={team.id} onClick={() => switchTo(team.id)}><span className="pf-team-switcher-icon" style={{ background: team.color, color: '#fff' }}>{team.name.slice(0, 1)}</span><span>{team.name}<small>{TEAM_ROLE_LABELS[viewerRole(team)]} · {team.memberCount} 位成员</small></span>{current?.id === team.id && <Check size={15} />}</button>)}
-        <div className="pf-team-switcher-bottom">{loading && <span>正在加载…</span>}{error && <button type="button" onClick={() => void reload()}>加载失败，重试</button>}<button type="button" onClick={() => { detailsRef.current?.removeAttribute('open'); if (!localStorage.getItem('token')) navigate('/auth?next=%2Fteams'); else setCreateOpen(true) }}><Plus size={17} />创建团队</button><Link to="/teams"><Settings2 size={17} />团队管理</Link></div>
+      <summary aria-label={tv("切换个人或团队空间", "Chuyển không gian cá nhân hoặc nhóm")}><span className="pf-team-switcher-icon" style={current ? { background: current.color, color: '#fff' } : undefined}>{current ? <UsersRound size={15} /> : <UserRound size={15} />}</span><span className="pf-team-switcher-label">{current?.name ?? tv('个人空间', 'Không gian cá nhân')}</span><ChevronDown size={13} /></summary>
+      <div className="pf-team-switcher-menu"><div className="pf-team-switcher-caption">{tv("切换空间", "Chuyển không gian")}</div><button type="button" onClick={() => switchTo(null)}><UserRound size={17} /><span>{tv("个人空间", "Không gian cá nhân")}<small>{tv("你的个人创作", "Sáng tạo cá nhân của bạn")}</small></span>{!current && <Check size={15} />}</button>
+        <div className="pf-team-switcher-caption">{tv("我的团队", "Nhóm của tôi")}</div>{teams.map((team) => <button type="button" key={team.id} onClick={() => switchTo(team.id)}><span className="pf-team-switcher-icon" style={{ background: team.color, color: '#fff' }}>{team.name.slice(0, 1)}</span><span>{team.name}<small>{TEAM_ROLE_LABELS[viewerRole(team)]} · {team.memberCount} {tv("位成员", "thành viên")}</small></span>{current?.id === team.id && <Check size={15} />}</button>)}
+        <div className="pf-team-switcher-bottom">{loading && <span>{tv("正在加载…", "Đang tải…")}</span>}{error && <button type="button" onClick={() => void reload()}>{tv("加载失败，重试", "Tải thất bại, thử lại")}</button>}<button type="button" onClick={() => { detailsRef.current?.removeAttribute('open'); if (!localStorage.getItem('token')) navigate('/auth?next=%2Fteams'); else setCreateOpen(true) }}><Plus size={17} />{tv("创建团队", "Tạo nhóm")}</button><Link to="/teams"><Settings2 size={17} />{tv("团队管理", "Quản lý nhóm")}</Link></div>
       </div>
     </details>
     <CreateTeamModal open={createOpen} onClose={() => setCreateOpen(false)} />

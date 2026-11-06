@@ -5,6 +5,7 @@ import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import { X } from 'lucide-react'
 import type { EpisodeAssetNodeData } from './buildEpisodeFlow'
 import { AssetCard } from '../../../components/assets/AssetLibrary'
+import { tv } from '../../../i18n/tv'
 
 type Props = NodeProps<Node<EpisodeAssetNodeData>> & {
   onUnlinkAsset?: (fragmentId: number, assetId: number) => void
@@ -17,7 +18,7 @@ function EpisodeAssetNodeComponent({ data, selected, onUnlinkAsset }: Props) {
 
   return (
     <div className={`ep-asset-node${selected ? ' is-selected' : ''}`}>
-      <AssetCard asset={{ name: data.name, type: data.typeLabel, cover: data.previewUrl }} compact selected={selected} footer={`关联 ${links.length} 个分镜`}>
+      <AssetCard asset={{ name: data.name, type: data.typeLabel, cover: data.previewUrl }} compact selected={selected} footer={tv(`关联 ${links.length} 个分镜`, `Liên kết ${links.length} phân cảnh`)}>
       {selected && links.length > 0 ? (
         <div className="ep-asset-node-links nodrag nopan">
           {links.map((link) => (
@@ -25,8 +26,8 @@ function EpisodeAssetNodeComponent({ data, selected, onUnlinkAsset }: Props) {
               key={link.fragmentId}
               type="button"
               className="ep-asset-node-unlink-chip"
-              aria-label={`取消 ${link.label} 的关联`}
-              title={`取消 ${link.label} 的关联`}
+              aria-label={tv(`取消 ${link.label} 的关联`, `Bỏ liên kết của ${link.label}`)}
+              title={tv(`取消 ${link.label} 的关联`, `Bỏ liên kết của ${link.label}`)}
               disabled={readOnly}
               onClick={() => onUnlinkAsset?.(link.fragmentId, data.assetId)}
             >

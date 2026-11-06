@@ -1,6 +1,7 @@
 import type { ToolRunRecord } from '../api/tools.ts'
 import type { AssetDetailRecord } from './assetDetails.ts'
 import { formatGenerationErrorMessage } from './generationError.ts'
+import { tv } from '../i18n/tv'
 
 /** 只接收参数标量，忽略请求引用、对象和内部追踪信息。 */
 function scalar(value: unknown): string | number | boolean | undefined {
@@ -20,13 +21,13 @@ export function toolRunDetailAsset(record: ToolRunRecord, resultIndex = 0): Asse
   const params = record.params || {}
   const url = record.kind === 'text' ? null : record.urls[resultIndex] || record.urls[0] || null
   const duration = seconds(params.duration_sec ?? params.duration)
-  const labels: Record<string, string> = { video: '视频生成', image: '图片生成', audio: '音频生成', text: '文字生成' }
-  const statuses: Record<string, string> = { queued: '任务正在排队，结果会自动更新。', running: '任务正在生成，结果会自动更新。', succeeded: '任务已完成，暂无可预览的媒体结果。', failed: '生成失败。', cancelled: '任务已取消。' }
-  const textContent = record.text_content || formatGenerationErrorMessage(record.error) || statuses[record.status] || `任务状态：${record.status}`
+  const labels: Record<string, string> = { video: tv('视频生成', 'Tạo video'), image: tv('图片生成', 'Tạo hình ảnh'), audio: tv('音频生成', 'Tạo âm thanh'), text: tv('文字生成', 'Tạo văn bản') }
+  const statuses: Record<string, string> = { queued: tv('任务正在排队，结果会自动更新。', 'Tác vụ đang xếp hàng, kết quả sẽ tự cập nhật.'), running: tv('任务正在生成，结果会自动更新。', 'Tác vụ đang tạo, kết quả sẽ tự cập nhật.'), succeeded: tv('任务已完成，暂无可预览的媒体结果。', 'Tác vụ đã hoàn tất, chưa có kết quả phương tiện để xem trước.'), failed: tv('生成失败。', 'Tạo thất bại.'), cancelled: tv('任务已取消。', 'Tác vụ đã bị hủy.') }
+  const textContent = record.text_content || formatGenerationErrorMessage(record.error) || statuses[record.status] || tv(`任务状态：${record.status}`, `Trạng thái tác vụ: ${record.status}`)
 
   return {
     id: record.id,
-    name: labels[record.kind] || '生成记录',
+    name: labels[record.kind] || tv('生成记录', 'Bản ghi tạo'),
     type: record.kind === 'text' || !url ? 'text' : record.kind,
     url,
     // 视频首帧只作已有视频的 poster；尚无成片时不能把图片作为视频下载或播放。

@@ -1,6 +1,7 @@
 import { createJsonRequester } from '../../api/client'
 import { setWorkspaceTeam, subscribeWorkspace, workspaceScope } from './workspaceScope'
 import { renewedLease, isSameLease, type EditLease } from './leaseIdentity'
+import { tv } from '../../i18n/tv'
 
 export type EditResource = 'structure' | 'script' | 'episode' | 'asset' | 'canvas'
 export type EditTarget = { projectId: number; type: EditResource; resourceId: number }
@@ -54,7 +55,7 @@ export async function projectTeam(projectId: number): Promise<number | null> {
   const epoch = workspaceScope.epoch
   const token = localStorage.getItem('token')
   const project = await request<Row>(`/api/drama/projects/${projectId}`)
-  if (epoch !== workspaceScope.epoch || token !== localStorage.getItem('token')) throw new DOMException('空间或登录身份已变化', 'AbortError')
+  if (epoch !== workspaceScope.epoch || token !== localStorage.getItem('token')) throw new DOMException(tv('空间或登录身份已变化', 'Không gian hoặc danh tính đăng nhập đã thay đổi'), 'AbortError')
   recordDramaResponse(`/api/drama/projects/${projectId}`, project)
   return project.team_id ?? null
 }
@@ -70,7 +71,7 @@ export async function holdEditLock(target: EditTarget, force = false): Promise<s
   const epoch = workspaceScope.epoch
   const authToken = localStorage.getItem('token')
   const teamId = await projectTeam(target.projectId)
-  if (epoch !== workspaceScope.epoch || authToken !== localStorage.getItem('token')) throw new DOMException('空间或登录身份已变化', 'AbortError')
+  if (epoch !== workspaceScope.epoch || authToken !== localStorage.getItem('token')) throw new DOMException(tv('空间或登录身份已变化', 'Không gian hoặc danh tính đăng nhập đã thay đổi'), 'AbortError')
   if (teamId === null) return null
   const id = key(target)
   const existing = held.get(id)
@@ -82,11 +83,11 @@ export async function holdEditLock(target: EditTarget, force = false): Promise<s
       const lease = await request<Lease>(`/api/teams/${teamId}/edit-locks/acquire`, { method: 'POST', body: JSON.stringify({ project_id: target.projectId, resource_type: target.type, resource_id: target.resourceId, session_id: editSessionId, force }) })
       if (epoch !== workspaceScope.epoch || authToken !== localStorage.getItem('token')) {
         void request(`/api/teams/${teamId}/edit-locks/release`, { method: 'POST', body: JSON.stringify({ token: lease.token, session_id: editSessionId }) }).catch(() => undefined)
-        throw new DOMException('空间或登录身份已变化', 'AbortError')
+        throw new DOMException(tv('空间或登录身份已变化', 'Không gian hoặc danh tính đăng nhập đã thay đổi'), 'AbortError')
       }
       if (existing) clearInterval(existing.timer)
       const entry: Held = { lease, teamId, target, refs: 0, timer: setInterval(() => {
-        void request<Omit<Lease, 'token'>>(`/api/teams/${teamId}/edit-locks/renew`, { method: 'POST', body: JSON.stringify({ token: entry.lease.token, session_id: editSessionId }) }).then((next) => { if (held.get(id) === entry) entry.lease = renewedLease(entry.lease, next) }).catch((cause) => { if (held.get(id) !== entry) return; entry.lost = cause instanceof Error ? cause.message : '编辑占用已失效'; clearInterval(entry.timer); emit() })
+        void request<Omit<Lease, 'token'>>(`/api/teams/${teamId}/edit-locks/renew`, { method: 'POST', body: JSON.stringify({ token: entry.lease.token, session_id: editSessionId }) }).then((next) => { if (held.get(id) === entry) entry.lease = renewedLease(entry.lease, next) }).catch((cause) => { if (held.get(id) !== entry) return; entry.lost = cause instanceof Error ? cause.message : tv('编辑占用已失效', 'Quyền chiếm chỉnh sửa đã mất hiệu lực'); clearInterval(entry.timer); emit() })
       }, 30_000) }
       held.set(id, entry); emit(); return entry
     })()
@@ -105,14 +106,14 @@ export async function releaseEditLock(target: EditTarget, all = false, expectedT
   await request(`/api/teams/${entry.teamId}/edit-locks/release`, { method: 'POST', body: JSON.stringify({ token: entry.lease.token, session_id: editSessionId }), keepalive: true }).catch(() => undefined)
 }
 /** 切换空间和离开标签页时尽早释放；异常退出仍有后端租约过期兜底。 */
-subscribeWorkspace(() => { pending.clear(); for (const entry of held.values()) entry.lost = '空间或登录身份已变化，请重新读取内容后取得编辑权'; emit(); for (const entry of held.values()) void releaseEditLock(entry.target, true) })
+subscribeWorkspace(() => { pending.clear(); for (const entry of held.values()) entry.lost = tv('空间或登录身份已变化，请重新读取内容后取得编辑权', 'Không gian hoặc danh tính đăng nhập đã thay đổi, vui lòng đọc lại nội dung rồi lấy quyền chỉnh sửa'); emit(); for (const entry of held.values()) void releaseEditLock(entry.target, true) })
 if (typeof window !== 'undefined') window.addEventListener('pagehide', () => { for (const entry of held.values()) void releaseEditLock(entry.target, true) })
 
 /** 补齐已知分集的业务集号，禁止用当前项目猜测归属。 */
 async function episodeTarget(id: number): Promise<EditTarget> {
   let info = episodes.get(id)
   if (!info) { const episode = await request<Row>(`/api/drama/episodes/${id}`); recordDramaResponse(`/api/drama/episodes/${id}`, episode); info = episodes.get(id) }
-  if (!info) throw new Error('无法确认分集归属，请重新打开项目')
+  if (!info) throw new Error(tv('无法确认分集归属，请重新打开项目', 'Không xác nhận được tập thuộc dự án nào, vui lòng mở lại dự án'))
   return { projectId: info.projectId, type: 'episode', resourceId: info.number }
 }
 /** 根据现有写入接口解析唯一资源目标。 */
@@ -128,9 +129,9 @@ export async function resolveEditTarget(path: string, init: RequestInit): Promis
   match = path.match(/\/episodes\/(\d+)/)
   if (match) return episodeTarget(Number(match[1]))
   match = path.match(/\/fragments\/(\d+)/)
-  if (match) { const episodeId = fragments.get(Number(match[1])); if (!episodeId) throw new Error('请刷新分集后再操作此分镜'); return episodeTarget(episodeId) }
+  if (match) { const episodeId = fragments.get(Number(match[1])); if (!episodeId) throw new Error(tv('请刷新分集后再操作此分镜', 'Vui lòng làm mới tập rồi hãy thao tác phân cảnh này')); return episodeTarget(episodeId) }
   match = path.match(/\/assets\/(\d+)/)
-  if (match) { const assetId = Number(match[1]); projectId = assets.get(assetId) || 0; if (!projectId) throw new Error('请重新打开所属项目的资产后再编辑'); return { projectId, type: 'asset', resourceId: assetId } }
+  if (match) { const assetId = Number(match[1]); projectId = assets.get(assetId) || 0; if (!projectId) throw new Error(tv('请重新打开所属项目的资产后再编辑', 'Vui lòng mở lại tài sản của dự án sở hữu rồi hãy chỉnh sửa')); return { projectId, type: 'asset', resourceId: assetId } }
   if (!projectId) return null
   if (/canvas/.test(path)) return { projectId, type: 'canvas', resourceId: 0 }
   if (/seed_from_script|script_summary|add_episode/.test(path)) return { projectId, type: 'structure', resourceId: 0 }
@@ -146,7 +147,7 @@ export async function withDramaEditLock<T>(path: string, init: RequestInit | und
   const target = init ? await resolveEditTarget(path, init) : null
   if (!target) return action(init)
   const actualTeam = await projectTeam(target.projectId)
-  if (epoch !== workspaceScope.epoch || authToken !== localStorage.getItem('token')) throw new DOMException('空间或登录身份已变化', 'AbortError')
+  if (epoch !== workspaceScope.epoch || authToken !== localStorage.getItem('token')) throw new DOMException(tv('空间或登录身份已变化', 'Không gian hoặc danh tính đăng nhập đã thay đổi'), 'AbortError')
   const scopeHeaders = new Headers(init?.headers)
   if (actualTeam === null) scopeHeaders.set('X-Workspace-Personal', '1')
   else scopeHeaders.set('X-Team-Id', String(actualTeam))
@@ -155,7 +156,7 @@ export async function withDramaEditLock<T>(path: string, init: RequestInit | und
   if (!heldToken) return action(scoped)
   try {
     const entry = held.get(key(target))
-    if (!entry || !isSameLease(entry.lease, heldToken) || entry.lost || new Date(entry.lease.expires_at).getTime() <= Date.now()) throw new Error(entry?.lost || '编辑占用已失效，请重新取得编辑权')
+    if (!entry || !isSameLease(entry.lease, heldToken) || entry.lost || new Date(entry.lease.expires_at).getTime() <= Date.now()) throw new Error(entry?.lost || tv('编辑占用已失效，请重新取得编辑权', 'Quyền chiếm chỉnh sửa đã mất hiệu lực, vui lòng lấy lại quyền chỉnh sửa'))
     const headers = new Headers(scopeHeaders)
     headers.set('X-Edit-Session', editSessionId); headers.set('X-Edit-Token', entry.lease.token); headers.set('X-Edit-Version', String(entry.lease.version))
     return await action({ ...init, headers })

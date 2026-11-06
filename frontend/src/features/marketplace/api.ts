@@ -1,4 +1,5 @@
 import { explainMarketplaceError, marketplaceErrorCode } from './messages'
+import { tv } from '../../i18n/tv'
 
 /** 下游独立客户端；不修改原 api.ts。金额统一以分传输。 */
 export type Row = {
@@ -47,7 +48,7 @@ export async function request<T>(path: string, method = 'GET', body?: unknown, s
     })
   } catch (cause) {
     if (signal?.aborted) throw cause
-    throw new Error('网络连接失败，请检查网络后重试。', { cause })
+    throw new Error(tv('网络连接失败，请检查网络后重试。', 'Kết nối mạng thất bại, vui lòng kiểm tra mạng rồi thử lại.'), { cause })
   }
   const result = await response.json().catch(() => ({}))
   if (!response.ok) {
@@ -67,7 +68,7 @@ export async function letterFile(id: number): Promise<Blob> {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
   } catch {
-    throw new Error('授权函暂时无法打开')
+    throw new Error(tv('授权函暂时无法打开', 'Tạm thời không mở được thư ủy quyền'))
   }
   if (!response.ok) {
     if (response.status === 401) window.location.assign(`/auth?next=${encodeURIComponent(window.location.pathname + window.location.search)}`)
@@ -142,8 +143,8 @@ export async function upload(file: File, kind: string, progress: (percent: numbe
   } catch (error) {
     if (signal?.aborted && session) {
       try { await request(`/uploads/${session.id}`, 'DELETE'); localStorage.removeItem(key) }
-      catch { throw new Error('取消未确认，请到我的文件检查状态；重新选择相同文件可恢复上传。') }
-      throw new Error('已取消上传')
+      catch { throw new Error(tv('取消未确认，请到我的文件检查状态；重新选择相同文件可恢复上传。', 'Hủy chưa được xác nhận, vui lòng đến Tệp của tôi kiểm tra trạng thái; chọn lại cùng tệp có thể tiếp tục tải lên.')) }
+      throw new Error(tv('已取消上传', 'Đã hủy tải lên'))
     }
     throw error
   }
@@ -156,6 +157,6 @@ export const date = (value?: string) => value ? new Date(value).toLocaleString('
 // 将UTC转为当前浏览器datetime-local值，避免表单回填时改变时区。
 export function localDate(value: string) { const date = new Date(value); return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16) }
 // 状态不在客户端推断，仅翻译后端结果。
-export const labels: Record<string, string> = { draft: '草稿', preview_failed: '短试看生成失败', pending: '待审核', approved: '已通过', rejected: '已驳回', missing: '未提交', ready: '已就绪', processing: '处理中', uploading: '上传中', failed: '失败', open: '征集中', closed: '已关闭', expired: '已到期', to_review: '待看', candidate: '候选', not_selected: '不采用', pending_materials: '待材料', reviewing: '材料核验中', supplement: '待补正', applying: '办理中', certificated: '已取得证书', cancelled: '已取消', existing: '已有证书', self_service: '自行办理', assisted: '客服协办' }
+export const labels: Record<string, string> = { draft: tv('草稿', 'Bản nháp'), preview_failed: tv('短试看生成失败', 'Tạo bản xem thử ngắn thất bại'), pending: tv('待审核', 'Chờ duyệt'), approved: tv('已通过', 'Đã duyệt'), rejected: tv('已驳回', 'Đã từ chối'), missing: tv('未提交', 'Chưa gửi'), ready: tv('已就绪', 'Đã sẵn sàng'), processing: tv('处理中', 'Đang xử lý'), uploading: tv('上传中', 'Đang tải lên'), failed: tv('失败', 'Thất bại'), open: tv('征集中', 'Đang thu thập'), closed: tv('已关闭', 'Đã đóng'), expired: tv('已到期', 'Đã hết hạn'), to_review: tv('待看', 'Chờ xem'), candidate: tv('候选', 'Ứng viên'), not_selected: tv('不采用', 'Không dùng'), pending_materials: tv('待材料', 'Chờ tài liệu'), reviewing: tv('材料核验中', 'Đang xác minh tài liệu'), supplement: tv('待补正', 'Chờ bổ sung'), applying: tv('办理中', 'Đang xử lý'), certificated: tv('已取得证书', 'Đã có chứng chỉ'), cancelled: tv('已取消', 'Đã hủy'), existing: tv('已有证书', 'Đã có chứng chỉ'), self_service: tv('自行办理', 'Tự thực hiện'), assisted: tv('客服协办', 'CSKH hỗ trợ') }
 
 

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { AlertCircle, CheckCircle2, Info, LoaderCircle, TriangleAlert, WifiOff, X } from 'lucide-react'
 import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
 import './dramaStatusNotice.css'
+import { tv } from '../../i18n/tv'
 
 type Props = {
   tone?: 'info' | 'success' | 'warning' | 'error' | 'busy'
@@ -33,7 +34,7 @@ export default function DramaStatusNotice({ tone = 'info', title, children, icon
         {children ? <div className="drama-status-notice-description">{children}</div> : null}
       </div>
       {onDismiss ? (
-        <button type="button" className="drama-status-notice-close" onClick={onDismiss} aria-label="关闭提示">
+        <button type="button" className="drama-status-notice-close" onClick={onDismiss} aria-label={tv("关闭提示", "Tắt nhắc nhở")}>
           <X size={16} aria-hidden="true" />
         </button>
       ) : null}
@@ -47,16 +48,16 @@ export function DramaErrorNotice({ message, className, onDismiss }: { message: s
   return (
     <DramaStatusNotice
       tone={networkError ? 'warning' : 'error'}
-      title={networkError ? '暂时无法连接服务' : '操作未完成'}
+      title={networkError ? tv('暂时无法连接服务', 'Tạm thời không kết nối được dịch vụ') : tv('操作未完成', 'Thao tác chưa hoàn tất')}
       icon={networkError ? <WifiOff size={17} strokeWidth={1.8} /> : undefined}
       className={className}
       onDismiss={onDismiss}
     >
       {networkError ? (
         <>
-          <p>请检查网络连接后重试。如有生成任务进行中，可稍后查看任务状态。</p>
+          <p>{tv("请检查网络连接后重试。如有生成任务进行中，可稍后查看任务状态。", "Vui lòng kiểm tra kết nối mạng rồi thử lại. Nếu có tác vụ tạo đang chạy, có thể xem trạng thái tác vụ sau.")}</p>
           <details className="drama-status-notice-details">
-            <summary>查看错误详情</summary>
+            <summary>{tv("查看错误详情", "Xem chi tiết lỗi")}</summary>
             <p>{message}</p>
           </details>
         </>

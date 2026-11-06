@@ -1,3 +1,4 @@
+import { tv } from '../i18n/tv'
 /** 视频生成版权审核错误的展示文案；原始异常继续保留在任务记录中。 */
 export type CopyrightErrorView = {
   title: string
@@ -14,10 +15,11 @@ export function formatCopyrightError(raw: string | null | undefined): CopyrightE
   const match = text.match(/\brequest[\s_-]*id\b["'\s:：]*([a-z0-9][a-z0-9_-]*)|请求(?:\s*(?:id|编号))?\s*[:：]\s*([a-z0-9][a-z0-9_-]*)/i)
   const requestId = match?.[1] || match?.[2]
   return {
-    title: '视频未通过版权审核',
-    message: '视频服务提示本次生成结果可能涉及版权限制，暂时无法提供视频。'
-      + (requestId ? `\n请求编号：${requestId}` : ''),
-    suggestion: '请调整提示词或参考素材后重试；如素材为原创或已获授权，请联系客服核查。',
+    title: tv('视频未通过版权审核', 'Video chưa qua duyệt bản quyền'),
+    message: tv('视频服务提示本次生成结果可能涉及版权限制，暂时无法提供视频。', 'Dịch vụ video báo kết quả tạo lần này có thể dính hạn chế bản quyền, tạm thời không cung cấp video được.')
+      + (requestId ? tv(`\n请求编号：${requestId}`, `
+Mã yêu cầu: ${requestId}`) : ''),
+    suggestion: tv('请调整提示词或参考素材后重试；如素材为原创或已获授权，请联系客服核查。', 'Vui lòng điều chỉnh prompt hoặc tư liệu tham chiếu rồi thử lại; nếu tư liệu là sáng tác gốc hoặc đã được cấp phép, vui lòng liên hệ CSKH kiểm tra.'),
     requestId,
   }
 }

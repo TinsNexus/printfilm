@@ -3,6 +3,7 @@ import { API_BASE, createJsonRequester, requestResponse, uploadFile } from './ap
 import { apiErrorMessage } from './api/http'
 import { curatedCreationTemplates } from './lib/creationTemplates'
 import type { PaymentCurrency, StripePaymentQuote } from './lib/billingPayments'
+import { tv } from './i18n/tv'
 
 /** 科普、账号和计费 API 共用 JSON 传输层。 */
 const request = createJsonRequester()
@@ -353,7 +354,7 @@ export const api = {
   /** 上传用户头像并返回更新后的用户资料。 */
   uploadAvatar(file: File) {
     return uploadFile<User>('/api/auth/avatar', file, (response, detail) => {
-      throw new Error(apiErrorMessage(detail, response.statusText) || '头像上传失败')
+      throw new Error(apiErrorMessage(detail, response.statusText) || tv('头像上传失败', 'Tải ảnh đại diện thất bại'))
     })
   },
   templates() {
@@ -417,7 +418,7 @@ export const api = {
   /** 上传科普项目封面并返回项目。 */
   uploadCover(id: number, file: File) {
     return uploadFile<Project>(`/api/projects/${id}/cover`, file, (response, detail) => {
-      throw new Error(apiErrorMessage(detail, response.statusText) || '封面上传失败')
+      throw new Error(apiErrorMessage(detail, response.statusText) || tv('封面上传失败', 'Tải ảnh bìa thất bại'))
     })
   },
   voices() {
@@ -470,7 +471,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ ids }),
     }, (response, detail) => {
-      throw new Error(apiErrorMessage(detail, response.statusText) || '打包下载失败')
+      throw new Error(apiErrorMessage(detail, response.statusText) || tv('打包下载失败', 'Tải xuống gói thất bại'))
     })
     const blob = await res.blob()
     const cd = res.headers.get('Content-Disposition') || ''
@@ -509,7 +510,7 @@ export const api = {
   /** 上传分镜图片，保留当前项目响应结构。 */
   uploadShotImage(projectId: number, shotId: number, file: File) {
     return uploadFile<Project>(`/api/projects/${projectId}/shots/${shotId}/image`, file, (_response, detail) => {
-      throw new Error(typeof detail === 'string' ? detail : '画面上传失败')
+      throw new Error(typeof detail === 'string' ? detail : tv('画面上传失败', 'Tải ảnh khung hình thất bại'))
     })
   },
   regenImage(projectId: number, shotId: number) {

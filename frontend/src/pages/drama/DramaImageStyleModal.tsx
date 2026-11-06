@@ -5,6 +5,7 @@ import { DramaImageStyleCardGrid } from '../../components/drama/DramaImageStyleC
 import { DramaImageStylePreviewImg } from '../../components/drama/DramaImageStylePreviewImg'
 import Modal from '../../components/ui/Modal'
 import { getImageStyleLabel, type ImageStyleId } from '../../lib/dramaImageStyles'
+import { tv } from '../../i18n/tv'
 
 type Props = {
   value: ImageStyleId | ''
@@ -26,13 +27,13 @@ export function DramaImageStyleModal({
   onChange,
   disabled = false,
   variant = 'toolbar',
-  fieldLabel = '项目风格',
-  title = '画面风格',
+  fieldLabel = tv('项目风格', 'Phong cách dự án'),
+  title = tv('画面风格', 'Phong cách hình ảnh'),
   emptyLabel,
 }: Props) {
   const [open, setOpen] = useState(false)
   const styleLabel = getImageStyleLabel(value)
-  const triggerLabel = styleLabel || emptyLabel || (variant === 'field' ? '选择风格' : '风格库')
+  const triggerLabel = styleLabel || emptyLabel || (variant === 'field' ? tv('选择风格', 'Chọn phong cách') : tv('风格库', 'Thư viện phong cách'))
   const active = Boolean(value) || open
 
   // 选中风格并关闭
@@ -81,9 +82,9 @@ export function DramaImageStyleModal({
       <Modal open={open} onClose={() => setOpen(false)} title={title} size="md" className="drama-style-modal">
         {/* 封面即画风参考图，避免用户以为只是缩略预览 */}
         <p className="drama-style-modal-hint">
-          封面图会作为画风参考一并提交。模型只借色调、笔触和光影，不会照抄封面里的人物或构图。
+          {tv("封面图会作为画风参考一并提交。模型只借色调、笔触和光影，不会照抄封面里的人物或构图。", "Ảnh bìa sẽ được gửi cùng làm tham chiếu phong cách hình ảnh. Model chỉ mượn tông màu, nét bút và ánh sáng, không sao chép nhân vật hay bố cục trong ảnh bìa.")}
         </p>
-        <DramaImageStyleCardGrid value={value} onChange={select} noneLabel="无风格" />
+        <DramaImageStyleCardGrid value={value} onChange={select} noneLabel={tv("无风格", "Không có phong cách")} />
       </Modal>
     </>
   )

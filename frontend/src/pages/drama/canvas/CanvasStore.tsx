@@ -47,6 +47,7 @@ import {
 } from './canvasTypes'
 import { useCanvasAutoSave, type CanvasSaveStatus } from './useCanvasAutoSave'
 import { CanvasStoreContext, useCanvasStore as useCanvasStoreBase } from './canvasStoreContext'
+import { tv } from '../../../i18n/tv'
 
 /** 从连线两端识别「音频 → 角色」绑定对（方向可互换） */
 function pickAudioCharacterPair(
@@ -236,7 +237,7 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
       })
       .catch((err) => {
         if (cancelled) return
-        setErrorMessage(err instanceof Error ? err.message : '加载画布失败')
+        setErrorMessage(err instanceof Error ? err.message : tv('加载画布失败', 'Tải canvas thất bại'))
         readyRef.current = true
       })
       .finally(() => {
@@ -374,7 +375,7 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
       const pair = pickAudioCharacterPair(source, target)
       if (pair) {
         void bindVoiceFromEdgeRef.current(pair.audio.id, pair.character.id).catch((err) => {
-          setErrorMessage(err instanceof Error ? err.message : '音色绑定失败')
+          setErrorMessage(err instanceof Error ? err.message : tv('音色绑定失败', 'Gắn giọng nói thất bại'))
         })
       }
     },
@@ -414,13 +415,13 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
               params: { on_canvas: true },
             })
             if (usedIds.has(retry.id)) {
-              setErrorMessage('创建节点失败：资产已存在于画布')
+              setErrorMessage(tv('创建节点失败：资产已存在于画布', 'Tạo nút thất bại: tài sản đã có trên canvas'))
               return
             }
             assetId = retry.id
           }
         } catch (err) {
-          setErrorMessage(err instanceof Error ? err.message : '创建资产失败')
+          setErrorMessage(err instanceof Error ? err.message : tv('创建资产失败', 'Tạo tài sản thất bại'))
           return
         }
 
@@ -478,7 +479,7 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
   const ensureNodeAsset = useCallback(
     async (nodeId: string) => {
       const node = nodesRef.current.find((n) => n.id === nodeId)
-      if (!node) throw new Error('节点不存在')
+      if (!node) throw new Error(tv('节点不存在', 'Nút không tồn tại'))
       if (typeof node.data.assetId === 'number' && node.data.assetId > 0) {
         return node.data.assetId
       }
@@ -529,7 +530,7 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
           .filter((n): n is Node<CanvasAssetNodeData> => Boolean(n && n.data.kind === 'character'))
         for (const character of linkedCharacters) {
           void bindVoiceFromEdgeRef.current(nodeId, character.id).catch((err) => {
-            setErrorMessage(err instanceof Error ? err.message : '音色绑定失败')
+            setErrorMessage(err instanceof Error ? err.message : tv('音色绑定失败', 'Gắn giọng nói thất bại'))
           })
         }
       }
@@ -542,10 +543,10 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
     async (nodeId: string, source: DramaAsset) => {
       pushSnapshot()
       const node = nodesRef.current.find((n) => n.id === nodeId)
-      if (!node) throw new Error('节点不存在')
+      if (!node) throw new Error(tv('节点不存在', 'Nút không tồn tại'))
       const isAudioNode = node.data.kind === 'audio'
       if (!source.url && !source.cover) {
-        throw new Error(isAudioNode ? '所选资产没有可用音频' : '所选资产没有可用图片')
+        throw new Error(isAudioNode ? tv('所选资产没有可用音频', 'Tài sản đã chọn không có âm thanh dùng được') : tv('所选资产没有可用图片', 'Tài sản đã chọn không có ảnh dùng được'))
       }
       const assetId = await ensureNodeAsset(nodeId)
       const promptHint = isAudioNode ? '' : readEditableVisualPrompt(source)
@@ -621,7 +622,7 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
           .filter((n): n is Node<CanvasAssetNodeData> => Boolean(n && n.data.kind === 'character'))
         for (const character of linkedCharacters) {
           void bindVoiceFromEdgeRef.current(nodeId, character.id).catch((err) => {
-            setErrorMessage(err instanceof Error ? err.message : '音色绑定失败')
+            setErrorMessage(err instanceof Error ? err.message : tv('音色绑定失败', 'Gắn giọng nói thất bại'))
           })
         }
       }
@@ -665,7 +666,7 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
       if (!audioNode || !characterNode) return
       const audioUrl = String(audioNode.data.mediaUrl || '').trim()
       if (!audioUrl) {
-        setErrorMessage('请先给音频节点上传或选用音频，再连到角色')
+        setErrorMessage(tv('请先给音频节点上传或选用音频，再连到角色', 'Vui lòng tải lên hoặc chọn âm thanh cho nút âm thanh trước, rồi nối vào nhân vật'))
         return
       }
 
@@ -674,15 +675,15 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
       const list = await dramaApi.listAssets(projectId)
       let character = list.find((a) => a.id === characterAssetId)
       let audio = list.find((a) => a.id === audioAssetId)
-      if (!character) throw new Error('角色资产不存在')
-      if (!audio) throw new Error('音频资产不存在')
+      if (!character) throw new Error(tv('角色资产不存在', 'Tài sản nhân vật không tồn tại'))
+      if (!audio) throw new Error(tv('音频资产不存在', 'Tài sản âm thanh không tồn tại'))
 
       if (!(audio.url || '').trim()) {
         audio = await dramaApi.updateAsset(audioAssetId, {
           url: audioUrl,
           type: audio.type === 'voice' ? 'voice' : 'audio',
           asset_type: 'audio',
-          name: audio.name || String(audioNode.data.label || '音色'),
+          name: audio.name || String(audioNode.data.label || tv('音色', 'Giọng nói')),
         })
       }
 
@@ -699,11 +700,11 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
   const generateNodeImage = useCallback(
     async (nodeId: string, prompt: string, options?: Partial<ImageGenerationOptions>) => {
       const trimmed = prompt.trim()
-      if (!trimmed) throw new Error('请输入提示词')
+      if (!trimmed) throw new Error(tv('请输入提示词', 'Vui lòng nhập prompt'))
       pushSnapshot()
       const node = nodesRef.current.find((n) => n.id === nodeId)
-      if (!node) throw new Error('节点不存在')
-      if (node.data.kind === 'video') throw new Error('视频节点请使用视频生成')
+      if (!node) throw new Error(tv('节点不存在', 'Nút không tồn tại'))
+      if (node.data.kind === 'video') throw new Error(tv('视频节点请使用视频生成', 'Nút video vui lòng dùng tạo video'))
 
       setNodes((current) =>
         current.map((n) =>
@@ -730,12 +731,12 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
           if (!ref) return token
           const kindLabel =
             ref.data.kind === 'character'
-              ? '角色'
+              ? tv('角色', 'Nhân vật')
               : ref.data.kind === 'scene'
-                ? '场景'
+                ? tv('场景', 'Bối cảnh')
                 : ref.data.kind === 'image'
-                  ? '图片'
-                  : '资产'
+                  ? tv('图片', 'Hình ảnh')
+                  : tv('资产', 'Tài sản')
           return `${kindLabel}「${ref.data.label}」`
         })
         const latest = await enqueueDramaImageGen({
@@ -777,7 +778,7 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
           },
         })
         const mediaUrl = latest.url || latest.cover || ''
-        if (!mediaUrl) throw new Error('生图超时，请重试')
+        if (!mediaUrl) throw new Error(tv('生图超时，请重试', 'Tạo ảnh quá thời gian, vui lòng thử lại'))
         setNodes((current) =>
           current.map((n) =>
             n.id === nodeId
@@ -832,10 +833,10 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
   const generateNodeVideo = useCallback(
     async (nodeId: string, prompt: string, options?: Partial<VideoGenerationOptions>) => {
       const trimmed = prompt.trim()
-      if (!trimmed) throw new Error('请输入提示词')
+      if (!trimmed) throw new Error(tv('请输入提示词', 'Vui lòng nhập prompt'))
       pushSnapshot()
       const node = nodesRef.current.find((n) => n.id === nodeId)
-      if (!node) throw new Error('节点不存在')
+      if (!node) throw new Error(tv('节点不存在', 'Nút không tồn tại'))
 
       setNodes((current) =>
         current.map((n) =>
@@ -870,7 +871,7 @@ export function CanvasStoreProvider({ projectId, children }: CanvasStoreProvider
           referenceAssetIds: collectConnectedAssetIds(nodeId),
         })
         const mediaUrl = resolveDramaMediaUrl(latest.url || latest.cover || '')
-        if (!mediaUrl) throw new Error('生视频超时，请重试')
+        if (!mediaUrl) throw new Error(tv('生视频超时，请重试', 'Tạo video quá thời gian, vui lòng thử lại'))
         setNodes((current) =>
           current.map((n) =>
             n.id === nodeId

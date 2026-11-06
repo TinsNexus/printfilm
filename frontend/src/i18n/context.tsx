@@ -46,7 +46,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     (path, vars) => {
       // 缺失的键先回退英文，避免界面直接露出键名
       const raw = lookupMessage(m, path) ?? lookupMessage(messages.en, path)
-      if (!raw) return path
+      if (raw === undefined) return path
       return interpolate(raw, vars)
     },
     [m],

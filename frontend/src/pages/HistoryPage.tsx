@@ -31,6 +31,7 @@ import { formatGenerationErrorMessage } from '../lib/generationError'
 import { formatDateTime, useI18n } from '../i18n'
 import './drama/project-list.css'
 import './shortVideoList.css'
+import { tv } from '../i18n/tv'
 
 type HistoryItem = Omit<Project, 'shots'> & {
   published?: boolean
@@ -371,7 +372,7 @@ export default function HistoryPage() {
                     <button type="button" className="pf-btn-text" onClick={() => continueEdit(p)}><IconEdit size={14} />{t('history.continueEdit')}</button>
                     <button type="button" className="pf-btn-text" disabled={!p.final_video_url} onClick={() => p.final_video_url && setPreview({ url: api.assetUrl(p.final_video_url, p.updated_at), title: p.title, projectId: p.id })}><IconEye size={14} />{t('common.preview')}</button>
                     <button type="button" className="pf-btn-text" disabled={!canDownload(p) || busyId === p.id || packing} onClick={() => downloadOne(p)}><IconDownload size={14} />{busyId === p.id ? t('common.downloading') : t('common.download')}</button>
-                    <button type="button" className="pf-btn-text" disabled={!p.final_video_url} onClick={() => nav(withReturn(`/marketplace/from-printfilm?project=${p.id}`, `${location.pathname}${location.search}`))}><IconSend size={14} />发布到市场</button>
+                    <button type="button" className="pf-btn-text" disabled={!p.final_video_url} onClick={() => nav(withReturn(`/marketplace/from-printfilm?project=${p.id}`, `${location.pathname}${location.search}`))}><IconSend size={14} />{tv("发布到市场", "Đăng lên chợ")}</button>
                   </>}
                 />
               })}

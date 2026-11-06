@@ -5,6 +5,7 @@ import { ChevronLeft, Maximize2, Settings } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useCanvasStore } from './CanvasStore'
 import type { CanvasSaveStatus } from './useCanvasAutoSave'
+import { tv } from '../../../i18n/tv'
 
 type Props = {
   variant?: 'fullscreen' | 'embedded'
@@ -12,10 +13,10 @@ type Props = {
 
 /** 保存状态文案 */
 function saveStatusLabel(status: CanvasSaveStatus): string | null {
-  if (status === 'dirty') return '未保存'
-  if (status === 'saving') return '保存中…'
-  if (status === 'saved') return '已保存'
-  if (status === 'error') return '保存失败'
+  if (status === 'dirty') return tv('未保存', 'Chưa lưu')
+  if (status === 'saving') return tv('保存中…', 'Đang lưu…')
+  if (status === 'saved') return tv('已保存', 'Đã lưu')
+  if (status === 'error') return tv('保存失败', 'Lưu thất bại')
   return null
 }
 
@@ -35,8 +36,8 @@ export function CanvasTopBar({ variant = 'fullscreen' }: Props) {
             <button
               type="button"
               className="fc-icon-btn"
-              aria-label="返回"
-              title="返回"
+              aria-label={tv("返回", "Quay lại")}
+              title={tv("返回", "Quay lại")}
               onClick={() => {
                 if (freeCanvasMode) {
                   navigate(workspaceScope.teamId ? `/teams/${workspaceScope.teamId}?tab=projects` : '/canvas')
@@ -50,7 +51,7 @@ export function CanvasTopBar({ variant = 'fullscreen' }: Props) {
             </button>
           )}
           <span className="fc-topbar-title">
-            {embedded ? '资产画布' : freeCanvasMode ? '自由画布' : '资产库编排'}
+            {embedded ? tv('资产画布', 'Canvas tài sản') : freeCanvasMode ? tv('自由画布', 'Canvas tự do') : tv('资产库编排', 'Sắp xếp thư viện tài sản')}
           </span>
           {statusText ? (
             <span
@@ -75,8 +76,8 @@ export function CanvasTopBar({ variant = 'fullscreen' }: Props) {
             <button
               type="button"
               className="fc-icon-btn"
-              aria-label="全屏画布"
-              title="全屏画布"
+              aria-label={tv("全屏画布", "Canvas toàn màn hình")}
+              title={tv("全屏画布", "Canvas toàn màn hình")}
               onClick={() => navigate(`/drama/projects/${projectId}/canvas`)}
             >
               <Maximize2 size={18} strokeWidth={1.8} />
@@ -85,8 +86,8 @@ export function CanvasTopBar({ variant = 'fullscreen' }: Props) {
           <button
             type="button"
             className="fc-icon-btn"
-            aria-label="设置"
-            title="设置"
+            aria-label={tv("设置", "Cài đặt")}
+            title={tv("设置", "Cài đặt")}
             aria-expanded={settingsOpen}
             onClick={() => setSettingsOpen((v) => !v)}
           >
@@ -96,11 +97,11 @@ export function CanvasTopBar({ variant = 'fullscreen' }: Props) {
       </div>
 
       {settingsOpen ? (
-        <div className="fc-settings-pop" role="dialog" aria-label="画布设置">
-          <strong>画布设置</strong>
+        <div className="fc-settings-pop" role="dialog" aria-label={tv("画布设置", "Cài đặt canvas")}>
+          <strong>{tv("画布设置", "Cài đặt canvas")}</strong>
           {freeCanvasMode
-            ? '在画布上添加节点、连线并生成图片与视频。布局与资产会自动保存。'
-            : '布局与项目资产会自动同步保存。上传走 OSS；合成时按需拉本地缓存。'}
+            ? tv('在画布上添加节点、连线并生成图片与视频。布局与资产会自动保存。', 'Thêm nút trên canvas, nối dây và tạo hình ảnh, video. Bố cục và tài sản tự động lưu.')
+            : tv('布局与项目资产会自动同步保存。上传走 OSS；合成时按需拉本地缓存。', 'Bố cục và tài sản dự án tự động đồng bộ lưu. Tải lên qua OSS; khi ghép sẽ kéo bộ đệm cục bộ khi cần.')}
           <div style={{ marginTop: 10 }}>
             <button
               type="button"
@@ -108,7 +109,7 @@ export function CanvasTopBar({ variant = 'fullscreen' }: Props) {
               style={{ width: 'auto', padding: '0 12px', borderRadius: 10 }}
               onClick={() => setSettingsOpen(false)}
             >
-              关闭
+              {tv("关闭", "Đóng")}
             </button>
           </div>
         </div>

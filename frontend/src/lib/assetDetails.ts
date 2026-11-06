@@ -1,5 +1,6 @@
 import { getImageStyleLabel } from './dramaImageStyles.ts'
 import { normalizeAssetDetailReferences, splitAssetDetailPrompt, type AssetDetailReference } from './assetDetailReferences.ts'
+import { tv } from '../i18n/tv'
 export { normalizeAssetDetailReferences, splitAssetDetailPrompt, type AssetDetailReference, type AssetDetailPromptPart } from './assetDetailReferences.ts'
 
 /** 统一资产详情数据：成功媒体快照优先，上传素材不混入旧生成参数。 */
@@ -23,14 +24,14 @@ function object(value: unknown): Record<string, unknown> {
 
 /** 仅展示标量值；保留 false 和 0，避免把内部对象直接输出到页面。 */
 function display(value: unknown): string {
-  if (typeof value === 'boolean') return value ? '是' : '否'
+  if (typeof value === 'boolean') return value ? tv('是', 'Có') : tv('否', 'Không')
   return typeof value === 'string' || typeof value === 'number' ? String(value) : ''
 }
 
 /** 成片时长最多保留两位小数，未知或无效值不伪造为零。 */
 export function formatMediaDuration(value: unknown): string {
   const duration = typeof value === 'number' ? value : Number.NaN
-  return Number.isFinite(duration) && duration > 0 ? `${Number(duration.toFixed(2))} 秒` : ''
+  return Number.isFinite(duration) && duration > 0 ? tv(`${Number(duration.toFixed(2))} 秒`, `${Number(duration.toFixed(2))} giây`) : ''
 }
 
 /** 从当前媒体读取生成参数；新快照存在时绝不回退到旧模型。 */
@@ -42,23 +43,23 @@ export function assetDetailInfo(asset: AssetDetailRecord) {
   const uploaded = (hasSnapshot ? snapshot.source : gen.source) === 'upload'
   const options = hasSnapshot ? object(snapshot.parameters) : { ...params, ...object(params.videoOptions), ...gen }
   const model = uploaded ? '' : display(hasSnapshot ? snapshot.model_id : options.model_id)
-  const source = uploaded ? '上传' : (hasSnapshot ? snapshot.source === 'generated' : Boolean(model)) ? 'AI 生成' : '未记录'
+  const source = uploaded ? tv('上传', 'Tải lên') : (hasSnapshot ? snapshot.source === 'generated' : Boolean(model)) ? tv('AI 生成', 'AI tạo') : tv('未记录', 'Chưa ghi nhận')
   const prompt = display(hasSnapshot ? snapshot.prompt : params.visualPrompt || params.visualImage || params.voicePrompt || params.prompt || params.description)
   // An explicit empty frozen list is authoritative; never borrow a later form's references.
   const references = uploaded ? [] : normalizeAssetDetailReferences(
     Object.hasOwn(snapshot, 'references') ? snapshot.references : asset.references,
   )
   const labels: Record<string, string> = {
-    aspect_ratio: snapshot.parameter_source === 'request' ? '设定画幅' : '比例',
-    resolution: snapshot.parameter_source === 'request' ? '设定分辨率' : '分辨率',
-    size: snapshot.parameter_source === 'request' ? '设定尺寸' : '尺寸', duration_sec: '时长', duration: '时长',
-    requested_duration_sec: '设定时长', video_mode: '生成方式', count: '生成数量', negative: '负向提示词',
-    strength: '参考强度', motion: '运动幅度',
-    image_style_id: '画面风格', generate_audio: '生成声音', watermark: '水印', camera_fixed: '固定镜头',
-    seed: '随机种子', speaker: '音色', sample_text: '试听文本', sampleText: '试听文本',
+    aspect_ratio: snapshot.parameter_source === 'request' ? tv('设定画幅', 'Đặt tỷ lệ khung') : tv('比例', 'Tỷ lệ'),
+    resolution: snapshot.parameter_source === 'request' ? tv('设定分辨率', 'Đặt độ phân giải') : tv('分辨率', 'Độ phân giải'),
+    size: snapshot.parameter_source === 'request' ? tv('设定尺寸', 'Đặt kích thước') : tv('尺寸', 'Kích thước'), duration_sec: tv('时长', 'Thời lượng'), duration: tv('时长', 'Thời lượng'),
+    requested_duration_sec: tv('设定时长', 'Đặt thời lượng'), video_mode: tv('生成方式', 'Cách tạo'), count: tv('生成数量', 'Số lượng tạo'), negative: tv('负向提示词', 'Prompt phủ định'),
+    strength: tv('参考强度', 'Cường độ tham chiếu'), motion: tv('运动幅度', 'Biên độ chuyển động'),
+    image_style_id: tv('画面风格', 'Phong cách hình ảnh'), generate_audio: tv('生成声音', 'Tạo âm thanh'), watermark: tv('水印', 'Watermark'), camera_fixed: tv('固定镜头', 'Cố định máy quay'),
+    seed: tv('随机种子', 'Hạt giống ngẫu nhiên'), speaker: tv('音色', 'Giọng nói'), sample_text: tv('试听文本', 'Văn bản nghe thử'), sampleText: tv('试听文本', 'Văn bản nghe thử'),
   }
   const parameters = uploaded ? [] : Object.entries(labels).flatMap(([key, label]) => {
-    const modes: Record<string, string> = { text_to_video: '文生视频', first_last_frame: '首尾帧', omni_reference: '全能参考' }
+    const modes: Record<string, string> = { text_to_video: tv('文生视频', 'Văn bản thành video'), first_last_frame: tv('首尾帧', 'Khung đầu cuối'), omni_reference: tv('全能参考', 'Tham chiếu đa năng') }
     const raw = options[key]
     const value = key === 'video_mode' ? modes[display(raw)] || ''
       : key === 'image_style_id' ? getImageStyleLabel(display(raw)) || display(raw)

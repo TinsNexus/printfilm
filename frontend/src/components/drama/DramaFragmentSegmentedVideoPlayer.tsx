@@ -13,6 +13,7 @@ import {
   resolveVideoTimelineSeekTime,
   type DramaEpisodeVideoTimelineSegment,
 } from '../../lib/dramaEpisodeVideoTimeline'
+import { tv } from '../../i18n/tv'
 
 type Props = {
   fragments: DramaFragment[]
@@ -401,7 +402,7 @@ export function DramaFragmentSegmentedVideoPlayer({
             <div className="drama-ep-video-overlay-actions">
               <button
                 type="button"
-                aria-label={isFullscreen ? '退出全屏' : '全屏预览'}
+                aria-label={isFullscreen ? tv('退出全屏', 'Thoát toàn màn hình') : tv('全屏预览', 'Xem trước toàn màn hình')}
                 className="drama-ep-video-overlay-btn"
                 onClick={() => void handleToggleFullscreen()}
               >
@@ -413,7 +414,7 @@ export function DramaFragmentSegmentedVideoPlayer({
               </button>
               <button
                 type="button"
-                aria-label="下载视频"
+                aria-label={tv("下载视频", "Tải video xuống")}
                 className="drama-ep-video-overlay-btn"
                 onClick={handleDownloadVideo}
               >
@@ -422,10 +423,10 @@ export function DramaFragmentSegmentedVideoPlayer({
             </div>
           </>
         ) : posterUrl ? (
-          <img src={posterUrl} alt="分镜预览" />
+          <img src={posterUrl} alt={tv("分镜预览", "Xem trước phân cảnh")} />
         ) : (
           <div className="drama-ep-player-placeholder">
-            <span>视频待生成</span>
+            <span>{tv("视频待生成", "Video chờ tạo")}</span>
           </div>
         )}
       </div>
@@ -438,7 +439,7 @@ export function DramaFragmentSegmentedVideoPlayer({
         <div className="drama-ep-video-toolbar">
           <button
             type="button"
-            aria-label={isPlaying ? '暂停' : '播放'}
+            aria-label={isPlaying ? tv('暂停', 'Tạm dừng') : tv('播放', 'Phát')}
             disabled={!hasCurrentVideo}
             className="drama-ep-video-icon-btn"
             onClick={handleTogglePlay}
@@ -497,9 +498,9 @@ export function DramaFragmentSegmentedVideoPlayer({
 
           <button
             type="button"
-            aria-label={autoLinkNext ? '关闭自动衔接下一片段' : '开启自动衔接下一片段'}
+            aria-label={autoLinkNext ? tv('关闭自动衔接下一片段', 'Tắt tự động nối đoạn tiếp theo') : tv('开启自动衔接下一片段', 'Bật tự động nối đoạn tiếp theo')}
             title={
-              autoLinkNext ? '关闭自动衔接下一片段' : '当前片段播放完后自动播放下一片段'
+              autoLinkNext ? tv('关闭自动衔接下一片段', 'Tắt tự động nối đoạn tiếp theo') : tv('当前片段播放完后自动播放下一片段', 'Phát xong đoạn hiện tại sẽ tự động phát đoạn tiếp theo')
             }
             disabled={!hasAnyVideo}
             className={`drama-ep-video-autolink${autoLinkNext ? ' is-on' : ''}`}
@@ -511,7 +512,7 @@ export function DramaFragmentSegmentedVideoPlayer({
 
           <button
             type="button"
-            aria-label={muted ? '取消静音' : '静音'}
+            aria-label={muted ? tv('取消静音', 'Bật tiếng') : tv('静音', 'Tắt tiếng')}
             disabled={!hasCurrentVideo}
             className="drama-ep-video-icon-btn is-muted"
             onClick={() => setMuted((value) => !value)}
@@ -525,8 +526,8 @@ export function DramaFragmentSegmentedVideoPlayer({
 
           <button
             type="button"
-            aria-label={isFullscreen ? '退出全屏' : '全屏预览'}
-            title={isFullscreen ? '退出全屏' : '全屏预览'}
+            aria-label={isFullscreen ? tv('退出全屏', 'Thoát toàn màn hình') : tv('全屏预览', 'Xem trước toàn màn hình')}
+            title={isFullscreen ? tv('退出全屏', 'Thoát toàn màn hình') : tv('全屏预览', 'Xem trước toàn màn hình')}
             disabled={!hasCurrentVideo}
             className="drama-ep-video-icon-btn"
             onClick={() => void handleToggleFullscreen()}

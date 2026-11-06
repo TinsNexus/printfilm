@@ -37,6 +37,7 @@ import TeamPage from './features/teams/TeamPage'
 import { TeamPreviewProvider } from './features/teams/TeamPreviewContext'
 import './styles/printfilm.css'
 import './App.css'
+import { tv } from './i18n/tv'
 
 const Marketplace = lazy(() => import('./features/marketplace/Marketplace'))
 
@@ -54,7 +55,7 @@ export default function App() {
   return (
     <TeamPreviewProvider><BrowserRouter>
       <Routes>
-        <Route path="/marketplace/*" element={<Suspense fallback={<p>正在加载作品与招募…</p>}><Marketplace /></Suspense>} />
+        <Route path="/marketplace/*" element={<Suspense fallback={<p>{tv("正在加载作品与招募…", "Đang tải tác phẩm và tuyển dụng…")}</p>}><Marketplace /></Suspense>} />
         <Route path="/" element={<HomePage />} />
         <Route path="/method" element={<MethodPage />} />
         <Route path="/auth" element={<AuthPage />} />

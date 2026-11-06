@@ -10,6 +10,7 @@ import {
   formatFragLabel,
   normalizeAssetTab,
 } from '../dramaEpisodeEditUtils'
+import { tv } from '../../../i18n/tv'
 
 export type EpisodeFragmentNodeData = {
   fragmentId: number
@@ -159,10 +160,10 @@ export function buildEpisodeFragmentFlow(
         assetId,
         linkedFragments: fragmentIds.map((fragmentId) => ({
           fragmentId,
-          label: fragLabels.get(fragmentId) || `镜 ${fragmentId}`,
+          label: fragLabels.get(fragmentId) || tv(`镜 ${fragmentId}`, `Cảnh ${fragmentId}`),
         })),
-        name: asset?.name || `资产 ${assetId}`,
-        typeLabel: tab || asset?.type || '资产',
+        name: asset?.name || tv(`资产 ${assetId}`, `Tài sản ${assetId}`),
+        typeLabel: tab || asset?.type || tv('资产', 'Tài sản'),
         previewUrl: resolveDramaMediaUrl(asset?.cover || asset?.url) || '',
       },
       draggable: true,

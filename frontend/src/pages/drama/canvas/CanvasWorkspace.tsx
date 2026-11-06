@@ -12,6 +12,7 @@ import { CANVAS_NODE_SIZE, type CanvasNodeKind } from './canvasTypes'
 import { FreeCanvasFlow } from './FreeCanvasFlow'
 import { formatGenerationErrorMessage } from '../../../lib/generationError'
 import './canvas.css'
+import { tv } from '../../../i18n/tv'
 
 type CanvasWorkspaceProps = {
   projectId: number
@@ -83,7 +84,7 @@ function CanvasWorkspaceContent({
       ) : null}
       {loading ? (
         <p className="fc-error-toast" style={{ background: '#fff', color: '#64748b' }}>
-          加载画布…
+          {tv("加载画布…", "Đang tải canvas…")}
         </p>
       ) : null}
     </div>

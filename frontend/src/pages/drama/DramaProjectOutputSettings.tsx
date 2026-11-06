@@ -20,6 +20,7 @@ import {
 } from '../../lib/dramaVideoGenerationOptions'
 import { catalogVideoModels, useMediaModelsCatalog } from '../../hooks/useMediaModelsCatalog'
 import './drama.css'
+import { tv } from '../../i18n/tv'
 
 type Props = {
   params: Record<string, unknown>
@@ -76,12 +77,12 @@ export function DramaProjectOutputSettings({
     videoModels,
   ) as DramaResolution
   const outputLabel = formatProjectOutputLabel(clampedAspect, clampedResolution)
-  const scopeHint = scope === 'episode' ? '本集' : '项目统一'
-  const panelTitle = scope === 'episode' ? '分集画幅' : '项目画幅'
+  const scopeHint = scope === 'episode' ? tv('本集', 'Tập này') : tv('项目统一', 'Thống nhất dự án')
+  const panelTitle = scope === 'episode' ? tv('分集画幅', 'Tỷ lệ khung của tập') : tv('项目画幅', 'Tỷ lệ khung của dự án')
   const panelNote =
     scope === 'episode'
-      ? '仅本集分镜使用；未单独设置时继承项目默认。比例与清晰度随当前视频模型过滤，可点选修改。'
-      : '全部分集共用同一规格；比例与清晰度随当前视频模型过滤。'
+      ? tv('仅本集分镜使用；未单独设置时继承项目默认。比例与清晰度随当前视频模型过滤，可点选修改。', 'Chỉ phân cảnh của tập này dùng; chưa đặt riêng thì kế thừa mặc định của dự án. Tỷ lệ và độ nét được lọc theo model video hiện tại, có thể bấm chọn để sửa.')
+      : tv('全部分集共用同一规格；比例与清晰度随当前视频模型过滤。', 'Tất cả các tập dùng chung một quy cách; tỷ lệ và độ nét được lọc theo model video hiện tại.')
 
   /* 仅在目录已匹配到模型白名单时静默钳制回写，避免 catalog/modelId 未就绪时把 1080p 写成 720p */
   useEffect(() => {
@@ -172,8 +173,8 @@ export function DramaProjectOutputSettings({
         disabled={disabled || saving}
         title={
           scope === 'episode'
-            ? '本集画幅与清晰度；各镜生成后可直接拼接'
-            : '全项目统一画幅与清晰度，各分镜生成后可直接拼接'
+            ? tv('本集画幅与清晰度；各镜生成后可直接拼接', 'Tỷ lệ khung và độ nét của tập này; các cảnh tạo xong có thể ghép trực tiếp')
+            : tv('全项目统一画幅与清晰度，各分镜生成后可直接拼接', 'Tỷ lệ khung và độ nét thống nhất toàn dự án, các phân cảnh tạo xong có thể ghép trực tiếp')
         }
         onClick={() => setOpen((c) => !c)}
       >
@@ -189,7 +190,7 @@ export function DramaProjectOutputSettings({
               className="fc-gen-opt-panel drama-ep-opt-panel fc-gen-opt-panel--portal"
               style={panelStyle}
               role="dialog"
-              aria-label={scope === 'episode' ? '分集画幅与清晰度' : '项目画幅与清晰度'}
+              aria-label={scope === 'episode' ? tv('分集画幅与清晰度', 'Tỷ lệ khung và độ nét của tập') : tv('项目画幅与清晰度', 'Tỷ lệ khung và độ nét của dự án')}
             >
               <div className="fc-gen-opt-panel-title">{panelTitle}</div>
               <p className="drama-project-output-note">{panelNote}</p>
@@ -208,7 +209,7 @@ export function DramaProjectOutputSettings({
                 ))}
               </div>
               <div className="fc-gen-opt-panel-title" style={{ marginTop: 12 }}>
-                清晰度
+                {tv("清晰度", "Độ nét")}
               </div>
               <div className="fc-gen-chip-row">
                 {resolutionOptions.map((r) => (

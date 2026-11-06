@@ -10,6 +10,7 @@ import {
   type AssetScope,
   type AssetTab,
 } from './dramaEpisodeEditUtils'
+import { tv } from '../../i18n/tv'
 
 type Props = {
   readOnly?: boolean
@@ -39,9 +40,9 @@ type Props = {
 
 // 当前分类新建按钮文案
 function createLabel(tab: AssetTab | null): string {
-  if (tab === 'scene') return '新建场景'
-  if (tab === 'prop') return '新建道具'
-  return '新建角色'
+  if (tab === 'scene') return tv('新建场景', 'Tạo bối cảnh mới')
+  if (tab === 'prop') return tv('新建道具', 'Tạo đạo cụ mới')
+  return tv('新建角色', 'Tạo nhân vật mới')
 }
 
 // 渲染分集编辑左侧资产栏
@@ -75,20 +76,20 @@ export function EpisodeEditAssetPanel({
             className={scope === 'episode' ? 'active' : ''}
             onClick={() => onScopeChange('episode')}
           >
-            本集
+            {tv("本集", "Tập này")}
           </button>
           <button
             type="button"
             className={scope === 'series' ? 'active' : ''}
             onClick={() => onScopeChange('series')}
           >
-            全集
+            {tv("全集", "Toàn phim")}
           </button>
         </div>
         <button
           type="button"
           className="drama-ep-icon-btn solid"
-          aria-label="打开分镜故事板画布"
+          aria-label={tv("打开分镜故事板画布", "Mở canvas storyboard phân cảnh")}
           onClick={onOpenCanvas}
         >
           +
@@ -104,7 +105,7 @@ export function EpisodeEditAssetPanel({
               disabled={readOnly || createBusy}
               onClick={onCreateAsset}
             >
-              {createBusy ? '创建中…' : createLabel(tab)}
+              {createBusy ? tv('创建中…', 'Đang tạo…') : createLabel(tab)}
             </button>
           ) : null}
           {onImportAsset ? (
@@ -114,7 +115,7 @@ export function EpisodeEditAssetPanel({
               disabled={readOnly || createBusy}
               onClick={onImportAsset}
             >
-              导入
+              {tv("导入", "Nhập")}
             </button>
           ) : null}
         </div>
@@ -123,8 +124,8 @@ export function EpisodeEditAssetPanel({
         {assets.length === 0 ? (
           <AssetEmpty>
             {scope === 'episode'
-              ? '本集暂无引用资产，可点上方「新建」加入，或切换「全集」查看项目资产'
-              : '暂无资产，可点上方「新建 / 导入」添加'}
+              ? tv('本集暂无引用资产，可点上方「新建」加入，或切换「全集」查看项目资产', 'Tập này chưa có tài sản tham chiếu, có thể bấm “Tạo mới” phía trên để thêm, hoặc chuyển sang “Toàn phim” xem tài sản dự án')
+              : tv('暂无资产，可点上方「新建 / 导入」添加', 'Chưa có tài sản, có thể bấm “Tạo mới / Nhập” phía trên để thêm')}
           </AssetEmpty>
         ) : (
           assets.map((asset) => {
@@ -140,8 +141,8 @@ export function EpisodeEditAssetPanel({
                 compact
                 busy={imageBusy}
                 selected={Boolean(isActive)}
-                status={imageBusy ? '生成中' : isActive ? '已关联' : undefined}
-                subtitle={voice ? '已绑定音色' : undefined}
+                status={imageBusy ? tv('生成中', 'Đang tạo') : isActive ? tv('已关联', 'Đã liên kết') : undefined}
+                subtitle={voice ? tv('已绑定音色', 'Đã gắn giọng nói') : undefined}
                 onOpen={() => onOpenAsset(asset)}
                 actions={<>
                   {isActive && onUnlinkAsset ? (
@@ -150,9 +151,9 @@ export function EpisodeEditAssetPanel({
                       className="drama-ep-asset-op-btn"
                       disabled={readOnly}
                       onClick={() => onUnlinkAsset(asset.id)}
-                      title="仅取消当前分镜关联，不会删除资产"
+                      title={tv("仅取消当前分镜关联，不会删除资产", "Chỉ bỏ liên kết với phân cảnh hiện tại, không xóa tài sản")}
                     >
-                      取消关联
+                      {tv("取消关联", "Bỏ liên kết")}
                     </button>
                   ) : (
                     <button
@@ -160,9 +161,9 @@ export function EpisodeEditAssetPanel({
                       className="drama-ep-asset-op-btn"
                       disabled={readOnly}
                       onClick={() => onMention(asset)}
-                      title="插入到当前分镜脚本"
+                      title={tv("插入到当前分镜脚本", "Chèn vào kịch bản phân cảnh hiện tại")}
                     >
-                      插入
+                      {tv("插入", "Chèn")}
                     </button>
                   )}
                   {isCharacter ? (
@@ -181,7 +182,7 @@ export function EpisodeEditAssetPanel({
                         disabled={readOnly || voiceGenerating}
                         onClick={() => onGenerateVoice(asset)}
                       >
-                        {voiceGenerating ? '生成中…' : '生成音色'}
+                        {voiceGenerating ? tv('生成中…', 'Đang tạo…') : tv('生成音色', 'Tạo giọng nói')}
                       </button>
                     ) : null
                   ) : null}

@@ -1,7 +1,8 @@
 import { createJsonRequester } from './client'
 import { requireCharacterVoiceGeneration, type PublicCapabilities } from '../lib/publicCapabilities'
+import { tv } from '../i18n/tv'
 
-const request = createJsonRequester(() => { throw new Error('无法读取功能状态') })
+const request = createJsonRequester(() => { throw new Error(tv('无法读取功能状态', 'Không đọc được trạng thái chức năng')) })
 
 export function getPublicCapabilities(): Promise<PublicCapabilities> {
   return request('/api/capabilities')

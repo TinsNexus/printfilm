@@ -6,6 +6,7 @@ import Button from '../../components/ui/Button'
 import ProjectCreateDialog, { type ProjectCreateValues } from '../../components/projects/ProjectCreateDialog'
 import { useTeamPreview } from './useTeamPreview'
 import { TEAM_COLORS } from './types'
+import { tv } from '../../i18n/tv'
 
 /** 创建真实团队，服务端确认后进入团队空间。 */
 export function CreateTeamModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -28,19 +29,19 @@ export function CreateTeamModal({ open, onClose }: { open: boolean; onClose: () 
       const id = await createTeam({ name, description, color })
       onClose()
       navigate(`/teams/${id}`)
-    } catch (cause) { setError(cause instanceof Error ? cause.message : '创建失败，请重试') }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : tv('创建失败，请重试', 'Tạo thất bại, vui lòng thử lại')) }
     finally { setBusy(false) }
   }
 
-  return <Modal open={open} onClose={onClose} dismissible={!busy} title="创建团队">
+  return <Modal open={open} onClose={onClose} dismissible={!busy} title={tv("创建团队", "Tạo nhóm")}>
     <form className="pf-team-form" onSubmit={submit}>
-      <div className="pf-team-form-intro"><span className="pf-team-mark" style={{ background: color }}><UsersRound size={24} /></span><div><strong>把灵感变成团队的作品</strong><p>你将成为团队所有者，随后可以邀请伙伴一起创作。</p></div></div>
-      <label className="pf-team-field">团队名称<input autoFocus value={name} onChange={(event) => setName(event.target.value)} maxLength={40} placeholder="例如：青禾影像" required /></label>
-      <label className="pf-team-field">团队介绍 <span className="pf-team-muted">选填</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} maxLength={180} placeholder="写下你们想一起完成的事" rows={3} /></label>
-      <fieldset className="pf-team-colors"><legend>标识颜色</legend>{TEAM_COLORS.map((item, index) => <button key={item} type="button" style={{ background: item }} aria-label={`选择标识颜色 ${index + 1}`} aria-pressed={color === item} onClick={() => setColor(item)}>{color === item && <Check size={16} />}</button>)}</fieldset>
-      <p className="pf-team-form-note">团队拥有独立的项目、资产和钱包，创建后可以邀请真实伙伴加入。</p>
+      <div className="pf-team-form-intro"><span className="pf-team-mark" style={{ background: color }}><UsersRound size={24} /></span><div><strong>{tv("把灵感变成团队的作品", "Biến cảm hứng thành tác phẩm của nhóm")}</strong><p>{tv("你将成为团队所有者，随后可以邀请伙伴一起创作。", "Bạn sẽ là chủ sở hữu nhóm, sau đó có thể mời cộng sự cùng sáng tạo.")}</p></div></div>
+      <label className="pf-team-field">{tv("团队名称", "Tên nhóm")}<input autoFocus value={name} onChange={(event) => setName(event.target.value)} maxLength={40} placeholder={tv("例如：青禾影像", "Ví dụ: Thanh Hòa Studio")} required /></label>
+      <label className="pf-team-field">{tv("团队介绍", "Giới thiệu nhóm")} <span className="pf-team-muted">{tv("选填", "Tùy chọn")}</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} maxLength={180} placeholder={tv("写下你们想一起完成的事", "Viết điều các bạn muốn cùng hoàn thành")} rows={3} /></label>
+      <fieldset className="pf-team-colors"><legend>{tv("标识颜色", "Màu nhận diện")}</legend>{TEAM_COLORS.map((item, index) => <button key={item} type="button" style={{ background: item }} aria-label={tv(`选择标识颜色 ${index + 1}`, `Chọn màu nhận diện ${index + 1}`)} aria-pressed={color === item} onClick={() => setColor(item)}>{color === item && <Check size={16} />}</button>)}</fieldset>
+      <p className="pf-team-form-note">{tv("团队拥有独立的项目、资产和钱包，创建后可以邀请真实伙伴加入。", "Nhóm có dự án, tài sản và ví riêng, sau khi tạo có thể mời cộng sự thật tham gia.")}</p>
       {error && <p className="pf-team-alert" role="alert">{error}</p>}
-      <div className="pf-team-modal-actions"><Button onClick={onClose}>取消</Button><Button variant="lime" type="submit" disabled={busy}>创建团队 <ArrowUpRight size={16} /></Button></div>
+      <div className="pf-team-modal-actions"><Button onClick={onClose}>{tv("取消", "Hủy")}</Button><Button variant="lime" type="submit" disabled={busy}>{tv("创建团队", "Tạo nhóm")} <ArrowUpRight size={16} /></Button></div>
     </form>
   </Modal>
 }
@@ -56,5 +57,5 @@ export function CreateTeamProjectModal({ open, onClose, teamId }: { open: boolea
     navigate(`/drama/projects/${id}`)
   }
 
-  return <ProjectCreateDialog key={teamId} open={open} onClose={onClose} kind="drama" contextLabel="团队项目 · 成员共同创作" titleRequired titleMaxLength={60} sourceMaxLength={100000} allowImageStyle={false} onSubmit={submit} footerNote="创建项目不会自动提交生成任务。后续生成费用由团队所有者的个人余额支付。" />
+  return <ProjectCreateDialog key={teamId} open={open} onClose={onClose} kind="drama" contextLabel={tv("团队项目 · 成员共同创作", "Dự án nhóm · Thành viên cùng sáng tạo")} titleRequired titleMaxLength={60} sourceMaxLength={100000} allowImageStyle={false} onSubmit={submit} footerNote={tv("创建项目不会自动提交生成任务。后续生成费用由团队所有者的个人余额支付。", "Tạo dự án sẽ không tự động gửi tác vụ tạo. Phí tạo sau đó do số dư cá nhân của chủ sở hữu nhóm thanh toán.")} />
 }

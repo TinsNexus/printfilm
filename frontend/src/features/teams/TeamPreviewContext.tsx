@@ -4,6 +4,7 @@ import { USER_UPDATED_EVENT } from '../../lib/userEvents'
 import { TeamContext, type TeamContextValue } from './useTeamPreview'
 import { setWorkspaceTeam, subscribeWorkspace, workspaceScope } from './workspaceScope'
 import type { Team } from './types'
+import { tv } from '../../i18n/tv'
 
 /** 真实团队缓存，账号代次保护避免迟到响应恢复上一账号的权限和钱包。 */
 export function TeamPreviewProvider({ children }: { children: ReactNode }) {
@@ -18,7 +19,7 @@ export function TeamPreviewProvider({ children }: { children: ReactNode }) {
   /** 捕获真实 token 和账号代次，所有异步状态写回前必须验证。 */
   const capture = useCallback(() => { const epoch = authEpoch.current; const token = localStorage.getItem('token'); return () => epoch === authEpoch.current && token === localStorage.getItem('token') }, [])
   /** 账号/成员关系发生变化后拒绝使用旧响应继续导航或操作。 */
-  const requireCurrent = useCallback((valid: () => boolean) => { if (!valid()) throw new DOMException('登录或团队状态已变化', 'AbortError') }, [])
+  const requireCurrent = useCallback((valid: () => boolean) => { if (!valid()) throw new DOMException(tv('登录或团队状态已变化', 'Đăng nhập hoặc trạng thái nhóm đã thay đổi'), 'AbortError') }, [])
   /** 更新单个真实概要。 */
   const cacheTeam = useCallback((team: Team) => { setTeams((old) => [...old.filter((item) => item.id !== team.id), team]) }, [])
   /** 选择器读取一页团队；目录页另行服务端分页。 */
@@ -33,7 +34,7 @@ export function TeamPreviewProvider({ children }: { children: ReactNode }) {
         return cached ? { ...cached, name: team.name, description: team.description, color: team.color, memberCount: team.memberCount, projectCount: team.projectCount, assetCount: team.assetCount } : team
       }))
     }
-    catch (cause) { if (valid() && !(cause instanceof DOMException && cause.name === 'AbortError')) setError(cause instanceof Error ? cause.message : '团队加载失败') }
+    catch (cause) { if (valid() && !(cause instanceof DOMException && cause.name === 'AbortError')) setError(cause instanceof Error ? cause.message : tv('团队加载失败', 'Tải nhóm thất bại')) }
     finally { if (valid()) setLoading(false) }
   }, [capture])
   /** 概览只读取首屏；退出团队或切账号后的响应不可重新加入缓存。 */
@@ -62,7 +63,7 @@ export function TeamPreviewProvider({ children }: { children: ReactNode }) {
   const mutate = useCallback(async <T,>(id: string, action: () => Promise<T>): Promise<T> => {
     const valid = capture(); const result = await action(); requireCurrent(valid)
     setRevision((value) => value + 1)
-    await loadTeam(id).catch((cause) => { if (valid()) setError(cause instanceof Error ? `操作已完成，刷新失败：${cause.message}` : '操作已完成，请重新加载团队资料') })
+    await loadTeam(id).catch((cause) => { if (valid()) setError(cause instanceof Error ? tv(`操作已完成，刷新失败：${cause.message}`, `Thao tác đã hoàn tất, làm mới thất bại: ${cause.message}`) : tv('操作已完成，请重新加载团队资料', 'Thao tác đã hoàn tất, vui lòng tải lại hồ sơ nhóm')) })
     requireCurrent(valid)
     return result
   }, [capture, loadTeam, requireCurrent])

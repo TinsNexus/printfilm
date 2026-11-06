@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api, type UsageChargeRecord } from '../../api'
 import Pagination from '../ui/Pagination'
 import { pageCountOf } from '../../lib/pagination'
+import { tv } from '../../i18n/tv'
 
 /** 格式化相对时间展示 */
 function formatWhen(iso?: string | null) {
@@ -63,7 +64,7 @@ export default function UsageChargeRecords({ variant = 'compact' }: UsageChargeR
       setPage(nextPage)
       setItems(res.items)
     } catch (e) {
-      setError(e instanceof Error ? e.message : '加载扣费记录失败')
+      setError(e instanceof Error ? e.message : tv('加载扣费记录失败', 'Tải bản ghi trừ phí thất bại'))
       setItems([])
       setTotal(0)
     } finally {
@@ -83,16 +84,16 @@ export default function UsageChargeRecords({ variant = 'compact' }: UsageChargeR
   return (
     <section className={`pf-usage-records${variant === 'compact' ? ' is-compact' : ''}`}>
       <header className="pf-usage-records-head">
-        <h3>使用扣费记录</h3>
-        <p className="pf-muted">每次 AI 调用的 token 用量与扣费明细</p>
+        <h3>{tv("使用扣费记录", "Bản ghi trừ phí sử dụng")}</h3>
+        <p className="pf-muted">{tv("每次 AI 调用的 token 用量与扣费明细", "Lượng token và chi tiết trừ phí của mỗi lần gọi AI")}</p>
       </header>
 
-      {loading ? <p className="pf-muted">加载中…</p> : null}
+      {loading ? <p className="pf-muted">{tv("加载中…", "Đang tải…")}</p> : null}
       {error ? <p className="pf-error">{error}</p> : null}
 
       {!loading && !error && items.length === 0 ? (
         <div className="pf-settings-empty">
-          <p>暂无扣费记录</p>
+          <p>{tv("暂无扣费记录", "Chưa có bản ghi trừ phí")}</p>
         </div>
       ) : null}
 
@@ -106,7 +107,7 @@ export default function UsageChargeRecords({ variant = 'compact' }: UsageChargeR
                   <em className="pf-muted">
                     {item.context}
                     {item.total_tokens > 0 ? ` · ${formatTokens(item.total_tokens)} tokens` : ''}
-                    {item.estimated ? ' · 估算' : ''}
+                    {item.estimated ? tv(' · 估算', ' · ước tính') : ''}
                   </em>
                 </span>
                 <span className="pf-settings-list-meta pf-usage-record-meta">
@@ -129,7 +130,7 @@ export default function UsageChargeRecords({ variant = 'compact' }: UsageChargeR
           pageSize={pageSize}
           onPageSizeChange={handlePageSizeChange}
           onChange={setPage}
-          ariaLabel="扣费记录分页"
+          ariaLabel={tv("扣费记录分页", "Phân trang bản ghi trừ phí")}
         />
       ) : null}
     </section>

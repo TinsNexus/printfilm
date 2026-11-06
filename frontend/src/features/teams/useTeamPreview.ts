@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react'
 import type { Team, TeamInvitation } from './types'
+import { tv } from '../../i18n/tv'
 
 /** 真实团队缓存与异步管理动作，分页列表由各页面请求。 */
 export type TeamContextValue = {
@@ -21,4 +22,4 @@ export type TeamContextValue = {
 /** 与组件模块分离，保证热更新和上下文身份一致。 */
 export const TeamContext = createContext<TeamContextValue | null>(null)
 /** 现有展示组件共用真实团队服务。 */
-export function useTeamPreview(): TeamContextValue { const context = useContext(TeamContext); if (!context) throw new Error('团队页面需要 TeamProvider'); return context }
+export function useTeamPreview(): TeamContextValue { const context = useContext(TeamContext); if (!context) throw new Error(tv('团队页面需要 TeamProvider', 'Trang nhóm cần TeamProvider')); return context }

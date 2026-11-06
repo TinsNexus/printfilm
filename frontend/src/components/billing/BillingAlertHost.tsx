@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { api } from '../../api'
 import { dialog } from '../../lib/dialog'
+import { tv } from '../../i18n/tv'
 
 type BillingAlertItem = {
   id: number
@@ -26,9 +27,9 @@ export default function BillingAlertHost() {
       if (!items.length) return
       for (const item of items) {
         await dialog.alert({
-          title: item.title || '消费提醒',
+          title: item.title || tv('消费提醒', 'Nhắc nhở chi tiêu'),
           message: item.message,
-          confirmText: '知道了',
+          confirmText: tv('知道了', 'Đã hiểu'),
         })
         try {
           await api.billingAlertAck(item.id)

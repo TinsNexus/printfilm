@@ -1,6 +1,7 @@
 import { recordDramaResponse } from '../features/teams/editLocks'
 import { createJsonRequester, requestResponse } from './client'
 import type { Page, Team, TeamMember, TeamInvitation, TeamProject, TeamAsset, TeamCharge, TeamActivity, UsageSummary } from '../features/teams/types'
+import { tv } from '../i18n/tv'
 
 /* 统一客户端与接口数据转换；后端始终验证权限。 */
 const request = createJsonRequester()
@@ -15,9 +16,9 @@ export function mapTeam(row: Row): Team { return { id: String(row.id), name: row
 /** 保留被服务端隐藏的财务 null 值。 */
 function member(row: Row): TeamMember { return { id: String(row.id), name: row.nickname || row.email, email: row.email, avatarUrl: row.avatar_url, role: row.role, color: '#e4eadc', monthlyLimitFen: row.monthly_limit_fen, spentFen: row.spent_fen, reservedFen: row.reserved_fen, joinedAt: row.joined_at } }
 /** 转换真实项目卡片。 */
-function project(row: Row): TeamProject { return { id: String(row.id), title: row.title, description: row.description || '', genre: row.genre || '漫剧', cover: row.cover || '', status: row.status || 'draft', episodes: row.episodes || 0, completedEpisodes: row.completed_episodes || 0, updatedAt: row.updated_at, collaborators: (row.collaborators || []).map(String), editingBy: row.editing_by ? String(row.editing_by) : undefined } }
+function project(row: Row): TeamProject { return { id: String(row.id), title: row.title, description: row.description || '', genre: row.genre || tv('漫剧', 'Phim truyện'), cover: row.cover || '', status: row.status || 'draft', episodes: row.episodes || 0, completedEpisodes: row.completed_episodes || 0, updatedAt: row.updated_at, collaborators: (row.collaborators || []).map(String), editingBy: row.editing_by ? String(row.editing_by) : undefined } }
 /** 转换真实资产。 */
-function asset(row: Row): TeamAsset { return { id: String(row.id), name: row.name || '未命名资产', type: row.type, cover: row.cover || '', url: row.url || '', projectId: String(row.project_id), description: row.description || '', updatedAt: row.updated_at, assetType: row.asset_type, params: row.params, references: row.references } }
+function asset(row: Row): TeamAsset { return { id: String(row.id), name: row.name || tv('未命名资产', 'Tài sản chưa đặt tên'), type: row.type, cover: row.cover || '', url: row.url || '', projectId: String(row.project_id), description: row.description || '', updatedAt: row.updated_at, assetType: row.asset_type, params: row.params, references: row.references } }
 /** 邀请列表不包含可重用令牌。 */
 function invitation(row: Row): TeamInvitation { return { id: String(row.id), email: row.email, status: row.status, createdAt: row.created_at, expiresAt: row.expires_at } }
 /** 转换真实消费记录。 */

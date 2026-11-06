@@ -1,5 +1,6 @@
 /** HTTP 基础能力：地址、登录态和响应解析；不依赖浏览器全局配置或业务模块。 */
 import { getMediaPriceVersion, setMediaPriceVersion } from '../lib/mediaPriceVersion.ts'
+import { tv } from '../i18n/tv'
 
 /** 空间/路由切换的主动取消不属于业务失败，不能显示为红色报错。 */
 export function isRequestAborted(cause: unknown): boolean {
@@ -63,7 +64,7 @@ export function createHttpTransport(options: {
       result = await fetch(`${options.baseUrl}${path}`, { ...init, headers })
     } catch (cause) {
       // 浏览器有时把中断显示为 TypeError/Failed to fetch；仍按原始取消原因处理。
-      if (init?.signal?.aborted) throw init.signal.reason || new DOMException('请求已取消', 'AbortError')
+      if (init?.signal?.aborted) throw init.signal.reason || new DOMException(tv('请求已取消', 'Yêu cầu đã bị hủy'), 'AbortError')
       throw cause
     }
     if (!result.ok) {

@@ -2,6 +2,7 @@
 import { dramaApi, type DramaAsset } from '../api/drama'
 import { buildBoundParams } from '../pages/drama/CharacterVoiceBindModal'
 import { ensureCharacterVoiceGenerationEnabled } from '../api/publicCapabilities'
+import { tv } from '../i18n/tv'
 
 export type CharacterVoiceGenerateResult = {
   character: DramaAsset
@@ -20,12 +21,12 @@ export async function generateAndBindCharacterVoice(
   })
   const voicePrompt = (promptResult.voice_prompt || '').trim()
   if (!voicePrompt) {
-    throw new Error('音色描述为空')
+    throw new Error(tv('音色描述为空', 'Mô tả giọng nói trống'))
   }
 
   const voiceResult = await dramaApi.generateVoice({
     project_id: projectId,
-    name: `${asset.name || '角色'}音色`,
+    name: tv(`${asset.name || '角色'}音色`, `Giọng ${asset.name || '角色'}`),
     voice_prompt: voicePrompt,
     speaker: promptResult.speaker || undefined,
     sample_text: promptResult.sample_text || undefined,
@@ -33,7 +34,7 @@ export async function generateAndBindCharacterVoice(
   })
   const voice = voiceResult.asset
   if (!voice?.url) {
-    throw new Error('音色合成失败')
+    throw new Error(tv('音色合成失败', 'Tổng hợp giọng nói thất bại'))
   }
 
   const character = await dramaApi.updateAsset(asset.id, {

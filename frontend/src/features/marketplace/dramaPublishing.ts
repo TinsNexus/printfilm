@@ -1,4 +1,5 @@
 import type { Handoff } from './api'
+import { tv } from '../../i18n/tv'
 
 export type PublishEpisode = {
   id: number; name: string; episode_number: number; fragment_count: number; completed_count: number
@@ -23,19 +24,19 @@ export function sourceRelation(episode: PublishEpisode, target?: PublishSeries) 
 
 export function publishSelection(context: DramaPublishContext, selected: number[], updates: number[], target?: PublishSeries) {
   return context.episodes.filter(item => selected.includes(item.id)).sort((a, b) => a.episode_number - b.episode_number).map(episode => {
-    if (!episode.ready) throw new Error(`${episode.name}：${episode.reason || '分集尚未全部生成完成'}`)
+    if (!episode.ready) throw new Error(`${episode.name}：${episode.reason || tv('分集尚未全部生成完成', 'Các tập chưa tạo xong toàn bộ')}`)
     const { changed } = sourceRelation(episode, target)
-    if (changed && !updates.includes(episode.id)) throw new Error(`请确认更新「${episode.name}」的新版本`)
+    if (changed && !updates.includes(episode.id)) throw new Error(tv(`请确认更新「${episode.name}」的新版本`, `Vui lòng xác nhận phiên bản mới của “${episode.name}”`))
     return { episode_id: episode.id, source_version: episode.source_version, update: changed }
   })
 }
 
 const phaseLabels: Record<string, string> = {
-  queued: '排队中', pending: '排队中', syncing: '同步素材', downloading: '同步素材', copying: '同步素材',
-  composing: '拼接整集', concatenating: '拼接整集', validating: '校验视频', ready: '已就绪', failed: '同步失败',
+  queued: tv('排队中', 'Đang xếp hàng'), pending: tv('排队中', 'Đang xếp hàng'), syncing: tv('同步素材', 'Đồng bộ tư liệu'), downloading: tv('同步素材', 'Đồng bộ tư liệu'), copying: tv('同步素材', 'Đồng bộ tư liệu'),
+  composing: tv('拼接整集', 'Ghép cả tập'), concatenating: tv('拼接整集', 'Ghép cả tập'), validating: tv('校验视频', 'Kiểm tra video'), ready: tv('已就绪', 'Đã sẵn sàng'), failed: tv('同步失败', 'Đồng bộ thất bại'),
 }
 export function handoffLabel(handoff: Handoff) {
-  return phaseLabels[handoff.phase || ''] || handoff.label || phaseLabels[handoff.status] || '同步中'
+  return phaseLabels[handoff.phase || ''] || handoff.label || phaseLabels[handoff.status] || tv('同步中', 'Đang đồng bộ')
 }
 export function isHandoffActive(handoff: Pick<Handoff, 'status'>) {
   return handoff.status === 'pending' || handoff.status === 'running'
