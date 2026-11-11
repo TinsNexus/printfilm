@@ -101,6 +101,9 @@ export const viFeStudio = {
     usesStyleReferencePreviousShot: "Dùng ảnh tham chiếu phong cách, và tham chiếu hình của cảnh trước để giữ nhất quán.",
     afterConfirmingShotsReferenceImages: "Sau khi xác nhận phân cảnh, trước tiên tạo hình ảnh tham chiếu, rồi tạo từng cảnh thành video, kiểm tra cảnh rồi ghép thành phim.",
     reviewShotsThenGenerateImages: "Kiểm tra phân cảnh rồi tạo hình ảnh và lồng tiếng, tư liệu sẵn sàng rồi mới ghép video.",
+    example1: "Giải thích cho học sinh tiểu học vì sao bầu trời màu xanh",
+    example2: "Một chú mèo nhút nhát gặp bạn mới vào ngày mưa",
+    example3: "Giới thiệu nhẹ nhàng tiết Sương Giáng trong 24 tiết khí",
   },
   editorPage: {
     script: "Lời dẫn",

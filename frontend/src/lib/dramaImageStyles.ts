@@ -1,3 +1,4 @@
+import { tr } from '../i18n/translate.ts'
 /** Drama image style options (aligned with manju imageStyles). */
 
 export const IMAGE_STYLE_IDS = [
@@ -27,27 +28,27 @@ export const IMAGE_STYLE_IDS = [
 export type ImageStyleId = (typeof IMAGE_STYLE_IDS)[number]
 
 export const IMAGE_STYLE_OPTIONS: Array<{ id: ImageStyleId; label: string }> = [
-  { id: 'retro-sci-fi-atompunk', label: '复古科幻原子朋克' },
-  { id: 'palace-intrigue-cold', label: '宫斗权谋冷峻' },
-  { id: 'domestic-suspense-cold', label: '国产悬疑冷调' },
-  { id: 'ancient-romance-soft', label: '古偶唯美柔光' },
-  { id: 'ancient-chinese-mythology', label: '中国古代神话史诗' },
-  { id: 'japanese-youth-film', label: '日式青春胶片' },
-  { id: 'japanese-daily-natural', label: '日式生活自然' },
-  { id: 'korean-urban-soft', label: '韩剧都市柔光' },
-  { id: 'chinese-urban-realistic', label: '国产都市写实' },
-  { id: 'wuxia-realistic-photo', label: '武侠江湖写实摄影' },
-  { id: '90s-realistic-film', label: '90年代写实电影' },
-  { id: 'retro-narrative-film', label: '复古叙事电影' },
-  { id: 'american-retro-hollywood', label: '美式复古好莱坞' },
-  { id: 'neon-cyberpunk-film', label: '霓虹赛博电影' },
-  { id: '90s-rural-china-film', label: '90年代中国农村电影' },
-  { id: 'cgi-3d-animation', label: '3D 动画' },
-  { id: 'ghibli-handdrawn-anime', label: '宫崎骏气质手绘' },
-  { id: 'tezuka-era-cartoon', label: '手冢治虫时代卡通画风' },
-  { id: 'shanghai-animation', label: '上美画风' },
-  { id: 'pixel-art', label: '像素风' },
-  { id: 'shadow-puppet-illustration', label: '皮影戏插画' },
+  { id: 'retro-sci-fi-atompunk', get label() { return tr('dramaImageStyles.retroSciFiAtompunk') } },
+  { id: 'palace-intrigue-cold', get label() { return tr('dramaImageStyles.palaceIntrigueCold') } },
+  { id: 'domestic-suspense-cold', get label() { return tr('dramaImageStyles.domesticSuspenseCold') } },
+  { id: 'ancient-romance-soft', get label() { return tr('dramaImageStyles.ancientRomanceSoft') } },
+  { id: 'ancient-chinese-mythology', get label() { return tr('dramaImageStyles.ancientChineseMythology') } },
+  { id: 'japanese-youth-film', get label() { return tr('dramaImageStyles.japaneseYouthFilm') } },
+  { id: 'japanese-daily-natural', get label() { return tr('dramaImageStyles.japaneseDailyNatural') } },
+  { id: 'korean-urban-soft', get label() { return tr('dramaImageStyles.koreanUrbanSoft') } },
+  { id: 'chinese-urban-realistic', get label() { return tr('dramaImageStyles.chineseUrbanRealistic') } },
+  { id: 'wuxia-realistic-photo', get label() { return tr('dramaImageStyles.wuxiaRealisticPhoto') } },
+  { id: '90s-realistic-film', get label() { return tr('dramaImageStyles.s90sRealisticFilm') } },
+  { id: 'retro-narrative-film', get label() { return tr('dramaImageStyles.retroNarrativeFilm') } },
+  { id: 'american-retro-hollywood', get label() { return tr('dramaImageStyles.americanRetroHollywood') } },
+  { id: 'neon-cyberpunk-film', get label() { return tr('dramaImageStyles.neonCyberpunkFilm') } },
+  { id: '90s-rural-china-film', get label() { return tr('dramaImageStyles.s90sRuralChinaFilm') } },
+  { id: 'cgi-3d-animation', get label() { return tr('dramaImageStyles.cgi3dAnimation') } },
+  { id: 'ghibli-handdrawn-anime', get label() { return tr('dramaImageStyles.ghibliHanddrawnAnime') } },
+  { id: 'tezuka-era-cartoon', get label() { return tr('dramaImageStyles.tezukaEraCartoon') } },
+  { id: 'shanghai-animation', get label() { return tr('dramaImageStyles.shanghaiAnimation') } },
+  { id: 'pixel-art', get label() { return tr('dramaImageStyles.pixelArt') } },
+  { id: 'shadow-puppet-illustration', get label() { return tr('dramaImageStyles.shadowPuppetIllustration') } },
 ]
 
 export const EPISODE_COUNT_PRESETS = [1, 12, 24, 36, 48] as const

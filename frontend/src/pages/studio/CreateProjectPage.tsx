@@ -15,7 +15,8 @@ import { dialog } from '../../lib/dialog'
 import './shortVideoCreate.css'
 import { tr } from '../../i18n/translate.ts'
 
-const EXAMPLES = ['给小学生讲讲为什么天空是蓝色的', '一只胆小的小猫在雨天遇见新朋友', '用轻松的方式介绍二十四节气里的霜降']
+// 示例想法：模块加载时按当前语言取文案（切换语言会刷新页面）
+const EXAMPLES = [tr('createProjectPage.example1'), tr('createProjectPage.example2'), tr('createProjectPage.example3')]
 
 export default function CreateProjectPage() {
   const nav = useNavigate()

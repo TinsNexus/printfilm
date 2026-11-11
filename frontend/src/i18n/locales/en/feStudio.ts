@@ -101,6 +101,9 @@ export const enFeStudio = {
     usesStyleReferencePreviousShot: "Uses the style reference and the previous shot to stay consistent.",
     afterConfirmingShotsReferenceImages: "After confirming shots, reference images are generated first, then each image becomes a video; review the shots, then compose the final video.",
     reviewShotsThenGenerateImages: "Review the shots, then generate images and voice-over; compose the video once the material is ready.",
+    example1: "Explain to primary-school kids why the sky is blue",
+    example2: "A timid kitten meets a new friend on a rainy day",
+    example3: "A light-hearted intro to Frost's Descent, one of the 24 solar terms",
   },
   editorPage: {
     script: "Script",

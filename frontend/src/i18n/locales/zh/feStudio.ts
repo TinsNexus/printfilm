@@ -101,6 +101,9 @@ export const zhFeStudio = {
     usesStyleReferencePreviousShot: "使用画风参考图，并参考前镜画面保持一致。",
     afterConfirmingShotsReferenceImages: "确认分镜后先生成参考图画面，再将图片逐镜生成为视频，检查镜头后合成成片。",
     reviewShotsThenGenerateImages: "检查分镜后生成图片和配音，素材准备好后再合成视频。",
+    example1: "给小学生讲讲为什么天空是蓝色的",
+    example2: "一只胆小的小猫在雨天遇见新朋友",
+    example3: "用轻松的方式介绍二十四节气里的霜降",
   },
   editorPage: {
     script: "文案",
