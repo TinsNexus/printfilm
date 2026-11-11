@@ -66,6 +66,7 @@ from app.services.tokenfree_video import (
     remap_video_path,
     resolve_tokenfree_media_download_url,
     uses_9router_gateway,
+    uses_piapi_gateway,
     tokenfree_video_content_url,
     unwrap_video_task_payload,
     uses_tokenfree_video,
@@ -557,14 +558,24 @@ class ArkGateway:
             return False  # Media has its own branches; storyboard/expansion must use real LLM.
         return self.settings.ark_mock or not self._ark_api_key()
 
+    @staticmethod
+    def _auth_headers(api_key: str) -> dict[str, str]:
+        """Bearer 鉴权头；PiAPI 统一任务接口另需 X-API-Key。"""
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        if uses_piapi_gateway():
+            headers["X-API-Key"] = api_key
+        return headers
+
     def _headers(self) -> dict[str, str]:
-        return {
-            "Authorization": f"Bearer {self._ark_api_key()}",
-            "Content-Type": "application/json",
-        }
+        return self._auth_headers(self._ark_api_key())
 
     def _url(self, path: str) -> str:
-        """拼接方舟/TokenFree 基址；视频任务路径在 TokenFree 上改写为 /videos。"""
+        """拼接方舟/TokenFree 基址；视频任务路径在 TokenFree 上改写为 /videos，PiAPI 上改为统一任务接口。"""
+        from app.services.piapi.video import piapi_task_url_for_ark_path
+
+        piapi_url = piapi_task_url_for_ark_path(path)
+        if piapi_url:
+            return piapi_url
         path = remap_video_path(path, base_url=self.settings.ark_base_url)
         base = self.settings.ark_base_url.rstrip("/")
         if not path.startswith("/"):
@@ -602,14 +613,13 @@ class ArkGateway:
         if route and route.api_key:
             from app.services.nine_router.plan_keys import plan_api_key_override
 
-            return {
-                "Authorization": f"Bearer {plan_api_key_override() or route.api_key}",
-                "Content-Type": "application/json",
-            }
+            return self._auth_headers(plan_api_key_override() or route.api_key)
         return self._headers()
 
     def _route_url(self, path: str, route: ResolvedModelRoute | None = None) -> str:
         """按逻辑路由基址拼 URL；无路由时回落到 _url。"""
+        if uses_piapi_gateway():
+            return self._url(path)
         if route and route.base_url:
             path = remap_video_path(
                 path,
@@ -630,6 +640,10 @@ class ArkGateway:
         """TokenFree 上把 Seedance 方舟 body 包装成 POST /v1/videos 请求体。"""
         base = (route.base_url if route and route.base_url else self.settings.ark_base_url) or ""
         channel_id = (route.channel_id if route else "") or ""
+        if uses_piapi_gateway():
+            # PiAPI：按上游模型 id 映射成 {model, task_type, input}，映射后的 model 不能再被覆盖
+            source = {**body, "model": route.upstream_model} if route is not None else body
+            return prepare_video_create_body(source, base_url=base, channel_id=channel_id)
         request = prepare_video_create_body(body, base_url=base, channel_id=channel_id)
         if route is not None:
             request["model"] = route.upstream_model
@@ -1101,31 +1115,45 @@ class ArkGateway:
                 style_ref_urls=style_refs,
             )
 
-        try:
-            async with httpx.AsyncClient(timeout=_upstream_timeout(IMAGE_GEN_READ_SEC)) as client:
-                async def _post():
-                    # 单次上游 POST，限流重试由外层包住
-                    return await self._request_media(client, "POST",
-                        self._route_url(path, route),
-                        headers=self._route_headers(route),
-                        json=body,
-                    )
+        if uses_piapi_gateway() and not getattr(self.settings, "local_media_mock", False):
+            # PiAPI：统一任务接口异步出图（Flux），建任务 + 轮询后返回 OpenAI 风格 data[0].url；本地模拟时走下方通用模拟分支
+            from app.services.piapi.image import generate_image_via_piapi
 
-                async with tokenfree_image_slot():
-                    resp = await post_until_not_rate_limited(_post)
-                # 限流/4xx 走 HTTP 文案；200 + status=failed 留给 raise_tokenfree_image_if_failed
-                if resp.status_code >= 400 or is_tokenfree_rate_limit(
-                    status_code=resp.status_code, body=resp.text
-                ):
-                    _raise_seedream_http_error(
-                        resp.status_code,
-                        resp.text,
-                        model=chosen,
-                        tokenfree=True,
-                    )
-                data = resp.json()
-        except httpx.TimeoutException as exc:
-            reraise_upstream_timeout(exc, kind="生图", read_sec=IMAGE_GEN_READ_SEC)
+            data = await generate_image_via_piapi(
+                api_key=self._route_headers(route)["X-API-Key"],
+                model=chosen,
+                prompt=full_prompt,
+                size=str(resolved_size or ""),
+                aspect_ratio=aspect_ratio,
+                ref_urls=[*subject_refs, *style_refs],
+                timeout_sec=IMAGE_GEN_READ_SEC,
+            )
+        else:
+            try:
+                async with httpx.AsyncClient(timeout=_upstream_timeout(IMAGE_GEN_READ_SEC)) as client:
+                    async def _post():
+                        # 单次上游 POST，限流重试由外层包住
+                        return await self._request_media(client, "POST",
+                            self._route_url(path, route),
+                            headers=self._route_headers(route),
+                            json=body,
+                        )
+
+                    async with tokenfree_image_slot():
+                        resp = await post_until_not_rate_limited(_post)
+                    # 限流/4xx 走 HTTP 文案；200 + status=failed 留给 raise_tokenfree_image_if_failed
+                    if resp.status_code >= 400 or is_tokenfree_rate_limit(
+                        status_code=resp.status_code, body=resp.text
+                    ):
+                        _raise_seedream_http_error(
+                            resp.status_code,
+                            resp.text,
+                            model=chosen,
+                            tokenfree=True,
+                        )
+                    data = resp.json()
+            except httpx.TimeoutException as exc:
+                reraise_upstream_timeout(exc, kind="生图", read_sec=IMAGE_GEN_READ_SEC)
 
         if getattr(self.settings, "local_media_mock", False):
             return ImageResult(local_url=local_media_mock.media_url("default.jpg"), raw_usage={"simulated": True}, upstream_cost_fen=0)

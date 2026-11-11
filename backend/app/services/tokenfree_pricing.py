@@ -844,11 +844,11 @@ async def ensure_official_rates(settings: Settings | None = None) -> dict[str, O
     """有缓存且未过期则复用；失败写短 TTL，预扣不因外网挂掉。
 
     Seedance 始终用 TF Ark 渠道导出的 billing_expr 覆盖，避免公开价目漂移。
-    9Router 下不拉官方价目。
+    9Router / PiAPI 下不拉官方价目。
     """
-    from app.services.nine_router.config import is_9router_active
+    from app.services.nine_router.config import is_non_tokenfree_gateway
 
-    if is_9router_active(settings):
+    if is_non_tokenfree_gateway(settings):
         return cached_rates()
     if getattr(settings or get_settings(), "local_media_mock", False):
         return merge_seedance_tf_rates(cached_rates())

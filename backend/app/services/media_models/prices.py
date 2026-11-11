@@ -102,8 +102,13 @@ def initial_draft() -> dict:
     from app.services.tokenfree_pricing import charge_fen_official_image, charge_fen_official_video
     settings = get_settings()
     prices = {}
+    from app.services.media_model_presets import is_piapi_only_model
     for strategy in strategies():
         rows = {}
+        if is_piapi_only_model(strategy.model_id):
+            # TokenFree 价目里没有 PiAPI 专属模型，估价只会是通用兜底数；留空，由管理员按 PiAPI 价目填写
+            prices[strategy.model_id] = rows
+            continue
         for resolution in strategy.resolutions:
             try:
                 amount = (charge_fen_official_image(settings, model=strategy.model_id, size=resolution)

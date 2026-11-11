@@ -59,6 +59,7 @@ def infer_model_capability(model: str) -> LogicalModelCapability:
         or "i2v" in mid
         or "minimax-h" in mid
         or "hailuo" in mid
+        or "kling" in mid
     ):
         return "video"
     if (

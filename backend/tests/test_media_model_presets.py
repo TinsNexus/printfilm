@@ -30,7 +30,9 @@ def test_all_preset_channel_models_covers_four_caps() -> None:
     assert "MiniMax-H3" in models
     assert "qwen-tts-2025-05-22" in models
     assert "gemini-3.1-flash-tts" not in models
-    assert len(models) == sum(len(preset_ids(c)) for c in ("text", "image", "video", "audio"))
+    # 渠道 models 含所有上游的预设（TokenFree + PiAPI），切换网关无需重建渠道
+    assert len(models) == sum(len(preset_ids(c, all_gateways=True)) for c in ("text", "image", "video", "audio"))
+    assert "kling-3.0" in models and "flux1-dev" in models
     assert preset_ids("image") == [
         "seedream-5.0-pro",
         "seedream-5.0",

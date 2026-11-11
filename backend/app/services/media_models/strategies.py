@@ -42,6 +42,7 @@ class MediaModelStrategy:
     max_reference_videos = 0
     supports_generate_audio = False
     max_count = 1  # Existing gateway delivers one output per request.
+    default_resolution: str | None = None  # None：沿用第二档（或唯一一档）
     duration_min = 4
     duration_max = 15
 
@@ -78,7 +79,7 @@ class MediaModelStrategy:
             "reference_limits": {"images": self.max_reference_images,
                                  "audios": self.max_reference_audios,
                                  "videos": self.max_reference_videos},
-            "defaults": {"resolution": self.resolutions[min(1, len(self.resolutions) - 1)],
+            "defaults": {"resolution": self.default_resolution or self.resolutions[min(1, len(self.resolutions) - 1)],
                          "aspect_ratio": "1:1" if self.capability == "image" else "9:16",
                          "count": 1},
         }
@@ -289,9 +290,55 @@ class MiniMaxH3Strategy(VideoModelStrategy):
     max_reference_videos = 0
 
 
+class FluxDevStrategy(ImageModelStrategy):
+    """PiAPI Flux：宽×高上限约 1MP，img2img 只收一张参考图。"""
+    model_id = "flux1-dev"
+    resolutions = ("1K",)
+    max_reference_images = 1
+
+
+class FluxSchnellStrategy(FluxDevStrategy):
+    model_id = "flux1-schnell"
+
+
+class Kling30Strategy(VideoModelStrategy):
+    """PiAPI Kling：720p=std、1080p=pro；只支持首/尾帧，不收参考音视频。"""
+    model_id = "kling-3.0"
+    resolutions = ("720p", "1080p")
+    default_resolution = "720p"  # 1080p 对应上游 pro 档，更贵，需显式选择
+    duration_min = 3
+    duration_max = 15
+    max_reference_images = 2
+    max_reference_audios = 0
+    max_reference_videos = 0
+
+
+class Kling40Strategy(Kling30Strategy):
+    model_id = "kling-4.0"
+    duration_max = 30
+
+
+class Veo31Strategy(VideoModelStrategy):
+    """PiAPI Veo 3.1：仅横/竖屏，上游时长只有 4/6/8 秒（提交时向上取档）。"""
+    model_id = "veo3.1"
+    resolutions = ("720p", "1080p")
+    default_resolution = "720p"
+    ratios = ("9:16", "16:9")
+    duration_max = 8
+    max_reference_images = 3
+    max_reference_audios = 0
+    max_reference_videos = 0
+
+
+class Veo31FastStrategy(Veo31Strategy):
+    model_id = "veo3.1-fast"
+
+
 _STRATEGIES = tuple(cls() for cls in (Seedream50ProStrategy, Seedream50Strategy, Seedream50FlashStrategy,
                                     GptImage2Strategy, GptImage25Strategy, Seedance25Strategy,
-                                    Seedance20Strategy, Seedance20FastStrategy, MiniMaxH3Strategy))
+                                    Seedance20Strategy, Seedance20FastStrategy, MiniMaxH3Strategy,
+                                    FluxDevStrategy, FluxSchnellStrategy, Kling30Strategy, Kling40Strategy,
+                                    Veo31Strategy, Veo31FastStrategy))
 
 
 def strategies() -> tuple[MediaModelStrategy, ...]:

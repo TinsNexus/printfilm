@@ -27,13 +27,15 @@ class AdminModelSettingsOut(BaseModel):
     model_llm: str = Field(default="", description="当前文本模型标识，运行时以有效默认文本路由为准")
     has_openai_api_key: bool = Field(default=False, description="是否已配置OpenAI 兼容文本服务的 API 密钥；实际密钥不在响应中返回")
 
-    upstream_gateway_type: str = Field(default="tokenfree", description="上游网关类型：tokenfree 或 9router")
+    upstream_gateway_type: str = Field(default="tokenfree", description="上游网关类型：tokenfree、9router 或 piapi")
     ninerouter_base_url: str = Field(default="", description="9Router 网关基础地址")
     ninerouter_api_key: str = Field(default="", description="9Router API 密钥；响应始终为空串，请通过 has_ninerouter_api_key 判断")
     has_ninerouter_api_key: bool = Field(default=False, description="是否已配置 9Router API 密钥")
     ninerouter_plan_keys: str = Field(default="", description="按套餐区分的 9Router Key；响应始终为空串")
     has_ninerouter_plan_keys: bool = Field(default=False, description="是否已配置按套餐的 9Router Key")
     ninerouter_plan_names: list[str] = Field(default_factory=list, description="已配置 Key 的套餐名称列表")
+    piapi_api_key: str = Field(default="", description="PiAPI API 密钥；响应始终为空串，请通过 has_piapi_api_key 判断")
+    has_piapi_api_key: bool = Field(default=False, description="是否已配置 PiAPI API 密钥")
 
     ark_api_key: str = Field(default="", description="图像、视频及语音服务的 API 密钥；响应始终为空串，请通过 has_ark_api_key 判断是否已配置")
     ark_base_url: str = Field(default="", description="图像、视频及语音服务的 API 基础地址，运行时会与当前模型渠道配置统一")
@@ -157,12 +159,14 @@ class AdminModelSettingsPatch(BaseModel):
     保存后刷新运行配置，模型与渠道相关字段还会按当前路由配置统一处理。
     """
 
-    upstream_gateway_type: Literal["tokenfree", "9router"] | None = Field(default=None, description="上游网关类型；省略或 null 时不修改")
+    upstream_gateway_type: Literal["tokenfree", "9router", "piapi"] | None = Field(default=None, description="上游网关类型；省略或 null 时不修改")
     ninerouter_base_url: str | None = Field(default=None, description="9Router 网关基础地址；省略或 null 时不修改")
     ninerouter_api_key: str | None = Field(default=None, description="9Router API 密钥；省略、null 或空白字符串时保留原值")
     clear_ninerouter_api_key: bool = Field(default=False, description="是否显式清空 9Router API 密钥")
     # 套餐 → Key 增量：非空设置/覆盖，空串删除该套餐
     ninerouter_plan_keys: dict[str, str] | None = Field(default=None, description="套餐到 9Router Key 的增量映射；非空设置或覆盖，空串删除该套餐")
+    piapi_api_key: str | None = Field(default=None, description="PiAPI API 密钥；省略、null 或空白字符串时保留原值")
+    clear_piapi_api_key: bool = Field(default=False, description="是否显式清空 PiAPI API 密钥")
 
     openai_api_key: str | None = Field(default=None, description="OpenAI 兼容文本服务的 API 密钥；省略、null 或空白字符串时保留原值；使用 clear_openai_api_key=true 清空")
     openai_base_url: str | None = Field(default=None, description="OpenAI 兼容文本服务的 API 基础地址，运行时会与当前模型渠道配置统一；省略或 null 时不修改")
@@ -296,6 +300,7 @@ def model_config_field_names() -> tuple[str, ...]:
         "ninerouter_base_url",
         "ninerouter_api_key",
         "ninerouter_plan_keys",
+        "piapi_api_key",
         "model_llm",
         "ark_api_key",
         "ark_base_url",
@@ -385,6 +390,7 @@ SECRET_FIELD_FLAGS: dict[str, str] = {
     "ark_api_key": "has_ark_api_key",
     "ninerouter_api_key": "has_ninerouter_api_key",
     "ninerouter_plan_keys": "has_ninerouter_plan_keys",
+    "piapi_api_key": "has_piapi_api_key",
     "oss_access_key_id": "has_oss_access_key_id",
     "oss_access_key_secret": "has_oss_access_key_secret",
     "tos_access_key": "has_tos_access_key",

@@ -29,6 +29,27 @@ PRESET_MODELS: dict[LogicalModelCapability, tuple[dict[str, str], ...]] = {
             "note": "综合能力强，复杂指令与英文场景更稳",
             "pricing_hint": "相对更贵",
         },
+        {
+            "id": "gpt-4o",
+            "label": "GPT-4o",
+            "note": "PiAPI 文本模型，响应快、综合能力均衡",
+            "pricing_hint": "按 Token 计费",
+            "gateways": "piapi",
+        },
+        {
+            "id": "gpt-5",
+            "label": "GPT-5",
+            "note": "PiAPI 文本模型，复杂剧本与长指令更稳",
+            "pricing_hint": "相对更贵",
+            "gateways": "piapi",
+        },
+        {
+            "id": "claude-sonnet-4-6",
+            "label": "Claude Sonnet 4.6",
+            "note": "PiAPI 文本模型，长文写作与润色表现好",
+            "pricing_hint": "相对更贵",
+            "gateways": "piapi",
+        },
     ),
     "image": (
         {
@@ -66,6 +87,22 @@ PRESET_MODELS: dict[LogicalModelCapability, tuple[dict[str, str], ...]] = {
             "pricing_hint": "按模型与分辨率定价",
             "eta_hint": "约 30–120 秒/张",
         },
+        {
+            "id": "flux1-dev",
+            "label": "Flux.1 Dev",
+            "note": "PiAPI 生图，质感细腻；仅 1K，参考图只用首张",
+            "pricing_hint": "按模型与分辨率定价",
+            "eta_hint": "约 20–60 秒/张",
+            "gateways": "piapi",
+        },
+        {
+            "id": "flux1-schnell",
+            "label": "Flux.1 Schnell",
+            "note": "PiAPI 快速生图，适合草稿与批量试错；仅 1K",
+            "pricing_hint": "按模型与分辨率定价",
+            "eta_hint": "约 5–20 秒/张",
+            "gateways": "piapi",
+        },
     ),
     "video": (
         {
@@ -74,6 +111,7 @@ PRESET_MODELS: dict[LogicalModelCapability, tuple[dict[str, str], ...]] = {
             "note": "成片首选，画质更好；4–30 秒，支持到 1080p",
             "pricing_hint": "按模型与分辨率定价",
             "eta_hint": "约 3–8 分钟/镜",
+            "gateways": "tokenfree,piapi",
         },
         {
             "id": "seedance-2.0",
@@ -97,6 +135,38 @@ PRESET_MODELS: dict[LogicalModelCapability, tuple[dict[str, str], ...]] = {
             "note": "节奏感强、人物生动；4–15 秒，480p / 768p",
             "pricing_hint": "按模型与分辨率定价",
             "eta_hint": "偏慢，4s 约 15 分钟起",
+        },
+        {
+            "id": "kling-3.0",
+            "label": "Kling 3.0",
+            "note": "PiAPI 视频，支持首尾帧；3–15 秒，720p / 1080p",
+            "pricing_hint": "按模型与分辨率定价",
+            "eta_hint": "约 2–6 分钟/镜",
+            "gateways": "piapi",
+        },
+        {
+            "id": "kling-4.0",
+            "label": "Kling 4.0",
+            "note": "PiAPI 视频，支持首尾帧；3–30 秒，720p / 1080p",
+            "pricing_hint": "按模型与分辨率定价",
+            "eta_hint": "约 3–8 分钟/镜",
+            "gateways": "piapi",
+        },
+        {
+            "id": "veo3.1",
+            "label": "Veo 3.1",
+            "note": "PiAPI 视频，画质高、可带声音；4–8 秒，720p / 1080p，仅横竖屏",
+            "pricing_hint": "按模型与分辨率定价",
+            "eta_hint": "约 2–6 分钟/镜",
+            "gateways": "piapi",
+        },
+        {
+            "id": "veo3.1-fast",
+            "label": "Veo 3.1 Fast",
+            "note": "Veo 3.1 加速档，更快更省；4–8 秒，720p / 1080p",
+            "pricing_hint": "按模型与分辨率定价",
+            "eta_hint": "约 1–4 分钟/镜",
+            "gateways": "piapi",
         },
     ),
     "audio": (
@@ -167,9 +237,38 @@ PRESET_MODEL_ALIASES: dict[str, str] = {
 }
 
 
-def preset_ids(capability: LogicalModelCapability) -> list[str]:
-    """某能力下的预设上游 id。"""
-    return [str(row["id"]) for row in PRESET_MODELS.get(capability, ())]
+def _row_supported_by_gateway(row: dict[str, str]) -> bool:
+    """预设是否属于当前上游：未标 gateways 的属于 TokenFree / 9Router，标了 piapi 的在 PiAPI 下可用。"""
+    from app.services.piapi.config import is_piapi_active
+
+    gateways = {g.strip() for g in str(row.get("gateways") or "tokenfree").split(",")}
+    return "piapi" in gateways if is_piapi_active() else "tokenfree" in gateways
+
+
+def is_piapi_only_model(model_id: str | None) -> bool:
+    """预设是否只属于 PiAPI（TokenFree 价目里没有，不能用 TokenFree 估价）。"""
+    row = lookup_preset_row(model_id)
+    gateways = {g.strip() for g in str((row or {}).get("gateways") or "tokenfree").split(",")}
+    return row is not None and "tokenfree" not in gateways
+
+
+def gateway_supports_model(model_id: str | None) -> bool:
+    """当前上游是否支持该预设模型；不在预设内的自定义模型名一律放行，9Router（自由填写模型）也不限制。"""
+    from app.services.nine_router.config import is_9router_active
+
+    if is_9router_active():
+        return True
+    row = lookup_preset_row(model_id)
+    return True if row is None else _row_supported_by_gateway(row)
+
+
+def preset_ids(capability: LogicalModelCapability, *, all_gateways: bool = False) -> list[str]:
+    """某能力下的预设上游 id；默认只返回当前上游支持的，all_gateways=True 返回全部。"""
+    return [
+        str(row["id"])
+        for row in PRESET_MODELS.get(capability, ())
+        if all_gateways or _row_supported_by_gateway(row)
+    ]
 
 
 def resolve_preset_alias(model_id: str | None) -> str:
@@ -210,11 +309,11 @@ def preset_display_meta(model_id: str | None) -> dict[str, str]:
 
 
 def all_preset_channel_models() -> list[str]:
-    """写入 TokenFree 渠道的全部预设 id（文/图/视/音）。"""
+    """写入网关渠道的全部预设 id（文/图/视/音，含各上游专属预设，切换网关后无需重建渠道）。"""
     out: list[str] = []
     seen: set[str] = set()
     for cap in ("text", "image", "video", "audio"):
-        for mid in preset_ids(cap):  # type: ignore[arg-type]
+        for mid in preset_ids(cap, all_gateways=True):  # type: ignore[arg-type]
             key = normalize_model_name(mid)
             if not key or key in seen:
                 continue

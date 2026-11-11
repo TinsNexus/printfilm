@@ -106,7 +106,7 @@ class AdminRoutingSettingsOut(BaseModel):
     media_reference_limits: dict[str, MediaReferenceLimits] = Field(default_factory=dict)
     validation_errors: list[str] = Field(default_factory=list)
     updated_at: datetime | None = None
-    # 当前上游：tokenfree 时模型限定预设；9router 时默认模型可自由填写
+    # 当前上游：tokenfree 时模型限定预设；9router / piapi 时默认模型可自由填写
     gateway_type: str = "tokenfree"
 
 

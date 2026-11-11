@@ -19,7 +19,7 @@ def test_model_contract(model, resolutions, maximum):
 
 
 def test_alias_and_registry():
-    assert len(strategies()) == 9
+    assert len(strategies()) == 15  # 9 个 TokenFree 策略 + 6 个 PiAPI 策略（Flux / Kling / Veo）
     assert get_strategy("seedance-2-5").model_id == "seedance-2.5"
     assert get_strategy("doubao-seedance-2-0-260128").model_id == "seedance-2.0"
     with pytest.raises(ValueError, match="model"):

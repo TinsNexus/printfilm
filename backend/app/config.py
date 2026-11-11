@@ -34,12 +34,14 @@ class Settings(BaseSettings):
 
     ark_api_key: str = ""
     ark_base_url: str = "https://www.tokenfree.com/v1"
-    # 文字模型：开源版支持 TokenFree New API 或 9Router，后台选模型
+    # 上游网关：tokenfree / 9router / piapi，后台一键切换
     upstream_gateway_type: str = "tokenfree"
     ninerouter_base_url: str = "http://localhost:20128/v1"
     ninerouter_api_key: str = ""
     # 按套餐（users.plan）区分的 9Router Key，JSON：{"free":"sk-..","pro":"sk-.."}
     ninerouter_plan_keys: str = ""
+    # PiAPI Key（upstream_gateway_type=piapi 时使用；文本走 /v1，图/视频走统一任务接口）
+    piapi_api_key: str = ""
     openai_api_key: str = ""
     openai_base_url: str = "https://www.tokenfree.com/v1"
     # 默认示例为 kimi；实际以后台渠道 models + 默认定稿为准，可改为 deepseek-chat 等

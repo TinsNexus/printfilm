@@ -60,6 +60,11 @@ def is_model_enabled(
     logical_models: Sequence[LogicalModel],
 ) -> bool:
     """Keep unmanaged custom names compatible; explicit switches cover their aliases."""
+    from app.services.media_model_presets import gateway_supports_model
+
+    # 不属于当前上游（TokenFree / PiAPI）的预设模型视为停用
+    if model_id and not gateway_supports_model(model_id):
+        return False
     matches = _matching_models(capability, model_id, logical_models)
     return not matches or all(model.enabled for model in matches)
 

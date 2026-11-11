@@ -60,6 +60,42 @@ async def test_switch_to_9router_and_back(db_session):
         )
         assert out.default_models.text_model == "cc/claude-sonnet-4"
 
+        # 切到 PiAPI：文本基址/Key 换成 PiAPI，Key 不回显；默认模型改用 PiAPI 预设
+        out_m, _ = await patch_admin_model_settings(
+            db_session, AdminModelSettingsPatch(upstream_gateway_type="piapi", piapi_api_key="pk-test")
+        )
+        assert out_m.upstream_gateway_type == "piapi"
+        assert out_m.piapi_api_key == "" and out_m.has_piapi_api_key
+        assert not is_9router_active()
+        assert get_settings().openai_base_url == "https://api.piapi.ai/v1"
+        assert get_settings().openai_api_key == "pk-test"
+        assert (await get_admin_routing_settings(db_session)).gateway_type == "piapi"
+        out, _ = await patch_admin_routing_settings(
+            db_session,
+            AdminRoutingSettingsPatch(
+                default_models=DefaultModels(text_model="gpt-4o", image_model="flux1-dev", video_model="kling-3.0", audio_model="")
+            ),
+        )
+        assert (out.default_models.text_model, out.default_models.image_model, out.default_models.video_model) == (
+            "gpt-4o", "flux1-dev", "kling-3.0",
+        )
+        # 重新加载缓存后仍保留（不会被 Seedance 别名或 TokenFree 预设钳回）
+        await load_model_settings_cache(db_session)
+        reloaded = await get_admin_routing_settings(db_session)
+        assert reloaded.default_models.image_model == "flux1-dev"
+        assert reloaded.default_models.video_model == "kling-3.0"
+        assert get_settings().model_video == "kling-3.0"
+        # PiAPI 下 TokenFree 专属模型不可作为默认
+        out, _ = await patch_admin_routing_settings(
+            db_session,
+            AdminRoutingSettingsPatch(
+                default_models=DefaultModels(text_model="kimi-k2.6", image_model="seedream-5.0-pro", video_model="MiniMax-H3", audio_model="")
+            ),
+        )
+        assert (out.default_models.text_model, out.default_models.image_model, out.default_models.video_model) == (
+            "gpt-4o", "flux1-dev", "seedance-2.5",
+        )
+
         await patch_admin_model_settings(db_session, AdminModelSettingsPatch(upstream_gateway_type="tokenfree"))
         assert not is_9router_active()
         assert get_settings().openai_base_url == TOKENFREE_BASE_URL

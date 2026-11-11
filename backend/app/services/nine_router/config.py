@@ -28,9 +28,23 @@ def normalize_9router_base_url(url: str | None) -> str:
 
 
 def get_upstream_gateway_type(settings: Settings | None = None) -> str:
-    """当前上游网关类型：'9router' 或 'tokenfree'（运行时由后台开关/环境变量决定）。"""
+    """当前上游网关类型：'9router' / 'piapi' / 'tokenfree'（运行时由后台开关/环境变量决定）。"""
+    from app.services.piapi.config import GATEWAY_TYPE_PIAPI, is_piapi_type
+
     s = settings or get_settings()
-    return GATEWAY_TYPE_9ROUTER if is_9router_type(getattr(s, "upstream_gateway_type", "")) else GATEWAY_TYPE_TOKENFREE
+    raw = getattr(s, "upstream_gateway_type", "")
+    if is_9router_type(raw):
+        return GATEWAY_TYPE_9ROUTER
+    if is_piapi_type(raw):
+        return GATEWAY_TYPE_PIAPI
+    return GATEWAY_TYPE_TOKENFREE
+
+
+def is_non_tokenfree_gateway(settings: Settings | None = None) -> bool:
+    """当前上游不是 TokenFree（9Router / PiAPI）：不拉官方价目/用量，默认模型解锁预设。"""
+    from app.services.piapi.config import is_piapi_active
+
+    return is_9router_active(settings) or is_piapi_active(settings)
 
 
 def is_9router_active(settings: Settings | None = None) -> bool:

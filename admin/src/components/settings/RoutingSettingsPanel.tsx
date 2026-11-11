@@ -18,6 +18,7 @@ import {
   CAPABILITY_ORDER,
   detectDefaultRemaps,
   PRESET_MODELS,
+  setActivePresetGateway,
   type ModelCapability,
 } from "@/lib/tokenfreeRecommendedModels";
 import { enabledPresetModels, normalizeRoutingDefaults, routingModelSettings, setRoutingModelEnabled } from "@/lib/routingModels";
@@ -63,6 +64,8 @@ export function RoutingSettingsPanel() {
     setLoading(true);
     try {
       const res = await api<AdminRoutingSettings>("/api/admin/settings/routing");
+      // 先按当前上游（TokenFree / PiAPI）切换预设，再归一默认模型
+      setActivePresetGateway(res.gateway_type);
       const defaults = normalizeRoutingDefaults(res.default_models, res.logical_models);
       setDefaultRemaps(detectDefaultRemaps(res.default_models)
         .map((item) => ({ ...item, to: defaults[`${item.capability}_model`] }))
@@ -140,6 +143,7 @@ export function RoutingSettingsPanel() {
           ...routingModelSettings(data),
         }),
       });
+      setActivePresetGateway(res.settings.gateway_type);
       setData({
         ...res.settings,
         default_models: normalizeRoutingDefaults(res.settings.default_models, res.settings.logical_models),

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { enabledPresetModels, normalizeRoutingDefaults, routingModelSettings, setRoutingModelEnabled } from '../src/lib/routingModels.ts'
-import { CAPABILITY_ORDER, PRESET_MODELS } from '../src/lib/tokenfreeRecommendedModels.ts'
+import { allPresetChannelModels, CAPABILITY_ORDER, PRESET_MODELS, setActivePresetGateway } from '../src/lib/tokenfreeRecommendedModels.ts'
 
 function settings() {
   return {
@@ -57,4 +57,25 @@ test('历史别名可映射到启用的预设，但不会选中已停用模型',
   assert.equal(normalizeRoutingDefaults(defaults, original.logical_models).image_model, 'seedream-5.0-flash')
   const disabled = setRoutingModelEnabled(original, 'seedream-5.0-flash', false)
   assert.equal(normalizeRoutingDefaults(defaults, disabled.logical_models).image_model, 'seedream-5.0-pro')
+})
+
+test('切到 PiAPI 时预设只剩 PiAPI 模型，切回后恢复；渠道模型始终是全部预设', () => {
+  const tokenfreeModels = settings().logical_models
+  try {
+    setActivePresetGateway('piapi')
+    assert.deepEqual(PRESET_MODELS.image.map(({ id }) => id), ['flux1-dev', 'flux1-schnell'])
+    assert.deepEqual(PRESET_MODELS.video.map(({ id }) => id), ['seedance-2.5', 'kling-3.0', 'kling-4.0', 'veo3.1', 'veo3.1-fast'])
+    // PiAPI 没有配音接口：语音无预设，默认为空（运行时回退 edge-tts）
+    assert.deepEqual(PRESET_MODELS.audio, [])
+    // 只启用了 TokenFree 模型时，PiAPI 下图片没有可选默认；Seedance 2.5 两边共用仍可选
+    const defaults = normalizeRoutingDefaults({ image_model: 'seedream-5.0-pro', video_model: 'seedance-2.5' }, tokenfreeModels)
+    assert.equal(defaults.image_model, '')
+    assert.equal(defaults.video_model, 'seedance-2.5')
+  } finally {
+    setActivePresetGateway('tokenfree')
+  }
+  assert.equal(PRESET_MODELS.image[0].id, 'seedream-5.0-pro')
+  assert.ok(!PRESET_MODELS.video.some(({ id }) => id.startsWith('kling')))
+  const channel = allPresetChannelModels()
+  assert.ok(channel.includes('kling-3.0') && channel.includes('seedream-5.0-pro'))
 })

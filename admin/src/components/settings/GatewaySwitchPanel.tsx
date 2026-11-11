@@ -3,13 +3,14 @@ import { toast } from "sonner";
 import { api } from "@/api/client";
 import { LabeledControl, SettingsPanel } from "@/components/settings/SettingsPanel";
 
-type GatewayType = "tokenfree" | "9router";
+type GatewayType = "tokenfree" | "9router" | "piapi";
 
 type GatewayState = {
   upstream_gateway_type: GatewayType;
   ninerouter_base_url: string;
   has_ninerouter_api_key: boolean;
   ninerouter_plan_names: string[];
+  has_piapi_api_key: boolean;
 };
 
 // 套餐 Key 行：existing 表示库里已有（Key 留空即保持不变）
@@ -17,10 +18,11 @@ type PlanRow = { plan: string; key: string; existing: boolean };
 
 const DEFAULT_9ROUTER_URL = "http://localhost:20128/v1";
 
-// 上游网关开关：TokenFree / 9Router 即插即用切换，保存后立即生效，无需重启
+// 上游网关开关：TokenFree / 9Router / PiAPI 即插即用切换，保存后立即生效，无需重启
 export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
   const [state, setState] = useState<GatewayState | null>(null);
   const [keyInput, setKeyInput] = useState("");
+  const [piapiKeyInput, setPiapiKeyInput] = useState("");
   const [planRows, setPlanRows] = useState<PlanRow[]>([]);
   const [saving, setSaving] = useState(false);
 
@@ -28,13 +30,18 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
     try {
       const res = await api<GatewayState>("/api/admin/settings/models");
       setState({
-        upstream_gateway_type: res.upstream_gateway_type === "9router" ? "9router" : "tokenfree",
+        upstream_gateway_type:
+          res.upstream_gateway_type === "9router" || res.upstream_gateway_type === "piapi"
+            ? res.upstream_gateway_type
+            : "tokenfree",
         ninerouter_base_url: res.ninerouter_base_url || DEFAULT_9ROUTER_URL,
         has_ninerouter_api_key: Boolean(res.has_ninerouter_api_key),
         ninerouter_plan_names: res.ninerouter_plan_names ?? [],
+        has_piapi_api_key: Boolean(res.has_piapi_api_key),
       });
       setPlanRows((res.ninerouter_plan_names ?? []).map((plan) => ({ plan, key: "", existing: true })));
       setKeyInput("");
+      setPiapiKeyInput("");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Tải cổng upstream thất bại");
     }
@@ -64,6 +71,7 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
           ninerouter_base_url: next.ninerouter_base_url.trim(),
           ninerouter_api_key: keyInput.trim() || undefined,
           ninerouter_plan_keys: Object.keys(planPatch).length ? planPatch : undefined,
+          piapi_api_key: piapiKeyInput.trim() || undefined,
         }),
       });
       toast.success("Đã lưu cổng upstream");
@@ -78,6 +86,7 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
 
   if (!state) return null;
   const is9router = state.upstream_gateway_type === "9router";
+  const isPiapi = state.upstream_gateway_type === "piapi";
 
   return (
     <SettingsPanel title={"Cổng upstream"} description={"Chuyển giữa TokenFree và 9Router, lưu xong có hiệu lực ngay, không cần khởi động lại. Việc chuyển không thay đổi cấu hình TokenFree đã lưu."}>
@@ -91,6 +100,7 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
           >
             <option value="tokenfree">TokenFree New API</option>
             <option value="9router">9Router</option>
+            <option value="piapi">PiAPI</option>
           </select>
         </LabeledControl>
         {is9router ? (
@@ -162,6 +172,22 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
               </div>
             </LabeledControl>
           </>
+        ) : null}
+        {isPiapi ? (
+          <LabeledControl
+            label="PiAPI API Key"
+            hint={state.has_piapi_api_key ? "Đã lưu, để trống để giữ nguyên" : undefined}
+            className="settings-field-span-full"
+          >
+            <input
+              className="settings-input is-secret"
+              type="password"
+              placeholder={state.has_piapi_api_key ? "Đã lưu, để trống sẽ không thay đổi" : "PiAPI key"}
+              value={piapiKeyInput}
+              onChange={(e) => setPiapiKeyInput(e.target.value)}
+            />
+            <p className="mt-1 text-xs text-[#909399]">{"Văn bản dùng LLM API của PiAPI; ảnh hỗ trợ Flux; video hỗ trợ Kling / Seedance / Veo; lồng tiếng chuyển về edge-tts. Không lấy bảng giá và mức dùng chính thức, ước tính chi phí chỉ mang tính tham khảo."}</p>
+          </LabeledControl>
         ) : null}
         <div className="settings-field-span-full">
           <button type="button" className="admin-btn admin-btn-primary" disabled={saving} onClick={() => void save(state)}>

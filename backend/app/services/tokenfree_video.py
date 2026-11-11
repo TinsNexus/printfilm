@@ -60,10 +60,17 @@ def uses_9router_gateway() -> bool:
     return is_9router_active()
 
 
+def uses_piapi_gateway() -> bool:
+    """后台开关选了 PiAPI 时，ark 层的图/视频改走 PiAPI 统一任务接口（渠道 id 仍是 tokenfree，需先排除）。"""
+    from app.services.piapi.config import is_piapi_active
+
+    return is_piapi_active()
+
+
 def uses_tokenfree_video(*, base_url: str = "", channel_id: str = "") -> bool:
-    """视频只走 TokenFree / New API；9Router 开启时不走该路径。"""
+    """视频只走 TokenFree / New API；9Router / PiAPI 开启时不走该路径。"""
     del base_url, channel_id
-    return not uses_9router_gateway()
+    return not (uses_9router_gateway() or uses_piapi_gateway())
 
 
 def remap_video_path(path: str, *, base_url: str = "", channel_id: str = "") -> str:
@@ -324,8 +331,12 @@ def prepare_video_create_body(
     base_url: str = "",
     channel_id: str = "",
 ) -> dict[str, Any]:
-    """TokenFree 包装成 POST /v1/videos 请求体；9Router 使用其专用包装。"""
+    """TokenFree 包装成 POST /v1/videos 请求体；9Router / PiAPI 使用各自的专用包装。"""
     del base_url, channel_id
+    if uses_piapi_gateway():
+        from app.services.piapi.video import wrap_seedance_payload_for_piapi
+
+        return wrap_seedance_payload_for_piapi(body)
     if uses_9router_gateway():
         return wrap_seedance_payload_for_9router(body)
     return wrap_seedance_payload_for_newapi(body)
@@ -381,7 +392,7 @@ def extract_video_task_id(data: dict[str, Any] | None) -> str | None:
 def format_video_task_error(err: Any) -> str:
     """把上游 error 对象收成可读短句。"""
     if isinstance(err, dict):
-        for key in ("message", "msg", "error"):
+        for key in ("message", "msg", "error", "raw_message"):
             value = err.get(key)
             if isinstance(value, str) and value.strip():
                 return value.strip()
@@ -417,6 +428,22 @@ def extract_video_result_url(data: dict[str, Any]) -> str | None:
             value = content.get(key)
             if isinstance(value, str) and value.strip():
                 return value.strip()
+    # PiAPI：{"output": {"video": "https://..."}}；Kling 2.6 及更早还有 works[].video.resource
+    output = data.get("output")
+    if isinstance(output, dict):
+        for key in ("video", "video_url"):
+            value = output.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        works = output.get("works")
+        if isinstance(works, list):
+            for work in works:
+                clip = work.get("video") if isinstance(work, dict) else None
+                if isinstance(clip, dict):
+                    for key in ("resource_without_watermark", "resource"):
+                        value = clip.get(key)
+                        if isinstance(value, str) and value.strip():
+                            return value.strip()
     return None
 
 

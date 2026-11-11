@@ -1,7 +1,7 @@
-"""Unified upstream model gateway supporting both TokenFree New API and 9Router.
+"""Unified upstream model gateway supporting TokenFree New API, 9Router and PiAPI.
 
 Provides seamless backward compatibility for TokenFree while dynamically delegating
-to 9Router when configured.
+to 9Router / PiAPI when configured.
 """
 
 from __future__ import annotations
@@ -24,6 +24,15 @@ from app.services.nine_router.config import (
     resolve_9router_base_url,
     site_origin_9router,
 )
+from app.services.piapi.config import (
+    GATEWAY_TYPE_PIAPI,
+    PIAPI_CHANNEL_NAME,
+    PIAPI_LLM_BASE_URL,
+    PIAPI_ORIGIN,
+    is_piapi_active,
+    is_piapi_type,
+    resolve_piapi_api_key,
+)
 
 # TokenFree defaults
 TOKENFREE_CHANNEL_ID = "tokenfree"
@@ -39,9 +48,11 @@ PRIMARY_GATEWAY_CHANNEL_IDS: frozenset[str] = frozenset(
 
 
 def get_active_gateway_type() -> str:
-    """Return active gateway type: '9router' or 'tokenfree'."""
+    """Return active gateway type: '9router', 'piapi' or 'tokenfree'."""
     if is_9router_active():
         return GATEWAY_TYPE_9ROUTER
+    if is_piapi_active():
+        return GATEWAY_TYPE_PIAPI
     return GATEWAY_TYPE_TOKENFREE
 
 
@@ -56,6 +67,8 @@ def get_active_channel_name() -> str:
     """Return active gateway display name."""
     if is_9router_active():
         return NINEROUTER_CHANNEL_NAME
+    if is_piapi_active():
+        return PIAPI_CHANNEL_NAME
     return TOKENFREE_CHANNEL_NAME
 
 
@@ -63,24 +76,28 @@ def get_active_base_url() -> str:
     """Return active gateway base URL."""
     if is_9router_active():
         return resolve_9router_base_url()
+    if is_piapi_active():
+        return PIAPI_LLM_BASE_URL
     return TOKENFREE_BASE_URL
 
 
 def is_gateway_channel(channel_id: str | None = None, base_url: str | None = None) -> bool:
-    """Check if channel ID or base URL belongs to supported gateway (TokenFree or 9Router)."""
+    """Check if channel ID or base URL belongs to supported gateway (TokenFree / 9Router / PiAPI)."""
     cid = (channel_id or "").strip().lower()
     if cid in PRIMARY_GATEWAY_CHANNEL_IDS:
         return True
     raw_base = (base_url or "").strip().lower()
     if "tokenfree.com" in raw_base or "localhost:20128" in raw_base or "127.0.0.1:20128" in raw_base or "9router" in raw_base:
         return True
-    return False
+    return "piapi.ai" in raw_base
 
 
 def tokenfree_site_origin(base_url: str | None = None) -> str:
     """Convert /v1 base URL to origin URL for dashboard/pricing."""
     if is_9router_active():
         return site_origin_9router(base_url or get_active_base_url())
+    if is_piapi_active():
+        return PIAPI_ORIGIN
     raw = (base_url or TOKENFREE_BASE_URL).strip().rstrip("/")
     if raw.endswith("/v1"):
         return raw[: -len("/v1")].rstrip("/")
@@ -88,9 +105,11 @@ def tokenfree_site_origin(base_url: str | None = None) -> str:
 
 
 def resolve_tokenfree_api_key() -> str:
-    """Resolve API key for active gateway (9Router or TokenFree)."""
+    """Resolve API key for active gateway (9Router / PiAPI / TokenFree)."""
     if is_9router_active():
         return resolve_9router_api_key()
+    if is_piapi_active():
+        return resolve_piapi_api_key()
 
     try:
         from app.services.model_settings import get_routing_snapshot
@@ -124,6 +143,11 @@ def locked_tokenfree_channel(
         base_url = resolve_9router_base_url()
         channel_name = NINEROUTER_CHANNEL_NAME
         channel_id = TOKENFREE_CHANNEL_ID  # Preserve id for DB consistency or use NINEROUTER_CHANNEL_ID
+        protocol = "openai"
+    elif is_piapi_active() and not force_tokenfree:
+        base_url = PIAPI_LLM_BASE_URL
+        channel_name = PIAPI_CHANNEL_NAME
+        channel_id = TOKENFREE_CHANNEL_ID
         protocol = "openai"
     else:
         base_url = TOKENFREE_BASE_URL
@@ -159,8 +183,11 @@ def pick_migratable_api_key(channels: list[SystemModelChannel]) -> str:
 
 
 def gateway_from_flat(flat: dict[str, Any]) -> tuple[bool, str, str]:
-    """按 flat 配置（而非已缓存的 Settings）判断是否 9Router，返回 (active, base_url, api_key)。"""
-    if not is_9router_type(str(flat.get("upstream_gateway_type") or "")):
+    """按 flat 配置（而非已缓存的 Settings）判断是否切到 9Router / PiAPI，返回 (active, base_url, api_key)。"""
+    gateway = str(flat.get("upstream_gateway_type") or "")
+    if is_piapi_type(gateway):
+        return True, PIAPI_LLM_BASE_URL, str(flat.get("piapi_api_key") or "").strip()
+    if not is_9router_type(gateway):
         return False, TOKENFREE_BASE_URL, ""
     return (
         True,
@@ -170,14 +197,19 @@ def gateway_from_flat(flat: dict[str, Any]) -> tuple[bool, str, str]:
 
 
 def apply_gateway_to_channels(channels: list[SystemModelChannel], flat: dict[str, Any]) -> list[SystemModelChannel]:
-    """运行时覆盖：9Router 开启时把 TokenFree 渠道的地址/Key/名称换成 9Router，数据库里的 TokenFree 配置保持不变。"""
+    """运行时覆盖：9Router / PiAPI 开启时把 TokenFree 渠道的地址/Key/名称换成对应网关，数据库里的 TokenFree 配置保持不变。"""
     active, base, key = gateway_from_flat(flat)
     if not active:
         return channels
+    name = (
+        PIAPI_CHANNEL_NAME
+        if is_piapi_type(str(flat.get("upstream_gateway_type") or ""))
+        else NINEROUTER_CHANNEL_NAME
+    )
     return [
         ch.model_copy(
             update={
-                "name": NINEROUTER_CHANNEL_NAME,
+                "name": name,
                 "base_url": base,
                 "api_key": key,
                 "has_api_key": bool(key),
@@ -191,7 +223,7 @@ def apply_gateway_to_channels(channels: list[SystemModelChannel], flat: dict[str
 
 
 def apply_tokenfree_flat_overlay(flat: dict[str, Any], channels: list[SystemModelChannel]) -> dict[str, Any]:
-    """把当前上游（TokenFree 或 9Router）的 Base URL / Key 同步到 LLM 与方舟客户端共用字段。"""
+    """把当前上游（TokenFree / 9Router / PiAPI）的 Base URL / Key 同步到 LLM 与方舟客户端共用字段。"""
     channel = next((item for item in channels if item.id in PRIMARY_GATEWAY_CHANNEL_IDS), None)
     if channel is None:
         return flat

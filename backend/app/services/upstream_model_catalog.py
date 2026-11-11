@@ -135,6 +135,14 @@ async def list_upstream_models(
         api_key_override=api_key_override,
     )
 
+    from app.services.piapi.config import is_piapi_active
+
+    if is_piapi_active():
+        # PiAPI 统一任务接口没有 /models，返回本项目已适配的内置目录
+        from app.services.piapi.catalog import list_piapi_catalog_models
+
+        return list_piapi_catalog_models(capability)
+
     # 已下线的方舟 / 豆包协议或 volces 地址不再直连，改拉当前网关（TokenFree / 9Router）目录
     if proto in {"ark", "volc_tts"} or "volces.com" in base.lower() or "openspeech.bytedance.com" in base.lower():
         from app.services.tokenfree_gateway import get_active_base_url, resolve_tokenfree_api_key

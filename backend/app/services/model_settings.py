@@ -254,8 +254,12 @@ def _bootstrap_logical_from_channels(channels: list[SystemModelChannel]) -> tupl
                     result.append(binding.model_copy())
         return result
 
+    def _is_seedance(model_id: str) -> bool:
+        # 只有 Seedance 才造短名别名；Kling / Veo 等自定义视频模型按原 id 保留，否则会被别名吞掉
+        return "seedance" in (model_id or "").lower()
+
     # 图模不再造 seedream-5.0 友好别名；仅视频保留 Seedance 短名
-    if settings.model_video:
+    if _is_seedance(settings.model_video):
         logical_id, name = _seedance_logical_meta(settings.model_video)
         _append_seedance_alias(
             alias_models,
@@ -264,7 +268,7 @@ def _bootstrap_logical_from_channels(channels: list[SystemModelChannel]) -> tupl
             name=name,
             bindings_for_upstream=_bindings_for_upstream,
         )
-    if settings.model_video_2:
+    if _is_seedance(settings.model_video_2):
         logical_id_2, name_2 = _seedance_logical_meta(settings.model_video_2)
         _append_seedance_alias(
             alias_models,
@@ -274,8 +278,10 @@ def _bootstrap_logical_from_channels(channels: list[SystemModelChannel]) -> tupl
             bindings_for_upstream=_bindings_for_upstream,
         )
     default_video = ""
-    if settings.model_video:
+    if _is_seedance(settings.model_video):
         default_video, _ = _seedance_logical_meta(settings.model_video)
+    elif settings.model_video:
+        default_video = settings.model_video.strip()
     elif settings.model_video_2:
         default_video = "seedance-2.0"
     synced = synchronize_logical_models_with_channels(logical_models, channels)
@@ -757,7 +763,7 @@ async def patch_admin_routing_settings(
     from app.services.nine_router.config import is_9router_active
     from app.services.media_model_presets import clamp_default_to_preset as _clamp_preset
 
-    # 9Router 模式解锁预设：默认模型可填任意上游模型 id，并并入渠道 models
+    # 9Router 模式解锁预设：默认模型可填任意上游模型 id，并并入渠道 models（PiAPI 走自己的预设）
     open_models = is_9router_active()
     custom_models: list[str] = []
     if open_models and body.default_models is not None:

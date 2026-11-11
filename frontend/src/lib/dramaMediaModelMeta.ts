@@ -37,6 +37,10 @@ export function mediaModelCapabilityBadge(model: MediaModelOption): string {
   if (id.includes('seedance')) return 'Seedance'
   if (id.includes('seedream')) return 'Seedream'
   if (id.includes('gpt-image')) return 'GPT Image'
+  // PiAPI 上游的模型族
+  if (id.includes('kling')) return 'Kling'
+  if (id.includes('veo')) return 'Veo'
+  if (id.includes('flux')) return 'Flux'
   return model.provider === 'tokenfree' ? 'TokenFree' : model.provider || tv('模型', 'Model')
 }
 

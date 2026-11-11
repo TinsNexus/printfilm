@@ -72,10 +72,10 @@ def _list_from_payload(payload: Any) -> list[dict[str, Any]]:
 
 async def _tokenfree_get(path: str, *, params: dict[str, Any] | None = None) -> Any:
     """GET TokenFree 站点路径；Bearer 使用模型页同一把 Key。"""
-    from app.services.nine_router.config import is_9router_active
+    from app.services.nine_router.config import is_non_tokenfree_gateway
 
-    if is_9router_active():
-        raise RuntimeError("当前上游为 9Router，不支持 TokenFree 用量接口")
+    if is_non_tokenfree_gateway():
+        raise RuntimeError("当前上游不是 TokenFree，不支持 TokenFree 用量接口")
     key = resolve_tokenfree_api_key()
     if not key:
         raise RuntimeError("未配置 TokenFree API Key，请先在「模型」填写")

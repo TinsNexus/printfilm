@@ -1,6 +1,6 @@
 # 图视频模型策略与站内定价
 
-模型能力由 `backend/app/services/media_models/` 内的九个策略定义。前台目录、参数校验、请求转换、报价和任务受理共用这些策略。图片按模型、分辨率、成功交付张数收费；视频按模型、分辨率、提交的生成秒数收费。每张/条向上取整到分后汇总，单价使用四位小数的 Decimal 元。
+模型能力由 `backend/app/services/media_models/` 内的十五个策略定义（TokenFree 九个 + PiAPI 六个，见下文「PiAPI 上游」）。前台目录、参数校验、请求转换、报价和任务受理共用这些策略。图片按模型、分辨率、成功交付张数收费；视频按模型、分辨率、提交的生成秒数收费。每张/条向上取整到分后汇总，单价使用四位小数的 Decimal 元。
 
 科普项目新增 `image_resolution`、`video_resolution`，可在风格配置页按模型选择。历史项目字段为空时仍使用原图像尺寸及站点视频清晰度规则；显式设置的视频分辨率优先于旧 `preview/hd` 推导。
 
@@ -60,3 +60,20 @@
 前端生成请求携带 `X-Media-Price-Version`（旧模式目录为 0）。价格或模式发生变化返回 409，在建任务、冻结资金、提交上游之前结束。刷新目录后由用户重新提交，不自动重发生成请求。
 
 站内图片生成按模型、分辨率和数量报价；视频按模型、分辨率和提交时长报价。模型不支持的组合返回字段错误，不自动降档。
+
+## PiAPI 上游
+
+管理端「系统设置 → 模型 → 上游网关」可切到 PiAPI（另两个选项为 TokenFree、9Router），保存后立即生效。文本走 PiAPI LLM 接口 `https://api.piapi.ai/v1`；图片、视频走统一任务接口 `POST /api/v1/task` + 轮询，代码在 `backend/app/services/piapi/`。
+
+| 策略 | 能力 | 分辨率 | 时长 | 参考素材 |
+|---|---|---|---|---|
+| `flux1-dev` / `flux1-schnell` | 图片 | 1K | — | 最多 1 张（img2img） |
+| `kling-3.0` | 视频 | 720p（std，默认）/ 1080p（pro） | 3–15 秒 | 只认首帧 + 尾帧 |
+| `kling-4.0` | 视频 | 同上 | 3–30 秒 | 只认首帧 + 尾帧 |
+| `veo3.1` / `veo3.1-fast` | 视频 | 720p（默认）/ 1080p，仅 16:9、9:16 | 4–8 秒，上游按 4/6/8 秒取档 | 首帧 + 尾帧，或 1–3 张参考图 |
+| `seedance-2.5` | 视频 | 与 TokenFree 共用同一策略 | | |
+
+- 预设按上游过滤（`media_model_presets.PRESET_MODELS` 的 `gateways` 字段，管理端 `tokenfreeRecommendedModels.ts` 同步）：PiAPI 下只能选上表模型，TokenFree 专属模型视为停用；切回 TokenFree 后 PiAPI 专属模型同样不可选。渠道 models 始终写入全部预设，切换网关无需重建渠道。
+- 开启固定计费时，PiAPI 模型同样要在「图片与视频价格」确认单价并发布，留空的分辨率不开放生成。初始草稿里 PiAPI 专属模型（Flux / Kling / Veo）留空：TokenFree 价目里没有这些模型，不套用通用兜底估价，须按 PiAPI 官网价目（https://piapi.ai/pricing）填写后发布。
+- PiAPI 不拉取 TokenFree 官方价目与用量，上游成本记为待核实。
+- PiAPI 没有配音接口：语音无预设，配音回退 edge-tts。Midjourney、Sora 2 已被 PiAPI 下线，选用时报错。

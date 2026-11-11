@@ -220,6 +220,11 @@ def resolve_upstream_model(
             if operation:
                 return restore_route(operation["route"]).upstream_model
     snapshot = get_routing_snapshot()
+    from app.services.media_model_presets import gateway_supports_model
+
+    if model_id and not gateway_supports_model(model_id):
+        # 切换上游（TokenFree / PiAPI）后旧模型不可用，不是被管理员停用
+        raise ValueError(f"model: 当前上游网关不支持 {model_id}，请在后台改选模型")
     if model_id and not is_model_enabled(capability, model_id, snapshot.logical_models):
         raise ValueError(f"model: {model_id} 已停用")
     logical_id = resolve_logical_model_id(capability, model_id)
