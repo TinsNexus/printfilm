@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -68,6 +69,19 @@ def _message_content(data: dict[str, Any]) -> str:
 
 
 # 调用 OpenAI 兼容 chat/completions
+# 上游限流 / 网关暂时不可用时的重试：共 3 次，间隔 2s、4s（Retry-After 优先，最多 10s）
+LLM_RETRY_ATTEMPTS = 3
+LLM_RETRY_STATUS = frozenset({429, 502, 503, 504})
+
+
+def _retry_delay(res: httpx.Response, attempt: int) -> float:
+    """Retry-After 秒数优先（封顶 10s），否则指数退避 2s、4s。"""
+    try:
+        return min(max(float(res.headers.get("retry-after", "")), 0.0), 10.0)
+    except ValueError:
+        return float(2 ** attempt)
+
+
 async def chat_completions(
     system: str,
     user: str,
@@ -125,14 +139,20 @@ async def chat_completions(
         max_tokens,
     )
     async with httpx.AsyncClient(timeout=timeout) as client:
-        res = await observed_request(client, "POST",
-            f"{base}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-        )
+        for attempt in range(1, LLM_RETRY_ATTEMPTS + 1):
+            res = await observed_request(client, "POST",
+                f"{base}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            if res.status_code not in LLM_RETRY_STATUS or attempt == LLM_RETRY_ATTEMPTS:
+                break
+            delay = _retry_delay(res, attempt)
+            logger.warning("文字 LLM 上游繁忙 HTTP %s，%.1fs 后第 %s 次重试 model=%s", res.status_code, delay, attempt + 1, model)
+            await asyncio.sleep(delay)
         if res.status_code >= 400:
             raise RuntimeError(f"LLM error {res.status_code}: {res.text[:800]}")
         body = (res.text or "").strip()
