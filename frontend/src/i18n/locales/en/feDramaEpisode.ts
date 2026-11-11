@@ -143,7 +143,7 @@ export const enFeDramaEpisode = {
   episodesStep: {
     failedLoadEpisode: "Failed to load the episode",
     reSplitAllShotsRules: "Re-split all shots by rules",
-    ruleEngineWillQuicklyRe: "The rule engine will quickly re-split every shot (including edited episodes and those with videos). Use “AI 分镜” for detailed per-episode splitting. Continue?",
+    ruleEngineWillQuicklyRe: "The rule engine will quickly re-split every shot (including edited episodes and those with videos). Use “AI shots” for detailed per-episode splitting. Continue?",
     continue: "Continue",
     splitComplete: "Split complete",
     shotsUpdatedEpisodesOpenEach: "Shots updated for {length} episodes; open each episode to review.",

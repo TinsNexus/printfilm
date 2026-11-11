@@ -26,7 +26,7 @@ export async function generateAndBindCharacterVoice(
 
   const voiceResult = await dramaApi.generateVoice({
     project_id: projectId,
-    name: tr('characterVoiceGenerate.voice', { name: asset.name || '角色' }),
+    name: tr('characterVoiceGenerate.voice', { name: asset.name || tr('uiCommon.character') }),
     voice_prompt: voicePrompt,
     speaker: promptResult.speaker || undefined,
     sample_text: promptResult.sample_text || undefined,

@@ -12,7 +12,8 @@ import { downloadSingleVideo } from '../../lib/clientDownload'
 import { withReturn } from '../../features/marketplace/ui'
 import { tr } from '../../i18n/translate.ts'
 
-const PANEL_TABS = [tr('editorPage.script'), tr('editorPage.visuals'), tr('editorPage.voiceOver'), tr('editorPage.transitions')] as const
+// 面板 id 固定，标签渲染时再翻译（不能用已翻译文字做状态比较）
+const PANEL_TABS = ['script', 'visuals', 'voiceOver', 'transitions'] as const
 
 export default function EditorPage() {
   useMarketplaceLocale()
@@ -22,7 +23,7 @@ export default function EditorPage() {
   const location = useLocation()
   const [project, setProject] = useState<Project | null>(null)
   const [activeShotId, setActiveShotId] = useState<number | null>(null)
-  const [tab, setTab] = useState<(typeof PANEL_TABS)[number]>(tr('editorPage.script'))
+  const [tab, setTab] = useState<(typeof PANEL_TABS)[number]>('script')
   const [narration, setNarration] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -459,12 +460,12 @@ export default function EditorPage() {
                 className={tab === t ? 'active' : ''}
                 onClick={() => setTab(t)}
               >
-                {t}
+                {tr(`editorPage.${t}`)}
               </button>
             ))}
           </div>
 
-          {tab === '文案' ? (
+          {tab === 'script' ? (
             <>
               <label className="pf-muted" style={{ fontSize: '0.85rem', display: 'block' }}>
                 {tr('editorPage.scriptText')}
@@ -509,7 +510,7 @@ export default function EditorPage() {
             </>
           ) : null}
 
-          {tab === '画面' ? (
+          {tab === 'visuals' ? (
             <>
               <p className="pf-muted" style={{ fontSize: '0.88rem' }}>
                 {tr('editorPage.useUploadImagePreviewReplace')}
@@ -525,7 +526,7 @@ export default function EditorPage() {
             </>
           ) : null}
 
-          {tab === '配音' ? (
+          {tab === 'voiceOver' ? (
             <>
               <p className="pf-muted" style={{ fontSize: '0.88rem' }}>
                 {tr('editorPage.replaceShotSVoiceOver')}
@@ -541,7 +542,7 @@ export default function EditorPage() {
             </>
           ) : null}
 
-          {tab === '转场' ? (
+          {tab === 'transitions' ? (
             <div className="pf-hint">
               {tr('editorPage.transitionEffectsFadesWhiteFlashes')}
             </div>

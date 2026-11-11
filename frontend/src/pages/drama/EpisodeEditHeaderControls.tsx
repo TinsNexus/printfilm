@@ -219,7 +219,7 @@ export function EpisodeEditHeaderControls({
             if (globalSettingsReadOnly) return
             setOpen((c) => (c === 'link' ? null : 'link'))
           }}
-          title={globalSettingsReadOnly ? tr('episodeEditHeaderControls.projectSettingReadOnlyHere4', { p: linkLastFrame ? '尾帧衔接' : '并发生成' }) : tr('episodeEditHeaderControls.lastFrameContinuityBetweenShots')}
+          title={globalSettingsReadOnly ? tr('episodeEditHeaderControls.projectSettingReadOnlyHere4', { p: linkLastFrame ? tr('uiCommon.lastFrameContinuity') : tr('uiCommon.parallelGeneration') }) : tr('episodeEditHeaderControls.lastFrameContinuityBetweenShots')}
         >
           <Link2 size={14} strokeWidth={1.8} />
           <span className="fc-gen-opt-label">{linkLastFrame ? tr('episodeEditHeaderControls.lastFrameContinuity') : tr('episodeEditHeaderControls.parallelGeneration')}</span>

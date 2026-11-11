@@ -174,7 +174,7 @@ export function CharacterVoiceBindModal({
     setSelectedId(bound?.sourceAssetId ?? null)
     setNewPrompt('')
     setSuggestedSpeaker('')
-    setNewName(tr('characterVoiceBindModal.voice2', { name: asset.name || '角色' }))
+    setNewName(tr('characterVoiceBindModal.voice2', { name: asset.name || tr('uiCommon.character') }))
     setMode('pick')
     promptRequestedRef.current = false
 
@@ -222,7 +222,7 @@ export function CharacterVoiceBindModal({
         project_id: projectId,
         type: 'voice',
         asset_type: 'audio',
-        name: baseName || tr('characterVoiceBindModal.voice2', { name: asset.name || '角色' }),
+        name: baseName || tr('characterVoiceBindModal.voice2', { name: asset.name || tr('uiCommon.character') }),
         params: {
           source: 'upload',
           originalFilename: file.name,

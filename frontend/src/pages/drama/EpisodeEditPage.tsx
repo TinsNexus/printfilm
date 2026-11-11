@@ -1960,7 +1960,7 @@ function EpisodeEditInner() {
             ? ['prop', 'material', 'none']
             : [resolveCreateAssetTab()]
         }
-        title={tr('episodeEditPage.import', { resolveCreateAssetTab: resolveCreateAssetTab() === 'scene' ? '场景' : resolveCreateAssetTab() === 'prop' ? '道具' : '角色' })}
+        title={tr('episodeEditPage.import', { resolveCreateAssetTab: resolveCreateAssetTab() === 'scene' ? tr('uiCommon.scene') : resolveCreateAssetTab() === 'prop' ? tr('uiCommon.prop') : tr('uiCommon.character') })}
         confirmLabel={tr('episodeEditPage.importEpisode')}
         onPick={handleImportSideAsset}
       />

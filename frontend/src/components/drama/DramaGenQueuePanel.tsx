@@ -98,7 +98,7 @@ export function DramaGenQueuePanel() {
 
   // 有进行中的分镜视频时后台轮询，离开编辑页也不中断
   useEffect(() => {
-    if (active.some((job) => job.kind === 'video' && job.subtype === '分镜视频')) {
+    if (active.some((job) => job.kind === 'video' && job.subtype === tr('dramaGenQueue.shotVideo2'))) {
       ensureEpisodeVideoStatusPoll()
     }
   }, [active])

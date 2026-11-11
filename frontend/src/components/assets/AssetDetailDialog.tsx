@@ -84,11 +84,11 @@ export function AssetDetailDialog({ asset, open = true, onClose, actions, childr
           <span className="pf-asset-detail-type">{labels[asset.type] || labels[kind] || asset.type}</span>
           <h2 title={title}>{title}</h2>
           {notice}
-          {prompt && <section className="pf-asset-detail-prompt"><h3>{info.source === 'AI 生成' ? tr('assetDetailDialog.generationPrompt') : tr('assetDetailDialog.assetDescription')}</h3><DetailPrompt key={`${asset.id}:${url}`} text={prompt} references={info.references} onPreview={setReferencePreview} /></section>}
+          {prompt && <section className="pf-asset-detail-prompt"><h3>{info.source === tr('assetDetails.aiGenerated') ? tr('assetDetailDialog.generationPrompt') : tr('assetDetailDialog.assetDescription')}</h3><DetailPrompt key={`${asset.id}:${url}`} text={prompt} references={info.references} onPreview={setReferencePreview} /></section>}
           <DetailReferences references={info.references} onPreview={setReferencePreview} />
           <dl className="pf-asset-detail-meta">
             <dt>{tr('assetDetailDialog.source')}</dt><dd>{info.source}</dd>
-            {info.source !== '上传' && <><dt>{tr('assetDetailDialog.model')}</dt><dd title={info.model}>{info.model || tr('assetDetailDialog.notRecorded')}</dd></>}
+            {info.source !== tr('assetDetails.upload') && <><dt>{tr('assetDetailDialog.model')}</dt><dd title={info.model}>{info.model || tr('assetDetailDialog.notRecorded')}</dd></>}
             {dimensions && <><dt>{tr('assetDetailDialog.mediaSize')}</dt><dd>{dimensions}</dd></>}
             {(mediaDuration || info.mediaDuration) && <><dt>{kind === 'audio' ? tr('assetDetailDialog.audioDuration') : tr('assetDetailDialog.videoDuration')}</dt><dd>{mediaDuration || info.mediaDuration}</dd></>}
             {info.fileSize !== null && <><dt>{tr('assetDetailDialog.fileSize')}</dt><dd>{info.fileSize >= 1048576 ? `${(info.fileSize / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(info.fileSize / 1024))} KB`}</dd></>}

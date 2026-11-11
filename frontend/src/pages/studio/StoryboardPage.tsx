@@ -835,7 +835,7 @@ title={tr('storyboardPage.rejoinCurrentShots')}
                 disabled={busy || running}
                 onClick={continueGenerate}
               >
-                {generateLabel === '生成中…' ? tr('storyboardPage.continueGenerating') : generateLabel}
+                {running ? tr('storyboardPage.continueGenerating') : generateLabel}
               </button>
             ) : null}
             <button
@@ -1459,7 +1459,7 @@ title={tr('storyboardPage.rejoinCurrentShots')}
                 ? tr('storyboardPage.editShotNarrationTitle', { shot_no: editing.shot_no })
                 : editMode === 'segment'
                   ? tr('storyboardPage.editShotBreakdown', { shot_no: editing.shot_no })
-                  : tr('storyboardPage.editShot', { shot_no: editing.shot_no, p: isFullPipeline ? '全部提示词' : '画面与旁白' })}
+                  : tr('storyboardPage.editShot', { shot_no: editing.shot_no, p: isFullPipeline ? tr('uiCommon.allPrompts') : tr('uiCommon.visualsAndNarration') })}
             </h3>
             <div className="pf-prompt-modal-scroll">
               {editMode === 'narration' || editMode === 'full' ? (

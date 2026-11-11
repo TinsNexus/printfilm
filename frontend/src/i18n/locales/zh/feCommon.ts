@@ -1,4 +1,4 @@
-/** 中文：前端文案：src */
+/** 中文：前端通用短语 */
 
 export const zhFeCommon = {
   api: {
@@ -6,5 +6,36 @@ export const zhFeCommon = {
     coverUploadFailed: "封面上传失败",
     bundleDownloadFailed: "打包下载失败",
     frameUploadFailed: "画面上传失败",
+  },
+  uiCommon: {
+    spendingReminder: "消费提醒",
+    gotIt: "知道了",
+    modelUnavailable: "模型暂不可用",
+    noQuoteForSettings: "当前参数无法报价，请选择已定价档位",
+    creditedAmount: "到账 {amount}",
+    paymentSucceeded: "支付成功，积分即将更新",
+    videoCostLine: "{resolution} · {count} 条 · {seconds} 秒 · ",
+    notPricedYet: "当前参数尚未定价",
+    stageHoldNote: "各阶段分别冻结；图视频按成功交付结算，配音等费用另计。",
+    teamBalanceCheck: "消费按团队余额与本人额度校验",
+    availableNow: "当前可用 {amount}",
+    bulkImageConfirm: "将为当前「{category}」下 {count} 个未出图资产开始生图（并行提交，不排队）。\n\n每张预扣约 {unit}，本次合计约 {total}（{balance}；结束后按实际上游用量多退少补）。\n\n是否继续？",
+    category: "分类",
+    startGenerating: "开始生成",
+    loadingMarketplace: "正在加载作品与招募…",
+    aiShots: "AI 分镜",
+    scene: "场景",
+    prop: "道具",
+    character: "角色",
+    lastFrameContinuity: "尾帧衔接",
+    parallelGeneration: "并发生成",
+    allPrompts: "全部提示词",
+    visualsAndNarration: "画面与旁白",
+    assetInitial: "资",
+    durationChipTitle: "时长 {seconds}s，编辑时点击切换",
+    assetN: "资产 {id}",
+    untitled: "未命名",
+    voice: "音色",
+    asset: "资产",
   },
 } as const;

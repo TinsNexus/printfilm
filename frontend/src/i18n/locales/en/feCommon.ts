@@ -1,4 +1,4 @@
-/** 英文：前端文案：src */
+/** 英文：前端通用短语 */
 
 export const enFeCommon = {
   api: {
@@ -6,5 +6,36 @@ export const enFeCommon = {
     coverUploadFailed: "Cover upload failed",
     bundleDownloadFailed: "Bundle download failed",
     frameUploadFailed: "Frame upload failed",
+  },
+  uiCommon: {
+    spendingReminder: "Spending reminder",
+    gotIt: "Got it",
+    modelUnavailable: "Model unavailable",
+    noQuoteForSettings: "No price for these settings. Choose a priced option",
+    creditedAmount: "Credited {amount}",
+    paymentSucceeded: "Payment successful. Your points will update shortly",
+    videoCostLine: "{resolution} · {count} videos · {seconds} s · ",
+    notPricedYet: "Not priced for these settings yet",
+    stageHoldNote: "Each stage is held separately; images and videos settle on successful delivery, and voice-over and other costs are billed separately.",
+    teamBalanceCheck: "Spending is checked against the team balance and your limit",
+    availableNow: "{amount} available",
+    bulkImageConfirm: "Image generation will start for {count} assets without images in “{category}” (submitted in parallel, no queue).\n\nAbout {unit} is held per image, about {total} in total ({balance}; the difference is refunded or charged based on actual upstream usage).\n\nContinue?",
+    category: "category",
+    startGenerating: "Start generating",
+    loadingMarketplace: "Loading marketplace…",
+    aiShots: "AI shots",
+    scene: "scene",
+    prop: "prop",
+    character: "character",
+    lastFrameContinuity: "Last-frame continuity",
+    parallelGeneration: "Parallel generation",
+    allPrompts: "all prompts",
+    visualsAndNarration: "visuals & narration",
+    assetInitial: "A",
+    durationChipTitle: "Duration {seconds}s; click to change while editing",
+    assetN: "Asset {id}",
+    untitled: "Untitled",
+    voice: "voice",
+    asset: "asset",
   },
 } as const;

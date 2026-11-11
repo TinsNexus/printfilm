@@ -43,7 +43,7 @@ export function DramaVoiceAssetCard({
         {onSynth && <button type="button" className="pf-btn pf-btn-lime pf-btn-sm" disabled={synthBusy || !promptValue.trim()} onClick={onSynth}>
           {synthBusy ? tr('dramaVoiceAssetCard.synthesizing2') : hasAudio ? tr('dramaVoiceAssetCard.synthesizeAgain') : tr('dramaVoiceAssetCard.synthesizePrompt')}
         </button>}
-        <button type="button" className="pf-btn pf-btn-sm drama-btn-danger-text" aria-label={tr('dramaVoiceAssetCard.delete', { name: asset.name || '音色' })} disabled={synthBusy} onClick={onDelete}><Trash2 size={14} />{tr('dramaVoiceAssetCard.delete2')}</button>
+        <button type="button" className="pf-btn pf-btn-sm drama-btn-danger-text" aria-label={tr('dramaVoiceAssetCard.delete', { name: asset.name || tr('uiCommon.voice') })} disabled={synthBusy} onClick={onDelete}><Trash2 size={14} />{tr('dramaVoiceAssetCard.delete2')}</button>
       </>}
     >
         <label className="pf-library-voice-field">

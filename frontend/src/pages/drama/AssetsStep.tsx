@@ -325,13 +325,12 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
     const unitYuan = pre.unit_estimate_fen
     const totalYuan = pre.requested_total_fen
     const balanceYuan = pre.balance_fen
-    const balanceText = balanceYuan === undefined ? '消费按团队余额与本人额度校验' : `当前可用 ${points(balanceYuan)}`
+    const balanceText = balanceYuan === undefined ? tr('uiCommon.teamBalanceCheck') : tr('uiCommon.availableNow', { amount: points(balanceYuan) })
     const ok = await dialog.confirm({
       title: tr('assetsStep.generateLooksBulk'),
       message:
-        `将为当前「${ASSET_TABS.find((t) => t.key === tab)?.label || '分类'}」下 ${targets.length} 个未出图资产开始生图（并行提交，不排队）。\n\n` +
-        `每张预扣约 ${points(unitYuan)}，本次合计约 ${points(totalYuan)}（${balanceText}；结束后按实际上游用量多退少补）。\n\n是否继续？`,
-      confirmText: '开始生成',
+        tr('uiCommon.bulkImageConfirm', { category: ASSET_TABS.find((t) => t.key === tab)?.label || tr('uiCommon.category'), count: targets.length, unit: points(unitYuan), total: points(totalYuan), balance: balanceText }),
+      confirmText: tr('uiCommon.startGenerating'),
     })
     if (!ok) return
     setBatchBusy(true)
@@ -511,7 +510,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
   async function handleDeleteVoice(asset: DramaAsset) {
     const ok = await dialog.confirm({
       title: tr('assetsStep.deleteVoice'),
-      message: tr('assetsStep.deleteVoice2', { name: asset.name || '未命名' }),
+      message: tr('assetsStep.deleteVoice2', { name: asset.name || tr('uiCommon.untitled') }),
       tone: 'danger',
       confirmText: tr('assetsStep.delete'),
     })
@@ -551,7 +550,7 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
   async function handleDeleteCharacter(asset: DramaAsset) {
     const ok = await dialog.confirm({
       title: tr('assetsStep.deleteCharacter'),
-      message: tr('assetsStep.deleteCharacterCannotUndone', { name: asset.name || '未命名' }),
+      message: tr('assetsStep.deleteCharacterCannotUndone', { name: asset.name || tr('uiCommon.untitled') }),
       tone: 'danger',
       confirmText: tr('assetsStep.delete'),
     })

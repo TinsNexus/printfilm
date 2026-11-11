@@ -233,7 +233,7 @@ export default function PaymentModal({ open, checkout, onClose, onPaid, teamId }
 
         <div className="pf-pay-sku-box">
           <strong>{checkout.sku_name}</strong>
-          <span>到账 {points(checkout.credit_fen)}</span>
+          <span>{tr('uiCommon.creditedAmount', { amount: points(checkout.credit_fen) })}</span>
         </div>
 
         <div className="pf-pay-amount">
@@ -271,7 +271,7 @@ export default function PaymentModal({ open, checkout, onClose, onPaid, teamId }
           <p className={`pf-pay-wait${status === 'paid' ? ' is-paid' : ''}`}>
             <span className="pf-pay-dot" aria-hidden />
             {status === 'paid'
-              ? '支付成功，积分即将更新'
+              ? tr('uiCommon.paymentSucceeded')
               : status === 'expired'
                 ? tr('paymentModal.orderTimedOut')
                 : tr('paymentModal.waitingPaymentDonTClose')}

@@ -82,7 +82,7 @@ export default function TopupHistoryModal({ open, onClose }: Props) {
               </div>
               <div className="pf-topup-meta">
                 <em>{billingOrderChargeLabel(o)}</em>
-                <span className="pf-muted">到账 {points(o.credit_fen)}</span>
+                <span className="pf-muted">{tr('uiCommon.creditedAmount', { amount: points(o.credit_fen) })}</span>
                 <span className="pf-muted">{PAY_LABELS[o.pay_type] || o.pay_type}</span>
                 <span className={`pf-topup-status is-${o.status}`}>
                   {STATUS_CN[o.status] || o.status}

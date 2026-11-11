@@ -12,7 +12,7 @@ export function MediaCostNotice({ modelId, resolution, seconds, count = 1 }: {
   const price = model?.prices?.[resolution || '']
   const amount = mediaQuoteFen(price, count, seconds ?? 1)
   return <span className="media-cost-notice" role="status">
-    {model?.available === false ? '模型暂不可用' : amount === null ? '当前参数无法报价，请选择已定价档位' :
+    {model?.available === false ? tr('uiCommon.modelUnavailable') : amount === null ? tr('uiCommon.noQuoteForSettings') :
       `${pointUnitRate(price!)} ${tr('mediaCostNotice.points')}/${seconds === undefined ? tr('mediaCostNotice.image') : tr('mediaCostNotice.second')} × ${seconds ?? count}${seconds !== undefined && count > 1 ? ` × ${count}` : ''} = ${tr('mediaCostNotice.estimated')} ${points(amount)}`}
   </span>
 }

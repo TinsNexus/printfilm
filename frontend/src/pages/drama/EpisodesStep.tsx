@@ -266,7 +266,7 @@ export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
 
       <div className="drama-episodes-tips" role="note">
         <Sparkles size={15} strokeWidth={1.75} aria-hidden />
-        <span>{tr('episodesStep.oneEpisodeClick')} <strong>AI 分镜</strong> {tr('episodesStep.detailedPlanningOpen')} <strong>{tr('episodesStep.edit')}</strong> {tr('episodesStep.editScriptGenerateVideo')}</span>
+        <span>{tr('episodesStep.oneEpisodeClick')} <strong>{tr('uiCommon.aiShots')}</strong> {tr('episodesStep.detailedPlanningOpen')} <strong>{tr('episodesStep.edit')}</strong> {tr('episodesStep.editScriptGenerateVideo')}</span>
       </div>
 
       {loading ? (
@@ -372,7 +372,7 @@ export function EpisodesStep({ projectId, onError }: EpisodesStepProps) {
                     onClick={() => void handlePlanEpisode(ep)}
                   >
                     <Wand2 size={15} strokeWidth={1.75} aria-hidden />
-                    {planning ? tr('episodesStep.aiSplittingShots') : 'AI 分镜'}
+                    {planning ? tr('episodesStep.aiSplittingShots') : tr('uiCommon.aiShots')}
                   </button>
                   <button
                     type="button"

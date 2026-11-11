@@ -347,7 +347,7 @@ export function OutlineScriptPreview({
   const summaryBar =
     blocks.length > 0 ? (
       <div className="drama-outline-script-summary">
-        <span>{blocks[0].label === '全文' ? tr('outlineScriptPreview.n1Part') : tr('outlineScriptPreview.scenes', { length: blocks.length })}</span>
+        <span>{blocks[0].label === tr('outlineScriptPreview.fullText') ? tr('outlineScriptPreview.n1Part') : tr('outlineScriptPreview.scenes', { length: blocks.length })}</span>
         {hasShotDuration ? (
           <span>
             {shotStats!.fragmentCount} {tr('outlineScriptPreview.shotsTotal')} {formatClockDuration(displayTotalSec)}
@@ -365,7 +365,7 @@ export function OutlineScriptPreview({
       </div>
     ) : null
 
-  if (blocks.length === 1 && blocks[0].label === '全文') {
+  if (blocks.length === 1 && blocks[0].label === tr('outlineScriptPreview.fullText')) {
     return (
       <div className="drama-outline-scene">
         {summaryBar}

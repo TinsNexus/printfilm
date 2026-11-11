@@ -198,6 +198,6 @@ export function EditableAssetDetailDialog({
         </li>)}</ul>
       </details>}
     </AssetDetailDialog>
-    {lightboxSrc && <AssetDetailDialog asset={{ ...asset, name: tr('editableAssetDetailDialog.previousVersion', { name: asset.name || '资产' }), cover: lightboxSrc, url: lightboxSrc, references: undefined, params: { media_metadata: history?.mediaMetadata || { source: 'unknown' } } }} onClose={() => setLightboxSrc(null)} />}
+    {lightboxSrc && <AssetDetailDialog asset={{ ...asset, name: tr('editableAssetDetailDialog.previousVersion', { name: asset.name || tr('uiCommon.asset') }), cover: lightboxSrc, url: lightboxSrc, references: undefined, params: { media_metadata: history?.mediaMetadata || { source: 'unknown' } } }} onClose={() => setLightboxSrc(null)} />}
   </>
 }

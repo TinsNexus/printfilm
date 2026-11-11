@@ -28,9 +28,9 @@ export default function BillingAlertHost() {
       if (!items.length) return
       for (const item of items) {
         await dialog.alert({
-          title: item.kind === 'user_milestone' ? tr('billingAlertHost.pointsUsageReminder') : item.title || '消费提醒',
+          title: item.kind === 'user_milestone' ? tr('billingAlertHost.pointsUsageReminder') : item.title || tr('uiCommon.spendingReminder'),
           message: item.kind === 'user_milestone' && Number.isSafeInteger(item.milestone_fen) ? tr('billingAlertHost.spendingHasReachedPleaseCheck', { p: points(item.milestone_fen) }) : item.message,
-          confirmText: '知道了',
+          confirmText: tr('uiCommon.gotIt'),
         })
         try {
           await api.billingAlertAck(item.id)
