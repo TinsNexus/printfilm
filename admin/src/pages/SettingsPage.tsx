@@ -10,15 +10,17 @@ import {
   useSettingsSaveSlot,
 } from "@/components/settings/SettingsSaveContext";
 import { cn } from "@/lib/utils";
+import { tr } from "@/i18n";
 
 type SettingsTab = "routing" | "runtime" | "oss" | "payment" | "site";
 
-const TABS: { id: SettingsTab; label: string }[] = [
-  { id: "routing", label: "Model" },
-  { id: "runtime", label: "Tham số chạy" },
-  { id: "oss", label: "Lưu trữ OSS" },
-  { id: "payment", label: "Thanh toán và tính phí" },
-  { id: "site", label: "Công cụ site" },
+// 只存 labelKey，渲染时翻译（模块级常量不能存已翻译文字）
+const TABS: { id: SettingsTab; labelKey: string }[] = [
+  { id: "routing", labelKey: "settingsUi.tabModels" },
+  { id: "runtime", labelKey: "settingsUi.tabRuntime" },
+  { id: "oss", labelKey: "settingsUi.tabOss" },
+  { id: "payment", labelKey: "settingsUi.tabPayment" },
+  { id: "site", labelKey: "settingsUi.tabSite" },
 ];
 
 // 页头：标题 + 统一保存按钮
@@ -27,9 +29,9 @@ function SettingsPageHeader() {
   return (
     <header className="settings-page-hero">
       <div className="min-w-0">
-        <h1 className="settings-page-title">Cài đặt hệ thống</h1>
+        <h1 className="settings-page-title">{tr("settingsUi.pageTitle")}</h1>
         <p className="settings-head-desc">
-          Quản lý model tạo, chạy tác vụ, kết nối lưu trữ, thanh toán tính phí và công cụ site.
+          {tr("settingsUi.pageDesc")}
         </p>
       </div>
       {action ? (
@@ -40,7 +42,7 @@ function SettingsPageHeader() {
           onClick={() => void action.onSave()}
         >
           {action.saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-          {action.label ?? "Lưu"}
+          {action.label ?? tr("settingsUi.save")}
         </button>
       ) : null}
     </header>
@@ -55,8 +57,8 @@ function SettingsPageInner() {
     <div className="settings-page admin-page">
       <SettingsPageHeader />
 
-      <div className="settings-tabs" role="tablist" aria-label="Phân vùng cài đặt hệ thống">
-        {TABS.map(({ id, label }) => (
+      <div className="settings-tabs" role="tablist" aria-label={tr("settingsUi.sections")}>
+        {TABS.map(({ id, labelKey }) => (
           <button
             key={id}
             type="button"
@@ -65,7 +67,7 @@ function SettingsPageInner() {
             className={cn("settings-tab", tab === id && "is-active")}
             onClick={() => setTab(id)}
           >
-            {label}
+            {tr(labelKey)}
           </button>
         ))}
       </div>

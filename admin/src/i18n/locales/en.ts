@@ -1,3 +1,4 @@
+import { enAdminSettingsUi } from "./en/adminSettingsUi";
 import { enAdminPeriodKpis } from "./en/adminPeriodKpis";
 import { enAdminSettingsPage } from "./en/adminSettingsPage";
 import { enAdminLogin } from "./en/adminLogin";
@@ -36,6 +37,7 @@ import { enAdminStatus } from "./en/adminStatus";
 import { enShell } from "./en/shell";
 
 export const en = {
+  ...enAdminSettingsUi,
   ...enShell,
   ...enAdminPeriodKpis,
   ...enAdminSettingsPage,

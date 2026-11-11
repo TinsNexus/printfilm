@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/api/client";
 import { LabeledControl, SettingsPanel } from "@/components/settings/SettingsPanel";
+import { tr } from "@/i18n";
 
 type GatewayType = "tokenfree" | "9router" | "piapi";
 
@@ -43,7 +44,7 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
       setKeyInput("");
       setPiapiKeyInput("");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Tải cổng upstream thất bại");
+      toast.error(err instanceof Error ? err.message : tr("routing.gatewayLoadFailed"));
     }
   }, []);
 
@@ -74,11 +75,11 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
           piapi_api_key: piapiKeyInput.trim() || undefined,
         }),
       });
-      toast.success("Đã lưu cổng upstream");
+      toast.success(tr("routing.gatewaySaved"));
       await load();
       onChanged?.();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Lưu thất bại");
+      toast.error(err instanceof Error ? err.message : tr("routing.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -89,9 +90,9 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
   const isPiapi = state.upstream_gateway_type === "piapi";
 
   return (
-    <SettingsPanel title={"Cổng upstream"} description={"Chuyển giữa TokenFree và 9Router, lưu xong có hiệu lực ngay, không cần khởi động lại. Việc chuyển không thay đổi cấu hình TokenFree đã lưu."}>
+    <SettingsPanel title={tr("routing.gatewayTitle")} description={tr("routing.gatewayDescription")}>
       <div className="settings-field-grid">
-        <LabeledControl label="Upstream hiện tại" className="settings-field-span-full">
+        <LabeledControl label={tr("routing.gatewayCurrent")} className="settings-field-span-full">
           <select
             className="settings-select"
             value={state.upstream_gateway_type}
@@ -114,21 +115,21 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
             </LabeledControl>
             <LabeledControl
               label="9Router API Key"
-              hint={state.has_ninerouter_api_key ? "Đã lưu, để trống để giữ nguyên" : undefined}
+              hint={state.has_ninerouter_api_key ? tr("routing.savedLeaveBlankKeep") : undefined}
               className="settings-field-span-full"
             >
               <input
                 className="settings-input is-secret"
                 type="password"
-                placeholder={state.has_ninerouter_api_key ? "Đã lưu, để trống sẽ không thay đổi" : "sk-..."}
+                placeholder={state.has_ninerouter_api_key ? tr("routing.savedLeaveBlankKeep2") : "sk-..."}
                 value={keyInput}
                 onChange={(e) => setKeyInput(e.target.value)}
               />
-              <p className="mt-1 text-xs text-[#909399]">{"Khi dùng 9Router sẽ không lấy bảng giá và mức dùng chính thức, ước tính chi phí chỉ mang tính tham khảo."}</p>
+              <p className="mt-1 text-xs text-[#909399]">{tr("routing.gatewayNoBilling")}</p>
             </LabeledControl>
             <LabeledControl
-              label="Key 9Router theo gói"
-              hint="Mỗi gói (plan của người dùng, như free / pro) một Key, giới hạn các model Key đó dùng được ở phía 9Router. Gói chưa cấu hình sẽ dùng Key mặc định ở trên."
+              label={tr("routing.gatewayPlanKeys")}
+              hint={tr("routing.gatewayPlanKeysHint")}
               className="settings-field-span-full"
             >
               <div className="space-y-2">
@@ -137,7 +138,7 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
                     <input
                       className="settings-input"
                       style={{ maxWidth: 160 }}
-                      placeholder="Tên gói"
+                      placeholder={tr("routing.gatewayPlanName")}
                       value={row.plan}
                       disabled={row.existing}
                       onChange={(e) =>
@@ -147,7 +148,7 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
                     <input
                       className="settings-input is-secret"
                       type="password"
-                      placeholder={row.existing ? "Đã lưu, để trống sẽ không thay đổi" : "sk-..."}
+                      placeholder={row.existing ? tr("routing.savedLeaveBlankKeep2") : "sk-..."}
                       value={row.key}
                       onChange={(e) =>
                         setPlanRows(planRows.map((r, i) => (i === idx ? { ...r, key: e.target.value } : r)))
@@ -158,7 +159,7 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
                       className="admin-btn admin-btn-secondary settings-mini-btn"
                       onClick={() => setPlanRows(planRows.filter((_, i) => i !== idx))}
                     >
-                      {"Xóa"}
+                      {tr("routing.clear")}
                     </button>
                   </div>
                 ))}
@@ -167,7 +168,7 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
                   className="admin-btn admin-btn-secondary settings-mini-btn"
                   onClick={() => setPlanRows([...planRows, { plan: "", key: "", existing: false }])}
                 >
-                  {"Thêm gói"}
+                  {tr("routing.gatewayAddPlan")}
                 </button>
               </div>
             </LabeledControl>
@@ -176,22 +177,22 @@ export function GatewaySwitchPanel({ onChanged }: { onChanged?: () => void }) {
         {isPiapi ? (
           <LabeledControl
             label="PiAPI API Key"
-            hint={state.has_piapi_api_key ? "Đã lưu, để trống để giữ nguyên" : undefined}
+            hint={state.has_piapi_api_key ? tr("routing.savedLeaveBlankKeep") : undefined}
             className="settings-field-span-full"
           >
             <input
               className="settings-input is-secret"
               type="password"
-              placeholder={state.has_piapi_api_key ? "Đã lưu, để trống sẽ không thay đổi" : "PiAPI key"}
+              placeholder={state.has_piapi_api_key ? tr("routing.savedLeaveBlankKeep2") : "PiAPI key"}
               value={piapiKeyInput}
               onChange={(e) => setPiapiKeyInput(e.target.value)}
             />
-            <p className="mt-1 text-xs text-[#909399]">{"Văn bản dùng LLM API của PiAPI; ảnh hỗ trợ Flux; video hỗ trợ Kling / Seedance / Veo; lồng tiếng chuyển về edge-tts. Không lấy bảng giá và mức dùng chính thức, ước tính chi phí chỉ mang tính tham khảo."}</p>
+            <p className="mt-1 text-xs text-[#909399]">{tr("routing.gatewayPiapiHint")}</p>
           </LabeledControl>
         ) : null}
         <div className="settings-field-span-full">
           <button type="button" className="admin-btn admin-btn-primary" disabled={saving} onClick={() => void save(state)}>
-            {saving ? "Đang lưu…" : "Lưu và chuyển"}
+            {saving ? tr("routing.gatewaySaving") : tr("routing.gatewaySave")}
           </button>
         </div>
       </div>

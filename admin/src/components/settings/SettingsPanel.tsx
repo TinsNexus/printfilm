@@ -5,6 +5,7 @@ import { AdminField } from "@/components/admin/AdminField";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useSettingsSaveSlot } from "@/components/settings/SettingsSaveContext";
+import { tr } from "@/i18n";
 
 type PanelProps = {
   title: string;
@@ -39,7 +40,7 @@ type SettingsTabShellProps = {
 };
 
 // Both save entries submit the same form, so keyboard and button validation stay consistent.
-export function SettingsTabShell({ children, onSave, saving, saveLabel = "Lưu cài đặt hiện tại", disabled }: SettingsTabShellProps) {
+export function SettingsTabShell({ children, onSave, saving, saveLabel = tr("settingsUi.saveCurrent"), disabled }: SettingsTabShellProps) {
   const { registerSave } = useSettingsSaveSlot();
   const formRef = useRef<HTMLFormElement>(null);
   const onSaveRef = useRef(onSave);
@@ -80,15 +81,15 @@ export function SettingsTabShell({ children, onSave, saving, saveLabel = "Lưu c
     <form ref={formRef} className="settings-tab-shell" noValidate onSubmit={(event) => { event.preventDefault(); void submit(); }}>
       <fieldset disabled={saving} className="settings-tab-body">{children}</fieldset>
       {hasSave ? <div className="settings-save-bar">
-        <div><strong>{saving ? "Đang lưu cài đặt…" : "Lưu phân vùng hiện tại"}</strong><p>Thay đổi ở trang này sẽ có hiệu lực sau khi lưu thành công.</p></div>
-        <Button type="submit" disabled={saving || disabled}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{saving ? "Đang lưu…" : saveLabel}</Button>
+        <div><strong>{saving ? tr("settingsUi.savingSettings") : tr("settingsUi.saveSection")}</strong><p>{tr("settingsUi.saveSectionHint")}</p></div>
+        <Button type="submit" disabled={saving || disabled}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{saving ? tr("settingsUi.saving") : saveLabel}</Button>
       </div> : null}
     </form>
   );
 }
 
 // 加载占位
-export function SettingsLoading({ label = "Đang tải…" }: { label?: string }) {
+export function SettingsLoading({ label = tr("settingsUi.loading") }: { label?: string }) {
   return (
     <div className="settings-loading">
       <Loader2 className="h-4 w-4 animate-spin" />
@@ -164,7 +165,7 @@ export function SettingsStatusBar({
           <div key={item.id} className={cn("settings-readiness-item", item.ready && "is-ready")}>
             <span className={cn("settings-readiness-dot", item.ready ? "is-on" : "is-off")} />
             <span>{item.label}</span>
-            <em>{item.ready ? item.readyText ?? "Đã cấu hình" : item.pendingText ?? "Chưa sẵn sàng"}</em>
+            <em>{item.ready ? item.readyText ?? tr("settingsUi.configured") : item.pendingText ?? tr("settingsUi.notReady")}</em>
           </div>
         ))}
       </div>

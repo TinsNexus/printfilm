@@ -67,13 +67,6 @@ export function setActivePresetGateway(gatewayType: string | null | undefined): 
 
 export const CAPABILITY_ORDER: ModelCapability[] = ["text", "image", "video", "audio"];
 
-export const CAPABILITY_LABELS: Record<ModelCapability, string> = {
-  text: "Văn bản",
-  image: "Hình ảnh",
-  video: "Video",
-  audio: "Lồng tiếng",
-};
-
 /** 写入网关渠道的全部预设 id（含各上游专属预设，与后端 all_preset_channel_models 一致） */
 export function allPresetChannelModels(): string[] {
   const out: string[] = [];

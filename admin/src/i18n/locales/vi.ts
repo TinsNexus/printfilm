@@ -1,3 +1,4 @@
+import { viAdminSettingsUi } from "./vi/adminSettingsUi";
 import { viAdminPeriodKpis } from "./vi/adminPeriodKpis";
 import { viAdminSettingsPage } from "./vi/adminSettingsPage";
 import { viAdminLogin } from "./vi/adminLogin";
@@ -36,6 +37,7 @@ import { viAdminStatus } from "./vi/adminStatus";
 import { viShell } from "./vi/shell";
 
 export const vi = {
+  ...viAdminSettingsUi,
   ...viShell,
   ...viAdminPeriodKpis,
   ...viAdminSettingsPage,

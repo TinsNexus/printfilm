@@ -14,7 +14,6 @@ import {
 } from "@/components/settings/SettingsPanel";
 import {
   allPresetChannelModels,
-  CAPABILITY_LABELS,
   CAPABILITY_ORDER,
   detectDefaultRemaps,
   PRESET_MODELS,
@@ -23,6 +22,7 @@ import {
 } from "@/lib/tokenfreeRecommendedModels";
 import { enabledPresetModels, normalizeRoutingDefaults, routingModelSettings, setRoutingModelEnabled } from "@/lib/routingModels";
 import { cn } from "@/lib/utils";
+import { tr } from "@/i18n";
 
 const TOKENFREE_CHANNEL_ID = "tokenfree";
 const TOKENFREE_BASE_URL = "https://www.tokenfree.com/v1";
@@ -31,16 +31,24 @@ const TOKENFREE_CONSOLE_URL = "https://www.tokenfree.com/channels";
 const DEFAULT_KEYS = ["text_model", "image_model", "video_model", "audio_model"] as const;
 const MEDIA_FIELDS = ["images", "videos", "audios"] as const;
 type MediaField = (typeof MEDIA_FIELDS)[number];
-const MEDIA_LABELS: Record<MediaField, string> = { images: "Ảnh tham chiếu", videos: "Video tham chiếu", audios: "Âm thanh tham chiếu" };
+// 能力名（按当前语言；放组件侧，保持 lib 不依赖 i18n，便于 node 单测）
+function capabilityLabel(cap: ModelCapability): string {
+  return tr(`routing.cap.${cap}`);
+}
+
+// 参考素材类型名（函数而非常量：渲染时按当前语言取）
+function mediaLabel(field: MediaField): string {
+  return tr(`routing.media.${field}`);
+}
 
 function buildReadiness(data: AdminRoutingSettings | null, hasKey: boolean) {
   const defaults = data?.default_models;
   return [
     { id: "secret", label: "API Key", ready: hasKey },
-    { id: "text", label: "Model văn bản", ready: Boolean(defaults?.text_model) },
-    { id: "image", label: "Model hình ảnh", ready: Boolean(defaults?.image_model) },
-    { id: "video", label: "Model video", ready: Boolean(defaults?.video_model) },
-    { id: "audio", label: "Model lồng tiếng", ready: Boolean(defaults?.audio_model) },
+    { id: "text", label: tr("routing.textModel"), ready: Boolean(defaults?.text_model) },
+    { id: "image", label: tr("routing.imageModel"), ready: Boolean(defaults?.image_model) },
+    { id: "video", label: tr("routing.videoModel"), ready: Boolean(defaults?.video_model) },
+    { id: "audio", label: tr("routing.voiceModel"), ready: Boolean(defaults?.audio_model) },
   ] as const;
 }
 
@@ -83,7 +91,7 @@ export function RoutingSettingsPanel() {
       setReferenceDrafts({});
       setShowKey(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Tải cấu hình model thất bại");
+      toast.error(err instanceof Error ? err.message : tr("routing.couldLoadModelSettings"));
     } finally {
       setLoading(false);
     }
@@ -101,12 +109,12 @@ export function RoutingSettingsPanel() {
       const raw = referenceDrafts[id]?.[field] ?? String(limits[field]);
       const value = Number(raw);
       if (!raw.trim() || !Number.isInteger(value) || value < 0 || value > 100) {
-        referenceErrors[id] = { ...referenceErrors[id], [field]: "Vui lòng nhập số nguyên từ 0–100" };
+        referenceErrors[id] = { ...referenceErrors[id], [field]: tr("routing.limitIntegerRange") };
       }
     });
   });
   const referenceErrorCount = Object.values(referenceErrors).reduce((total, fields) => total + Object.keys(fields).length, 0);
-  const keyError = hasKey ? undefined : "Vui lòng nhập API Key, lưu xong là có thể gọi model.";
+  const keyError = hasKey ? undefined : tr("routing.apiKeyRequired");
 
   function setDefaultModel(key: (typeof DEFAULT_KEYS)[number], value: string) {
     const cap = key.replace("_model", "") as ModelCapability;
@@ -152,30 +160,30 @@ export function RoutingSettingsPanel() {
       setApiKeyInput("");
       setReferenceDrafts({});
       setShowKey(false);
-      toast.success("Đã lưu cấu hình model");
+      toast.success(tr("routing.modelSettingsSaved"));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Lưu thất bại");
+      toast.error(err instanceof Error ? err.message : tr("routing.saveFailed"));
     } finally {
       setSaving(false);
     }
   }
 
   if (loading && !data) {
-    return <SettingsLoading label="Đang tải cấu hình model…" />;
+    return <SettingsLoading label={tr("routing.loadingModelSettings")} />;
   }
 
-  if (!data) return <SettingsSurface><p>Tải cấu hình model thất bại.</p><button type="button" className="admin-btn admin-btn-secondary mt-3" onClick={() => void load()}>Tải lại</button></SettingsSurface>;
+  if (!data) return <SettingsSurface><p>{tr("routing.loadFailedFull")}</p><button type="button" className="admin-btn admin-btn-secondary mt-3" onClick={() => void load()}>{tr("routing.reload")}</button></SettingsSurface>;
 
   return (
-    <SettingsTabShell onSave={handleSave} saving={saving} disabled={Boolean(keyError) || referenceErrorCount > 0} saveLabel="Lưu cài đặt model">
+    <SettingsTabShell onSave={handleSave} saving={saving} disabled={Boolean(keyError) || referenceErrorCount > 0} saveLabel={tr("routing.saveModelSettings")}>
       <SettingsSurface className="settings-readiness-bar">
-        <div className="settings-readiness-title">Cấu hình sẵn sàng</div>
+        <div className="settings-readiness-title">{tr("routing.configurationReady")}</div>
         <div className="settings-readiness-row">
           {readiness.map((item) => (
             <div key={item.id} className={cn("settings-readiness-item", item.ready && "is-ready")}>
               <span className={cn("settings-readiness-dot", item.ready ? "is-on" : "is-off")} />
               <span>{item.label}</span>
-              <em>{item.ready ? "Đã cấu hình" : "Chưa sẵn sàng"}</em>
+              <em>{item.ready ? tr("routing.configured") : tr("routing.notReady")}</em>
             </div>
           ))}
         </div>
@@ -183,7 +191,7 @@ export function RoutingSettingsPanel() {
 
       {(data?.validation_errors.length ?? 0) > 0 ? (
         <SettingsSurface className="border-[#fde2e2] bg-[#fef0f0]">
-          <div className="text-xs font-medium text-[#f56c6c]">Kiểm tra cấu hình</div>
+          <div className="text-xs font-medium text-[#f56c6c]">{tr("routing.configurationChecks")}</div>
           <ul className="mt-1 space-y-0.5 text-xs text-[#f56c6c]">
             {data?.validation_errors.map((item) => (
               <li key={item}>· {item}</li>
@@ -194,53 +202,53 @@ export function RoutingSettingsPanel() {
 
       {defaultRemaps.length > 0 ? (
         <SettingsSurface className="border-[#faecd8] bg-[#fdf6ec]">
-          <div className="text-xs font-medium text-[#e6a23c]">Model mặc định đã được ánh xạ sang preset</div>
+          <div className="text-xs font-medium text-[#e6a23c]">{tr("routing.defaultsRemapped")}</div>
           <ul className="mt-1 space-y-0.5 text-xs text-[#b88230]">
             {defaultRemaps.map((item) => (
               <li key={`${item.capability}-${item.from}`}>
-                · {CAPABILITY_LABELS[item.capability]}：
+                · {capabilityLabel(item.capability)}：
                 <code className="mx-1">{item.from}</code>→
                 <code className="mx-1">{item.to}</code>
               </li>
             ))}
           </ul>
-          <p className="mt-1 text-xs text-[#909399]">Sau khi lưu sẽ ghi các id preset ở trên; nếu cần giữ model cũ, hãy đổi danh sách thả xuống trước rồi lưu.</p>
+          <p className="mt-1 text-xs text-[#909399]">{tr("routing.defaultsRemappedHint")}</p>
         </SettingsSurface>
       ) : null}
 
       <GatewaySwitchPanel onChanged={() => void load()} />
 
-      <SettingsPanel title="Kết nối dịch vụ model" description="Dùng TokenFree API Key để kết nối upstream. Địa chỉ giao diện đã được đặt sẵn, hoàn tất ủy quyền rồi chọn model mặc định.">
+      <SettingsPanel title={tr("routing.connectTitle")} description={tr("routing.connectDesc")}>
         <LabeledControl label="TokenFree API Key" required={!hasSavedKey} optional={hasSavedKey} error={keyError}
-          hint={hasSavedKey ? "Đã lưu khóa. Để trống sẽ giữ giá trị cũ; nhập khóa mới sẽ thay thế sau khi lưu." : "Tạo khóa trong bảng điều khiển TokenFree và dán vào đây."}>
+          hint={hasSavedKey ? tr("routing.keySavedHint") : tr("routing.keyCreateHint")}>
           <div className="settings-secret-row">
             <input className="settings-input is-secret" type={showKey ? "text" : "password"}
               autoComplete="new-password" autoCapitalize="off" spellCheck={false}
               required={!hasSavedKey} aria-invalid={Boolean(keyError)}
-              placeholder={hasSavedKey ? "Đã lưu, để trống giữ khóa hiện tại" : "Dán API Key"}
+              placeholder={hasSavedKey ? tr("routing.keySavedPlaceholder") : tr("routing.pasteApiKey")}
               value={apiKeyInput} onChange={(e) => setApiKeyInput(e.target.value)} />
-            <button type="button" className="admin-btn admin-btn-secondary settings-mini-btn" aria-label={showKey ? "Ẩn API Key" : "Hiện API Key"} aria-pressed={showKey} onClick={() => setShowKey((value) => !value)}>
+            <button type="button" className="admin-btn admin-btn-secondary settings-mini-btn" aria-label={showKey ? tr("routing.hideApiKey") : tr("routing.showApiKey")} aria-pressed={showKey} onClick={() => setShowKey((value) => !value)}>
               {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
-            {apiKeyInput ? <button type="button" className="admin-btn admin-btn-secondary settings-mini-btn" onClick={() => { setApiKeyInput(""); setShowKey(false); }}>Hủy phần đã nhập</button> : null}
+            {apiKeyInput ? <button type="button" className="admin-btn admin-btn-secondary settings-mini-btn" onClick={() => { setApiKeyInput(""); setShowKey(false); }}>{tr("routing.discardInput")}</button> : null}
           </div>
         </LabeledControl>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-[var(--admin-muted)]">
-          <span>Địa chỉ kết nối <code className="ml-1 text-[var(--admin-text)]">{TOKENFREE_BASE_URL}</code></span>
-          <a className="inline-flex items-center gap-1.5 font-medium text-[var(--admin-forest)] hover:underline" href={TOKENFREE_CONSOLE_URL} target="_blank" rel="noreferrer">Mở bảng điều khiển TokenFree<ExternalLink className="h-3.5 w-3.5" /></a>
+          <span>{tr("routing.endpoint")} <code className="ml-1 text-[var(--admin-text)]">{TOKENFREE_BASE_URL}</code></span>
+          <a className="inline-flex items-center gap-1.5 font-medium text-[var(--admin-forest)] hover:underline" href={TOKENFREE_CONSOLE_URL} target="_blank" rel="noreferrer">{tr("routing.openTokenfreeConsole")}<ExternalLink className="h-3.5 w-3.5" /></a>
         </div>
       </SettingsPanel>
 
-      <SettingsPanel title="Sử dụng model và mặc định" description="Bật các model cho phép người dùng dùng, rồi chọn model mặc định của site. Sau khi lưu, model bị tắt sẽ không còn dùng cho yêu cầu mới; các tác vụ hình/video đã cố định route vẫn tiếp tục chạy.">
+      <SettingsPanel title={tr("routing.usageTitle")} description={tr("routing.usageDesc")}>
         <div className="settings-field-grid settings-field-grid--2">
           {CAPABILITY_ORDER.map((cap) => {
             const key = `${cap}_model` as (typeof DEFAULT_KEYS)[number];
             const options = enabledPresetModels(cap, data.logical_models);
-            const hints: Record<ModelCapability, string> = { text: "Dùng cho kịch bản, tóm tắt và lập kế hoạch phân cảnh.", image: "Dùng để tạo ảnh tham chiếu cho nhân vật, bối cảnh, đạo cụ, v.v.", video: "Dùng để tạo video phân cảnh.", audio: "Dùng cho lồng tiếng nhân vật; hiện cung cấp một model preset." };
+            const hints: Record<ModelCapability, string> = { text: tr("routing.hintText"), image: tr("routing.hintImage"), video: tr("routing.hintVideo"), audio: tr("routing.hintAudio") };
             return (
-              <section key={cap} className="min-w-0 space-y-4 rounded-xl border border-[var(--admin-border)] p-4" aria-label={`${CAPABILITY_LABELS[cap]}Cài đặt sử dụng model`}>
+              <section key={cap} className="min-w-0 space-y-4 rounded-xl border border-[var(--admin-border)] p-4" aria-label={tr("routing.capUsageAria", { cap: capabilityLabel(cap) })}>
                 <div className="flex items-center justify-between gap-3">
-                  <h4 className="text-sm font-semibold">{CAPABILITY_LABELS[cap]}Model</h4>
+                  <h4 className="text-sm font-semibold">{tr("routing.capModels", { cap: capabilityLabel(cap) })}</h4>
                   <span className="text-xs text-[var(--admin-muted)]">Đã bật {options.length} / {PRESET_MODELS[cap].length}</span>
                 </div>
                 <p className="text-xs text-[var(--admin-muted)]">{hints[cap]}</p>
@@ -251,18 +259,18 @@ export function RoutingSettingsPanel() {
                     return <div key={row.id} className="settings-toggle-row">
                       <div className="min-w-0"><strong>{row.label}</strong><span className="block break-all">{row.id}</span></div>
                       <div className="flex shrink-0 items-center gap-2">
-                        <span>{enabled ? "Đã bật" : "Đã tắt"}</span>
-                        <Switch aria-label={`${row.label} Sử dụng`} checked={enabled} disabled={!model}
+                        <span>{enabled ? tr("routing.enabled") : tr("routing.disabled")}</span>
+                        <Switch aria-label={tr("routing.useModelAria", { model: row.label })} checked={enabled} disabled={!model}
                           onCheckedChange={(value) => setData((prev) => prev ? setRoutingModelEnabled(prev, row.id, value) : prev)} />
                       </div>
                     </div>;
                   })}
                 </div>
-                <LabeledControl label={`${CAPABILITY_LABELS[cap]}Model mặc định`} required={options.length > 0}
-                  hint={options.length === 0 ? "Hiện không có model khả dụng, hãy bật model trước khi dùng chức năng này." : "Chỉ chọn trong các model đã bật."}>
+                <LabeledControl label={tr("routing.capDefault", { cap: capabilityLabel(cap) })} required={options.length > 0}
+                  hint={options.length === 0 ? tr("routing.noModelHint") : tr("routing.enabledOnlyHint")}>
                   <Select className="settings-select" value={data.default_models[key]} required={options.length > 0} disabled={options.length === 0}
-                    aria-label={`${CAPABILITY_LABELS[cap]}Model mặc định`} onChange={(e) => setDefaultModel(key, e.target.value)}>
-                    {options.length === 0 ? <option value="">Không có model khả dụng</option> : options.map((row) => <option key={row.id} value={row.id}>{row.label}</option>)}
+                    aria-label={tr("routing.capDefault", { cap: capabilityLabel(cap) })} onChange={(e) => setDefaultModel(key, e.target.value)}>
+                    {options.length === 0 ? <option value="">{tr("routing.noModel")}</option> : options.map((row) => <option key={row.id} value={row.id}>{row.label}</option>)}
                   </Select>
                 </LabeledControl>
               </section>
@@ -272,15 +280,15 @@ export function RoutingSettingsPanel() {
       </SettingsPanel>
 
       <details className="settings-advanced">
-        <summary><span>Cài đặt model nâng cao</span><span>{referenceErrorCount > 0 ? `${referenceErrorCount} mục giới hạn tham chiếu cần sửa` : "Cấu hình số lượng tài liệu tham chiếu theo model"}</span></summary>
-        <SettingsPanel title="Giới hạn tài liệu tham chiếu" description="Giới hạn số ảnh, video và âm thanh tham chiếu có thể đính kèm cho mỗi lần tạo. Mỗi mục là số nguyên 0–100, 0 nghĩa là không hỗ trợ; khung đầu cuối và bảng phong cách cũng tính vào số ảnh.">
+        <summary><span>{tr("routing.advancedTitle")}</span><span>{referenceErrorCount > 0 ? tr("routing.refErrors", { n: referenceErrorCount }) : tr("routing.advancedSummary")}</span></summary>
+        <SettingsPanel title={tr("routing.refLimitsTitle")} description={tr("routing.refLimitsDesc")}>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead><tr className="border-b text-xs text-[var(--admin-muted)]">
                 <th scope="col" className="px-2 py-3 font-medium">Model</th>
-                <th scope="col" className="px-2 py-3 font-medium">Ảnh / tấm</th>
-                <th scope="col" className="px-2 py-3 font-medium">Video / đoạn</th>
-                <th scope="col" className="px-2 py-3 font-medium">Âm thanh / đoạn</th>
+                <th scope="col" className="px-2 py-3 font-medium">{tr("routing.colImages")}</th>
+                <th scope="col" className="px-2 py-3 font-medium">{tr("routing.colVideos")}</th>
+                <th scope="col" className="px-2 py-3 font-medium">{tr("routing.colAudios")}</th>
               </tr></thead>
               <tbody>{Object.entries(data.media_reference_limits ?? {}).map(([id, limits]) => (
                 <tr key={id} className="border-b last:border-0">
@@ -289,9 +297,9 @@ export function RoutingSettingsPanel() {
                     const unsupported = PRESET_MODELS.image.some((model) => model.id === id) && field !== "images";
                     const error = referenceErrors[id]?.[field];
                     return <td key={field} className="px-2 py-3 align-top">
-                      {unsupported ? <span className="inline-flex h-10 items-center text-xs text-[var(--admin-muted)]">Không hỗ trợ</span> : <>
+                      {unsupported ? <span className="inline-flex h-10 items-center text-xs text-[var(--admin-muted)]">{tr("routing.unsupported")}</span> : <>
                         <input type="number" min="0" max="100" step="1" required
-                          aria-label={`${id} ${MEDIA_LABELS[field]}Giới hạn`} aria-invalid={Boolean(error)}
+                          aria-label={tr("routing.refLimitAria", { model: id, media: mediaLabel(field) })} aria-invalid={Boolean(error)}
                           className="settings-input !w-24" value={referenceDrafts[id]?.[field] ?? limits[field]} disabled={saving}
                           onChange={(event) => {
                             const raw = event.target.value;
@@ -309,7 +317,7 @@ export function RoutingSettingsPanel() {
               ))}</tbody>
             </table>
           </div>
-          <p className="mt-4 text-xs leading-6 text-[var(--admin-muted)]">Các giá trị này dùng để kiểm tra số lượng trước khi gửi tác vụ. Model tạo ảnh chỉ nhận tham chiếu ảnh; năng lực thực tế tùy theo model upstream tương ứng.</p>
+          <p className="mt-4 text-xs leading-6 text-[var(--admin-muted)]">{tr("routing.refLimitsFoot")}</p>
         </SettingsPanel>
       </details>
     </SettingsTabShell>

@@ -1,3 +1,4 @@
+import { zhAdminSettingsUi } from "./zh/adminSettingsUi";
 import { zhAdminPeriodKpis } from "./zh/adminPeriodKpis";
 import { zhAdminSettingsPage } from "./zh/adminSettingsPage";
 import { zhAdminLogin } from "./zh/adminLogin";
@@ -36,6 +37,7 @@ import { zhAdminStatus } from "./zh/adminStatus";
 import { zhShell } from "./zh/shell";
 
 export const zh = {
+  ...zhAdminSettingsUi,
   ...zhShell,
   ...zhAdminPeriodKpis,
   ...zhAdminSettingsPage,
