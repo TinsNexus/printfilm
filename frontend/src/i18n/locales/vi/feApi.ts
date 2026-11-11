@@ -24,4 +24,13 @@ export const viFeApi = {
     projectPageHasChanged: "Trang dự án đã được chuyển",
     workspaceHasChanged: "Không gian sáng tạo đã được chuyển",
   },
+  tools: {
+    notSigned: "Chưa đăng nhập",
+    estimatedCostUnavailable: "Tạm thời không có chi phí dự kiến",
+    failedLoadAssetLibrary: "Tải thư viện tài sản thất bại",
+    generationFailed: "Tạo thất bại",
+    queryFailed: "Truy vấn thất bại",
+    failedLoad: "Tải thất bại",
+    failedLoadModelSettings: "Tải cấu hình model thất bại",
+  },
 } as const;

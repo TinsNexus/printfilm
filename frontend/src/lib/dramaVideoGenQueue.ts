@@ -2,7 +2,7 @@
 import { dramaApi, type DramaAsset } from '../api/drama'
 import type { VideoGenerationOptions } from './dramaVideoGenerationOptions'
 import { syncAssetVideoJobToUnified } from './dramaGenQueue'
-import { tv } from '../i18n/tv'
+import { tr } from '../i18n/translate.ts'
 
 export type DramaVideoGenStatus = 'queued' | 'running' | 'done' | 'failed'
 
@@ -161,11 +161,11 @@ async function waitForAssetVideo(projectId: number, assetId: number): Promise<Dr
       const list = await dramaApi.listAssets(projectId)
       transientStreak = 0
       const latest = list.find((a) => a.id === assetId)
-      if (!latest) throw new Error(tv('资产不存在', 'Tài sản không tồn tại'))
+      if (!latest) throw new Error(tr('dramaVideoGenQueue.assetNotFound'))
       const status = readGenerationStatus(latest)
       if (status === 'failed') {
         const gen = (latest.params || {}).generation as { error?: string } | undefined
-        throw new Error(String(gen?.error || tv('生视频失败', 'Tạo video thất bại')))
+        throw new Error(String(gen?.error || tr('dramaVideoGenQueue.videoGenerationFailed')))
       }
       if (status === 'done' && latest.url) {
         return latest
@@ -183,7 +183,7 @@ async function waitForAssetVideo(projectId: number, assetId: number): Promise<Dr
     }
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
   }
-  throw new Error(tv('生视频超时，请刷新后重试', 'Tạo video quá thời gian, vui lòng làm mới rồi thử lại'))
+  throw new Error(tr('dramaVideoGenQueue.videoGenerationTimedOutRefresh'))
 }
 
 // 有限并发轮询后端结果
@@ -196,7 +196,7 @@ async function pollJob(job: InternalJob) {
     emit()
     job.resolve(asset)
   } catch (err) {
-    const message = err instanceof Error ? err.message : tv('生视频失败', 'Tạo video thất bại')
+    const message = err instanceof Error ? err.message : tr('dramaVideoGenQueue.videoGenerationFailed')
     job.status = 'failed'
     job.error = message
     job.finishedAt = Date.now()
@@ -247,7 +247,7 @@ function startJob(job: InternalJob) {
       waitingPoll.push(job)
       pump()
     } catch (err) {
-      const message = err instanceof Error ? err.message : tv('生视频失败', 'Tạo video thất bại')
+      const message = err instanceof Error ? err.message : tr('dramaVideoGenQueue.videoGenerationFailed')
       job.status = 'failed'
       job.error = message
       job.finishedAt = Date.now()
@@ -292,7 +292,7 @@ export function enqueueDramaVideoGen(input: EnqueueInput): Promise<DramaAsset> {
       id: makeJobId(),
       projectId: input.projectId,
       assetId: input.assetId,
-      assetName: (input.assetName || '').trim() || tv(`视频 ${input.assetId}`, `Video ${input.assetId}`),
+      assetName: (input.assetName || '').trim() || tr('dramaVideoGenQueue.video', { assetId: input.assetId }),
       prompt: input.prompt,
       options: input.options || {},
       referenceAssetIds: input.referenceAssetIds || [],

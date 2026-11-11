@@ -1,5 +1,5 @@
 import type { ImageStyleId } from './dramaImageStyles'
-import { tv } from '../i18n/tv'
+import { tr } from '../i18n/translate.ts'
 
 export type ProjectCreateKind = 'drama' | 'canvas'
 
@@ -35,13 +35,13 @@ export function validateProjectCreate(
   const episodeCount = Number(draft.episodeCount)
   const errors: ProjectCreateErrors = {}
 
-  if ((kind === 'canvas' || titleRequired) && !title) errors.title = kind === 'canvas' ? tv('请填写画布名称', 'Vui lòng nhập tên canvas') : tv('请填写项目名称', 'Vui lòng nhập tên dự án')
-  else if (title.length > titleMaxLength) errors.title = tv(`名称请控制在 ${titleMaxLength} 字以内`, `Tên vui lòng giữ trong ${titleMaxLength} ký tự`)
-  if (description.length > 500) errors.description = tv('简介请控制在 500 字以内', 'Giới thiệu vui lòng giữ trong 500 ký tự')
+  if ((kind === 'canvas' || titleRequired) && !title) errors.title = kind === 'canvas' ? tr('projectCreateForm.enterCanvasName') : tr('projectCreateForm.enterProjectName')
+  else if (title.length > titleMaxLength) errors.title = tr('projectCreateForm.keepNameWithinCharacters', { titleMaxLength })
+  if (description.length > 500) errors.description = tr('projectCreateForm.keepDescriptionWithin500Characters')
   if (kind === 'drama') {
-    if (source.length < 20) errors.source = tv('故事内容至少 20 字，请补充人物、情节或冲突', 'Nội dung câu chuyện tối thiểu 20 chữ, vui lòng bổ sung nhân vật, tình tiết hoặc xung đột')
-    else if (source.length > sourceMaxLength) errors.source = tv(`故事内容请控制在 ${sourceMaxLength} 字以内`, `Nội dung câu chuyện vui lòng giữ trong ${sourceMaxLength} ký tự`)
-    if (!Number.isInteger(episodeCount) || episodeCount < 1 || episodeCount > PROJECT_EPISODE_MAX) errors.episodeCount = tv(`请输入 1–${PROJECT_EPISODE_MAX} 之间的整数集数`, `Vui lòng nhập số tập là số nguyên trong khoảng 1–${PROJECT_EPISODE_MAX}`)
+    if (source.length < 20) errors.source = tr('projectCreateForm.storyNeedsLeast20Characters')
+    else if (source.length > sourceMaxLength) errors.source = tr('projectCreateForm.keepStoryWithinCharacters', { sourceMaxLength })
+    if (!Number.isInteger(episodeCount) || episodeCount < 1 || episodeCount > PROJECT_EPISODE_MAX) errors.episodeCount = tr('projectCreateForm.enterWholeNumberEpisodes1', { PROJECT_EPISODE_MAX })
   }
 
   return {

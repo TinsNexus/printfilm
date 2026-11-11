@@ -11,7 +11,7 @@ import {
   resolveAssetImageVersionUrl,
 } from '../../lib/dramaAssetImageVersions'
 import { readAssetVoiceBinding } from '../../pages/drama/CharacterVoiceBindModal'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 
 type Props = {
   asset: DramaAsset
@@ -47,7 +47,7 @@ export function EditableAssetDetailDialog({
   open,
   readOnly = false,
   busy = false,
-  genLabel = tv('生成形象', 'Tạo hình tượng'),
+  genLabel = tr('editableAssetDetailDialog.generateLook'),
   onClose,
   onUpdated,
   onGenerate,
@@ -76,11 +76,11 @@ export function EditableAssetDetailDialog({
   const isProp =
     (asset.type || '').toLowerCase() === 'prop' ||
     (asset.type || '').toLowerCase() === 'material'
-  const deleteLabel = isScene ? tv('删除场景', 'Xóa bối cảnh') : isProp ? tv('删除道具', 'Xóa đạo cụ') : tv('删除角色', 'Xóa nhân vật')
+  const deleteLabel = isScene ? tr('editableAssetDetailDialog.deleteScene') : isProp ? tr('editableAssetDetailDialog.deleteProp') : tr('editableAssetDetailDialog.deleteCharacter')
   const canDelete = Boolean(onDelete) && (isCharacter || isScene || isProp)
   const dirty = promptDraft.trim() !== readVisualPrompt(asset).trim()
   const imageVersions = readAssetImageVersions(asset)
-  const lock = useTeamEditLock({ projectId: asset.project_id, type: 'asset', resourceId: asset.id }, open && !readOnly, async (isCurrent) => { const rows = await dramaApi.listAssets(asset.project_id); const fresh = rows.find((item) => item.id === asset.id); if (!fresh) throw new Error(tv('资产已删除，请关闭后重新加载', 'Tài sản đã bị xóa, vui lòng đóng rồi tải lại')); if (isCurrent()) onUpdated(fresh) })
+  const lock = useTeamEditLock({ projectId: asset.project_id, type: 'asset', resourceId: asset.id }, open && !readOnly, async (isCurrent) => { const rows = await dramaApi.listAssets(asset.project_id); const fresh = rows.find((item) => item.id === asset.id); if (!fresh) throw new Error(tr('editableAssetDetailDialog.assetWasDeletedCloseReload')); if (isCurrent()) onUpdated(fresh) })
   const actionBusy = readOnly || lock.readOnly || busy || saving || uploading || Boolean(restoringVersionId)
 
   useEffect(() => {
@@ -95,7 +95,7 @@ export function EditableAssetDetailDialog({
     if (actionBusy) return
     const text = promptDraft.trim()
     if (!text) {
-      onError(tv('提示词不能为空', 'Prompt không được để trống'))
+      onError(tr('editableAssetDetailDialog.promptCannotEmpty'))
       return
     }
     setSaving(true)
@@ -105,7 +105,7 @@ export function EditableAssetDetailDialog({
       })
       onUpdated(updated)
     } catch (err) {
-      onError(err instanceof Error ? err.message : tv('保存提示词失败', 'Lưu prompt thất bại'))
+      onError(err instanceof Error ? err.message : tr('editableAssetDetailDialog.failedSavePrompt'))
     } finally {
       setSaving(false)
     }
@@ -117,7 +117,7 @@ export function EditableAssetDetailDialog({
     if (dirty) {
       const text = promptDraft.trim()
       if (!text) {
-        onError(tv('提示词不能为空', 'Prompt không được để trống'))
+        onError(tr('editableAssetDetailDialog.promptCannotEmpty'))
         return
       }
       setSaving(true)
@@ -128,7 +128,7 @@ export function EditableAssetDetailDialog({
         onUpdated(updated)
         onGenerate(updated)
       } catch (err) {
-        onError(err instanceof Error ? err.message : tv('保存提示词失败', 'Lưu prompt thất bại'))
+        onError(err instanceof Error ? err.message : tr('editableAssetDetailDialog.failedSavePrompt'))
       } finally {
         setSaving(false)
       }
@@ -145,7 +145,7 @@ export function EditableAssetDetailDialog({
       const updated = await dramaApi.uploadAssetMedia(asset.id, file)
       onUpdated(updated)
     } catch (err) {
-      onError(err instanceof Error ? err.message : tv('上传失败', 'Tải lên thất bại'))
+      onError(err instanceof Error ? err.message : tr('editableAssetDetailDialog.uploadFailed'))
     } finally {
       setUploading(false)
       if (uploadInputRef.current) uploadInputRef.current.value = ''
@@ -160,7 +160,7 @@ export function EditableAssetDetailDialog({
       const updated = await dramaApi.activateAssetImageVersion(asset.id, versionId)
       onUpdated(updated)
     } catch (err) {
-      onError(err instanceof Error ? err.message : tv('还原失败', 'Khôi phục thất bại'))
+      onError(err instanceof Error ? err.message : tr('editableAssetDetailDialog.restoreFailed'))
     } finally {
       setRestoringVersionId(null)
     }
@@ -173,31 +173,31 @@ export function EditableAssetDetailDialog({
       asset={asset}
       open={open}
       onClose={onClose}
-      notice={readOnly ? <p className="drama-muted" role="status">{tv("只读查看", "Chỉ xem")}</p> : lock.readOnly ? <p className="pf-team-alert" role="status">{lock.checking ? tv('正在取得编辑占用…', 'Đang lấy quyền chỉnh sửa…') : lock.error}<button type="button" onClick={lock.retry}>{tv("重新尝试", "Thử lại")}</button></p> : undefined}
-      actions={!readOnly && <button type="button" className="pf-btn pf-btn-lime" disabled={actionBusy || !promptDraft.trim()} onClick={() => void handleGenerate()}>{busy ? tv('生成中…', 'Đang tạo…') : genLabel}</button>}
+      notice={readOnly ? <p className="drama-muted" role="status">{tr('editableAssetDetailDialog.readOnly')}</p> : lock.readOnly ? <p className="pf-team-alert" role="status">{lock.checking ? tr('editableAssetDetailDialog.gettingEditingRights') : lock.error}<button type="button" onClick={lock.retry}>{tr('editableAssetDetailDialog.tryAgain')}</button></p> : undefined}
+      actions={!readOnly && <button type="button" className="pf-btn pf-btn-lime" disabled={actionBusy || !promptDraft.trim()} onClick={() => void handleGenerate()}>{busy ? tr('editableAssetDetailDialog.generating') : genLabel}</button>}
     >
       {!readOnly && <details className="pf-asset-detail-editor">
-        <summary>{tv("编辑下次生成的提示词", "Chỉnh prompt cho lần tạo tiếp theo")}</summary>
-        <label><span className="sr-only">{tv("生图提示词", "Prompt tạo ảnh")}</span><textarea rows={5} value={promptDraft} readOnly={lock.readOnly} onChange={(event) => setPromptDraft(event.target.value)} placeholder={tv("描述外观、构图、光影与风格…", "Mô tả ngoại hình, bố cục, ánh sáng và phong cách…")} /></label>
+        <summary>{tr('editableAssetDetailDialog.editPromptNextGeneration')}</summary>
+        <label><span className="sr-only">{tr('editableAssetDetailDialog.imagePrompt')}</span><textarea rows={5} value={promptDraft} readOnly={lock.readOnly} onChange={(event) => setPromptDraft(event.target.value)} placeholder={tr('editableAssetDetailDialog.describeAppearanceCompositionLightingStyle')} /></label>
         <div className="pf-asset-detail-edit-actions">
-          <button type="button" className="pf-btn pf-btn-sm" disabled={saving || !dirty || actionBusy} onClick={() => void savePrompt()}>{saving ? tv('保存中…', 'Đang lưu…') : tv('保存提示词', 'Lưu prompt')}</button>
+          <button type="button" className="pf-btn pf-btn-sm" disabled={saving || !dirty || actionBusy} onClick={() => void savePrompt()}>{saving ? tr('editableAssetDetailDialog.saving') : tr('editableAssetDetailDialog.savePrompt')}</button>
         </div>
       </details>}
       {!readOnly && <div className="pf-asset-detail-edit-actions">
         <input ref={uploadInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="sr-only" disabled={actionBusy} onChange={(event) => { const file = event.target.files?.[0]; if (file) void handleUpload(file) }} />
-        <button type="button" className="pf-btn pf-btn-sm" disabled={actionBusy} onClick={() => uploadInputRef.current?.click()}>{uploading ? tv('上传中…', 'Đang tải lên…') : hasImage ? tv('更换图片', 'Đổi ảnh') : tv('上传图片', 'Tải ảnh lên')}</button>
-        {isCharacter && onBindVoice && <button type="button" className="pf-btn pf-btn-sm" disabled={actionBusy} onClick={() => onBindVoice(asset)}>{voice ? tv('更换音色', 'Đổi giọng nói') : tv('绑定音色', 'Gắn giọng nói')}</button>}
+        <button type="button" className="pf-btn pf-btn-sm" disabled={actionBusy} onClick={() => uploadInputRef.current?.click()}>{uploading ? tr('editableAssetDetailDialog.uploading') : hasImage ? tr('editableAssetDetailDialog.replaceImage') : tr('editableAssetDetailDialog.uploadImage')}</button>
+        {isCharacter && onBindVoice && <button type="button" className="pf-btn pf-btn-sm" disabled={actionBusy} onClick={() => onBindVoice(asset)}>{voice ? tr('editableAssetDetailDialog.changeVoice') : tr('editableAssetDetailDialog.assignVoice')}</button>}
         {canDelete && <button type="button" className="pf-btn pf-btn-sm drama-btn-danger-text" disabled={actionBusy} onClick={() => onDelete?.(asset)}>{deleteLabel}</button>}
       </div>}
       {imageVersions.length > 0 && <details className="pf-asset-detail-history">
-        <summary>{tv("历史版本 ·", "Phiên bản lịch sử ·")} {imageVersions.length} {tv("个", "")}</summary>
+        <summary>{tr('editableAssetDetailDialog.previousVersions', { length: imageVersions.length })}</summary>
         <ul className="pf-asset-detail-versions">{imageVersions.map((version) => <li key={version.id}>
-          <button type="button" className="pf-asset-detail-version-thumb" title={tv("查看历史版本详情", "Xem chi tiết phiên bản lịch sử")} onClick={() => setLightboxSrc(resolveAssetImageVersionUrl(version))}><img src={resolveAssetImageVersionUrl(version)} alt="" /></button>
+          <button type="button" className="pf-asset-detail-version-thumb" title={tr('editableAssetDetailDialog.viewPreviousVersionDetails')} onClick={() => setLightboxSrc(resolveAssetImageVersionUrl(version))}><img src={resolveAssetImageVersionUrl(version)} alt="" /></button>
           <div className="pf-asset-detail-version-info"><span>{formatAssetImageVersionLabel(version)}</span>{version.createdAt && <small>{version.createdAt.replace('T', ' ').slice(0, 16)}</small>}</div>
-          {!readOnly && <button type="button" className="pf-btn pf-btn-sm" disabled={actionBusy} onClick={() => void handleRestoreVersion(version.id)}>{restoringVersionId === version.id ? tv('还原中…', 'Đang khôi phục…') : tv('还原', 'Khôi phục')}</button>}
+          {!readOnly && <button type="button" className="pf-btn pf-btn-sm" disabled={actionBusy} onClick={() => void handleRestoreVersion(version.id)}>{restoringVersionId === version.id ? tr('editableAssetDetailDialog.restoring') : tr('editableAssetDetailDialog.restore')}</button>}
         </li>)}</ul>
       </details>}
     </AssetDetailDialog>
-    {lightboxSrc && <AssetDetailDialog asset={{ ...asset, name: tv(`${asset.name || '资产'} · 历史版本`, `${asset.name || '资产'} · Phiên bản lịch sử`), cover: lightboxSrc, url: lightboxSrc, references: undefined, params: { media_metadata: history?.mediaMetadata || { source: 'unknown' } } }} onClose={() => setLightboxSrc(null)} />}
+    {lightboxSrc && <AssetDetailDialog asset={{ ...asset, name: tr('editableAssetDetailDialog.previousVersion', { name: asset.name || '资产' }), cover: lightboxSrc, url: lightboxSrc, references: undefined, params: { media_metadata: history?.mediaMetadata || { source: 'unknown' } } }} onClose={() => setLightboxSrc(null)} />}
   </>
 }

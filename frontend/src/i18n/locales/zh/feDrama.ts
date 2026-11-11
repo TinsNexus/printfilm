@@ -28,4 +28,25 @@ export const zhFeDrama = {
     noScriptYetClickEdit: "暂无脚本内容，点击「编辑」开始填写",
     asset: "资产 {assetId}",
   },
+  dramaEpisodeCountPopover: {
+    episodes: "集",
+    customEpisodeCount: "自定义集数",
+    ok: "确定",
+  },
+  dramaEpisodeDir: {
+    episode: "第 {epNo} 集",
+    unnumbered: "未编号 · {id}",
+    episode2: "分集 {id}",
+    shots: "{fragCount} 镜",
+    episodes: "分集目录",
+    noEpisodesYet: "暂无分集",
+  },
+  dramaImageStyleModal: {
+    projectStyle: "项目风格",
+    visualStyle: "画面风格",
+    chooseStyle: "选择风格",
+    styleLibrary: "风格库",
+    coverImageSentStyleReference: "封面图会作为画风参考一并提交。模型只借色调、笔触和光影，不会照抄封面里的人物或构图。",
+    noStyle: "无风格",
+  },
 } as const;

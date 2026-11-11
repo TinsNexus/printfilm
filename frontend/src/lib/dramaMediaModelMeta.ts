@@ -1,6 +1,6 @@
 /** 漫剧模型选择：图标族与展示文案辅助 */
 import type { MediaModelOption } from '../api'
-import { tv } from '../i18n/tv'
+import { tr } from '../i18n/translate.ts'
 
 export type MediaModelIconKind =
   | 'seedance25'
@@ -41,19 +41,19 @@ export function mediaModelCapabilityBadge(model: MediaModelOption): string {
   if (id.includes('kling')) return 'Kling'
   if (id.includes('veo')) return 'Veo'
   if (id.includes('flux')) return 'Flux'
-  return model.provider === 'tokenfree' ? 'TokenFree' : model.provider || tv('模型', 'Model')
+  return model.provider === 'tokenfree' ? 'TokenFree' : model.provider || tr('dramaMediaModelMeta.model')
 }
 
 /** 悬停 / title 完整介绍 */
 export function mediaModelHoverText(model: MediaModelOption): string {
   const clip =
     typeof model.duration_min === 'number' && typeof model.duration_max === 'number'
-      ? tv(`成片 ${model.duration_min}–${model.duration_max}s`, `Phim ${model.duration_min}–${model.duration_max}s`)
+      ? tr('dramaMediaModelMeta.videoS', { duration_min: model.duration_min, duration_max: model.duration_max })
       : ''
   const parts = [
     model.label || model.id,
     model.description?.trim(),
-    model.eta_hint?.trim() ? tv(`耗时：${model.eta_hint.trim()}`, `Thời gian: ${model.eta_hint.trim()}`) : '',
+    model.eta_hint?.trim() ? tr('dramaMediaModelMeta.time', { trim: model.eta_hint.trim() }) : '',
     clip,
     model.pricing_hint?.trim() || '',
   ].filter(Boolean)
@@ -65,6 +65,6 @@ export function mediaModelClipDurationLabel(model: MediaModelOption): string {
   const lo = Number(model.duration_min)
   const hi = Number(model.duration_max)
   if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo <= 0 || hi <= 0) return ''
-  if (lo === hi) return tv(`成片 ${lo}s`, `Phim ${lo}s`)
-  return tv(`成片 ${lo}–${hi}s`, `Phim ${lo}–${hi}s`)
+  if (lo === hi) return tr('dramaMediaModelMeta.videoS2', { lo })
+  return tr('dramaMediaModelMeta.videoS3', { lo, hi })
 }

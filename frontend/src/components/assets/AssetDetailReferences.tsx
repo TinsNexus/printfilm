@@ -3,10 +3,10 @@ import { AudioLines, ImageIcon, Play, Video } from 'lucide-react'
 import { resolveDramaMediaUrl } from '../../api/drama'
 import { splitAssetDetailPrompt, type AssetDetailReference } from '../../lib/assetDetails'
 import Modal from '../ui/Modal'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 
 type ReferencePreview = { reference: AssetDetailReference; label: string }
-const kindLabels = { image: tv('图片', 'Hình ảnh'), video: tv('视频', 'Video'), audio: tv('音频', 'Âm thanh') } as const
+const kindLabels = { image: tr('assetDetailReferences.image'), video: tr('assetDetailReferences.video'), audio: tr('assetDetailReferences.audio') } as const
 
 function numberedReferences(references: AssetDetailReference[]) {
   const counts = { image: 0, video: 0, audio: 0 }
@@ -63,11 +63,11 @@ export function DetailPrompt({ text, references, onPreview }: {
       const preview = numbered.find(item => item.reference === reference)!
       const name = part.references.find(item => item.name)?.name || preview.label
       const labels = numbered.filter(item => part.references.includes(item.reference)).map(item => item.label).join('、')
-      return <button key={index} type="button" className="pf-detail-prompt-mention" onClick={() => onPreview(preview)} title={`${name} · ${labels}`} aria-label={tv(`预览${name}，${labels}`, `Xem trước ${name}, ${labels}`)}>
+      return <button key={index} type="button" className="pf-detail-prompt-mention" onClick={() => onPreview(preview)} title={`${name} · ${labels}`} aria-label={tr('assetDetailReferences.preview', { name, labels })}>
         <ReferenceThumbnail key={reference.url} reference={reference} /><span>{name}</span><small>{labels}</small>
       </button>
     })}</p>
-    {long && <button type="button" className="pf-detail-text-toggle" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? tv('收起', 'Thu gọn') : tv('展开全文', 'Mở rộng toàn bộ')}</button>}
+    {long && <button type="button" className="pf-detail-text-toggle" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? tr('assetDetailReferences.collapse') : tr('assetDetailReferences.showAll')}</button>}
   </div>
 }
 
@@ -77,23 +77,23 @@ export function DetailReferences({ references, onPreview }: {
 }) {
   const numbered = numberedReferences(references)
   if (!numbered.length) return null
-  return <section className="pf-detail-references" aria-label={tv("本次生成的参考素材", "Tư liệu tham chiếu của lần tạo này")}>
-    <h3>{tv("参考素材", "Tư liệu tham chiếu")} <span>{numbered.length}</span></h3>
+  return <section className="pf-detail-references" aria-label={tr('assetDetailReferences.referencesUsedGeneration')}>
+    <h3>{tr('assetDetailReferences.references')} <span>{numbered.length}</span></h3>
     {(['image', 'video', 'audio'] as const).map(kind => {
       const items = numbered.filter(item => item.reference.kind === kind)
       if (!items.length) return null
       return <div className={`pf-detail-reference-group is-${kind}`} key={kind}>
-        <h4>{tv("参考", "Tham chiếu")}{kindLabels[kind]}</h4>
-        <div className="pf-detail-reference-grid">{items.map((item, index) => <div className="pf-detail-reference" key={`${item.reference.url}:${index}`}>
-          <button type="button" className="pf-detail-reference-open" onClick={() => onPreview(item)} aria-label={tv(`预览${item.label}${item.reference.name ? `：${item.reference.name}` : ''}`, `Xem trước ${item.label}${item.reference.name ? `：${item.reference.name}` : ''}`)}>
+        <h4>{tr('assetDetailReferences.reference')}{kindLabels[kind]}</h4>
+        <div className="pf-detail-reference-grid">{items.map((item, index) => { const refName = item.reference.name ? `：${item.reference.name}` : ''; return <div className="pf-detail-reference" key={`${item.reference.url}:${index}`}>
+          <button type="button" className="pf-detail-reference-open" onClick={() => onPreview(item)} aria-label={tr('assetDetailReferences.preview2', { label: item.label, refName })}>
             <ReferenceThumbnail key={item.reference.url} reference={item.reference} />
             <span className="pf-detail-reference-label">{item.label}</span>
           </button>
           <span className="pf-detail-reference-name" title={item.reference.name || item.label}>{kind === 'audio' && item.reference.name ? `${item.label} · ${item.reference.name}` : item.reference.name || item.label}</span>
-          {item.reference.role === 'first_frame' && <small>{tv("首帧", "Khung đầu")}</small>}
-          {item.reference.role === 'last_frame' && <small>{tv("尾帧", "Khung cuối")}</small>}
-          {kind === 'audio' && <audio src={resolveDramaMediaUrl(item.reference.url)} controls preload="none" aria-label={`${item.label}：${item.reference.name || tv('参考音频', 'Âm thanh tham chiếu')}`} />}
-        </div>)}</div>
+          {item.reference.role === 'first_frame' && <small>{tr('assetDetailReferences.firstFrame')}</small>}
+          {item.reference.role === 'last_frame' && <small>{tr('assetDetailReferences.lastFrame')}</small>}
+          {kind === 'audio' && <audio src={resolveDramaMediaUrl(item.reference.url)} controls preload="none" aria-label={`${item.label}：${item.reference.name || tr('assetDetailReferences.referenceAudio')}`} />}
+        </div> })}</div>
       </div>
     })}
   </section>
@@ -106,7 +106,7 @@ export function DetailReferencePreview({ preview, onClose }: { preview: Referenc
   const url = resolveDramaMediaUrl(reference.url)
   return <Modal open onClose={onClose} title={`${label}${reference.name ? ` · ${reference.name}` : ''}`} size="lg" className="pf-detail-reference-preview">
     <div className={`pf-detail-reference-player is-${reference.kind}`}>
-      {failed ? <p role="status">{tv("参考素材暂时无法加载", "Tạm thời không tải được tư liệu tham chiếu")}</p>
+      {failed ? <p role="status">{tr('assetDetailReferences.referencesCannotLoadedRightNow')}</p>
         : reference.kind === 'image' ? <img src={url} alt={reference.name || label} onError={() => setFailed(true)} />
           : reference.kind === 'video' ? <video src={url} poster={resolveDramaMediaUrl(reference.cover)} controls playsInline preload="metadata" onError={() => setFailed(true)} />
             : <><AudioLines size={52} aria-hidden /><audio src={url} controls preload="metadata" aria-label={reference.name || label} onError={() => setFailed(true)} /></>}

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import Modal from '../ui/Modal'
 import { api, type BillingOrder } from '../../api'
 import { billingOrderChargeLabel, } from '../../lib/billingPayments'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 
 type Props = {
   open: boolean
@@ -11,19 +11,19 @@ type Props = {
 }
 
 const SKU_LABELS: Record<string, string> = {
-  topup_10: tv('体验充值', 'Nạp thử'),
-  topup_49: tv('基础充值', 'Nạp cơ bản'),
-  topup_99: tv('进阶充值', 'Nạp nâng cao'),
-  topup_199: tv('专业充值', 'Nạp chuyên nghiệp'),
+  topup_10: tr('topupHistoryModal.trialTopUp'),
+  topup_49: tr('topupHistoryModal.basicTopUp'),
+  topup_99: tr('topupHistoryModal.plusTopUp'),
+  topup_199: tr('topupHistoryModal.proTopUp'),
 }
 
 const STATUS_CN: Record<string, string> = {
-  pending: tv('待支付', 'Chờ thanh toán'),
-  paid: tv('已到账', 'Đã ghi có'),
-  closed: tv('已关闭', 'Đã đóng'),
+  pending: tr('topupHistoryModal.awaitingPayment'),
+  paid: tr('topupHistoryModal.credited'),
+  closed: tr('topupHistoryModal.closed'),
 }
 
-const PAY_LABELS: Record<string, string> = { alipay: tv('支付宝', 'Alipay'), wxpay: tv('微信支付', 'WeChat Pay'), stripe: 'Stripe' }
+const PAY_LABELS: Record<string, string> = { alipay: tr('topupHistoryModal.alipay'), wxpay: tr('topupHistoryModal.wechatPay'), stripe: 'Stripe' }
 
 function formatTime(iso?: string | null) {
   if (!iso) return '—'
@@ -55,7 +55,7 @@ export default function TopupHistoryModal({ open, onClose }: Props) {
         if (!cancelled) setOrders(r.orders || [])
       })
       .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : tv('加载失败', 'Tải thất bại'))
+        if (!cancelled) setError(e instanceof Error ? e.message : tr('topupHistoryModal.failedLoad'))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -66,11 +66,11 @@ export default function TopupHistoryModal({ open, onClose }: Props) {
   }, [open])
 
   return (
-    <Modal open={open} onClose={onClose} title={tv("充值记录", "Lịch sử nạp tiền")} size="lg" className="pf-topup-history-modal">
-      {loading ? <p className="pf-muted">{tv("加载中…", "Đang tải…")}</p> : null}
+    <Modal open={open} onClose={onClose} title={tr('topupHistoryModal.topUpHistory')} size="lg" className="pf-topup-history-modal">
+      {loading ? <p className="pf-muted">{tr('topupHistoryModal.loading')}</p> : null}
       {error ? <p className="pf-error">{error}</p> : null}
       {!loading && !error && orders.length === 0 ? (
-        <p className="pf-muted">{tv("暂无充值记录", "Chưa có lịch sử nạp tiền")}</p>
+        <p className="pf-muted">{tr('topupHistoryModal.noTopUpsYet')}</p>
       ) : null}
       {!loading && orders.length > 0 ? (
         <ul className="pf-topup-list">

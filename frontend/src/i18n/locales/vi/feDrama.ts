@@ -28,4 +28,25 @@ export const viFeDrama = {
     noScriptYetClickEdit: "Chưa có nội dung kịch bản, bấm “Chỉnh sửa” để bắt đầu điền",
     asset: "Tài sản {assetId}",
   },
+  dramaEpisodeCountPopover: {
+    episodes: "tập",
+    customEpisodeCount: "Số tập tùy chỉnh",
+    ok: "Xác định",
+  },
+  dramaEpisodeDir: {
+    episode: "Tập {epNo}",
+    unnumbered: "Chưa đánh số · {id}",
+    episode2: "Tập {id}",
+    shots: "{fragCount} cảnh",
+    episodes: "Mục lục tập",
+    noEpisodesYet: "Chưa có tập",
+  },
+  dramaImageStyleModal: {
+    projectStyle: "Phong cách dự án",
+    visualStyle: "Phong cách hình ảnh",
+    chooseStyle: "Chọn phong cách",
+    styleLibrary: "Thư viện phong cách",
+    coverImageSentStyleReference: "Ảnh bìa sẽ được gửi cùng làm tham chiếu phong cách hình ảnh. Model chỉ mượn tông màu, nét bút và ánh sáng, không sao chép nhân vật hay bố cục trong ảnh bìa.",
+    noStyle: "Không có phong cách",
+  },
 } as const;

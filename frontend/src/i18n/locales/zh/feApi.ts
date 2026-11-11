@@ -24,4 +24,13 @@ export const zhFeApi = {
     projectPageHasChanged: "项目页面已切换",
     workspaceHasChanged: "创作空间已切换",
   },
+  tools: {
+    notSigned: "未登录",
+    estimatedCostUnavailable: "预计消耗暂不可用",
+    failedLoadAssetLibrary: "加载资产库失败",
+    generationFailed: "生成失败",
+    queryFailed: "查询失败",
+    failedLoad: "加载失败",
+    failedLoadModelSettings: "加载模型配置失败",
+  },
 } as const;

@@ -1,7 +1,7 @@
 /** 漫剧分集左侧目录（大纲 / 分集页 / 分镜页共用） */
 import type { ReactNode } from 'react'
 import type { DramaEpisode } from '../../api/drama'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 
 export type DramaEpisodeDirItem = {
   id: number
@@ -32,21 +32,21 @@ export function buildEpisodeDirItems(episodes: DramaEpisode[]): DramaEpisodeDirI
     const fragCount = (ep.fragments || []).length
     return {
       id: ep.id,
-      label: epNo >= 1 ? tv(`第 ${epNo} 集`, `Tập ${epNo}`) : tv(`未编号 · ${ep.id}`, `Chưa đánh số · ${ep.id}`),
-      title: ep.name || tv(`分集 ${ep.id}`, `Tập ${ep.id}`),
-      meta: fragCount > 0 ? tv(`${fragCount} 镜`, `${fragCount} cảnh`) : undefined,
+      label: epNo >= 1 ? tr('dramaEpisodeDir.episode', { epNo }) : tr('dramaEpisodeDir.unnumbered', { id: ep.id }),
+      title: ep.name || tr('dramaEpisodeDir.episode2', { id: ep.id }),
+      meta: fragCount > 0 ? tr('dramaEpisodeDir.shots', { fragCount }) : undefined,
     }
   })
 }
 
 // 左侧分集目录
 export function DramaEpisodeDir({
-  title = tv('分集目录', 'Mục lục tập'),
+  title = tr('dramaEpisodeDir.episodes'),
   items,
   activeId,
   onSelect,
   footer,
-  emptyText = tv('暂无分集', 'Chưa có tập'),
+  emptyText = tr('dramaEpisodeDir.noEpisodesYet'),
 }: DramaEpisodeDirProps) {
   return (
     <aside className="drama-episode-dir">

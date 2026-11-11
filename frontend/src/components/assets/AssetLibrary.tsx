@@ -4,7 +4,7 @@ import { ArrowUpRight, AudioLines, Check, Image, Layers3, Loader2, Search, Video
 import { resolveDramaAssetPreviewUrl } from '../../api/drama'
 import { isAudioUrl, isPlayableVideoUrl } from '../../lib/canvasNodeMedia'
 import './asset-library.css'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 
 export type AssetDisplay = {
   name?: string | null
@@ -31,7 +31,7 @@ type AssetCardProps = {
 }
 
 // 展示标签统一使用中文，兼容画布中的图片与音频类型。
-const ASSET_LABELS: Record<string, string> = { character: tv('角色', 'Nhân vật'), scene: tv('场景', 'Bối cảnh'), prop: tv('道具', 'Đạo cụ'), voice: tv('音色', 'Giọng nói'), audio: tv('音频', 'Âm thanh'), image: tv('图片', 'Hình ảnh'), video: tv('视频', 'Video') }
+const ASSET_LABELS: Record<string, string> = { character: tr('assetLibrary.character'), scene: tr('assetLibrary.scene'), prop: tr('assetLibrary.prop'), voice: tr('assetLibrary.voice'), audio: tr('assetLibrary.audio'), image: tr('assetLibrary.image'), video: tr('assetLibrary.video') }
 
 /** 日期缺失或无效时显示占位，不产生 Invalid Date。 */
 function assetDate(value: string): string {
@@ -63,26 +63,26 @@ export function AssetVisual({ asset }: { asset: AssetDisplay }) {
   ) : (
     <span className="pf-library-art">
       {kind === 'audio' ? <AudioLines size={48} aria-hidden="true" /> : kind === 'video' ? <Video size={46} aria-hidden="true" /> : <Image size={44} aria-hidden="true" />}
-      <small>{kind === 'audio' ? asset.type === 'voice' ? tv('音色资产', 'Tài sản giọng nói') : tv('音频资产', 'Tài sản âm thanh') : kind === 'video' ? tv('视频资产', 'Tài sản video') : tv('暂无预览图', 'Chưa có ảnh xem trước')}</small>
+      <small>{kind === 'audio' ? asset.type === 'voice' ? tr('assetLibrary.voiceAsset') : tr('assetLibrary.audioAsset') : kind === 'video' ? tr('assetLibrary.videoAsset') : tr('assetLibrary.noPreviewImage')}</small>
     </span>
   )
 }
 
 /** 图片卡片与画布节点共用封面，画布可传入视频播放器或可编辑文本。 */
 export function AssetCover({ asset, subtitle, onOpen, selected, busy, status, children, className = '', style, showLabels = true }: Pick<AssetCardProps, 'asset' | 'subtitle' | 'onOpen' | 'selected' | 'busy' | 'status' | 'children'> & { className?: string; style?: CSSProperties; showLabels?: boolean }) {
-  const name = asset.name || tv('未命名资产', 'Tài sản chưa đặt tên')
+  const name = asset.name || tr('assetLibrary.untitledAsset')
   const cover = <>
     {children ?? <AssetVisual asset={asset} />}
     {showLabels && <><span className="pf-library-shade" />
-    <span className="pf-library-type">{['character', 'scene', 'prop', 'voice'].includes(asset.type) ? ASSET_LABELS[asset.type] : asset.type === 'text' ? tv('文本', 'Văn bản') : ASSET_LABELS[assetMediaType(asset)]}</span>
+    <span className="pf-library-type">{['character', 'scene', 'prop', 'voice'].includes(asset.type) ? ASSET_LABELS[asset.type] : asset.type === 'text' ? tr('assetLibrary.text') : ASSET_LABELS[assetMediaType(asset)]}</span>
     {(selected || busy || status) && <span className="pf-library-status" role={busy ? 'status' : undefined}>
       {busy ? <Loader2 size={13} className="pf-library-spinner" /> : selected ? <Check size={13} /> : null}
-      {status || (busy ? tv('生成中', 'Đang tạo') : tv('已选择', 'Đã chọn'))}
+      {status || (busy ? tr('assetLibrary.generating') : tr('assetLibrary.selected'))}
     </span>}
     <span className="pf-library-name"><strong>{name}</strong>{subtitle && <small>{subtitle}</small>}</span>
     {onOpen && <span className="pf-library-open"><ArrowUpRight size={18} /></span>}</>}
   </>
-  return onOpen ? <button type="button" className={`pf-library-cover ${className}`} style={style} onClick={onOpen} aria-label={tv(`${selected ? '已选择，' : ''}打开${name}`, `${selected ? '已选择，' : ''}Mở ${name}`)} aria-pressed={selected === undefined ? undefined : selected}>{cover}</button> : <div className={`pf-library-cover ${className}`} style={style}>{cover}</div>
+  return onOpen ? <button type="button" className={`pf-library-cover ${className}`} style={style} onClick={onOpen} aria-label={tr('assetLibrary.open', { p: selected ? '已选择，' : '', name })} aria-pressed={selected === undefined ? undefined : selected}>{cover}</button> : <div className={`pf-library-cover ${className}`} style={style}>{cover}</div>
 }
 
 /** 方形封面、渐变标题与来源页脚；操作区独立于主按钮，支持键盘和选择态。 */
@@ -101,21 +101,21 @@ export function AssetGrid({ children, compact = false, picker = false }: { child
 }
 
 /** 统一分类按钮；分类与数据筛选仍由调用方控制。 */
-export function AssetTypeFilter<T extends string>({ options, value, onChange, disabled = false, ariaLabel = tv('按资产类型筛选', 'Lọc theo loại tài sản') }: { options: readonly { value: T; label: string }[]; value: T | null; onChange: (value: T) => void; disabled?: boolean; ariaLabel?: string }) {
+export function AssetTypeFilter<T extends string>({ options, value, onChange, disabled = false, ariaLabel = tr('assetLibrary.filterAssetType') }: { options: readonly { value: T; label: string }[]; value: T | null; onChange: (value: T) => void; disabled?: boolean; ariaLabel?: string }) {
   return <div className="pf-library-filters" role="group" aria-label={ariaLabel}>{options.map((item) => <button type="button" key={item.value} className={`pf-library-pill${value === item.value ? ' is-active' : ''}`} disabled={disabled} aria-pressed={value === item.value} onClick={() => onChange(item.value)}>{item.label}</button>)}</div>
 }
 
 /** 与共享资产一致的搜索框，保留原有查询与加载方式。 */
-export function AssetSearch({ value, onChange, placeholder = tv('搜索资产名称或描述', 'Tìm tên hoặc mô tả tài sản') }: { value: string; onChange: (value: string) => void; placeholder?: string }) {
-  return <label className="pf-library-search"><Search size={17} aria-hidden="true" /><input aria-label={tv("搜索资产", "Tìm tài sản")} placeholder={placeholder} value={value} onChange={(event) => onChange(event.target.value)} /></label>
+export function AssetSearch({ value, onChange, placeholder = tr('assetLibrary.searchAssetNamesDescriptions') }: { value: string; onChange: (value: string) => void; placeholder?: string }) {
+  return <label className="pf-library-search"><Search size={17} aria-hidden="true" /><input aria-label={tr('assetLibrary.searchAssets')} placeholder={placeholder} value={value} onChange={(event) => onChange(event.target.value)} /></label>
 }
 
 /** 共享资产的提示横幅，允许项目编辑页说明自己的操作方式。 */
-export function AssetBanner({ title = tv('一次创作，让灵感多次发生。', 'Một lần sáng tạo, để cảm hứng bừng lên nhiều lần.'), children }: { title?: string; children: ReactNode }) {
+export function AssetBanner({ title = tr('assetLibrary.createOnceLetIdeasSpark'), children }: { title?: string; children: ReactNode }) {
   return <div className="pf-library-banner" role="note"><span className="pf-library-banner-icon"><Layers3 size={23} aria-hidden="true" /></span><div><strong>{title}</strong><p>{children}</p></div></div>
 }
 
 /** 各资产入口共用的空态。 */
 export function AssetEmpty({ children }: { children?: ReactNode }) {
-  return <div className="pf-library-empty"><Image size={30} aria-hidden="true" /><strong>{tv("暂无符合条件的资产", "Không có tài sản phù hợp")}</strong><p>{children || tv('调整筛选条件，或在项目中添加新的资产。', 'Điều chỉnh điều kiện lọc, hoặc thêm tài sản mới trong dự án.')}</p></div>
+  return <div className="pf-library-empty"><Image size={30} aria-hidden="true" /><strong>{tr('assetLibrary.noMatchingAssets')}</strong><p>{children || tr('assetLibrary.adjustFiltersAddNewAssets')}</p></div>
 }

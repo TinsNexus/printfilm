@@ -24,4 +24,13 @@ export const enFeApi = {
     projectPageHasChanged: "The project page has changed",
     workspaceHasChanged: "Your workspace has changed",
   },
+  tools: {
+    notSigned: "Not signed in",
+    estimatedCostUnavailable: "Estimated cost unavailable",
+    failedLoadAssetLibrary: "Failed to load the asset library",
+    generationFailed: "Generation failed",
+    queryFailed: "Query failed",
+    failedLoad: "Failed to load",
+    failedLoadModelSettings: "Failed to load model settings",
+  },
 } as const;

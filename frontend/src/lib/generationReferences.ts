@@ -1,5 +1,5 @@
 import type { ToolReferenceAsset, ToolReferenceInput } from '../api/tools'
-import { tv } from '../i18n/tv'
+import { tr } from '../i18n/translate.ts'
 
 export type VideoGenerationMode = 'text_to_video' | 'first_last_frame' | 'omni_reference'
 export type GenerationReferenceKind = 'image' | 'video' | 'audio'
@@ -53,7 +53,7 @@ export function checkGenerationReferenceCounts(
   for (const reference of next) counts[reference.kind] += 1
   if (counts.image > max.images || counts.video > max.videos || counts.audio > max.audios || (!frameMode && next.length > 12)) {
     return t(
-      tv(`参考资料超出上限：图片 ${max.images} 张、视频 ${max.videos} 段、音频 ${max.audios} 段，最多 12 份。`, `Tài liệu tham chiếu vượt giới hạn: ${max.images} ảnh, ${max.videos} video, ${max.audios} âm thanh, tối đa 12 tài liệu.`),
+      tr('libGenerationReferences.tooManyReferencesImagesVideos', { images: max.images, videos: max.videos, audios: max.audios }),
       `Reference limit: ${max.images} images, ${max.videos} videos, ${max.audios} audio clips; 12 files in total.`,
     )
   }
@@ -82,29 +82,29 @@ export function validateGenerationReferences(
   value: GenerationReference[],
   limits?: GenerationReferenceLimits,
 ): string | null {
-  if (mode === 'text_to_video') return value.length ? tv('文生视频无需参考资料，请切换生成方式后使用。', 'Văn bản thành video không cần tài liệu tham chiếu, vui lòng đổi cách tạo rồi dùng.') : null
+  if (mode === 'text_to_video') return value.length ? tr('libGenerationReferences.textVideoTakesNoReferences') : null
   const max = generationReferenceLimits(limits)
   const counts = { image: 0, video: 0, audio: 0 }
   for (const reference of value) {
-    if (!reference.file && (!reference.assetId || reference.assetId < 1)) return tv('参考资料已失效，请重新上传或从资产库选择。', 'Tài liệu tham chiếu đã mất hiệu lực, vui lòng tải lên lại hoặc chọn từ thư viện tài sản.')
-    if (reference.file && reference.file.size === 0) return tv('参考文件不能为空，请重新选择。', 'Tệp tham chiếu không được để trống, vui lòng chọn lại.')
-    if (reference.file && reference.file.size > 40 * 1024 * 1024) return tv('单个参考文件不能超过 40MB。', 'Mỗi tệp tham chiếu không được vượt quá 40MB.')
-    if (reference.file && generationReferenceFileKind(reference.file) !== reference.kind) return tv('参考文件格式或媒体类型不支持，请重新选择。', 'Định dạng hoặc loại phương tiện của tệp tham chiếu không được hỗ trợ, vui lòng chọn lại.')
+    if (!reference.file && (!reference.assetId || reference.assetId < 1)) return tr('libGenerationReferences.referenceNoLongerAvailableUpload')
+    if (reference.file && reference.file.size === 0) return tr('libGenerationReferences.referenceFileEmptyChooseAnother')
+    if (reference.file && reference.file.size > 40 * 1024 * 1024) return tr('libGenerationReferences.eachReferenceFileMust40')
+    if (reference.file && generationReferenceFileKind(reference.file) !== reference.kind) return tr('libGenerationReferences.referenceFileFormatMediaType')
     counts[reference.kind] += 1
     const expectedRole = reference.kind === 'image' ? 'reference_image' : reference.kind === 'video' ? 'reference_video' : 'reference_audio'
-    if (mode === 'omni_reference' && reference.role !== expectedRole) return tv('全能参考请使用图片、视频或音频参考资料。', 'Tham chiếu đa năng vui lòng dùng tài liệu tham chiếu là ảnh, video hoặc âm thanh.')
-    if (mode === 'first_last_frame' && (reference.kind !== 'image' || !['first_frame', 'last_frame'].includes(reference.role))) return tv('首尾帧仅支持首帧和尾帧图片。', 'Khung đầu cuối chỉ hỗ trợ ảnh khung đầu và khung cuối.')
+    if (mode === 'omni_reference' && reference.role !== expectedRole) return tr('libGenerationReferences.multiReferenceAcceptsImageVideo')
+    if (mode === 'first_last_frame' && (reference.kind !== 'image' || !['first_frame', 'last_frame'].includes(reference.role))) return tr('libGenerationReferences.firstLastFrameModeOnly')
   }
-  if (counts.image > max.images) return max.images === 0 ? tv('当前模型不支持参考图片，请切换模型。', 'Model hiện tại không hỗ trợ ảnh tham chiếu, vui lòng đổi model.') : tv(`当前模型最多支持 ${max.images} 张参考图片，请移除多余图片。`, `Model hiện tại hỗ trợ tối đa ${max.images} ảnh tham chiếu, vui lòng bỏ bớt ảnh thừa.`)
-  if (counts.video > max.videos) return max.videos === 0 ? tv('当前模型不支持参考视频，请切换模型。', 'Model hiện tại không hỗ trợ video tham chiếu, vui lòng đổi model.') : tv(`当前模型最多支持 ${max.videos} 段参考视频，请移除多余视频。`, `Model hiện tại hỗ trợ tối đa ${max.videos} video tham chiếu, vui lòng bỏ bớt video thừa.`)
-  if (counts.audio > max.audios) return max.audios === 0 ? tv('当前模型不支持参考音频，请切换模型。', 'Model hiện tại không hỗ trợ âm thanh tham chiếu, vui lòng đổi model.') : tv(`当前模型最多支持 ${max.audios} 段参考音频，请移除多余音频。`, `Model hiện tại hỗ trợ tối đa ${max.audios} âm thanh tham chiếu, vui lòng bỏ bớt âm thanh thừa.`)
+  if (counts.image > max.images) return max.images === 0 ? tr('libGenerationReferences.currentModelDoesNotSupport') : tr('libGenerationReferences.currentModelSupportsUpReference', { images: max.images })
+  if (counts.video > max.videos) return max.videos === 0 ? tr('libGenerationReferences.currentModelDoesNotSupport2') : tr('libGenerationReferences.currentModelSupportsUpReference2', { videos: max.videos })
+  if (counts.audio > max.audios) return max.audios === 0 ? tr('libGenerationReferences.currentModelDoesNotSupport3') : tr('libGenerationReferences.currentModelSupportsUpAudio', { audios: max.audios })
   if (mode === 'first_last_frame') {
-    if (max.images < 1) return tv('当前模型不支持首尾帧，请切换模型。', 'Model hiện tại không hỗ trợ khung đầu cuối, vui lòng đổi model.')
-    if (!value.some(item => item.role === 'first_frame')) return tv('请上传或从资产库选择首帧图片。', 'Vui lòng tải lên hoặc chọn ảnh khung đầu từ thư viện tài sản.')
-    if (value.filter(item => item.role === 'first_frame').length > 1 || value.filter(item => item.role === 'last_frame').length > 1) return tv('首帧和尾帧分别只能选择一张图片。', 'Khung đầu và khung cuối mỗi nơi chỉ chọn được một ảnh.')
+    if (max.images < 1) return tr('libGenerationReferences.currentModelDoesNotSupport4')
+    if (!value.some(item => item.role === 'first_frame')) return tr('libGenerationReferences.uploadFirstFrameImageChoose')
+    if (value.filter(item => item.role === 'first_frame').length > 1 || value.filter(item => item.role === 'last_frame').length > 1) return tr('libGenerationReferences.chooseOnlyOneImageEach')
   } else {
-    if (!value.length) return tv('请上传或从资产库选择至少一份参考资料。', 'Vui lòng tải lên hoặc chọn ít nhất một tài liệu tham chiếu từ thư viện tài sản.')
-    if (value.length > 12) return tv('全能参考最多支持 12 份资料，请移除多余资料。', 'Tham chiếu đa năng hỗ trợ tối đa 12 tài liệu, vui lòng bỏ bớt tài liệu thừa.')
+    if (!value.length) return tr('libGenerationReferences.uploadLeastOneReferenceChoose')
+    if (value.length > 12) return tr('libGenerationReferences.multiReferenceSupportsUp12')
   }
   return null
 }
