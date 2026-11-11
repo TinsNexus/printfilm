@@ -1,18 +1,19 @@
-import { tv } from '../../i18n/tv'
+import { points } from '../../lib/points.ts'
+import { marketText as mt, marketFeedback } from './translate.ts'
 /** 用户提示与接口错误码分开处理，不改变服务端状态和错误契约。 */
 const businessMessages: Record<string, string> = {
-  MARKETPLACE_STORAGE_UNAVAILABLE: tv('文件服务暂未配置或暂时不可用，请稍后重试或联系客服。', 'Dịch vụ tệp chưa được cấu hình hoặc tạm thời không khả dụng, vui lòng thử lại sau hoặc liên hệ CSKH.'),
-  MARKETPLACE_PAYMENT_UNAVAILABLE: tv('支付服务暂不可用，请稍后重试。', 'Dịch vụ thanh toán tạm thời không khả dụng, vui lòng thử lại sau.'),
-  MARKETPLACE_REVENUE_CONFIG_REQUIRED: tv('平台投放收益暂未开放，请联系客服确认。', 'Doanh thu quảng bá nền tảng chưa mở, vui lòng liên hệ CSKH xác nhận.'),
-  MARKETPLACE_RIGHTS_REQUIRED: tv('请先确认版权信息：PrintFilm 作品签署授权函，其他平台作品提交版权证明。', 'Vui lòng xác nhận thông tin bản quyền trước: tác phẩm PrintFilm ký thư ủy quyền, tác phẩm nền tảng khác nộp chứng minh bản quyền.'),
-  MARKETPLACE_EPISODE_NOT_READY: tv('视频尚未准备好，请稍后刷新查看。', 'Video chưa chuẩn bị xong, vui lòng làm mới xem lại sau.'),
-  MARKETPLACE_ENTITLEMENT_REQUIRED: tv('请先购买该发布版本的在线播放权益。', 'Vui lòng mua quyền phát trực tuyến của phiên bản đăng này trước.'),
-  MARKETPLACE_SOURCE_NOT_READY: tv('源成片尚未就绪，请完成视频生成后再同步。', 'Phim nguồn chưa sẵn sàng, vui lòng tạo xong video rồi đồng bộ.'),
-  MARKETPLACE_SOURCE_CHANGED: tv('源成片已更新，请刷新并重新选择后同步。', 'Phim nguồn đã được cập nhật, vui lòng làm mới và chọn lại rồi đồng bộ.'),
-  MARKETPLACE_TARGET_CHANGED: tv('市场作品已更新，请刷新后重新确认同步内容。', 'Tác phẩm trên chợ đã được cập nhật, vui lòng làm mới và xác nhận lại nội dung đồng bộ.'),
-  MARKETPLACE_SOURCE_INCOMPATIBLE: tv('分镜视频规格不一致，请统一画幅和分辨率后重新同步。', 'Quy cách video phân cảnh không đồng nhất, vui lòng thống nhất tỷ lệ khung và độ phân giải rồi đồng bộ lại.'),
-  MARKETPLACE_SYNC_IN_PROGRESS: tv('成片正在同步，请等待同步完成后再保存或提交。', 'Phim đang đồng bộ, vui lòng đợi đồng bộ xong rồi mới lưu hoặc gửi.'),
-  MARKETPLACE_SUBMISSIONS_DISABLED: tv('招募通过平台客服接单，请在招募详情中联系客服。', 'Tuyển dụng nhận việc qua CSKH nền tảng, vui lòng liên hệ CSKH trong chi tiết tuyển dụng.'),
+  MARKETPLACE_STORAGE_UNAVAILABLE: '文件服务暂未配置或暂时不可用，请稍后重试或联系客服。',
+  MARKETPLACE_PAYMENT_UNAVAILABLE: '支付服务暂不可用，请稍后重试。',
+  MARKETPLACE_REVENUE_CONFIG_REQUIRED: '平台投放收益暂未开放，请联系客服确认。',
+  MARKETPLACE_RIGHTS_REQUIRED: '请先确认版权信息：PRINTFILM 作品签署授权函，其他平台作品提交版权证明。',
+  MARKETPLACE_EPISODE_NOT_READY: '视频尚未准备好，请稍后刷新查看。',
+  MARKETPLACE_ENTITLEMENT_REQUIRED: '请先购买该发布版本的在线播放权益。',
+  MARKETPLACE_SOURCE_NOT_READY: '源成片尚未就绪，请完成视频生成后再同步。',
+  MARKETPLACE_SOURCE_CHANGED: '源成片已更新，请刷新并重新选择后同步。',
+  MARKETPLACE_TARGET_CHANGED: '市场作品已更新，请刷新后重新确认同步内容。',
+  MARKETPLACE_SOURCE_INCOMPATIBLE: '分镜视频规格不一致，请统一画幅和分辨率后重新同步。',
+  MARKETPLACE_SYNC_IN_PROGRESS: '成片正在同步，请等待同步完成后再保存或提交。',
+  MARKETPLACE_SUBMISSIONS_DISABLED: '招募通过平台客服接单，请在招募详情中联系客服。',
 }
 
 const fieldNames: Record<string, string> = {
@@ -44,12 +45,14 @@ export function marketplaceErrorCode(detail: unknown): string | undefined {
 
 function readableText(text: string): string | undefined {
   const cleaned = text.trim().replace(/^Value error,\s*/i, '')
-  // 有中文的业务说明可以保留；纯错误码或底层英文交给统一回退提示。
-  return /[\u3400-\u9fff]/u.test(cleaned) ? cleaned : undefined
+  // 两种语言的业务说明均可展示；纯错误码和底层异常使用安全回退提示。
+  if (!cleaned || /^MARKETPLACE_[A-Z_]+$/.test(cleaned) || /Internal Server Error|Traceback|sqlalchemy|SELECT .* FROM|https?:\/\/|object at 0x|Error:|Exception:/i.test(cleaned)) return undefined
+  return marketFeedback(cleaned)
 }
 
 function limitText(value: unknown, field: string): string {
-  if (typeof value !== 'number' && typeof value !== 'string') return tv('允许的范围', 'Phạm vi cho phép')
+  if (typeof value !== 'number' && typeof value !== 'string') return mt("允许的范围")
+  if (field === 'unlock_price_fen') return points(Number(value))
   if (field.endsWith('_fen') && Number.isFinite(Number(value))) return `¥${(Number(value) / 100).toFixed(2)}`
   return String(value)
 }
@@ -59,29 +62,29 @@ function validationMessage(row: Record<string, unknown>, field: string): string 
   const ctx = record(row.ctx) ?? {}
   const raw = typeof row.msg === 'string' ? row.msg : ''
   const ownMessage = readableText(raw)
-  if (ownMessage) return ownMessage
+  if (ownMessage && type === 'value_error') return ownMessage
   switch (type) {
-    case 'missing': return tv('这是必填项', 'Đây là mục bắt buộc')
-    case 'string_too_short': return tv(`至少填写 ${ctx.min_length} 个字`, `Nhập ít nhất ${ctx.min_length} ký tự`)
-    case 'string_too_long': return tv(`不能超过 ${ctx.max_length} 个字`, `Không được vượt quá ${ctx.max_length} ký tự`)
-    case 'too_short': return tv(`至少需要 ${ctx.min_length} 项`, `Cần ít nhất ${ctx.min_length} mục`)
-    case 'too_long': return tv(`最多允许 ${ctx.max_length} 项`, `Cho phép tối đa ${ctx.max_length} mục`)
-    case 'greater_than': return tv(`须大于 ${limitText(ctx.gt, field)}`, `Phải lớn hơn ${limitText(ctx.gt, field)}`)
-    case 'greater_than_equal': return tv(`不能小于 ${limitText(ctx.ge, field)}`, `Không được nhỏ hơn ${limitText(ctx.ge, field)}`)
-    case 'less_than': return tv(`须小于 ${limitText(ctx.lt, field)}`, `Phải nhỏ hơn ${limitText(ctx.lt, field)}`)
-    case 'less_than_equal': return tv(`不能超过 ${limitText(ctx.le, field)}`, `Không được vượt quá ${limitText(ctx.le, field)}`)
-    case 'int_parsing': case 'int_type': case 'int_from_float': return tv('请填写整数', 'Vui lòng nhập số nguyên')
-    case 'float_parsing': case 'float_type': case 'finite_number': return tv('请填写有效数字', 'Vui lòng nhập số hợp lệ')
-    case 'literal_error': return ctx.expected === 'True' ? tv('请勾选确认', 'Vui lòng tích xác nhận') : tv('请选择有效选项', 'Vui lòng chọn tùy chọn hợp lệ')
-    case 'bool_parsing': case 'bool_type': return tv('请确认此选项', 'Vui lòng xác nhận tùy chọn này')
-    case 'datetime_parsing': case 'datetime_from_date_parsing': case 'timezone_aware': return tv('请填写有效的日期和时间', 'Vui lòng nhập ngày giờ hợp lệ')
-    case 'extra_forbidden': return tv('此项不支持提交，请刷新页面后重试', 'Mục này không hỗ trợ gửi, vui lòng làm mới trang rồi thử lại')
+    case 'missing': return mt("这是必填项")
+    case 'string_too_short': return mt("至少填写 {0} 个字", [ctx.min_length])
+    case 'string_too_long': return mt("不能超过 {0} 个字", [ctx.max_length])
+    case 'too_short': return mt("至少需要 {0} 项", [ctx.min_length])
+    case 'too_long': return mt("最多允许 {0} 项", [ctx.max_length])
+    case 'greater_than': return mt("须大于 {0}", [limitText(ctx.gt, field)])
+    case 'greater_than_equal': return mt("不能小于 {0}", [limitText(ctx.ge, field)])
+    case 'less_than': return mt("须小于 {0}", [limitText(ctx.lt, field)])
+    case 'less_than_equal': return mt("不能超过 {0}", [limitText(ctx.le, field)])
+    case 'int_parsing': case 'int_type': case 'int_from_float': return mt("请填写整数")
+    case 'float_parsing': case 'float_type': case 'finite_number': return mt("请填写有效数字")
+    case 'literal_error': return ctx.expected === 'True' ? mt("请勾选确认") : mt("请选择有效选项")
+    case 'bool_parsing': case 'bool_type': return mt("请确认此选项")
+    case 'datetime_parsing': case 'datetime_from_date_parsing': case 'timezone_aware': return mt("请填写有效的日期和时间")
+    case 'extra_forbidden': return mt("此项不支持提交，请刷新页面后重试")
   }
-  if (/field required/i.test(raw)) return tv('这是必填项', 'Đây là mục bắt buộc')
-  if (/at least 1 character/i.test(raw)) return tv('不能为空', 'Không được để trống')
-  if (/valid integer/i.test(raw)) return tv('请填写整数', 'Vui lòng nhập số nguyên')
-  if (/valid number/i.test(raw)) return tv('请填写有效数字', 'Vui lòng nhập số hợp lệ')
-  return tv('请检查填写内容', 'Vui lòng kiểm tra nội dung đã nhập')
+  if (/field required/i.test(raw)) return mt("这是必填项")
+  if (/at least 1 character/i.test(raw)) return mt("不能为空")
+  if (/valid integer/i.test(raw)) return mt("请填写整数")
+  if (/valid number/i.test(raw)) return mt("请填写有效数字")
+  return mt("请检查填写内容")
 }
 
 function explainValidation(detail: unknown[]): string {
@@ -90,11 +93,11 @@ function explainValidation(detail: unknown[]): string {
     if (!row) return []
     const parts = (Array.isArray(row.loc) ? row.loc : []).filter(part => !['body', 'query', 'path'].includes(String(part)))
     const field = String(parts.at(-1) ?? '')
-    const location = parts.map(part => typeof part === 'number' ? tv(`第 ${part + 1} 项`, `Mục ${part + 1}`) : fieldNames[String(part)] || tv('填写内容', 'Nội dung đã nhập')).join(tv('的', ''))
+    const location = parts.map(part => typeof part === 'number' ? mt("第 {0} 项", [part + 1]) : mt(fieldNames[String(part)] || '') || mt("填写内容")).join(mt("的"))
     const message = validationMessage(row, field)
     return [location ? `${location}：${message}` : message]
   })
-  return [...new Set(lines)].join('；') || tv('请检查表单内容和必填字段', 'Vui lòng kiểm tra nội dung biểu mẫu và các trường bắt buộc')
+  return [...new Set(lines)].join('；') || mt("请检查表单内容和必填字段")
 }
 
 export function explainMarketplaceError(detail: unknown, status?: number): string {
@@ -102,16 +105,16 @@ export function explainMarketplaceError(detail: unknown, status?: number): strin
   const value = record(detail)
   const raw = typeof detail === 'string' ? detail : typeof value?.message === 'string' ? value.message : ''
   const code = marketplaceErrorCode(detail)
-  // 带具体原因的中文说明优先于通用错误码说明。
+  // 带具体原因的业务说明优先于通用错误码说明。
   const message = readableText(raw.replace(/^MARKETPLACE_[A-Z_]+\s*[:：]?\s*/, ''))
   if (message) return message
-  if (code && businessMessages[code]) return businessMessages[code]
-  if (status === 401) return tv('登录已过期，请重新登录后继续。', 'Đăng nhập đã hết hạn, vui lòng đăng nhập lại để tiếp tục.')
-  if (status === 403) return tv('当前账号没有执行此操作的权限。', 'Tài khoản hiện tại không có quyền thực hiện thao tác này.')
-  if (status === 404) return tv('内容不存在或暂不可访问，请刷新后重试。', 'Nội dung không tồn tại hoặc tạm thời không truy cập được, vui lòng làm mới rồi thử lại.')
-  if (status === 409) return tv('内容状态已变化，请刷新后重新操作。', 'Trạng thái nội dung đã thay đổi, vui lòng làm mới rồi thao tác lại.')
-  if (status === 413) return tv('文件超过允许大小，请选择较小的文件。', 'Tệp vượt quá dung lượng cho phép, vui lòng chọn tệp nhỏ hơn.')
-  if (status === 422) return tv('请检查表单内容和必填字段。', 'Vui lòng kiểm tra nội dung biểu mẫu và các trường bắt buộc.')
-  if (status === 429) return tv('操作过于频繁，请稍后再试。', 'Thao tác quá thường xuyên, vui lòng thử lại sau.')
-  return tv('暂时无法完成操作，请稍后重试。', 'Tạm thời không thể hoàn tất thao tác, vui lòng thử lại sau.')
+  if (code && businessMessages[code]) return mt(businessMessages[code])
+  if (status === 401) return mt("登录已过期，请重新登录后继续。")
+  if (status === 403) return mt("当前账号没有执行此操作的权限。")
+  if (status === 404) return mt("内容不存在或暂不可访问，请刷新后重试。")
+  if (status === 409) return mt("内容状态已变化，请刷新后重新操作。")
+  if (status === 413) return mt("文件超过允许大小，请选择较小的文件。")
+  if (status === 422) return mt("请检查表单内容和必填字段。")
+  if (status === 429) return mt("操作过于频繁，请稍后再试。")
+  return mt("暂时无法完成操作，请稍后重试。")
 }

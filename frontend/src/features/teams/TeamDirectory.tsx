@@ -33,7 +33,7 @@ export default function TeamDirectory({ compact = false }: { compact?: boolean }
       <button type="button" className="pf-team-directory-new" onClick={() => setCreateOpen(true)}><span><Plus size={25} /></span><strong>{tv("组建你的创作团队", "Lập nhóm sáng tạo của bạn")}</strong><p>{tv("邀请伙伴，从第一个故事开始", "Mời cộng sự, bắt đầu từ câu chuyện đầu tiên")}</p></button>
     </div>
     <TeamPagination page={page} total={listing.meta.total} onChange={setPage} />
-    {!compact && <div className="pf-team-directory-foot"><UsersRound size={20} /><p><strong>{tv("个人创作与团队协作，自由切换。", "Sáng tạo cá nhân và cộng tác nhóm, chuyển đổi tự do.")}</strong><br />{tv("个人项目保持私有，团队项目由所有伙伴共同完成。团队消费由所有者个人余额支付。", "Dự án cá nhân giữ riêng tư, dự án nhóm do tất cả cộng sự cùng hoàn thành. Chi tiêu nhóm do số dư cá nhân của chủ sở hữu thanh toán.")}</p></div>}
+    {!compact && <div className="pf-team-directory-foot"><UsersRound size={20} /><p><strong>个人创作与团队协作，自由切换。</strong><br />个人项目保持私有，团队项目由所有伙伴共同完成。团队消费由所有者个人积分支付。</p></div>}
     <CreateTeamModal open={createOpen} onClose={() => setCreateOpen(false)} />
   </div>
 }

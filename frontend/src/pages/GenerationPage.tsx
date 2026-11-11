@@ -1,3 +1,4 @@
+import { points } from '../lib/points'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { ArrowRight, AudioLines, Check, Clock3, Download, Eye, ImagePlus, Layers, Loader2, Mic, Plus, RectangleHorizontal, RectangleVertical, Sparkles, Square, X } from 'lucide-react'
@@ -258,12 +259,12 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
           activeIndex={mentionActiveIndex} onActiveIndexChange={setMentionActiveIndex} onSelect={selectMention} onClose={() => setMention(null)} />}
         <div className="gen-submit-group">
           {kind === 'video' ? <div className="gen-estimate" aria-live="polite">
-            {estimateError ? <><strong>{text(tv('预计消耗暂不可用', 'Tạm thời không có chi phí dự kiến'), 'Estimate unavailable')}</strong><button type="button" onClick={retryEstimate}>{text(tv('重新计算', 'Tính lại'), 'Retry estimate')}</button></> : quote ? <>
-              <span>{text(tv('预计消耗', 'Chi phí dự kiến'), 'Estimated cost')} <strong>{quote.billing_enabled ? `¥${(quote.estimate_fen / 100).toFixed(2)}` : text(tv('本次不扣费', 'Lần này không trừ phí'), 'No charge')}</strong></span>
-              <small>{text(quote.billing_enabled ? quote.billing_mode === 'fixed_media' ? tv(`${duration.replace('s', '')} 秒 × 1 条 · 按当前价格结算`, `${duration.replace('s', '')} giây × 1 mục · quyết toán theo giá hiện tại`) : tv('按当前配置估算，最终按实际用量结算', 'Ước tính theo cấu hình hiện tại, cuối cùng quyết toán theo mức dùng thực tế') : tv('当前站点未开启计费', 'Site hiện tại chưa bật tính phí'), quote.billing_enabled ? quote.billing_mode === 'fixed_media' ? `${duration.replace('s', '')} sec × 1 video · Current pricing` : 'Estimated; settled on actual usage' : 'Billing is disabled on this site')}</small>
-            </> : <span>{text(estimating ? tv('正在计算预计消耗…', 'Đang tính chi phí dự kiến…') : referenceError || tv('选择模型和参数后显示预计消耗', 'Chọn model và tham số sẽ hiển thị chi phí dự kiến'), estimating ? 'Estimating cost…' : referenceError ? 'Add valid reference media to estimate cost' : 'Choose a model and settings to estimate cost')}</span>}
-          </div> : <span>{text(tv('生成记录自动保存', 'Bản ghi tạo tự động lưu'), 'Creations saved automatically')}</span>}
-          <button className="gen-primary" disabled={submitting || !prompt.trim() || invalidParameters || (kind === 'video' && Boolean(referenceError || !quote || estimating || estimateError))} type="submit">{submitting ? <Loader2 className="gen-spin" size={18} /> : <Icon size={18} />}{text(submitting ? tv('提交中', 'Đang gửi') : kind === 'audio' ? tv('生成语音', 'Tạo giọng nói') : tv('创作', 'Sáng tạo'), submitting ? 'Submitting' : 'Generate')}</button>
+            {estimateError ? <><strong>{text('预计消耗暂不可用', 'Estimate unavailable')}</strong><button type="button" onClick={retryEstimate}>{text('重新计算', 'Retry estimate')}</button></> : quote ? <>
+              <span>{text('预计消耗', 'Estimated cost')} <strong>{quote.billing_enabled ? points(quote.estimate_fen) : text('本次不扣费', 'No charge')}</strong></span>
+              <small>{text(quote.billing_enabled ? quote.billing_mode === 'fixed_media' ? `${duration.replace('s', '')} 秒 × 1 条 · 按当前价格结算` : '按当前配置估算，最终按实际用量结算' : '当前站点未开启计费', quote.billing_enabled ? quote.billing_mode === 'fixed_media' ? `${duration.replace('s', '')} sec × 1 video · Current pricing` : 'Estimated; settled on actual usage' : 'Billing is disabled on this site')}</small>
+            </> : <span>{text(estimating ? '正在计算预计消耗…' : referenceError || '选择模型和参数后显示预计消耗', estimating ? 'Estimating cost…' : referenceError ? 'Add valid reference media to estimate cost' : 'Choose a model and settings to estimate cost')}</span>}
+          </div> : <span>{text('生成记录自动保存', 'Creations saved automatically')}</span>}
+          <button className="gen-primary" disabled={submitting || !prompt.trim() || invalidParameters || (kind === 'video' && Boolean(referenceError || !quote || estimating || estimateError))} type="submit">{submitting ? <Loader2 className="gen-spin" size={18} /> : <Icon size={18} />}{text(submitting ? '提交中' : kind === 'audio' ? '生成语音' : '创作', submitting ? 'Submitting' : 'Generate')}</button>
         </div>
       </div>
     </form>

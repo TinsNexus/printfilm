@@ -18,8 +18,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useAdminDetailQuery } from "@/hooks/useAdminDetailQuery";
 import { formatAccountId } from "@/lib/admin-account";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
-import { fenToYuan } from "@/lib/utils";
-import { yuanInputToFen } from "@/lib/moneyInput";
+import { points, parsePoints } from "@/lib/points";
+
 import { Switch } from "@/components/ui/switch";
 
 type ListRes = { items: AdminUserRow[]; meta: PageMeta };
@@ -39,8 +39,8 @@ export function UsersPage() {
     role: "user",
     /** increase=增加 / decrease=减少 */
     balance_dir: "increase" as "increase" | "decrease",
-    /** 调账金额（元），空表示不改余额 */
-    balance_amount_yuan: "",
+    /** 调账积分，空表示不调整 */
+    balance_amount_points: "",
     balance_note: "",
   });
   const [saving, setSaving] = useState(false);
@@ -53,16 +53,16 @@ export function UsersPage() {
   const adjustmentToggleId = useId();
   const userDetail = useAdminDetailQuery("user");
 
-  const amountFen = yuanInputToFen(form.balance_amount_yuan);
+  const amountFen = parsePoints(form.balance_amount_points);
   const balanceAfterFen = editing && adjustBalance && amountFen !== null
     ? editing.balance_fen + (form.balance_dir === "decrease" ? -amountFen : amountFen)
     : editing?.balance_fen ?? 0;
-  const amountError = !adjustBalance ? "" : !form.balance_amount_yuan.trim()
-    ? "Vui lòng nhập số tiền cần điều chỉnh"
-    : amountFen === null ? "Vui lòng nhập số tiền hợp lệ, tối đa hai chữ số thập phân"
-    : amountFen === 0 ? "Số tiền điều chỉnh phải lớn hơn 0 tệ"
-    : !Number.isSafeInteger(balanceAfterFen) ? "Số tiền sau điều chỉnh quá lớn, vui lòng giảm số tiền điều chỉnh"
-    : balanceAfterFen < 0 ? "Số tiền giảm không được vượt quá số dư hiện tại"
+  const amountError = !adjustBalance ? "" : !form.balance_amount_points.trim()
+    ? "请输入需要调整的积分"
+    : amountFen === null ? "请输入有效的整数积分"
+    : amountFen === 0 ? "调整积分须大于 0"
+    : !Number.isSafeInteger(balanceAfterFen) ? "调整后积分过大，请减少调整数量"
+    : balanceAfterFen < 0 ? "减少积分不能超过当前积分"
     : "";
   const visibleAmountError = amountTouched || submitAttempted ? amountError : "";
   const roleChanged = editing !== null && form.role !== editing.role;
@@ -116,7 +116,7 @@ export function UsersPage() {
     setForm({
       role: user.role || "user",
       balance_dir: "increase",
-      balance_amount_yuan: "",
+      balance_amount_points: "",
       balance_note: "",
     });
   }
@@ -162,7 +162,7 @@ export function UsersPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader title="Quản lý người dùng" description="Tìm người dùng, điều chỉnh vai trò và số dư" />
+      <PageHeader title="用户管理" description="搜索用户，调整角色与积分" />
 
       <AdminFilterBar>
         <AdminSearchInput
@@ -202,15 +202,15 @@ export function UsersPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>ID tài khoản</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Biệt danh</TableHead>
-              <TableHead>Điện thoại</TableHead>
-              <TableHead>Số dư</TableHead>
-              <TableHead>Đóng băng</TableHead>
-              <TableHead>Vai trò</TableHead>
-              <TableHead>Thời gian đăng ký</TableHead>
-              <TableHead className="w-[140px]">Thao tác</TableHead>
+              <TableHead>账号 ID</TableHead>
+              <TableHead>邮箱</TableHead>
+              <TableHead>昵称</TableHead>
+              <TableHead>手机</TableHead>
+              <TableHead>积分</TableHead>
+              <TableHead>冻结</TableHead>
+              <TableHead>角色</TableHead>
+              <TableHead>注册时间</TableHead>
+              <TableHead className="w-[140px]">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -220,8 +220,8 @@ export function UsersPage() {
                 <TableCell className="font-medium">{u.email}</TableCell>
                 <TableCell>{u.nickname || "—"}</TableCell>
                 <TableCell className="text-xs">{u.phone || "—"}</TableCell>
-                <TableCell className="tabular-nums">¥{fenToYuan(u.balance_fen)}</TableCell>
-                <TableCell className="tabular-nums">¥{fenToYuan(u.frozen_fen)}</TableCell>
+                <TableCell className="tabular-nums">{points(u.balance_fen)}</TableCell>
+                <TableCell className="tabular-nums">{points(u.frozen_fen)}</TableCell>
                 <TableCell>
                   <Badge variant={u.role === "admin" ? "success" : "secondary"}>{u.role === "admin" ? "Quản trị viên" : "Người dùng thường"}</Badge>
                 </TableCell>
@@ -298,8 +298,8 @@ export function UsersPage() {
       >
         <form id={editFormId} noValidate onSubmit={(event) => { event.preventDefault(); void saveEdit(); }} className="space-y-6">
           <div className="admin-form-summary grid gap-4 rounded-xl border border-[var(--admin-border)] bg-[#f7f9f4] p-4 sm:grid-cols-2">
-            <div className="admin-form-summary-item"><div className="text-xs text-[var(--admin-muted)]">Số dư tài khoản hiện tại</div><div className="mt-1.5 text-2xl font-semibold tabular-nums text-[var(--admin-text)]">¥{fenToYuan(editing?.balance_fen ?? 0)}</div></div>
-            <div className="admin-form-summary-item"><div className="text-xs text-[var(--admin-muted)]">Số tiền đã đóng băng</div><div className="mt-1.5 text-lg font-medium tabular-nums text-[var(--admin-text)]">¥{fenToYuan(editing?.frozen_fen ?? 0)}</div><p className="mt-1 text-xs leading-relaxed text-[var(--admin-muted)]">Điều chỉnh sẽ không thay đổi số tiền đã đóng băng của tác vụ</p></div>
+            <div className="admin-form-summary-item"><div className="text-xs text-[var(--admin-muted)]">当前账户积分</div><div className="mt-1.5 text-2xl font-semibold tabular-nums text-[var(--admin-text)]">{points(editing?.balance_fen ?? 0)}</div></div>
+            <div className="admin-form-summary-item"><div className="text-xs text-[var(--admin-muted)]">已冻结积分</div><div className="mt-1.5 text-lg font-medium tabular-nums text-[var(--admin-text)]">{points(editing?.frozen_fen ?? 0)}</div><p className="mt-1 text-xs leading-relaxed text-[var(--admin-muted)]">调账不会修改任务已冻结的积分</p></div>
           </div>
           <fieldset disabled={saving} className="admin-form-section min-w-0 space-y-4">
             <legend className="admin-form-section-title mb-1 text-sm font-semibold text-[var(--admin-text)]">Quyền tài khoản</legend>
@@ -311,26 +311,26 @@ export function UsersPage() {
           </fieldset>
           <section className="admin-form-section space-y-4 border-t border-[var(--admin-border)] pt-5">
             <div className="flex items-start justify-between gap-4">
-              <div><label htmlFor={adjustmentToggleId} className="text-sm font-semibold text-[var(--admin-text)]">Điều chỉnh số dư tài khoản</label><p className="mt-1 text-xs leading-relaxed text-[var(--admin-muted)]">Bật khi cần; nếu chỉ sửa vai trò thì số dư tài khoản giữ nguyên.</p></div>
+              <div><label htmlFor={adjustmentToggleId} className="text-sm font-semibold text-[var(--admin-text)]">调整账户积分</label><p className="mt-1 text-xs leading-relaxed text-[var(--admin-muted)]">按需开启；仅修改角色时，账户积分保持不变。</p></div>
               <Switch id={adjustmentToggleId} checked={adjustBalance} disabled={saving} onCheckedChange={(checked) => { setAdjustBalance(checked); setSaveError(""); }} />
             </div>
             {adjustBalance ? <fieldset disabled={saving} className="min-w-0 space-y-4">
               <div className="admin-form-grid admin-form-grid--2">
                 <AdminField label="Hướng điều chỉnh" required>
                   <Select value={form.balance_dir} disabled={saving} onChange={(e) => { setSaveError(""); setForm((f) => ({ ...f, balance_dir: e.target.value === "decrease" ? "decrease" : "increase" })); }}>
-                    <option value="increase">Tăng số dư</option><option value="decrease">Giảm số dư</option>
+                    <option value="increase">增加积分</option><option value="decrease">减少积分</option>
                   </Select>
                 </AdminField>
-                <AdminField label="Số tiền điều chỉnh (tệ)" required hint="Lớn hơn 0, tối đa hai chữ số thập phân." error={visibleAmountError}>
-                  <Input inputMode="decimal" value={form.balance_amount_yuan} disabled={saving} placeholder="Ví dụ 100.00" onBlur={() => setAmountTouched(true)} onChange={(e) => { setSaveError(""); setForm((f) => ({ ...f, balance_amount_yuan: e.target.value })); }} />
+                <AdminField label="调整积分" required hint="大于 0 的整数积分。" error={visibleAmountError}>
+                  <Input inputMode="numeric" value={form.balance_amount_points} disabled={saving} placeholder="例如 10000" onBlur={() => setAmountTouched(true)} onChange={(e) => { setSaveError(""); setForm((f) => ({ ...f, balance_amount_points: e.target.value })); }} />
                 </AdminField>
               </div>
               <AdminField label="Ghi chú điều chỉnh" optional hint="Ghi chú sẽ được ghi vào biến động tài khoản, thuận tiện cho việc đối chiếu sau này.">
                 <Input value={form.balance_note} disabled={saving} onChange={(e) => setForm((f) => ({ ...f, balance_note: e.target.value }))} placeholder="Ví dụ: cấp bù thưởng sự kiện, thu hồi hoàn tiền" />
               </AdminField>
               {!amountError && amountFen !== null ? <div className="admin-form-preview rounded-xl border border-[#d5e6d1] bg-[var(--admin-accent-soft)] p-4" aria-live="polite">
-                <div className="mb-2 flex items-center gap-2 text-xs font-medium text-[var(--admin-forest)]"><Wallet className="h-4 w-4" aria-hidden="true" />Số dư tài khoản sau khi lưu</div>
-                <div className="flex flex-wrap items-center gap-3 text-lg font-semibold tabular-nums text-[var(--admin-text)]"><span className="text-[var(--admin-muted)]">¥{fenToYuan(editing?.balance_fen ?? 0)}</span><ArrowRight className="h-4 w-4 text-[var(--admin-muted)]" aria-hidden="true" /><span>¥{fenToYuan(balanceAfterFen)}</span><span className="text-xs font-medium text-[var(--admin-forest)]">{form.balance_dir === "decrease" ? "Giảm" : "Tăng"} ¥{fenToYuan(amountFen)}</span></div>
+                <div className="mb-2 flex items-center gap-2 text-xs font-medium text-[var(--admin-forest)]"><Wallet className="h-4 w-4" aria-hidden="true" />保存后的账户积分</div>
+                <div className="flex flex-wrap items-center gap-3 text-lg font-semibold tabular-nums text-[var(--admin-text)]"><span className="text-[var(--admin-muted)]">{points(editing?.balance_fen ?? 0)}</span><ArrowRight className="h-4 w-4 text-[var(--admin-muted)]" aria-hidden="true" /><span>{points(balanceAfterFen)}</span><span className="text-xs font-medium text-[var(--admin-forest)]">{form.balance_dir === "decrease" ? "减少" : "增加"} {points(amountFen)}</span></div>
               </div> : null}
             </fieldset> : null}
           </section>

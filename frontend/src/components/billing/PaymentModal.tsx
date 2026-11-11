@@ -1,3 +1,4 @@
+import { points } from '../../lib/points'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
 import Modal from '../ui/Modal'
@@ -232,7 +233,7 @@ export default function PaymentModal({ open, checkout, onClose, onPaid, teamId }
 
         <div className="pf-pay-sku-box">
           <strong>{checkout.sku_name}</strong>
-          <span>{tv("到账", "Tiền về")} {cnyAmountDisplay(checkout.credit_fen)}</span>
+          <span>到账 {points(checkout.credit_fen)}</span>
         </div>
 
         <div className="pf-pay-amount">
@@ -270,7 +271,7 @@ export default function PaymentModal({ open, checkout, onClose, onPaid, teamId }
           <p className={`pf-pay-wait${status === 'paid' ? ' is-paid' : ''}`}>
             <span className="pf-pay-dot" aria-hidden />
             {status === 'paid'
-              ? tv('支付成功，余额即将更新', 'Thanh toán thành công, số dư sắp được cập nhật')
+              ? '支付成功，积分即将更新'
               : status === 'expired'
                 ? tv('订单已超时', 'Đơn hàng đã hết thời gian')
                 : tv('等待支付结果，请勿关闭页面', 'Đang chờ kết quả thanh toán, vui lòng không đóng trang')}

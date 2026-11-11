@@ -186,6 +186,13 @@ def _ensure_maintenance_loop() -> None:
 
 # 每项维护独占短事务；超时退出时由 session 上下文回滚，释放已持有的锁。
 async def _run_maintenance_operation(name: str) -> None:
+    from app.services.billing.wallet_cutover import runtime_state as state, sync_runtime
+    async with AsyncSessionLocal() as cutover_db:
+        value = await state(cutover_db)
+        await sync_runtime(cutover_db, value)
+        if value.get("paused") and name == "sequential_queue":
+            return
+    from app.services.billing.unified_ai import reconcile_refunded_task_notices
     if name == "orphan_recovery":
         await recover_orphaned_tasks()
         return
@@ -193,6 +200,7 @@ async def _run_maintenance_operation(name: str) -> None:
         "sequential_queue": reconcile_sequential_batches,
         "stale_fragments": reconcile_stale_pending_tasks,
         "billing_reconcile": reconcile_terminal_frozen_tasks,
+        "wallet_refunds": reconcile_refunded_task_notices,
     }
     async with AsyncSessionLocal() as db:
         await operations[name](db)
@@ -201,7 +209,7 @@ async def _run_maintenance_operation(name: str) -> None:
 # 低频维护与任务领取隔离，单项锁等待不得阻塞新任务和取消请求。
 async def _maintenance_loop() -> None:
     while not _stop_event.is_set():
-        for name in ("orphan_recovery", "sequential_queue", "stale_fragments", "billing_reconcile"):
+        for name in ("orphan_recovery", "sequential_queue", "stale_fragments", "billing_reconcile", "wallet_refunds"):
             try:
                 await asyncio.wait_for(_run_maintenance_operation(name), timeout=_MAINTENANCE_TIMEOUT_SEC)
             except asyncio.CancelledError:
@@ -216,6 +224,12 @@ async def _maintenance_loop() -> None:
 
 # 扫描并租约抢占可执行任务。
 async def _tick() -> None:
+    # A cutover revision is persisted; other API/worker processes must not keep
+    # using pre-migration billing settings after maintenance is released.
+    from app.services.billing.wallet_cutover import runtime_state as state, sync_runtime
+    async with AsyncSessionLocal() as cutover_db:
+        cutover_state = await state(cutover_db)
+        await sync_runtime(cutover_db, cutover_state)
     now = datetime.now(UTC)
     for task_id, job in list(_running_jobs.items()):
         if job.done():
@@ -225,6 +239,8 @@ async def _tick() -> None:
         if job.done():
             _cancel_jobs.pop(task_id, None)
     await _claim_cancel_requests()
+    if cutover_state.get("paused"):
+        return
     # Conversations advance from persisted, settled stage results, including after restarts.
     try:
         from app.services.creation import reconcile_creation_sessions

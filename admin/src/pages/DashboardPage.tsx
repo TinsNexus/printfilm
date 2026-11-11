@@ -1,3 +1,4 @@
+import { points } from "@/lib/points";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -132,9 +133,9 @@ export function DashboardPage() {
           tone="blue"
         />
         <DashboardKpiCard
-          label="Phí AI tháng này"
-          value={kpiReady ? `¥${fenToYuan(stats!.usage_charge_month_fen ?? 0)}` : kpiPlaceholder}
-          hint={kpiReady ? `Hôm nay ¥${fenToYuan(stats!.usage_charge_today_fen ?? 0)}` : "Phí trừ hôm nay"}
+          label="本月 AI 扣费"
+          value={kpiReady ? `${points(stats!.usage_charge_month_fen ?? 0)}` : kpiPlaceholder}
+          hint={kpiReady ? `今日 ${points(stats!.usage_charge_today_fen ?? 0)}` : "今日扣费"}
           icon={Zap}
           tone="purple"
         />

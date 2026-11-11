@@ -1,3 +1,4 @@
+import { points } from "@/lib/points";
 import { ArrowLeft, RefreshCw, UsersRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
@@ -13,7 +14,7 @@ import { teamDate } from "@/lib/teamLabels";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAdminTeamQuery } from "@/hooks/useAdminTeamQuery";
-import { cn, fenToYuan } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 /** 团队二级详情：基本资料、成员与可追溯的团队消费记录。 */
 export function TeamDetailPage() {
@@ -35,11 +36,11 @@ export function TeamDetailPage() {
         <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-3"><h1 className="text-xl font-semibold">{team.name}</h1><Badge variant="info">Nhóm #{team.id}</Badge></div><p className="mt-2 break-words text-sm text-[var(--admin-muted)]">{team.description || "Chưa có giới thiệu nhóm"}</p><p className="mt-3 break-words text-xs text-[var(--admin-muted)]">Chủ sở hữu:{team.owner_nickname || "—"} · {team.owner_email} · #{team.owner_user_id}<br />Tạo lúc {teamDate(team.created_at)}</p></div>
       </div>
       <AdminListStats items={[
-        { label: "Thành viên đang trong nhóm", value: team.member_count, hint: `${team.project_count} dự án nhóm` },
-        { label: "Số dư cá nhân của chủ sở hữu", value: `¥${fenToYuan(team.balance_fen)}`, hint: `Đóng băng ¥${fenToYuan(team.frozen_fen)}` },
-        { label: "Hạn mức hằng tháng của nhóm", value: team.monthly_limit_fen === null ? "Không giới hạn" : "¥" + fenToYuan(team.monthly_limit_fen), hint: "Giữ chỗ ¥" + fenToYuan(team.month_reserved_fen) },
-        { label: "Đã chi tháng này", value: `¥${fenToYuan(team.month_spent_fen)}`, hint: `${team.period} · Tháng dương lịch Thượng Hải` },
-        { label: "Tổng đã chi", value: `¥${fenToYuan(team.total_spent_fen)}`, hint: "Số tiền đã quyết toán, gồm cả thành viên trong lịch sử" },
+        { label: "在队成员", value: team.member_count, hint: `${team.project_count} 个团队项目` },
+        { label: "所有者个人积分", value: points(team.balance_fen), hint: `冻结 ${points(team.frozen_fen)}` },
+        { label: "团队月度上限", value: team.monthly_limit_fen === null ? "不限额" : points(team.monthly_limit_fen), hint: "预留 " + points(team.month_reserved_fen) },
+        { label: "本月已消费", value: points(team.month_spent_fen), hint: `${team.period} · 上海自然月` },
+        { label: "累计已消费", value: points(team.total_spent_fen), hint: "已结算金额，包含历史成员" },
       ]} />
       <nav className="flex gap-2 border-b border-[var(--admin-border)] pb-3" aria-label="Điều hướng chi tiết nhóm">
         {([['members', 'Thành viên nhóm'], ['usage', 'Bản ghi chi tiêu của nhóm'], ['wallet', 'Biến động ví nhóm lịch sử']] as const).map(([value, label]) => <Button key={value} type="button" variant={tab === value ? "soft" : "ghost"} aria-current={tab === value ? "page" : undefined} className={cn(tab === value && "font-bold")} onClick={() => { const next = new URLSearchParams(params); next.set("tab", value); if (value !== "usage") next.delete("member_id"); setParams(next); }}>{label}</Button>)}

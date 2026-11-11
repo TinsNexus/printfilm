@@ -1,3 +1,4 @@
+import { points } from '../../lib/points.ts'
 const messages: Record<string, string> = {
   MARKETPLACE_STORAGE_UNAVAILABLE: 'Dịch vụ tệp chưa được cấu hình, vui lòng kiểm tra cài đặt dịch vụ tệp trong trang quản trị.',
   MARKETPLACE_PAYMENT_UNAVAILABLE: 'Dịch vụ thanh toán tạm thời không khả dụng, vui lòng kiểm tra cấu hình thanh toán rồi thử lại.',
@@ -28,7 +29,8 @@ function readableText(value: string) {
 }
 
 function boundary(value: unknown, field: string): string {
-  if ((typeof value !== 'number' && typeof value !== 'string') || value === '' || !Number.isFinite(Number(value))) return 'Phạm vi cho phép'
+  if ((typeof value !== 'number' && typeof value !== 'string') || value === '' || !Number.isFinite(Number(value))) return '允许范围'
+  if (field === 'unlock_price_fen') return points(Number(value))
   return field.endsWith('_fen') ? `¥${(Number(value) / 100).toFixed(2)}` : String(value)
 }
 

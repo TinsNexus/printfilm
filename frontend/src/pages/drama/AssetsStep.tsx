@@ -1,3 +1,4 @@
+import { points } from '../../lib/points'
 /** 资产库步骤：首次无资产时自动 seed，分类 Tab + 生图队列 + 角色音色绑定 */
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -314,20 +315,16 @@ export function AssetsStep({ projectId, onError }: AssetsStepProps) {
     }
     const pre = await ensureImageGenBalance(targets.length)
     if (!pre) return
-    const unitYuan = pre.unit_estimate_yuan ?? pre.unit_estimate_fen / 100
-    const totalYuan = pre.requested_total_yuan ?? pre.requested_total_fen / 100
-    const balanceYuan = pre.balance_yuan ?? (typeof pre.balance_fen === 'number' ? pre.balance_fen / 100 : undefined)
-    const balanceText = balanceYuan === undefined ? tv('消费按团队余额与本人额度校验', 'Chi tiêu được kiểm tra theo số dư nhóm và hạn mức của bạn') : tv(`当前余额 ¥${balanceYuan.toFixed(2)}`, `Số dư hiện tại ¥${balanceYuan.toFixed(2)}`)
+    const unitYuan = pre.unit_estimate_fen
+    const totalYuan = pre.requested_total_fen
+    const balanceYuan = pre.balance_fen
+    const balanceText = balanceYuan === undefined ? '消费按团队余额与本人额度校验' : `当前可用 ${points(balanceYuan)}`
     const ok = await dialog.confirm({
       title: tv('批量生成形象', 'Tạo hình tượng hàng loạt'),
       message:
-        tv(`将为当前「${ASSET_TABS.find((t) => t.key === tab)?.label || '分类'}」下 ${targets.length} 个未出图资产开始生图（并行提交，不排队）。\n\n`, `Sẽ bắt đầu tạo ảnh cho ${targets.length} tài sản chưa có ảnh trong “${ASSET_TABS.find((t) => t.key === tab)?.label || '分类'}” hiện tại (gửi song song, không xếp hàng).
-
-`) +
-        tv(`每张预扣约 ¥${unitYuan.toFixed(2)}，本次合计约 ¥${totalYuan.toFixed(2)}（${balanceText}；结束后按实际上游用量多退少补）。\n\n是否继续？`, `Mỗi ảnh giữ trước khoảng ¥${unitYuan.toFixed(2)}, lần này tổng cộng khoảng ¥${totalYuan.toFixed(2)} (${balanceText}; sau khi kết thúc sẽ hoàn hoặc thu bù theo mức dùng upstream thực tế).
-
-Tiếp tục không?`),
-      confirmText: tv('开始生成', 'Bắt đầu tạo'),
+        `将为当前「${ASSET_TABS.find((t) => t.key === tab)?.label || '分类'}」下 ${targets.length} 个未出图资产开始生图（并行提交，不排队）。\n\n` +
+        `每张预扣约 ${points(unitYuan)}，本次合计约 ${points(totalYuan)}（${balanceText}；结束后按实际上游用量多退少补）。\n\n是否继续？`,
+      confirmText: '开始生成',
     })
     if (!ok) return
     setBatchBusy(true)

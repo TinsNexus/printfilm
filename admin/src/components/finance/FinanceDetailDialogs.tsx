@@ -1,3 +1,4 @@
+import { points } from "@/lib/points";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import type { AdminLedger, AdminOrder } from "@/api/client";
@@ -5,7 +6,7 @@ import { AdminDetailMeta, AdminDetailSection } from "@/components/admin/AdminDet
 import { AdminEntityLink } from "@/components/admin/AdminEntityLink";
 import { AdminModal } from "@/components/admin/AdminModal";
 import { Button } from "@/components/ui/button";
-import { fenToYuan } from "@/lib/utils";
+
 import { orderPaymentLabel } from "@/lib/orderPayment";
 import { ledgerKindLabel, orderStatusLabel, payTypeLabel } from "@/lib/statusLabels";
 
@@ -79,12 +80,12 @@ export function OrderDetailDialog({
                 ),
               },
               { label: "SKU", value: orderDetail.sku_id },
-              { label: "Số tiền thanh toán", value: orderPaymentLabel(orderDetail) },
-              { label: "Ghi có (CNY)", value: `¥${fenToYuan(orderDetail.credit_fen)}` },
-              ...(orderDetail.payment_currency && orderDetail.payment_currency !== "cny" ? [{ label: "Tỷ giá đơn hàng", value: `1 ${orderDetail.payment_currency.toUpperCase()} = ${orderDetail.payment_exchange_rate || "—"} CNY` }] : []),
-              { label: "Phương thức thanh toán", value: payTypeLabel(orderDetail.pay_type) },
-              { label: "Trạng thái", value: orderStatusLabel(orderDetail.status) },
-              { label: "Mã đơn kênh", value: orderDetail.trade_no || "—" },
+              { label: "支付金额", value: orderPaymentLabel(orderDetail) },
+              { label: "到账积分", value: points(orderDetail.credit_fen) },
+              ...(orderDetail.payment_currency && orderDetail.payment_currency !== "cny" ? [{ label: "订单汇率", value: `1 ${orderDetail.payment_currency.toUpperCase()} = ${orderDetail.payment_exchange_rate || "—"} CNY` }] : []),
+              { label: "支付方式", value: payTypeLabel(orderDetail.pay_type) },
+              { label: "状态", value: orderStatusLabel(orderDetail.status) },
+              { label: "渠道单号", value: orderDetail.trade_no || "—" },
               {
                 label: "Thời gian thanh toán",
                 value: orderDetail.paid_at ? new Date(orderDetail.paid_at).toLocaleString() : "—",
@@ -128,11 +129,11 @@ export function LedgerDetailDialog({
                   />
                 ),
               },
-              { label: "Loại", value: ledgerKindLabel(ledgerDetail.kind) },
-              { label: "Biến động", value: `¥${fenToYuan(ledgerDetail.delta_fen)}` },
-              { label: "Số dư sau", value: `¥${fenToYuan(ledgerDetail.balance_after)}` },
-              { label: "Liên quan", value: <LedgerRefLink row={ledgerDetail} /> },
-              { label: "Ghi chú", value: ledgerDetail.note || "—" },
+              { label: "类型", value: ledgerKindLabel(ledgerDetail.kind) },
+              { label: "变动", value: points(ledgerDetail.delta_fen) },
+              { label: "剩余积分", value: points(ledgerDetail.balance_after) },
+              { label: "关联", value: <LedgerRefLink row={ledgerDetail} /> },
+              { label: "备注", value: ledgerDetail.note || "—" },
               {
                 label: "Thời gian",
                 value: new Date(ledgerDetail.created_at).toLocaleString(),

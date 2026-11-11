@@ -1,3 +1,5 @@
+import { marketText as mt } from '../../features/marketplace/translate'
+import { useMarketplaceLocale } from '../../features/marketplace/useMarketplaceLocale'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { tv } from '../../i18n/tv'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
@@ -127,6 +129,7 @@ function isProjectBusy(project: Project | null): boolean {
 }
 
 export default function StoryboardPage() {
+  useMarketplaceLocale()
   const { id } = useParams()
   const projectId = Number(id)
   const nav = useNavigate()
@@ -1048,7 +1051,7 @@ title={tv("用当前镜头重新拼接", "Ghép lại bằng các cảnh quay hi
                       {tv("预览成片", "Xem trước phim")}
                     </button>
                     <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" onClick={() => nav(withReturn(`/marketplace/from-printfilm?project=${project.id}`, `${location.pathname}${location.search}`))}>
-                      {tv("发布到数字资产市场", "Đăng lên chợ tài sản số")}
+                      {mt("发布到数字资产市场")}
                     </button>
                   </>
                 ) : (

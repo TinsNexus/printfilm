@@ -1,3 +1,5 @@
+import { marketText as mt } from '../../features/marketplace/translate'
+import { useMarketplaceLocale } from '../../features/marketplace/useMarketplaceLocale'
 /** 分集编辑右侧：分段视频预览 + 入口打开全屏分镜画布 */
 import { useState } from 'react'
 import { Download, Loader2 } from 'lucide-react'
@@ -57,6 +59,7 @@ export function EpisodeEditSidePane({
   onClearPreview,
   onActivatePreview,
 }: Props) {
+  useMarketplaceLocale()
   const hasSelection = playingFragmentId !== null
   /*
    * composeBusy 本地拼接中
@@ -133,7 +136,7 @@ export function EpisodeEditSidePane({
             className="drama-ep-compose-btn drama-ep-compose-btn--header"
             onClick={() => setPublishOpen(true)}
           >
-            {tv("发布到数字资产市场", "Đăng lên chợ tài sản số")}
+            {mt("发布到数字资产市场")}
           </button>
         ) : null}
       </div>

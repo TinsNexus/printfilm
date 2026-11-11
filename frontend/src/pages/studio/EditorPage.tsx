@@ -1,3 +1,5 @@
+import { marketText as mt } from '../../features/marketplace/translate'
+import { useMarketplaceLocale } from '../../features/marketplace/useMarketplaceLocale'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../../api'
@@ -13,6 +15,7 @@ import { tv } from '../../i18n/tv'
 const PANEL_TABS = [tv('文案', 'Lời dẫn'), tv('画面', 'Hình ảnh'), tv('配音', 'Lồng tiếng'), tv('转场', 'Chuyển cảnh')] as const
 
 export default function EditorPage() {
+  useMarketplaceLocale()
   const { id } = useParams()
   const projectId = Number(id)
   const nav = useNavigate()
@@ -266,7 +269,7 @@ export default function EditorPage() {
             disabled={!project.final_video_url}
             onClick={() => nav(withReturn(`/marketplace/from-printfilm?project=${project.id}`, `${location.pathname}${location.search}`))}
           >
-            {tv("发布到数字资产市场", "Đăng lên chợ tài sản số")}
+            {mt("发布到数字资产市场")}
           </button>
         </div>
       </div>

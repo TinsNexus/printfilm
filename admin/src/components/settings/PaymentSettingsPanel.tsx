@@ -8,6 +8,9 @@ import { Button } from "@/components/ui/button";
 import { useAdminModelSettings } from "@/hooks/useAdminModelSettings";
 import { stripeRateInputError, stripeSettingsPatch, stripeSettingsReady } from "@/lib/stripeSettings";
 import { MediaPriceSettings } from "./MediaPriceSettings";
+import { AppleProductSettings } from "./AppleProductSettings";
+import { AppleConnectionSettings } from "./AppleConnectionSettings";
+import { WalletMigrationSettings } from "./WalletMigrationSettings";
 
 const RATE_FIELDS = [
   { key: "billing_llm_per_m", label: "LLM văn bản", unit: "tệ / triệu Token" },
@@ -76,6 +79,8 @@ export function PaymentSettingsPanel() {
       epay_notify_url: form.epay_notify_url.trim(),
       epay_return_url: form.epay_return_url.trim(),
       billing_enabled: form.billing_enabled,
+      unified_wallet_enabled: form.unified_wallet_enabled,
+      wallet_environment: form.wallet_environment,
       billing_markup: 1.0,
       billing_estimate_buffer: form.billing_estimate_buffer,
       billing_seedance_video0: form.billing_seedance_video0,
@@ -124,7 +129,7 @@ export function PaymentSettingsPanel() {
   const smtpReady = form.smtp_enabled && Boolean(form.smtp_host.trim() && form.smtp_from.trim() && (!smtpNeedsPassword || hasSmtpPassword));
   const moneyHint = (key: NumericKey) => {
     const raw = numericDrafts[key] ?? form[key];
-    return raw === "" ? "Vui lòng nhập số tiền theo đơn vị xu." : `Số tiền hiện tại ¥${(Number(raw) / 100).toFixed(2)}; 100 xu = 1 tệ.`;
+    return raw === "" ? "请输入整数积分。" : `当前 ${Number(raw).toLocaleString()} 积分；100 积分 = 1 元额度。`;
   };
 
   return <div className="space-y-5">
@@ -166,6 +171,7 @@ export function PaymentSettingsPanel() {
           <div><strong>Bật thanh toán Stripe</strong><span>Sau khi bật và lưu cấu hình đầy đủ, người dùng có thể chọn thanh toán bằng thẻ ngân hàng ở trang nạp tiền.</span></div>
           <Switch aria-label="Bật thanh toán Stripe" checked={Boolean(form.stripe_enabled)} onCheckedChange={(value) => patchField("stripe_enabled", value)} />
         </div>
+
         <div className="settings-field-grid mt-5">
           <LabeledControl label="Tiền tệ thu của Stripe" hint="Tự động chọn theo ngôn ngữ website hiện tại của người dùng; Alipay và WeChat Pay vẫn dùng nhân dân tệ.">
             <input className="settings-input" readOnly value="Tiếng Trung CNY / tiếng Anh USD (theo ngôn ngữ website)" />
@@ -199,11 +205,16 @@ export function PaymentSettingsPanel() {
 
       <SettingsPanel title="Số dư và tính phí" description="Kiểm soát trừ phí khi tạo và quà tặng người dùng mới. Giá hình ảnh và video được phát hành riêng bên dưới, không lưu cùng biểu mẫu này.">
         <div className="settings-toggle-row">
-          <div><strong>Bật tính phí theo số dư</strong><span>Khi bật sẽ trừ số dư người dùng theo quy tắc; khi tắt, tạo nội dung không trừ số dư.</span></div>
-          <Switch aria-label="Bật tính phí theo số dư" checked={form.billing_enabled} onCheckedChange={(value) => patchField("billing_enabled", value)} />
+          <div><strong>启用余额计费</strong><span>开启后按规则扣除用户余额；关闭后生成不扣余额。</span></div>
+          <Switch aria-label="启用余额计费" checked={form.billing_enabled} onCheckedChange={(value) => patchField("billing_enabled", value)} />
+          <label>启用统一钱包（须先核对历史资金来源）<Switch aria-label="启用统一钱包" checked={form.unified_wallet_enabled} onCheckedChange={(value) => patchField("unified_wallet_enabled", value)} /></label>
         </div>
+        <p className="settings-panel-footnote">首次启用请使用下方“统一钱包迁移与核对”；此开关不执行迁移。已有统一钱包账户时不能切回旧记账。</p>
+        <LabeledControl label="统一钱包环境" hint="独立于 Apple 交易环境。正式站使用 Production；Sandbox 仅用于独立测试库。已有钱包账户或余额后禁止直接切换，不会转换历史资金。">
+          <select className="settings-input" value={form.wallet_environment} onChange={event => patchField("wallet_environment", event.target.value as "Production" | "Sandbox")}><option value="Production">Production（正式资金）</option><option value="Sandbox">Sandbox（独立测试资金）</option></select>
+        </LabeledControl>
         <div className="settings-field-grid mt-5">
-          <LabeledControl label="Số tiền tặng khi đăng ký (xu)" required hint={moneyHint("billing_signup_grant_fen")}>
+          <LabeledControl label="注册赠送积分" required hint={moneyHint("billing_signup_grant_fen")}>
             <input className="settings-input" type="number" min={0} step={1} placeholder="0" {...numericControl("billing_signup_grant_fen")} />
           </LabeledControl>
         </div>
@@ -239,7 +250,7 @@ export function PaymentSettingsPanel() {
           <Switch aria-label="Cửa sổ nhắc chi tiêu cho người dùng" checked={form.billing_user_alert_enabled} disabled={!form.billing_enabled} onCheckedChange={(value) => patchField("billing_user_alert_enabled", value)} />
         </div>
         <div className="settings-field-grid mt-5">
-          <LabeledControl label="Khoảng nhắc chi tiêu (xu)" required={form.billing_enabled && form.billing_user_alert_enabled} hint={form.billing_enabled ? moneyHint("billing_user_alert_interval_fen") : "Cần bật tính phí theo số dư trước; cài đặt nhắc cũ được giữ nguyên."}>
+          <LabeledControl label="消费提醒间隔（积分）" required={form.billing_enabled && form.billing_user_alert_enabled} hint={form.billing_enabled ? moneyHint("billing_user_alert_interval_fen") : "需先启用余额计费；原提醒设置保留。"}>
             <input className="settings-input" type="number" min={1} step={1} disabled={!form.billing_enabled || !form.billing_user_alert_enabled} {...numericControl("billing_user_alert_interval_fen")} />
           </LabeledControl>
         </div>
@@ -279,6 +290,9 @@ export function PaymentSettingsPanel() {
         </SettingsPanel>
       </details>
     </SettingsTabShell>
+    <WalletMigrationSettings />
+    <AppleConnectionSettings />
+    <AppleProductSettings />
     <MediaPriceSettings />
   </div>;
 }

@@ -1,4 +1,5 @@
 import { workspaceScope } from './features/teams/workspaceScope'
+import { createAccountRequests } from './api/account'
 import { API_BASE, createJsonRequester, requestResponse, uploadFile } from './api/client'
 import { apiErrorMessage } from './api/http'
 import { curatedCreationTemplates } from './lib/creationTemplates'
@@ -7,6 +8,8 @@ import { tv } from './i18n/tv'
 
 /** 科普、账号和计费 API 共用 JSON 传输层。 */
 const request = createJsonRequester()
+// 注销沿用统一的鉴权请求器，不在组件内另建 fetch 或处理令牌。
+const accountRequests = createAccountRequests(request)
 
 export type PipelineMode = 'full' | 'image_text'
 
@@ -266,6 +269,9 @@ export type UsageChargeList = {
 }
 
 export type Wallet = {
+  debt_fen?: number
+  spendable_fen?: number
+  pending_commitment_fen?: number
   balance_fen: number
   frozen_fen: number
   balance_yuan: number
@@ -351,6 +357,7 @@ export const api = {
       body: JSON.stringify(body),
     })
   },
+  closeAccount: accountRequests.closeAccount,
   /** 上传用户头像并返回更新后的用户资料。 */
   uploadAvatar(file: File) {
     return uploadFile<User>('/api/auth/avatar', file, (response, detail) => {
@@ -547,7 +554,7 @@ export const api = {
     return request<Work[]>('/api/works')
   },
   wallet() {
-    return request<Wallet>('/api/billing/wallet')
+    return request<Wallet>('/api/billing/wallet?view=production')
   },
   billingSkus(language: 'zh' | 'en' = 'zh') {
     return request<{ skus: BillingSku[]; pay_types: string[]; markup: number; stripe_unavailable_reason?: string | null }>(`/api/billing/skus?language=${language}`)

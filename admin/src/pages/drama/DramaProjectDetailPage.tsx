@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { dramaAssetTypeLabel, formatDramaGenerationStatus } from "@/lib/dramaLabels";
 import { taskStatusLabel, taskTypeLabel } from "@/lib/statusLabels";
-import { fenToYuan } from "@/lib/utils";
+import { points } from "@/lib/points";
 
 const TABS = ["overview", "episodes", "assets", "tasks"] as const;
 type TabKey = (typeof TABS)[number];
@@ -134,8 +134,8 @@ export function DramaProjectDetailPage() {
           <AdminDetailSection title="Tổng hợp chi phí">
             <AdminDetailStatGrid
               items={[
-                { label: "Trừ phí", value: `¥${fenToYuan(usage?.charge_fen ?? detail.charge_fen ?? 0)}` },
-                { label: "Lượt gọi", value: usage?.calls ?? 0 },
+                { label: "扣费", value: `${points(usage?.charge_fen ?? detail.charge_fen ?? 0)}` },
+                { label: "调用", value: usage?.calls ?? 0 },
                 {
                   label: "Ảnh/Video/LLM/TTS",
                   value: `${usage?.image_gens ?? 0}/${usage?.video_gens ?? 0}/${usage?.llm_calls ?? 0}/${usage?.tts_gens ?? 0}`,
@@ -257,7 +257,7 @@ export function DramaProjectDetailPage() {
                         <td>{taskTypeLabel(t.task_type)}</td>
                         <td>{taskStatusLabel(t.status)}</td>
                         <td>
-                          ¥{fenToYuan(t.billing_charged_fen)} / ¥{fenToYuan(t.billing_estimate_fen)}
+                          {points(t.billing_charged_fen)} / {points(t.billing_estimate_fen)}
                         </td>
                       </tr>
                     ))

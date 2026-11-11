@@ -15,7 +15,7 @@ import { TeamQueryFeedback } from "./TeamQueryFeedback";
 import { teamDate, teamRoleLabels } from "@/lib/teamLabels";
 import { useAdminTeamQuery } from "@/hooks/useAdminTeamQuery";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
-import { fenToYuan } from "@/lib/utils";
+import { points } from "@/lib/points";
 
 /** 分页查看在队/已退出成员，支持按月份回看预算与实际消费。 */
 export function TeamMembersTable({ teamId }: { teamId: number }) {
@@ -46,9 +46,9 @@ export function TeamMembersTable({ teamId }: { teamId: number }) {
     </TableRow></TableHeader><TableBody>{data.items.map((member) => <TableRow key={member.user_id}>
       <TableCell><div className="font-semibold">{member.nickname || "—"}</div><div className="mt-1 text-xs text-[var(--admin-muted)]">{member.email} · #{member.user_id}</div></TableCell>
       <TableCell><Badge variant={member.role === "owner" ? "success" : "info"}>{teamRoleLabels[member.role]}</Badge></TableCell>
-      <TableCell><Badge variant={member.active ? "success" : "default"}>{member.active ? "Trong nhóm" : "Đã rời"}</Badge></TableCell>
-      <TableCell className="tabular-nums">{member.monthly_limit_fen === null ? "Không giới hạn" : `¥${fenToYuan(member.monthly_limit_fen)}`}</TableCell>
-      <TableCell className="tabular-nums"><div>¥{fenToYuan(member.spent_fen)}</div><div className="mt-1 text-xs text-[var(--admin-muted)]">Giữ chỗ ¥{fenToYuan(member.reserved_fen)}</div></TableCell>
+      <TableCell><Badge variant={member.active ? "success" : "default"}>{member.active ? "在队" : "已退出"}</Badge></TableCell>
+      <TableCell className="tabular-nums">{member.monthly_limit_fen === null ? "不限额" : `${points(member.monthly_limit_fen)}`}</TableCell>
+      <TableCell className="tabular-nums"><div>{points(member.spent_fen)}</div><div className="mt-1 text-xs text-[var(--admin-muted)]">预留 {points(member.reserved_fen)}</div></TableCell>
       <TableCell className="whitespace-nowrap text-xs">{teamDate(member.joined_at)}</TableCell>
       <TableCell>{member.active && <Button type="button" variant="ghost" size="sm" onClick={() => setTarget(member)}>Đặt hạn mức</Button>}<Button type="button" asChild variant="outline" size="sm"><Link to={`/teams/${teamId}?tab=usage&member_id=${member.user_id}`}>Bản ghi chi tiêu</Link></Button></TableCell>
     </TableRow>)}</TableBody></Table>}

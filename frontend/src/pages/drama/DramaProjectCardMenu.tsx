@@ -1,3 +1,5 @@
+import { marketText as mt } from '../../features/marketplace/translate'
+import { useMarketplaceLocale } from '../../features/marketplace/useMarketplaceLocale'
 /** 项目卡片「更多」菜单：点选项、移出或点外部即收起 */
 import { useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
@@ -15,6 +17,7 @@ const HIDE_DELAY_MS = 120
 
 // 渲染项目卡片重命名 / 删除菜单
 export function DramaProjectCardMenu({ onRename, onDelete, onPublish }: Props) {
+  useMarketplaceLocale()
   /*
    * open 菜单是否展开
    * rootRef 用于点外部关闭
@@ -106,7 +109,7 @@ export function DramaProjectCardMenu({ onRename, onDelete, onPublish }: Props) {
           {onPublish && <button type="button" role="menuitem"
             onPointerDown={event => { event.preventDefault(); event.stopPropagation(); closeThenRun(onPublish) }}
             onClick={event => { event.stopPropagation(); if (!ignoreToggleRef.current) closeThenRun(onPublish) }}
-          >{tv("发布到数字资产市场", "Đăng lên chợ tài sản số")}</button>}
+          >{mt("发布到数字资产市场")}</button>}
           <button
             type="button"
             role="menuitem"

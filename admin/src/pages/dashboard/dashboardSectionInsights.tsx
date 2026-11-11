@@ -1,3 +1,4 @@
+import { points } from "@/lib/points";
 import {
   Activity,
   Banknote,
@@ -35,7 +36,7 @@ export function buildFinanceInsights(stats: AdminStats | null): DashboardInsight
       key: "charge-month",
       label: "Phí trừ tháng này",
       value: `¥${fenToYuan(monthCharge)}`,
-      hint: `Hôm nay ¥${fenToYuan(stats.usage_charge_today_fen ?? 0)}`,
+      hint: `今日 ${points(stats.usage_charge_today_fen ?? 0)}`,
       icon: Zap,
       tone: "purple",
     },

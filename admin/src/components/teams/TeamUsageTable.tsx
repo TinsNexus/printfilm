@@ -15,7 +15,7 @@ import { TeamQueryFeedback } from "./TeamQueryFeedback";
 import { teamDate } from "@/lib/teamLabels";
 import { useAdminTeamQuery } from "@/hooks/useAdminTeamQuery";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
-import { fenToYuan } from "@/lib/utils";
+import { points } from "@/lib/points";
 
 /** 团队消费明细与筛选合计；成员深链可继续查看已退出成员的历史记录。 */
 export function TeamUsageTable({ teamId }: { teamId: number }) {
@@ -47,8 +47,8 @@ export function TeamUsageTable({ teamId }: { teamId: number }) {
     {validation && <p role="alert" className="text-sm text-red-700">{validation}</p>}
     {memberId && <div className="flex items-center gap-3 text-sm"><Badge variant="info">Chỉ xem thành viên #{memberId}</Badge><Button type="button" variant="ghost" size="sm" onClick={() => { const next = new URLSearchParams(params); next.delete("member_id"); setParams(next, { replace: true }); setPage(1); }}>Xem tất cả thành viên</Button></div>}
     <AdminListStats items={[
-      { label: "Số bản ghi kết quả lọc", value: data?.summary.record_count ?? "—" },
-      { label: "Chi tiêu đã quyết toán của kết quả lọc", value: data ? `¥${fenToYuan(data.summary.settled_charge_fen)}` : "—", hint: "Tổng hợp theo toàn bộ kết quả lọc, không bị ảnh hưởng bởi phân trang; không gồm số tiền chờ quyết toán" },
+      { label: "筛选结果记录数", value: data?.summary.record_count ?? "—" },
+      { label: "筛选结果已结算消费", value: data ? `${points(data.summary.settled_charge_fen)}` : "—", hint: "按全部筛选结果汇总，不受分页影响；不含待结算金额" },
     ]} />
     <TeamQueryFeedback loading={loading} error={error} empty={!data?.items.length} onRetry={reload} />
     {data && data.items.length > 0 && <Table><TableHeader><TableRow>
@@ -59,8 +59,8 @@ export function TeamUsageTable({ teamId }: { teamId: number }) {
       <TableCell><div>{row.project_title || (row.project_id ? "Dự án đã bị xóa" : "Không liên kết dự án")}</div><div className="mt-1 text-xs text-[var(--admin-muted)]">{row.project_id ? `Dự án #${row.project_id} · ` : ""}{row.task_run_id ? `Tác vụ #${row.task_run_id}` : "Không liên kết tác vụ"}</div></TableCell>
       <TableCell><div>{row.billing_label}</div><div className="mt-1 text-xs text-[var(--admin-muted)]">{row.model || "—"}</div></TableCell>
       <TableCell className="tabular-nums">{row.total_tokens.toLocaleString()}</TableCell>
-      <TableCell className="font-semibold tabular-nums">¥{fenToYuan(row.charge_fen)}</TableCell>
-      <TableCell><Badge variant={row.settled ? "success" : "warning"}>{row.settled ? "Đã quyết toán" : "Chờ quyết toán"}</Badge></TableCell>
+      <TableCell className="font-semibold tabular-nums">{points(row.charge_fen)}</TableCell>
+      <TableCell><Badge variant={row.settled ? "success" : "warning"}>{row.settled ? "已结算" : "待结算"}</Badge></TableCell>
     </TableRow>)}</TableBody></Table>}
     {data && <PaginationBar page={page} pageSize={pageSize} total={data.meta.total} onPageChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1); }} />}
   </div>;
