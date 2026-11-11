@@ -7,7 +7,7 @@ import type { GenerationReference, GenerationReferenceKind } from '../../lib/gen
 import { useGenerationText } from '../../lib/generationMedia'
 import type { MentionCaretRect } from '../../lib/promptMention'
 import '../../styles/generation-references.css'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 
 type Props = {
   open: boolean
@@ -43,10 +43,10 @@ export default function PromptMentionPopover({ open, items, anchorRect, activeIn
   const left = Math.min(Math.max(12, anchorRect.left), window.innerWidth - 320)
 
   return createPortal(
-    <div ref={panelRef} className="gen-mention-pop" style={{ top, left }} role="listbox" aria-label={text(tv('@ 引用参考资料', '@ Tham chiếu tài liệu'), 'Mention a reference')}>
-      <p className="gen-mention-pop-heading"><Search size={13} aria-hidden />{text(tv('提及已加入的参考资料', 'Nhắc đến tài liệu tham chiếu đã thêm'), 'Mention a reference you added')}</p>
+    <div ref={panelRef} className="gen-mention-pop" style={{ top, left }} role="listbox" aria-label={text(tr('promptMentionPopover.referenceMaterial'), 'Mention a reference')}>
+      <p className="gen-mention-pop-heading"><Search size={13} aria-hidden />{text(tr('promptMentionPopover.mentionAddedReferenceMaterial'), 'Mention a reference you added')}</p>
       {items.length === 0 ? (
-        <p className="gen-mention-pop-empty">{text(tv('没有匹配的参考资料，请先上传或从资产库选择图片、视频或音频。', 'Không có tài liệu tham chiếu phù hợp, vui lòng tải lên hoặc chọn hình ảnh, video, âm thanh từ thư viện tài sản trước.'), 'No matching references. Add an image, video or audio first.')}</p>
+        <p className="gen-mention-pop-empty">{text(tr('promptMentionPopover.noMatchingReferencesUploadPick'), 'No matching references. Add an image, video or audio first.')}</p>
       ) : (
         <div className="gen-mention-pop-list">
           {items.map((reference, index) => {
@@ -64,7 +64,7 @@ export default function PromptMentionPopover({ open, items, anchorRect, activeIn
                 <span className="gen-mention-pop-thumb">{preview ? <img src={preview} alt="" /> : <Icon size={15} aria-hidden />}</span>
                 <span className="gen-mention-pop-meta">
                   <strong>{reference.name}</strong>
-                  <em>{reference.kind === 'image' ? text(tv('图片', 'Hình ảnh'), 'Image') : reference.kind === 'video' ? text(tv('视频', 'Video'), 'Video') : text(tv('音频', 'Âm thanh'), 'Audio')}</em>
+                  <em>{reference.kind === 'image' ? text(tr('promptMentionPopover.image'), 'Image') : reference.kind === 'video' ? text(tr('promptMentionPopover.video'), 'Video') : text(tr('promptMentionPopover.audio'), 'Audio')}</em>
                 </span>
               </button>
             )

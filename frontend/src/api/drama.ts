@@ -6,7 +6,7 @@ import { teamsApi } from './teams'
 import { projectTeam } from '../features/teams/editLocks'
 import { workspaceScope } from '../features/teams/workspaceScope'
 import type { AssetDetailReference } from '../lib/assetDetailReferences'
-import { tv } from '../i18n/tv'
+import { tr } from '../i18n/translate.ts'
 
 /** 只读资产目录：工具结果 ID 不可作为可编辑的 DramaAsset ID 使用。 */
 export type MediaLibraryItem = {
@@ -37,7 +37,7 @@ export type MediaLibraryPage = {
 
 /** 漫剧 API 沿用原有错误提示，并共用登录态与 JSON 解析。 */
 const rawRequest = createJsonRequester((response, detail) =>
-  throwApiError(response.status, detail, tv('请求失败', 'Yêu cầu thất bại')),
+  throwApiError(response.status, detail, tr('drama.requestFailed')),
 )
 /** 所有漫剧写入口共用资源占用校验，读取只登记实际归属。 */
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -46,10 +46,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const url = new URL(path, 'http://local')
   const body = typeof init?.body === 'string' ? JSON.parse(init.body || '{}') as { project_id?: number } : {}
   const requestedProject = Number(path.match(/^\/api\/drama\/(?:projects|scripts|canvas)\/(\d+)/)?.[1] || url.searchParams.get('project_id') || body.project_id || 0)
-  if (routeProject && requestedProject && routeProject !== requestedProject) throw new DOMException(tv('项目页面已切换', 'Trang dự án đã được chuyển'), 'AbortError')
+  if (routeProject && requestedProject && routeProject !== requestedProject) throw new DOMException(tr('drama.projectPageHasChanged'), 'AbortError')
   const result = await withDramaEditLock(path, init, (next) => rawRequest<T>(path, next))
-  if (epoch !== workspaceScope.epoch) throw new DOMException(tv('创作空间已切换', 'Không gian sáng tạo đã được chuyển'), 'AbortError')
-  if (routeProject && typeof window !== 'undefined' && Number(window.location.pathname.match(/^\/drama\/projects\/(\d+)/)?.[1] || 0) !== routeProject) throw new DOMException(tv('项目页面已切换', 'Trang dự án đã được chuyển'), 'AbortError')
+  if (epoch !== workspaceScope.epoch) throw new DOMException(tr('drama.workspaceHasChanged'), 'AbortError')
+  if (routeProject && typeof window !== 'undefined' && Number(window.location.pathname.match(/^\/drama\/projects\/(\d+)/)?.[1] || 0) !== routeProject) throw new DOMException(tr('drama.projectPageHasChanged'), 'AbortError')
   recordDramaResponse(path, result, epoch)
   return result
 }

@@ -1,6 +1,6 @@
 /** 团队真实数据模型，字符串 ID 仅用于路由与表单控件。 */
 import type { AssetDetailReference } from '../../lib/assetDetailReferences'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 export type TeamRole = 'owner' | 'admin' | 'member'
 export type TeamTab = 'overview' | 'projects' | 'assets' | 'members' | 'billing' | 'settings'
 export type TeamProjectStatus = 'draft' | 'producing' | 'completed'
@@ -21,7 +21,7 @@ export type PreviewProject = TeamProject
 export type PreviewAsset = TeamAsset
 export type PreviewCharge = TeamCharge
 export type PreviewActivity = TeamActivity
-export const TEAM_ROLE_LABELS = { owner: tv('所有者', 'Chủ sở hữu'), admin: tv('管理员', 'Quản trị viên'), member: tv('成员', 'Thành viên') }
+export const TEAM_ROLE_LABELS = { owner: tr('types.owner'), admin: tr('types.admin'), member: tr('types.member') }
 export const TEAM_COLORS = ['#435c4b', '#766492', '#48687b', '#a06e51', '#45464c']
 /** 角色只取真实成员关系。 */
 export function viewerRole(team: Team): TeamRole { return team.myRole }

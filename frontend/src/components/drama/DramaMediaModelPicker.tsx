@@ -9,7 +9,7 @@ import {
   mediaModelIconKind,
   type MediaModelIconKind,
 } from '../../lib/dramaMediaModelMeta'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 
 type Props = {
   models: MediaModelOption[]
@@ -43,7 +43,7 @@ function ModelIcon({ kind }: { kind: MediaModelIconKind }) {
 export function DramaMediaModelPicker({
   models,
   selectedId,
-  emptyHint = tv('请先在管理后台「模型」保存预设默认模型', 'Vui lòng lưu model mặc định preset ở “Model” trong trang quản trị trước'),
+  emptyHint = tr('dramaMediaModelPicker.saveDefaultPresetModelUnder'),
   onSelect,
 }: Props) {
   if (models.length === 0) {
@@ -57,7 +57,7 @@ export function DramaMediaModelPicker({
         const kind = mediaModelIconKind(m.id)
         const badge = mediaModelCapabilityBadge(m)
         const desc = (m.description || '').trim()
-        const price = m.prices && Object.keys(m.prices).length ? Object.entries(m.prices).map(([resolution, amount]) => `${resolution} ¥${amount}/${m.billing_unit === 'second' ? tv('秒', 'giây') : tv('张', 'ảnh')}`).join(' · ') : (m.pricing_hint || '').trim()
+        const price = m.prices && Object.keys(m.prices).length ? Object.entries(m.prices).map(([resolution, amount]) => `${resolution} ¥${amount}/${m.billing_unit === 'second' ? tr('dramaMediaModelPicker.s') : tr('dramaMediaModelPicker.images')}`).join(' · ') : (m.pricing_hint || '').trim()
         const eta = (m.eta_hint || '').trim()
         const clip = mediaModelClipDurationLabel(m)
         const metaBits = [clip, eta].filter(Boolean)
@@ -78,7 +78,7 @@ export function DramaMediaModelPicker({
             <span className="fc-gen-model-card-body">
               <span className="fc-gen-model-card-head">
                 <strong>{m.label}</strong>
-                {m.recommended ? <em className="fc-gen-model-card-rec">{tv("默认", "Mặc định")}</em> : null}
+                {m.recommended ? <em className="fc-gen-model-card-rec">{tr('dramaMediaModelPicker.default')}</em> : null}
                 <em className="fc-gen-model-card-badge">{badge}</em>
                 {selected ? (
                   <Check className="fc-gen-model-card-check" size={15} strokeWidth={2.4} aria-hidden />
@@ -91,7 +91,7 @@ export function DramaMediaModelPicker({
               {price ? <span className="fc-gen-model-card-price">{price}</span> : null}
               {m.reference_limits ? (
                 <span className="fc-gen-model-card-meta">
-                  {tv("参考上限：图片", "Giới hạn tham chiếu: ảnh")} {m.reference_limits.images} {tv("· 视频", "· video")} {m.reference_limits.videos} {tv("· 音频", "· âm thanh")} {m.reference_limits.audios}
+                  {tr('dramaMediaModelPicker.referenceLimitsImages')} {m.reference_limits.images} {tr('dramaMediaModelPicker.videos')} {m.reference_limits.videos} {tr('dramaMediaModelPicker.audio')} {m.reference_limits.audios}
                 </span>
               ) : null}
             </span>

@@ -2,7 +2,7 @@ import { points, pointText } from '../../lib/points'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type UsageSummary } from '../../api'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 
 /** 格式化 token 数量，过大时用 k/M 缩写 */
 function formatTokens(n: number) {
@@ -47,7 +47,7 @@ export default function MonthlyUsageCard({
       </header>
 
       <div className="pf-usage-row">
-        <span>{tv("Token 用量", "Lượng Token")}</span>
+        <span>{tr('monthlyUsageCard.tokenUsage')}</span>
         <span className="pf-usage-val">{formatTokens(usage?.tokens ?? 0)}</span>
       </div>
       <div className="pf-meter">

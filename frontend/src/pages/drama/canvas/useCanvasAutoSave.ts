@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import type { Edge, Node } from '@xyflow/react'
 import { dramaApi } from '../../../api/drama'
 import { CANVAS_AUTO_SAVE_MS, type CanvasAssetNodeData } from './canvasTypes'
-import { tv } from '../../../i18n/tv'
+import { tr } from '../../../i18n/translate.ts'
 
 export type CanvasSaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error'
 
@@ -80,7 +80,7 @@ export function useCanvasAutoSave({
         }
       } catch (err) {
         onStatus?.('error')
-        onError(err instanceof Error ? err.message : tv('自动保存失败', 'Tự động lưu thất bại'))
+        onError(err instanceof Error ? err.message : tr('useCanvasAutoSave.autosaveFailed'))
         // 网络闪断时保持 dirty，便于稍后自动重试 / Ctrl+S
         throw err
       } finally {

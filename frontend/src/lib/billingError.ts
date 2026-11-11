@@ -1,7 +1,7 @@
 import { pointText, points } from './points'
 import { dialog } from './dialog'
 import { workspaceScope } from '../features/teams/workspaceScope'
-import { tv } from '../i18n/tv'
+import { tr } from '../i18n/translate.ts'
 
 export const PRICING_PATH = '/pricing'
 
@@ -28,7 +28,7 @@ export async function handleBillingError(
   const message = err instanceof Error ? err.message : String(err || '')
   if (!isBillingError(message)) return false
   if (workspaceScope.teamId !== null) {
-    await dialog.alert({ title: tv('团队消费受限', 'Chi tiêu nhóm bị giới hạn'), message: tv(`${message}。请在团队钱包查看本人额度；团队余额与充值由所有者管理。`, `${message}. Vui lòng xem hạn mức của bạn trong ví nhóm; số dư và nạp tiền của nhóm do chủ sở hữu quản lý.`), confirmText: tv('知道了', 'Đã hiểu') })
+    await dialog.alert({ title: tr('billingError.teamSpendingLimited'), message: tr('billingError.checkLimitTeamWalletTeam', { message }), confirmText: tr('billingError.got') })
     return true
   }
   const go = await dialog.confirm({

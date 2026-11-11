@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Pause, Volume2 } from 'lucide-react'
 import { resolveDramaMediaUrl } from '../../api/drama'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 
 type Props = {
   url: string
@@ -50,7 +50,7 @@ export function CharacterVoicePreviewButton({
 
   function handlePreview() {
     if (!src) {
-      onError?.(tv('试听地址无效', 'Địa chỉ nghe thử không hợp lệ'))
+      onError?.(tr('characterVoicePreviewButton.invalidPreviewUrl'))
       return
     }
     if (playing) {
@@ -68,7 +68,7 @@ export function CharacterVoicePreviewButton({
     setPlaying(true)
     void sharedAudio.play().catch(() => {
       setPlaying(false)
-      onError?.(tv('播放失败', 'Phát thất bại'))
+      onError?.(tr('characterVoicePreviewButton.playbackFailed'))
     })
   }
 
@@ -92,10 +92,10 @@ export function CharacterVoicePreviewButton({
         e.stopPropagation()
         handlePreview()
       }}
-      title={label ? tv(`试听：${label}`, `Nghe thử: ${label}`) : tv('试听音色', 'Nghe thử giọng nói')}
+      title={label ? tr('characterVoicePreviewButton.preview', { label }) : tr('characterVoicePreviewButton.previewVoice')}
     >
       {playing ? <Pause size={14} strokeWidth={1.8} aria-hidden /> : <Volume2 size={14} strokeWidth={1.8} aria-hidden />}
-      {playing ? tv('停止', 'Dừng') : tv('试听', 'Nghe thử')}
+      {playing ? tr('characterVoicePreviewButton.stop') : tr('characterVoicePreviewButton.preview2')}
     </button>
   )
 }

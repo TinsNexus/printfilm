@@ -10,7 +10,7 @@ import { useTeamPage } from './useTeamPage'
 import { TeamPagination } from './TeamPagination'
 import type { Team, TeamRole, UsageSummary } from './types'
 import './team-management.css'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 
 /** 金额以人民币元展示。 */
 const money = points
@@ -32,7 +32,7 @@ export default function TeamBillingPanel({ team, role }: { team: Team; role: Tea
   const { loadTeam } = useTeamPreview()
   const isOwner = role === 'owner'
   const listing = useTeamPage(`${team.id}:charges:${page}:${search}:${member}:${project}:${period}`, (signal) => teamsApi.charges(team.id, { page, page_size: 12, q: search, member_id: isOwner && member ? member : undefined, project_id: project || undefined, period: period || undefined }, signal), refresh)
-  useEffect(() => { let active = true; void teamsApi.summary(team.id).then((data) => { if (active) setSummary(data) }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : tv('用量加载失败', 'Tải mức dùng thất bại')) }); return () => { active = false } }, [team.id, refresh])
+  useEffect(() => { let active = true; void teamsApi.summary(team.id).then((data) => { if (active) setSummary(data) }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : tr('teamBillingPanel.failedLoadUsage')) }); return () => { active = false } }, [team.id, refresh])
   /** 打开编辑器，空值不限额；零额度停止新的付费任务。 */
   function openBudget() { setLimit(String(summary?.team_monthly_limit_fen ?? 0)); setUnlimited(summary?.team_monthly_limit_fen == null); setError(''); setBudgetOpen(true) }
   /** 金额精确转为分后提交真实接口，已消费和在途任务保留。 */
@@ -43,7 +43,7 @@ export default function TeamBillingPanel({ team, role }: { team: Team; role: Tea
     if (value !== null && (!Number.isSafeInteger(value) || value > 100000000)) { setError('额度不得超过 100,000,000 积分'); return }
     setBusy(true); setError('')
     try { await teamsApi.update(team.id, { monthly_limit_fen: value }); setBudgetOpen(false); setRefresh((n) => n + 1); await loadTeam(team.id) }
-    catch (cause) { setError(cause instanceof Error ? cause.message : tv('额度保存失败', 'Lưu hạn mức thất bại')) }
+    catch (cause) { setError(cause instanceof Error ? cause.message : tr('teamBillingPanel.failedSaveLimit')) }
     finally { setBusy(false) }
   }
   return <div className="pf-team-billing"><div className="pf-team-billing-summary"><section className="pf-team-billing-wallet"><div className="pf-team-billing-wallet-top"><span><Wallet size={17} />{isOwner ? '所有者个人账户' : '我的本月消费'}</span><span className="pf-team-billing-wallet-badge">{isOwner ? '团队费用由此支付' : '仅本人可见'}</span></div><div className="pf-team-billing-wallet-amount"><span>{isOwner ? '可用积分' : '已结算消费'}</span><strong>{summary ? money(isOwner ? summary.balance_fen ?? 0 : summary.spent_fen) : '—'}</strong></div><div className="pf-team-billing-wallet-bottom"><span><LockKeyhole size={13} />{isOwner ? '任务冻结' : '在途预留'} <strong>{summary ? money(isOwner ? summary.frozen_fen ?? 0 : summary.reserved_fen) : '—'}</strong></span>{isOwner && <Button variant="lime" size="sm" disabled={busy || !summary} onClick={openBudget}>设置总上限</Button>}</div><div className="pf-team-billing-wallet-pattern" aria-hidden="true">P/F</div></section><section className="pf-team-panel pf-team-billing-stat"><span className="pf-team-muted">{isOwner ? '团队本月消费' : '我的月度额度'}</span><strong>{summary ? isOwner ? money(summary.spent_fen) : summary.monthly_limit_fen === null ? '不限额' : money(summary.monthly_limit_fen) : '—'}</strong><p>{summary?.period || '正在读取统计'}</p></section><section className="pf-team-panel pf-team-billing-stat"><span className="pf-team-muted">{isOwner ? '团队月度上限' : '我的在途预留'}</span><strong>{isOwner ? summary?.team_monthly_limit_fen == null ? '不限额' : money(summary.team_monthly_limit_fen) : summary ? money(summary.reserved_fen) : '—'}</strong><p>{isOwner ? summary ? '已预留 ' + money(summary.reserved_fen) : '在成员管理中设置个人上限' : '任务完成后按实际用量结算'}</p></section></div><div className="pf-team-billing-info"><p>{isOwner ? '团队消费直接扣除你的个人积分，记录实际操作成员；总上限与成员上限同时生效。' : '团队费用由所有者个人积分支付。你可查看自己的消费及额度。'}{summary && !summary.billing_enabled && ' 当前未启用计费，不产生扣款。'}</p>{isOwner && <Link className="pf-link" to="/pricing">个人账户充值 →</Link>}</div>{error && <div className="pf-team-alert" role="alert">{error}</div>}

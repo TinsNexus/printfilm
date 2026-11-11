@@ -7,7 +7,7 @@ import {
   resolveSelectedSkillIds,
   saveStoredSkillIds,
 } from '../lib/agentSkillSelection'
-import { tv } from '../i18n/tv'
+import { tr } from '../i18n/translate.ts'
 
 type UseAgentSkillSelectionResult = {
   skills: AgentSkill[]
@@ -93,7 +93,7 @@ export function useAgentSkillSelection(): UseAgentSkillSelectionResult {
         return next
       })
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : tv('上传失败', 'Tải lên thất bại'))
+      setUploadError(err instanceof Error ? err.message : tr('useAgentSkillSelection.uploadFailed'))
     } finally {
       setUploading(false)
     }

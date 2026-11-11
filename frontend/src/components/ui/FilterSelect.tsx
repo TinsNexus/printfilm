@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '../../lib/cn'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 
 export type FilterOption = {
   value: string
@@ -60,7 +60,7 @@ export default function FilterSelect({
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="pf-filter-trigger-label">{current?.label || tv('请选择', 'Vui lòng chọn')}</span>
+        <span className="pf-filter-trigger-label">{current?.label || tr('filterSelect.select')}</span>
         <ChevronDown size={15} strokeWidth={2} className="pf-filter-chevron" aria-hidden />
       </button>
       {open ? (

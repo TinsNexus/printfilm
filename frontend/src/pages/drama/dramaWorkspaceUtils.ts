@@ -1,6 +1,6 @@
 /** Shared helpers for drama project workspace steps. */
 import type { DramaEpisodeBody, DramaProject, DramaScript } from '../../api/drama'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 
 /** 与后端 MIN_EPISODE_CONTENT_CHARS 对齐：过短正文视为未完成 */
 export const MIN_EPISODE_BODY_CHARS = 500
@@ -88,7 +88,7 @@ export function buildOutlineDirectory(
     const ep = byNumber.get(episodeNumber)
     return {
       episodeNumber,
-      title: ep?.title || tv(`第 ${episodeNumber} 集`, `Tập ${episodeNumber}`),
+      title: ep?.title || tr('dramaWorkspaceUtils.episode', { episodeNumber }),
       creative: ep?.creative,
       summary: ep?.summary,
       body: ep?.body,

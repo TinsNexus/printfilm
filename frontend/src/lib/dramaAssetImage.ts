@@ -1,6 +1,6 @@
 /** 漫剧资产是否已有形象图（AI 生成或本地上传；SVG 占位不算） */
 import type { DramaAsset } from '../api/drama'
-import { tv } from '../i18n/tv'
+import { tr } from '../i18n/translate.ts'
 
 const BITMAP_SUFFIXES = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp']
 
@@ -61,5 +61,5 @@ export function dramaAssetImageGenButtonLabel(
   queueLabel: string | null,
 ): string {
   if (queueLabel) return queueLabel
-  return dramaAssetHasImage(asset) ? tv('重新生成形象', 'Tạo lại hình tượng') : tv('生成形象', 'Tạo hình tượng')
+  return dramaAssetHasImage(asset) ? tr('dramaAssetImage.regenerateLook') : tr('dramaAssetImage.generateLook')
 }

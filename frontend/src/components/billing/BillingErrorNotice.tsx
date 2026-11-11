@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { isBillingError, billingPointsMessage, PRICING_PATH } from '../../lib/billingError'
 import { workspaceScope } from '../../features/teams/workspaceScope'
 import { formatCopyrightError, formatGenerationErrorMessage } from '../../lib/generationError'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 
 type Props = {
   message: string | null | undefined
@@ -20,7 +20,7 @@ export default function BillingErrorNotice({
   message,
   className = 'pf-error',
   style,
-  linkText = tv('去充值 →', 'Đi nạp tiền →'),
+  linkText = tr('billingErrorNotice.topUp'),
   inline = false,
 }: Props) {
   const text = String(message || '').trim()
@@ -37,7 +37,7 @@ export default function BillingErrorNotice({
     <Tag className={className} style={style} role={inline ? undefined : 'alert'}>
       {billingPointsMessage(text)}{' '}
       <Link to={workspaceScope.teamId === null ? PRICING_PATH : `/teams/${workspaceScope.teamId}?tab=billing`} className="pf-link pf-billing-topup-link">
-        {workspaceScope.teamId === null ? linkText : tv('查看团队用量 →', 'Xem mức dùng của nhóm →')}
+        {workspaceScope.teamId === null ? linkText : tr('billingErrorNotice.viewTeamUsage')}
       </Link>
     </Tag>
   )

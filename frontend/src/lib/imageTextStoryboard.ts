@@ -1,10 +1,10 @@
-import { tv } from '../i18n/tv'
+import { tr } from '../i18n/translate.ts'
 /** Four manual checkpoints for the image + narration short-video workflow. */
 export const IMAGE_TEXT_STEPS = [
-  { key: 'topic', label: tv('创作设置', 'Cài đặt sáng tạo') },
-  { key: 'confirm', label: tv('文案与分镜', 'Lời dẫn và phân cảnh') },
-  { key: 'assets', label: tv('画面与配音', 'Hình ảnh và lồng tiếng') },
-  { key: 'compose', label: tv('成片预览', 'Xem trước phim') },
+  { key: 'topic', label: tr('imageTextStoryboard.creationSettings') },
+  { key: 'confirm', label: tr('imageTextStoryboard.scriptStoryboard') },
+  { key: 'assets', label: tr('imageTextStoryboard.visualsVoiceOver') },
+  { key: 'compose', label: tr('imageTextStoryboard.preview') },
 ]
 
 type ImageTextProject = {
