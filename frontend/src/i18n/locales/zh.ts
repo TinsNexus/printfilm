@@ -1,3 +1,4 @@
+import { zhFeStudioStoryboard } from "./zh/feStudioStoryboard.ts";
 import { zhFeDramaOutline } from "./zh/feDramaOutline.ts";
 import { zhFeDramaEpisode } from "./zh/feDramaEpisode.ts";
 import { zhFeStudio } from "./zh/feStudio.ts";
@@ -16,6 +17,7 @@ import { zhPages } from './zh/pages.ts'
 import { zhShell } from './zh/shell.ts'
 
 export const zh = {
+  ...zhFeStudioStoryboard,
   ...zhFeDramaOutline,
   ...zhFeDramaEpisode,
   ...zhFeStudio,

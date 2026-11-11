@@ -18,7 +18,7 @@ export const LOCALE_DATE: Record<Locale, string> = {
   vi: 'vi-VN',
 }
 
-// 当前生效语言（供非 React 工具函数读取）；模块加载时即按本地偏好/浏览器语言初始化，保证顶层常量里的 tv() 取到正确语言
+// 当前生效语言（供非 React 工具函数读取）；模块加载时即按本地偏好/浏览器语言初始化，保证模块级 tr() 取到正确语言
 let activeLocale: Locale = initialLocale()
 
 function initialLocale(): Locale {

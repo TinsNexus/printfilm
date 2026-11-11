@@ -1,3 +1,4 @@
+import { enFeStudioStoryboard } from "./en/feStudioStoryboard.ts";
 import { enFeDramaOutline } from "./en/feDramaOutline.ts";
 import { enFeDramaEpisode } from "./en/feDramaEpisode.ts";
 import { enFeStudio } from "./en/feStudio.ts";
@@ -16,6 +17,7 @@ import { enPages } from './en/pages.ts'
 import { enShell } from './en/shell.ts'
 
 export const en = {
+  ...enFeStudioStoryboard,
   ...enFeDramaOutline,
   ...enFeDramaEpisode,
   ...enFeStudio,
