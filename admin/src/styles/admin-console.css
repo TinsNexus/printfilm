@@ -80,6 +80,11 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
 .admin-command-trigger kbd { margin-left: auto; background: #fff; border: 1px solid #e0e7d9; border-radius: 4px; padding: 1px 4px; font-size: 9px; font-family: inherit; color: #8a9685; }
 .admin-site-link { display: inline-flex; align-items: center; gap: 5px; text-decoration: none; font-size: 11px; color: #6b776c; }
 .admin-site-link:hover { color: #245c46; }
+/* 语言切换：中 / EN / VI */
+.admin-lang-switch { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid rgba(26, 43, 34, .12); border-radius: 7px; }
+.admin-lang-option { padding: 2px 7px; border-radius: 5px; font-size: 11px; font-weight: 600; color: #6b776c; background: transparent; }
+.admin-lang-option:hover { color: #1a2b22; }
+.admin-lang-option.is-active { color: #fff; background: #1a2b22; }
 .admin-topbar-avatar { height: 29px; width: 29px; display: grid; place-items: center; border-radius: 50%; color: #325d40; background: #e9f1df; font-size: 11px; font-weight: 650; }
 .admin-content { padding: 28px 30px 32px; outline: none; width: 100%; max-width: 1900px; margin: 0 auto; }
 .admin-list-page, .admin-page { gap: 20px; }

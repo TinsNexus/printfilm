@@ -48,163 +48,102 @@ import {
 import { clearAuth, getCachedUser } from "@/lib/auth";
 
 import { cn } from "@/lib/utils";
+import { LOCALES, useI18n } from "@/i18n";
 import { AdminNavigationSearch } from "./AdminNavigationSearch";
 
+// 导航与标题只存 labelKey：模块级常量在导入时求值，存翻译后的文字会固化成首次加载时的语言
 type NavItem = {
-
   to: string;
-
-  label: string;
-
+  labelKey: string;
   icon: typeof LayoutDashboard;
-
   end?: boolean;
-
   matchPrefix?: boolean;
-
 };
 
 type NavGroup = {
-
-  label: string;
-
+  id: string;
+  labelKey: string;
   items: NavItem[];
-
 };
+
+/** 渲染用：labelKey 已翻译成当前语言 */
+type TranslatedNavGroup = { id: string; label: string; items: Array<Omit<NavItem, "labelKey"> & { label: string }> };
 
 const navGroups: NavGroup[] = [
-
+  { id: "overview", labelKey: "layout.overview", items: [{ to: "/", labelKey: "layout.dashboard", icon: LayoutDashboard, end: true }] },
   {
-
-    label: "Tổng quan",
-
-    items: [{ to: "/", label: "Bảng điều khiển", icon: LayoutDashboard, end: true }],
-
-  },
-
-  {
-
-    label: "Nghiệp vụ",
-
+    id: "business",
+    labelKey: "layout.business",
     items: [
-
-      { to: "/users", label: "Quản lý người dùng", icon: Users },
-
-      { to: "/teams", label: "Quản lý nhóm", icon: Users, matchPrefix: true },
-
-      { to: "/orders", label: "Giao dịch đơn hàng", icon: Receipt },
-
-      { to: "/adjustments", label: "Điều chỉnh thủ công", icon: Scale },
-
-      { to: "/finance", label: "Danh sách tài chính", icon: Wallet },
-
-      { to: "/projects", label: "Dự án khoa học", icon: Clapperboard },
-
-      { to: "/works", label: "Duyệt tác phẩm", icon: FileVideo },
-
+      { to: "/users", labelKey: "layout.users", icon: Users },
+      { to: "/teams", labelKey: "layout.teams", icon: Users, matchPrefix: true },
+      { to: "/orders", labelKey: "layout.ordersLedger", icon: Receipt },
+      { to: "/adjustments", labelKey: "layout.adjustments", icon: Scale },
+      { to: "/finance", labelKey: "layout.finance", icon: Wallet },
+      { to: "/projects", labelKey: "layout.explainerProjects", icon: Clapperboard },
+      { to: "/works", labelKey: "layout.workReview", icon: FileVideo },
     ],
-
   },
-
   {
-
-    label: "Phim truyện",
-
+    id: "drama",
+    labelKey: "layout.drama",
     items: [
-
-      { to: "/drama-projects", label: "Dự án phim truyện", icon: Film, matchPrefix: true },
-
-      { to: "/drama-assets", label: "Thư viện tài sản", icon: Image, matchPrefix: true },
-
-      { to: "/drama-episodes", label: "Quản lý tập", icon: ListVideo, matchPrefix: true },
-
-      { to: "/drama-fragments", label: "Quản lý phân cảnh", icon: Layers, matchPrefix: true },
-
+      { to: "/drama-projects", labelKey: "layout.dramaProjects", icon: Film, matchPrefix: true },
+      { to: "/drama-assets", labelKey: "layout.assetLibrary", icon: Image, matchPrefix: true },
+      { to: "/drama-episodes", labelKey: "layout.episodes", icon: ListVideo, matchPrefix: true },
+      { to: "/drama-fragments", labelKey: "layout.shots", icon: Layers, matchPrefix: true },
     ],
-
   },
-
   {
-
-    label: "Tài nguyên",
-
+    id: "resources",
+    labelKey: "layout.resources",
     items: [
-
-      { to: "/templates", label: "Quản lý mẫu", icon: Shapes },
-
-      { to: "/queues", label: "Trung tâm tác vụ", icon: Layers },
-
+      { to: "/templates", labelKey: "layout.templates", icon: Shapes },
+      { to: "/queues", labelKey: "layout.taskCenter", icon: Layers },
     ],
-
   },
-
-  {
-
-    label: "Hệ thống",
-
-    items: [{ to: "/settings", label: "Cài đặt hệ thống", icon: Settings }],
-
-  },
-
+  { id: "system", labelKey: "layout.system", items: [{ to: "/settings", labelKey: "layout.systemSettings", icon: Settings }] },
 ];
 
-const titles: Record<string, string> = {
-  "/marketplace": "Vận hành nền tảng tài sản số",
-
-  "/": "Bảng điều khiển",
-
-  "/users": "Quản lý người dùng",
-
-  "/teams": "Quản lý nhóm",
-
-  "/orders": "Giao dịch đơn hàng",
-
-  "/adjustments": "Điều chỉnh thủ công",
-
-  "/finance": "Danh sách tài chính",
-
-  "/projects": "Dự án khoa học",
-
-  "/drama-projects": "Dự án phim truyện",
-
-  "/drama-assets": "Thư viện tài sản",
-
-  "/drama-episodes": "Quản lý tập",
-
-  "/drama-fragments": "Quản lý phân cảnh",
-
-  "/works": "Duyệt tác phẩm",
-
-  "/templates": "Quản lý mẫu",
-
-  "/settings": "Cài đặt hệ thống",
-
-  "/queues": "Trung tâm tác vụ",
-
+const titleKeys: Record<string, string> = {
+  "/marketplace": "layout.marketplaceOps",
+  "/": "layout.dashboard",
+  "/users": "layout.users",
+  "/teams": "layout.teams",
+  "/orders": "layout.ordersLedger",
+  "/adjustments": "layout.adjustments",
+  "/finance": "layout.finance",
+  "/projects": "layout.explainerProjects",
+  "/drama-projects": "layout.dramaProjects",
+  "/drama-assets": "layout.assetLibrary",
+  "/drama-episodes": "layout.episodes",
+  "/drama-fragments": "layout.shots",
+  "/works": "layout.workReview",
+  "/templates": "layout.templates",
+  "/settings": "layout.systemSettings",
+  "/queues": "layout.taskCenter",
 };
 
-function resolveTitle(pathname: string): string {
-
-  if (pathname.startsWith("/teams/")) return "Chi tiết nhóm";
-
-  if (pathname.startsWith("/drama-projects/")) return "Chi tiết dự án phim truyện";
-
-  if (pathname.startsWith("/drama-assets/")) return "Chi tiết tài sản";
-
-  if (pathname.startsWith("/drama-episodes/")) return "Chi tiết tập";
-
-  if (pathname.startsWith("/drama-fragments/")) return "Chi tiết phân cảnh";
-
-  return titles[pathname] ?? "Quản trị";
-
+/** 按路由取页面标题的 key（详情页按前缀匹配） */
+function resolveTitleKey(pathname: string): string {
+  if (pathname.startsWith("/teams/")) return "layout.teamDetails";
+  if (pathname.startsWith("/drama-projects/")) return "layout.dramaProjectDetails";
+  if (pathname.startsWith("/drama-assets/")) return "layout.assetDetails";
+  if (pathname.startsWith("/drama-episodes/")) return "layout.episodeDetails";
+  if (pathname.startsWith("/drama-fragments/")) return "layout.shotDetails";
+  return titleKeys[pathname] ?? "layout.adminConsole";
 }
 
 /** 统一运营工作台：桌面折叠导航、移动抽屉与可搜索入口。 */
 export function AdminLayout() {
+  const { t, locale, setLocale } = useI18n();
   const marketplaceEnabled = useMarketplaceEnabled();
-  const visibleNavGroups = navGroups.map((group) => group.label === "Nghiệp vụ" && marketplaceEnabled
-    ? { ...group, items: [...group.items, { to: "/marketplace", label: "Vận hành nền tảng tài sản số", icon: FileVideo } satisfies NavItem] }
-    : group);
+  const visibleNavGroups: TranslatedNavGroup[] = navGroups.map((group) => {
+    const items = group.id === "business" && marketplaceEnabled
+      ? [...group.items, { to: "/marketplace", labelKey: "layout.marketplaceOps", icon: FileVideo } satisfies NavItem]
+      : group.items;
+    return { id: group.id, label: t(group.labelKey), items: items.map(({ labelKey, ...item }) => ({ ...item, label: t(labelKey) })) };
+  });
   const navigate = useNavigate();
   const location = useLocation();
   const user = getCachedUser();
@@ -216,7 +155,7 @@ export function AdminLayout() {
   const navigationToggleRef = useRef<HTMLButtonElement>(null);
   const sidebarCloseRef = useRef<HTMLButtonElement>(null);
   const mobileDrawerOpen = isMobile && mobileOpen;
-  const title = resolveTitle(location.pathname);
+  const title = t(resolveTitleKey(location.pathname));
   const initial = (user?.nickname || user?.email || "A").slice(0, 1).toUpperCase();
 
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
@@ -298,19 +237,19 @@ export function AdminLayout() {
 
   return (
     <div className={cn("admin-app", collapsed && "is-collapsed", mobileDrawerOpen && "is-mobile-open")}>
-      <a className="admin-skip-link" href="#admin-main-content">Chuyển đến nội dung trang</a>
-      {mobileDrawerOpen && <button type="button" className="admin-sidebar-scrim" tabIndex={-1} aria-label="Đóng điều hướng" onClick={() => setMobileOpen(false)} />}
-      <aside ref={sidebarRef} className="admin-sidebar" id="admin-sidebar" aria-label="Điều hướng quản trị"
+      <a className="admin-skip-link" href="#admin-main-content">{t("layout.skipToContent")}</a>
+      {mobileDrawerOpen && <button type="button" className="admin-sidebar-scrim" tabIndex={-1} aria-label={t("layout.closeNav")} onClick={() => setMobileOpen(false)} />}
+      <aside ref={sidebarRef} className="admin-sidebar" id="admin-sidebar" aria-label={t("layout.adminNav")}
         role={mobileDrawerOpen ? "dialog" : undefined} aria-modal={mobileDrawerOpen ? true : undefined}
         aria-hidden={isMobile && !mobileOpen ? true : undefined} inert={isMobile && !mobileOpen}>
         <div className="admin-brand">
           <div className="admin-brand-mark"><Aperture size={23} strokeWidth={1.7} /></div>
-          <div className="admin-brand-copy"><div className="admin-brand-name">PRINTFILM<span>®</span></div><div className="admin-brand-sub">Bảng điều khiển vận hành</div></div>
-          <button ref={sidebarCloseRef} type="button" className="admin-icon-btn admin-sidebar-close" aria-label="Đóng điều hướng" onClick={() => setMobileOpen(false)}><X size={18} /></button>
+          <div className="admin-brand-copy"><div className="admin-brand-name">PRINTFILM<span>®</span></div><div className="admin-brand-sub">{t("layout.consoleSubtitle")}</div></div>
+          <button ref={sidebarCloseRef} type="button" className="admin-icon-btn admin-sidebar-close" aria-label={t("layout.closeNav")} onClick={() => setMobileOpen(false)}><X size={18} /></button>
         </div>
-        <nav className="admin-nav" aria-label="Điều hướng chính">
+        <nav className="admin-nav" aria-label={t("layout.mainNav")}>
           {visibleNavGroups.map((group) => (
-            <div key={group.label} className="admin-nav-group">
+            <div key={group.id} className="admin-nav-group">
               <div className="admin-nav-group-label">{group.label}</div>
               {group.items.map((item) => (
                 <NavLink key={item.to} to={item.to} end={item.end ?? !item.matchPrefix}
@@ -326,27 +265,35 @@ export function AdminLayout() {
         <div className="admin-sidebar-footnote"><span />PRINTFILM OPERATIONS</div>
         <div className="admin-user-card">
           <div className="admin-avatar">{initial}</div>
-          <div className="admin-user-copy"><strong>{user?.nickname || "Quản trị viên"}</strong><span title={user?.email}>{user?.email}</span></div>
-          <button type="button" className="admin-icon-btn admin-logout" onClick={handleLogout} title="Đăng xuất" aria-label="Đăng xuất"><LogOut size={16} /></button>
+          <div className="admin-user-copy"><strong>{user?.nickname || t("layout.adminFallbackName")}</strong><span title={user?.email}>{user?.email}</span></div>
+          <button type="button" className="admin-icon-btn admin-logout" onClick={handleLogout} title={t("layout.signOut")} aria-label={t("layout.signOut")}><LogOut size={16} /></button>
         </div>
       </aside>
       <div className="admin-main" inert={mobileDrawerOpen}>
         <header className="admin-topbar">
           <div className="admin-topbar-leading">
             <button ref={navigationToggleRef} type="button" className="admin-icon-btn" onClick={toggleNavigation}
-              aria-label={isMobile ? (mobileOpen ? "Đóng điều hướng" : "Mở rộng điều hướng") : (collapsed ? "Mở rộng điều hướng" : "Thu gọn điều hướng")}
+              aria-label={t(isMobile ? (mobileOpen ? "layout.closeNav" : "layout.expandNav") : (collapsed ? "layout.expandNav" : "layout.collapseNav"))}
               aria-controls="admin-sidebar" aria-expanded={isMobile ? mobileOpen : !collapsed}>
               <PanelLeftClose size={19} />
             </button>
-            <div className="admin-topbar-breadcrumb"><span>Bảng điều khiển</span><ChevronRight size={13} /><strong>{title}</strong></div>
+            <div className="admin-topbar-breadcrumb"><span>{t("layout.dashboard")}</span><ChevronRight size={13} /><strong>{title}</strong></div>
           </div>
           <div className="admin-topbar-actions">
-            <button type="button" className="admin-command-trigger" aria-label="Tìm chức năng quản trị" aria-keyshortcuts="Control+K Meta+K" onClick={() => setSearchOpen(true)}><Search size={15} /><span>Tìm chức năng…</span><kbd>Ctrl K</kbd></button>
-            <a className="admin-site-link" href={import.meta.env.DEV ? "http://127.0.0.1:5173" : "/"} target="_blank" rel="noreferrer">Trang người dùng<ArrowUpRight size={14} /></a>
-            <button type="button" className="admin-icon-btn admin-fullscreen" title="Bật/tắt toàn màn hình" aria-label="Bật/tắt toàn màn hình" onClick={() => {
+            <button type="button" className="admin-command-trigger" aria-label={t("layout.searchFeatures")} aria-keyshortcuts="Control+K Meta+K" onClick={() => setSearchOpen(true)}><Search size={15} /><span>{t("layout.searchShort")}</span><kbd>Ctrl K</kbd></button>
+            <a className="admin-site-link" href={import.meta.env.DEV ? "http://127.0.0.1:5173" : "/"} target="_blank" rel="noreferrer">{t("layout.userSite")}<ArrowUpRight size={14} /></a>
+            <button type="button" className="admin-icon-btn admin-fullscreen" title={t("layout.toggleFullscreen")} aria-label={t("layout.toggleFullscreen")} onClick={() => {
               if (!document.fullscreenElement) void document.documentElement.requestFullscreen().catch(() => undefined);
               else void document.exitFullscreen().catch(() => undefined);
             }}><Maximize2 size={17} /></button>
+            <div className="admin-lang-switch" role="group" aria-label={t("lang.label")}>
+              {LOCALES.map((code) => (
+                <button key={code} type="button" aria-pressed={locale === code}
+                  className={cn("admin-lang-option", locale === code && "is-active")} onClick={() => setLocale(code)}>
+                  {t(`lang.${code}`)}
+                </button>
+              ))}
+            </div>
             <div className="admin-topbar-avatar" title={user?.email}>{initial}</div>
           </div>
         </header>
