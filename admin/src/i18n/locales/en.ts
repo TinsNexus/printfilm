@@ -1,3 +1,4 @@
+import { enAdminMarketplaceOps } from "./en/adminMarketplaceOps.ts";
 import { enAdminTeamsUi } from "./en/adminTeamsUi.ts";
 import { enAdminDramaUi } from "./en/adminDramaUi.ts";
 import { enAdminDashboardUi } from "./en/adminDashboardUi.ts";
@@ -47,6 +48,7 @@ import { enAdminStatus } from "./en/adminStatus.ts";
 import { enShell } from "./en/shell.ts";
 
 export const en = {
+  ...enAdminMarketplaceOps,
   ...enAdminTeamsUi,
   ...enAdminDramaUi,
   ...enAdminDashboardUi,

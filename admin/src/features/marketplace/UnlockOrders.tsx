@@ -1,3 +1,5 @@
+import { tr } from "../../i18n/translate.ts";
+import { formatDateTime } from "../../i18n/detect.ts";
 import { useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { PaginationBar } from '@/components/PaginationBar'
@@ -27,24 +29,24 @@ export default function UnlockOrders({ revision = 0 }: { revision?: number }) {
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [environment, status, userId, page, refresh, revision])
-  return <section aria-label="视频解锁订单" className="grid gap-4">
-    <div><h2>视频解锁订单</h2><p className="market-ops-context">查询全平台用户用积分购买视频的订单。扣除积分属于购买用户；创作者收益请在收益账本中查看。</p></div>
+  return <section aria-label={tr('mkOps.unlock.title')} className="grid gap-4">
+    <div><h2>{tr('mkOps.unlock.title')}</h2><p className="market-ops-context">{tr('mkOps.unlock.desc')}</p></div>
     <div className="market-ops-filter">
-      <label>订单环境<select aria-label="订单环境" value={environment} onChange={event => { setEnvironment(event.target.value); setPage(1) }}><option value="Production">生产环境</option><option value="Sandbox">沙箱测试环境</option></select></label>
-      <label>订单状态<select aria-label="订单状态" value={status} onChange={event => { setStatus(event.target.value); setPage(1) }}><option value="">全部状态</option><option value="paid">已解锁</option><option value="revoked">已撤销</option></select></label>
-      <label>购买用户编号<input aria-label="购买用户编号" type="text" inputMode="numeric" value={userId} onChange={event => { if (/^\d*$/.test(event.target.value)) { setUserId(event.target.value); setPage(1) } }} placeholder="全部购买用户" /></label>
-      <button type="button" disabled={loading} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={14} /> 刷新订单</button>
+      <label>{tr('mkOps.unlock.env')}<select aria-label={tr('mkOps.unlock.env')} value={environment} onChange={event => { setEnvironment(event.target.value); setPage(1) }}><option value="Production">{tr('mkOps.env.production')}</option><option value="Sandbox">{tr('mkOps.env.sandbox')}</option></select></label>
+      <label>{tr('mkOps.unlock.status')}<select aria-label={tr('mkOps.unlock.status')} value={status} onChange={event => { setStatus(event.target.value); setPage(1) }}><option value="">{tr('mkOps.allStatuses')}</option><option value="paid">{tr('mkOps.unlock.paid')}</option><option value="revoked">{tr('mkOps.unlock.revoked')}</option></select></label>
+      <label>{tr('mkOps.unlock.buyerId')}<input aria-label={tr('mkOps.unlock.buyerId')} type="text" inputMode="numeric" value={userId} onChange={event => { if (/^\d*$/.test(event.target.value)) { setUserId(event.target.value); setPage(1) } }} placeholder={tr('mkOps.unlock.allBuyers')} /></label>
+      <button type="button" disabled={loading} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={14} /> {tr('mkOps.unlock.refresh')}</button>
     </div>
-    {environment === 'Sandbox' && <p className="market-ops-context">当前显示沙箱测试订单，不计入生产交易。</p>}
-    {error && <p role="alert" className="market-ops-feedback is-error">订单读取失败：{error}<button type="button" onClick={() => setRefresh(value => value + 1)}>重试</button></p>}
-    {loading ? <p role="status">正在读取解锁订单…</p> : listing && <>
-      <p>共 {listing.meta.total} 条订单</p>
-      <Table><TableHeader><TableRow>{['解锁订单编号', '内容订单编号', '购买用户编号', '视频发布版本', '扣除积分', '状态', '解锁时间'].map(label => <TableHead key={label}>{label}</TableHead>)}</TableRow></TableHeader>
+    {environment === 'Sandbox' && <p className="market-ops-context">{tr('mkOps.unlock.sandboxNote')}</p>}
+    {error && <p role="alert" className="market-ops-feedback is-error">{tr('mkOps.unlock.loadFailed', { error })}<button type="button" onClick={() => setRefresh(value => value + 1)}>{tr('mkOps.retry')}</button></p>}
+    {loading ? <p role="status">{tr('mkOps.unlock.loading')}</p> : listing && <>
+      <p>{tr('mkOps.unlock.totalN', { n: listing.meta.total })}</p>
+      <Table><TableHeader><TableRow>{[tr('mkOps.unlock.colId'), tr('mkOps.unlock.colOrderId'), tr('mkOps.unlock.buyerId'), tr('mkOps.unlock.colPublication'), tr('mkOps.unlock.colCoins'), tr('mkOps.status'), tr('mkOps.unlock.colTime')].map(label => <TableHead key={label}>{label}</TableHead>)}</TableRow></TableHeader>
         <TableBody>{listing.items.length ? listing.items.map(item => <TableRow key={item.id}>
           <TableCell>#{item.id}</TableCell><TableCell>#{String(item.order_id)}</TableCell><TableCell>#{String(item.user_id)}</TableCell><TableCell>#{String(item.publication_id)}</TableCell>
-          <TableCell>{points(item.coins)}</TableCell><TableCell>{item.status === 'paid' ? '已解锁' : item.status === 'revoked' ? '已撤销' : String(item.status)}</TableCell>
-          <TableCell>{item.created_at ? new Date(String(item.created_at)).toLocaleString('zh-CN', { hour12: false }) : '—'}</TableCell>
-        </TableRow>) : <TableRow><TableCell colSpan={7}>暂无订单，请检查环境和筛选条件。</TableCell></TableRow>}</TableBody>
+          <TableCell>{points(item.coins)}</TableCell><TableCell>{item.status === 'paid' ? tr('mkOps.unlock.paid') : item.status === 'revoked' ? tr('mkOps.unlock.revoked') : String(item.status)}</TableCell>
+          <TableCell>{item.created_at ? formatDateTime(String(item.created_at)) : '—'}</TableCell>
+        </TableRow>) : <TableRow><TableCell colSpan={7}>{tr('mkOps.unlock.empty')}</TableCell></TableRow>}</TableBody>
       </Table>
       <PaginationBar page={page} pageSize={listing.meta.page_size} total={listing.meta.total} onPageChange={setPage} />
     </>}
