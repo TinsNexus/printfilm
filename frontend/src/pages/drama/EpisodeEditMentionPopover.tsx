@@ -15,7 +15,7 @@ import {
   type MentionCaretRect,
 } from '../../lib/dramaEpisodePromptEditor'
 import type { AssetScope } from './dramaEpisodeEditUtils'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 
 type Props = {
   open: boolean
@@ -39,9 +39,9 @@ type TabKey = 'assets' | 'tools'
 type ToolsView = 'list' | 'duration' | 'camera'
 
 const TYPE_LABEL: Record<string, string> = {
-  character: tv('角色', 'Nhân vật'),
-  scene: tv('场景', 'Bối cảnh'),
-  prop: tv('道具', 'Đạo cụ'),
+  character: tr('episodeEditMentionPopover.character'),
+  scene: tr('episodeEditMentionPopover.scene'),
+  prop: tr('episodeEditMentionPopover.prop'),
 }
 
 // 渲染 @ 引用弹层
@@ -193,7 +193,7 @@ export function EpisodeEditMentionPopover({
       className="drama-ep-mention-pop"
       style={{ top, left }}
       role="listbox"
-      aria-label={tv("@ 引用", "@ Tham chiếu")}
+      aria-label={tr('episodeEditMentionPopover.reference')}
     >
       <div className="drama-ep-mention-pop-tabs">
         <button
@@ -203,7 +203,7 @@ export function EpisodeEditMentionPopover({
           onClick={() => setTab('assets')}
         >
           <LayoutGrid size={14} />
-          {tv("资产", "Tài sản")}
+          {tr('episodeEditMentionPopover.asset')}
         </button>
         <button
           type="button"
@@ -215,7 +215,7 @@ export function EpisodeEditMentionPopover({
           }}
         >
           <Timer size={14} />
-          {tv("小工具", "Công cụ nhỏ")}
+          {tr('episodeEditMentionPopover.tools')}
         </button>
       </div>
 
@@ -228,7 +228,7 @@ export function EpisodeEditMentionPopover({
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => onScopeChange('episode')}
             >
-              {tv("本集", "Tập này")}
+              {tr('episodeEditMentionPopover.episode')}
             </button>
             <button
               type="button"
@@ -236,7 +236,7 @@ export function EpisodeEditMentionPopover({
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => onScopeChange('series')}
             >
-              {tv("全剧", "Toàn phim")}
+              {tr('episodeEditMentionPopover.wholeDrama')}
             </button>
           </div>
           <label className="drama-ep-mention-pop-search">
@@ -245,7 +245,7 @@ export function EpisodeEditMentionPopover({
               ref={searchRef}
               type="search"
               value={searchQuery}
-              placeholder={tv("搜索资产名称、类型…", "Tìm tên, loại tài sản…")}
+              placeholder={tr('episodeEditMentionPopover.searchAssetNamesTypes')}
               onChange={(e) => setSearchQuery(e.target.value)}
               onMouseDown={(e) => e.stopPropagation()}
               onKeyDown={(e) => {
@@ -264,7 +264,7 @@ export function EpisodeEditMentionPopover({
           </label>
           <div className="drama-ep-mention-pop-list">
             {filteredAssets.length === 0 ? (
-              <p className="drama-ep-mention-pop-empty">{tv("无匹配资产", "Không có tài sản phù hợp")}</p>
+              <p className="drama-ep-mention-pop-empty">{tr('episodeEditMentionPopover.noMatchingAssets')}</p>
             ) : (
               filteredAssets.map((asset, index) => {
                 const preview = resolveDramaMediaUrl(asset.cover || asset.url)
@@ -286,7 +286,7 @@ export function EpisodeEditMentionPopover({
                       )}
                     </span>
                     <span className="drama-ep-mention-pop-meta">
-                      <strong>{asset.name || tv(`资产 ${asset.id}`, `Tài sản ${asset.id}`)}</strong>
+                      <strong>{asset.name || tr('episodeEditMentionPopover.asset2', { id: asset.id })}</strong>
                       <em>{TYPE_LABEL[typeKey] || typeKey}</em>
                     </span>
                   </button>
@@ -304,8 +304,8 @@ export function EpisodeEditMentionPopover({
           >
             <Clapperboard size={16} />
             <span>
-              <strong>{tv("插入时长", "Chèn thời lượng")}</strong>
-              <em>{tv("剩余可用", "Còn dùng được")} {remaining}s</em>
+              <strong>{tr('episodeEditMentionPopover.insertDuration')}</strong>
+              <em>{tr('episodeEditMentionPopover.remaining')} {remaining}s</em>
             </span>
           </button>
           <button
@@ -315,8 +315,8 @@ export function EpisodeEditMentionPopover({
           >
             <Aperture size={16} />
             <span>
-              <strong>{tv("景别 / 运镜", "Cỡ cảnh / chuyển động máy")}</strong>
-              <em>{tv("插入空镜、特写、推拉摇移等前缀", "Chèn các tiền tố như cảnh trống, cận cảnh, đẩy/kéo/lia/dịch")}</em>
+              <strong>{tr('episodeEditMentionPopover.framingCameraMoves')}</strong>
+              <em>{tr('episodeEditMentionPopover.insertPrefixesSuchEmptyShot')}</em>
             </span>
           </button>
         </div>
@@ -328,7 +328,7 @@ export function EpisodeEditMentionPopover({
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => setToolsView('list')}
           >
-            {tv("← 返回", "← Quay lại")}
+            {tr('episodeEditMentionPopover.back')}
           </button>
           <div className="drama-ep-mention-pop-duration-presets">
             {DURATION_PRESET_OPTIONS.map((sec) => {
@@ -351,7 +351,7 @@ export function EpisodeEditMentionPopover({
               type="number"
               min={1}
               max={remaining || FRAGMENT_CONTENT_DURATION_MAX}
-              placeholder={tv("自定义秒数", "Số giây tùy chỉnh")}
+              placeholder={tr('episodeEditMentionPopover.customSeconds')}
               value={customDuration}
               onChange={(e) => setCustomDuration(e.target.value)}
               onMouseDown={(e) => e.stopPropagation()}
@@ -365,7 +365,7 @@ export function EpisodeEditMentionPopover({
                 onSelectDuration(sec)
               }}
             >
-              {tv("插入", "Chèn")}
+              {tr('episodeEditMentionPopover.insert')}
             </button>
           </div>
         </div>
@@ -377,14 +377,14 @@ export function EpisodeEditMentionPopover({
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => setToolsView('list')}
           >
-            {tv("← 返回", "← Quay lại")}
+            {tr('episodeEditMentionPopover.back')}
           </button>
           {filteredCamera.length === 0 ? (
-            <p className="drama-ep-mention-pop-empty">{tv("无匹配词条", "Không có mục từ phù hợp")}</p>
+            <p className="drama-ep-mention-pop-empty">{tr('episodeEditMentionPopover.noMatchingEntries')}</p>
           ) : (
             <>
-              {renderCameraGroup(tv('景别', 'Cỡ cảnh'), shotItems)}
-              {renderCameraGroup(tv('运镜', 'Chuyển động máy'), moveItems)}
+              {renderCameraGroup(tr('episodeEditMentionPopover.framing'), shotItems)}
+              {renderCameraGroup(tr('episodeEditMentionPopover.cameraMoves'), moveItems)}
             </>
           )}
           <ul className="drama-ep-mention-pop-camera-tips">
