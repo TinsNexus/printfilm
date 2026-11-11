@@ -2,6 +2,7 @@ import { cn } from "@/lib/utils";
 import { AdminField } from "@/components/admin/AdminField";
 import { Select } from "@/components/ui/select";
 import { useId } from "react";
+import { tr } from "../../i18n/translate.ts";
 
 export type AdminSelectOption = {
   value: string;
@@ -33,7 +34,7 @@ export function AdminSelect({
     <div className={cn("admin-select-container", className)}>
       <Select
         id={id}
-        aria-label={label || placeholder || "Tùy chọn lọc"}
+        aria-label={label || placeholder || tr("ui.filterOptions")}
         value={value}
         onChange={(e) => onChange(e.target.value)}
       >

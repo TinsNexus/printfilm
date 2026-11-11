@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Inbox } from "lucide-react";
 import "@/styles/admin-primitives.css";
+import { tr } from "../../i18n/translate.ts";
 
 type PageHeaderProps = {
   title?: string;
@@ -32,8 +33,8 @@ type EmptyStateProps = {
 
 // 空列表占位
 export function EmptyState({
-  title = "Chưa có dữ liệu",
-  description = "Hãy thử đổi điều kiện lọc",
+  title = tr("ui.data"),
+  description = tr("ui.tryChangingFilters"),
   className,
 }: EmptyStateProps) {
   return (

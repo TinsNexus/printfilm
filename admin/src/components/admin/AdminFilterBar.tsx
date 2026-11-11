@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import "@/styles/admin-controls.css";
+import { tr } from "../../i18n/translate.ts";
 
 type AdminFilterBarProps = {
   children: ReactNode;
@@ -11,7 +12,7 @@ type AdminFilterBarProps = {
 /** 管理端列表筛选条：单行紧凑横排，空间不足时自动换行 */
 export function AdminFilterBar({ children, trailing, className }: AdminFilterBarProps) {
   return (
-    <div className={cn("admin-filter-bar admin-filter-toolbar", className)} role="group" aria-label="Điều kiện lọc">
+    <div className={cn("admin-filter-bar admin-filter-toolbar", className)} role="group" aria-label={tr("ui.filterConditions")}>
       <div className="admin-filter-bar-main">{children}</div>
       {trailing ? <div className="admin-filter-bar-trailing">{trailing}</div> : null}
     </div>

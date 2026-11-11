@@ -2,6 +2,7 @@ import { cn } from "@/lib/utils";
 import type { KeyboardEventHandler } from "react";
 import { Search, X } from "lucide-react";
 import "@/styles/admin-controls.css";
+import { tr } from "../../i18n/translate.ts";
 
 type AdminSearchInputProps = {
   value: string;
@@ -15,7 +16,7 @@ type AdminSearchInputProps = {
 export function AdminSearchInput({
   value,
   onChange,
-  placeholder = "Tìm kiếm…",
+  placeholder = tr("ui.search"),
   className,
   onKeyDown,
 }: AdminSearchInputProps) {
@@ -37,7 +38,7 @@ export function AdminSearchInput({
           }
         }}
       />
-      {value ? <button type="button" className="admin-control-clear" aria-label="Xóa tìm kiếm" onMouseDown={(event) => event.preventDefault()} onClick={() => onChange("")}><X size={13} /></button> : null}
+      {value ? <button type="button" className="admin-control-clear" aria-label={tr("ui.clearSearch")} onMouseDown={(event) => event.preventDefault()} onClick={() => onChange("")}><X size={13} /></button> : null}
     </div>
   );
 }

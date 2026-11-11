@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import "@/styles/admin-controls.css";
+import { tr } from "../../i18n/translate.ts";
 
 export type AdminChipOption = {
   value: string;
@@ -21,7 +22,7 @@ export function AdminChipFilter({ label, value, options, onChange, className }: 
   return (
     <div className={cn("admin-chip-filter admin-choice-filter", className)}>
       {label ? <span className="admin-chip-filter-label">{label}</span> : null}
-      <div className={cn("admin-chip-filter-list", segment && "is-segment")} role="group" aria-label={label || "Lọc danh mục"}>
+      <div className={cn("admin-chip-filter-list", segment && "is-segment")} role="group" aria-label={label || tr("ui.filterCategory")}>
         {options.map((opt) => {
           const active = value === opt.value;
           return (

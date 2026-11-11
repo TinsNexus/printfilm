@@ -3,6 +3,7 @@ import * as SelectPrimitive from "@radix-ui/react-select";
 import { Check, ChevronDown, ChevronUp, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import "@/styles/admin-controls.css";
+import { tr } from "../../i18n/translate.ts";
 
 type OptionElement = React.ReactElement<React.ComponentProps<"option">>;
 type OptionRow = { value: string; label: React.ReactNode; text: string; disabled: boolean; group?: string };
@@ -90,19 +91,19 @@ export function Select({ className, children, value, defaultValue, onChange, ref
         <SelectPrimitive.Trigger
           ref={triggerRef}
           id={props.id} className={cn("admin-control admin-select admin-select-trigger", className)} title={props.title}
-          aria-label={props["aria-label"] ?? (props.id ? undefined : rows.find((row) => row.value === selectedValue)?.text ?? "Chọn tùy chọn")}
+          aria-label={props["aria-label"] ?? (props.id ? undefined : rows.find((row) => row.value === selectedValue)?.text ?? tr("ui.chooseOption"))}
           aria-labelledby={props["aria-labelledby"]} aria-describedby={props["aria-describedby"]} aria-invalid={props["aria-invalid"]}
           aria-required={props.required}
           tabIndex={props.tabIndex} autoFocus={props.autoFocus} style={props.style}
         >
-          <SelectPrimitive.Value>{rows.find((row) => row.value === selectedValue)?.label ?? "Vui lòng chọn"}</SelectPrimitive.Value>
+          <SelectPrimitive.Value>{rows.find((row) => row.value === selectedValue)?.label ?? tr("ui.pleaseChoose")}</SelectPrimitive.Value>
           <SelectPrimitive.Icon className="admin-select-chevron"><ChevronDown size={15} /></SelectPrimitive.Icon>
         </SelectPrimitive.Trigger>
         <SelectPrimitive.Portal>
           <SelectPrimitive.Content ref={contentRef} className="admin-select-popover" position="popper" sideOffset={6} collisionPadding={12}>
             {searchable ? <div className="admin-select-search-wrap">
               <Search size={14} aria-hidden="true" />
-              <input ref={searchRef} className="admin-select-search-input" aria-label="Tìm tùy chọn" placeholder="Tìm tùy chọn…" value={search}
+              <input ref={searchRef} className="admin-select-search-input" aria-label={tr("ui.searchOptions")} placeholder={tr("ui.searchOptionsPh")} value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Escape") return;
@@ -120,7 +121,7 @@ export function Select({ className, children, value, defaultValue, onChange, ref
                   }
                 }}
               />
-              {search ? <button type="button" aria-label="Xóa tìm kiếm tùy chọn" className="admin-select-search-clear" onPointerDown={(event) => event.preventDefault()} onClick={() => { setSearch(""); searchRef.current?.focus(); }}><X size={13} /></button> : null}
+              {search ? <button type="button" aria-label={tr("ui.clearOptionSearch")} className="admin-select-search-clear" onPointerDown={(event) => event.preventDefault()} onClick={() => { setSearch(""); searchRef.current?.focus(); }}><X size={13} /></button> : null}
             </div> : null}
             <SelectPrimitive.ScrollUpButton className="admin-select-scroll"><ChevronUp size={14} /></SelectPrimitive.ScrollUpButton>
             <SelectPrimitive.Viewport className="admin-select-viewport">
@@ -133,7 +134,7 @@ export function Select({ className, children, value, defaultValue, onChange, ref
                   </SelectPrimitive.Item>
                 </React.Fragment>
               ))}
-              {visibleRows.length === 0 ? <div className="admin-select-empty">{search ? "Không có tùy chọn phù hợp" : "Chưa có tùy chọn"}</div> : null}
+              {visibleRows.length === 0 ? <div className="admin-select-empty">{tr(search ? "ui.noMatchingOptions" : "ui.noOptions")}</div> : null}
             </SelectPrimitive.Viewport>
             <SelectPrimitive.ScrollDownButton className="admin-select-scroll"><ChevronDown size={14} /></SelectPrimitive.ScrollDownButton>
           </SelectPrimitive.Content>

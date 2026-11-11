@@ -3,6 +3,8 @@ import { buildPageItems, DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { cn } from "@/lib/utils";
 import { Select } from "@/components/ui/select";
 import "@/styles/admin-primitives.css";
+import { tr } from "../i18n/translate.ts";
+import { tRich } from "../i18n/rich";
 
 type Props = {
   page: number;
@@ -37,16 +39,16 @@ export function PaginationBar({
     >
       <div className="flex flex-wrap items-center gap-3">
         <span className="admin-ui-pagination-summary">
-          Tổng <em className="not-italic font-semibold text-[var(--admin-text)]">{total}</em> mục
+          {tRich(tr("ui.totalRows"), { total: <em className="not-italic font-semibold text-[var(--admin-text)]">{total}</em> })}
           <span className="mx-1.5 text-[var(--admin-border)]">·</span>
           {from}-{to}
         </span>
         {onPageSizeChange && (
           <label className="admin-ui-pagination-size flex items-center gap-2 text-xs">
-            <span>mỗi trang</span>
+            <span>{tr("ui.perPage")}</span>
             <Select
               className="admin-ui-pagination-select !h-9 !min-w-[4.5rem] !text-xs"
-              aria-label="Số mục hiển thị mỗi trang"
+              aria-label={tr("ui.pageSizeLabel")}
               value={pageSize}
               onChange={(e) => onPageSizeChange(Number(e.target.value))}
             >
@@ -56,18 +58,18 @@ export function PaginationBar({
                 </option>
               ))}
             </Select>
-            <span>mục</span>
+            <span>{tr("ui.items")}</span>
           </label>
         )}
       </div>
 
-      <nav className="admin-ui-pagination-pages flex items-center gap-1" aria-label="Điều hướng phân trang">
+      <nav className="admin-ui-pagination-pages flex items-center gap-1" aria-label={tr("ui.paginationNav")}>
         <button
           type="button"
           className="admin-page-btn"
           disabled={page <= 1}
           onClick={() => onPageChange(page - 1)}
-          aria-label="Trang trước"
+          aria-label={tr("ui.previousPage")}
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
@@ -82,7 +84,7 @@ export function PaginationBar({
               type="button"
               className={cn("admin-page-btn", n === page && "is-active")}
               aria-current={n === page ? "page" : undefined}
-              aria-label={`Trang ${n} `}
+              aria-label={tr("ui.pageN", { n })}
               onClick={() => onPageChange(n)}
             >
               {n}
@@ -94,7 +96,7 @@ export function PaginationBar({
           className="admin-page-btn"
           disabled={page >= totalPages}
           onClick={() => onPageChange(page + 1)}
-          aria-label="Trang sau"
+          aria-label={tr("ui.nextPage")}
         >
           <ChevronRight className="h-4 w-4" />
         </button>

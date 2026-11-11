@@ -3,6 +3,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import "@/styles/admin-primitives.css";
+import { tr } from "../../i18n/translate.ts";
 
 export const Dialog = DialogPrimitive.Root;
 export const DialogTrigger = DialogPrimitive.Trigger;
@@ -24,7 +25,7 @@ export function DialogContent({
         {...props}
       >
         {children}
-        <DialogPrimitive.Close aria-label="Đóng cửa sổ" className="admin-dialog-close absolute right-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-lg text-[var(--admin-muted)] transition-colors hover:bg-[#f1f4ee] hover:text-[var(--admin-text)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--admin-accent-ring)]">
+        <DialogPrimitive.Close aria-label={tr("ui.closeDialog")} className="admin-dialog-close absolute right-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-lg text-[var(--admin-muted)] transition-colors hover:bg-[#f1f4ee] hover:text-[var(--admin-text)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--admin-accent-ring)]">
           <X className="h-4 w-4" aria-hidden="true" />
         </DialogPrimitive.Close>
       </DialogPrimitive.Content>

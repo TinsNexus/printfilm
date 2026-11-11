@@ -1,4 +1,5 @@
 import { clearAuth, getToken, setCachedUser, setToken, type AdminUser } from "@/lib/auth";
+import { tr } from "../i18n/translate.ts";
 
 type ApiError = {
   detail?: string | { msg?: string }[];
@@ -9,7 +10,7 @@ function errorMessage(data: ApiError, status: number): string {
   const detail = data?.detail;
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail) && detail[0]?.msg) return detail[0].msg;
-  return `Yêu cầu thất bại (${status})`;
+  return tr("ui.requestFailed", { status });
 }
 
 // 为管理接口附加会话信息，统一处理响应与登录失效
@@ -34,7 +35,7 @@ export async function api<T>(
     if (!window.location.pathname.startsWith("/login")) {
       window.location.href = "/login";
     }
-    throw new Error("Chưa đăng nhập hoặc phiên đăng nhập đã hết hạn");
+    throw new Error(tr("ui.signedSessionExpired"));
   }
   if (!res.ok) {
     throw new Error(errorMessage(data as ApiError, res.status));
@@ -52,7 +53,7 @@ export async function loginAsAdmin(email: string, password: string): Promise<Adm
   const me = await api<AdminUser>("/api/auth/me");
   if (me.role !== "admin") {
     clearAuth();
-    throw new Error("Tài khoản này không có quyền quản trị");
+    throw new Error(tr("ui.accountAdminPermission"));
   }
   setCachedUser(me);
   return me;

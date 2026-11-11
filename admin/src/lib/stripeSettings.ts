@@ -1,3 +1,4 @@
+import { tr } from "../i18n/translate.ts";
 type StripeSettings = {
   stripe_enabled: boolean;
   stripe_frontend_url: string;
@@ -42,8 +43,8 @@ export function stripeSettingsReady(settings: StripeSettings, drafts: StripeSecr
 export function stripeRateInputError(value: string | undefined): string | undefined {
   const raw = (value || "").trim();
   if (!raw) return undefined;
-  if (!/^\d+(?:\.\d{1,6})?$/.test(raw)) return "Vui lòng nhập tỷ giá dương với tối đa sáu chữ số thập phân.";
+  if (!/^\d+(?:\.\d{1,6})?$/.test(raw)) return tr("ui.stripeRateFormat");
   const amount = Number(raw);
-  if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) return "Tỷ giá phải lớn hơn 0 và không vượt quá 1000000.";
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) return tr("ui.stripeRateRange");
   return undefined;
 }

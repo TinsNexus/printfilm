@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, type AdminTaskEventPage } from "@/api/client";
 import { taskEventPagePath } from "@/lib/taskEventPagination";
 import { redactTaskText } from "@/lib/taskObservability";
+import { tr } from "../i18n/translate.ts";
 
 /** Load only the selected history page; live refreshes never move an older page. */
 export function useTaskEventPage(taskId: number, refreshToken: string, eventTypePrefix?: string) {
@@ -21,7 +22,7 @@ export function useTaskEventPage(taskId: number, refreshToken: string, eventType
     void api<AdminTaskEventPage>(taskEventPagePath(taskId, page, pageSize, eventTypePrefix), { signal: controller.signal })
       .then((result) => { if (!cancelled) setData(result); })
       .catch((reason: unknown) => {
-        if (!cancelled) setError(redactTaskText(reason instanceof Error ? reason.message : "Tải sự kiện thất bại"));
+        if (!cancelled) setError(redactTaskText(reason instanceof Error ? reason.message : tr("ui.eventsLoadFailed")));
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => {

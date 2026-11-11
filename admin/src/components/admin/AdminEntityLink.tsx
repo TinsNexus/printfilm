@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { formatAccountId } from "@/lib/admin-account";
+import { tr } from "../../i18n/translate.ts";
 
 type EntityKind = "user" | "project" | "drama" | "drama_asset" | "task" | "order";
 
@@ -35,15 +36,15 @@ function defaultLabel(kind: EntityKind, id: number): string {
     case "user":
       return `ID：${formatAccountId(id)}`;
     case "project":
-      return `Khoa học#${id}`;
+      return tr("ui.explainer", { id });
     case "drama":
-      return `Phim truyện#${id}`;
+      return tr("ui.drama", { id });
     case "drama_asset":
-      return `Tài sản#${id}`;
+      return tr("ui.asset", { id });
     case "task":
-      return `Tác vụ#${id}`;
+      return tr("ui.task", { id });
     case "order":
-      return `Đơn hàng#${id}`;
+      return tr("ui.order", { id });
     default:
       return String(id);
   }

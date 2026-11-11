@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api, type AdminModelSettings } from "@/api/client";
+import { tr } from "../i18n/translate.ts";
 
 // 加载 / 保存管理端 flat 配置（DB 覆盖 env）
 export function useAdminModelSettings() {
@@ -14,7 +15,7 @@ export function useAdminModelSettings() {
     try {
       setForm(await api<AdminModelSettings>("/api/admin/settings/models"));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Tải cấu hình thất bại");
+      toast.error(err instanceof Error ? err.message : tr("ui.couldLoadSettings"));
     } finally {
       setLoading(false);
     }
@@ -28,7 +29,7 @@ export function useAdminModelSettings() {
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
   }
 
-  async function save(body: Record<string, unknown>, successMessage = "Đã lưu cấu hình"): Promise<boolean> {
+  async function save(body: Record<string, unknown>, successMessage = tr("ui.settingsSaved")): Promise<boolean> {
     if (pendingSave.current) return false;
     pendingSave.current = true;
     setSaving(true);
@@ -38,7 +39,7 @@ export function useAdminModelSettings() {
       toast.success(successMessage);
       return true;
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Lưu thất bại");
+      toast.error(err instanceof Error ? err.message : tr("ui.saveFailed"));
       return false;
     } finally {
       pendingSave.current = false;

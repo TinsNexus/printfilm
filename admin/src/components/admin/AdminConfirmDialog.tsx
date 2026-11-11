@@ -1,6 +1,7 @@
 import { AlertTriangle, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AdminModal } from "@/components/admin/AdminModal";
+import { tr } from "../../i18n/translate.ts";
 
 type AdminConfirmDialogProps = {
   open: boolean;
@@ -19,8 +20,8 @@ export function AdminConfirmDialog({
   open,
   title,
   description,
-  confirmLabel = "Xác nhận",
-  cancelLabel = "Hủy",
+  confirmLabel = tr("ui.confirm"),
+  cancelLabel = tr("ui.cancel"),
   loading = false,
   destructive = false,
   onOpenChange,
