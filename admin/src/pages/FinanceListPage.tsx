@@ -7,14 +7,15 @@ import { PageHeader } from "@/components/ui/page";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, type AdminFinanceDaily } from "@/api/client";
 import { points } from "@/lib/points";
+import { tr } from "../i18n/translate.ts";
 
 type FinanceDays = "7" | "14" | "30" | "90";
 
 const DAY_OPTIONS = [
-  { value: "7", label: "7 ngày qua" },
-  { value: "14", label: "14 ngày qua" },
-  { value: "30", label: "30 ngày qua" },
-  { value: "90", label: "90 ngày qua" },
+  { value: "7", get label() { return tr("teamsUi.lastNDays", { n: 7 }); } },
+  { value: "14", get label() { return tr("teamsUi.lastNDays", { n: 14 }); } },
+  { value: "30", get label() { return tr("teamsUi.lastNDays", { n: 30 }); } },
+  { value: "90", get label() { return tr("teamsUi.lastNDays", { n: 90 }); } },
 ];
 
 /** 管理端财务列表：按日展示用户扣费与用量。 */
@@ -30,7 +31,7 @@ export function FinanceListPage() {
       setData(res);
     } catch (err) {
       setData(null);
-      toast.error(err instanceof Error ? err.message : "Tải danh sách tài chính thất bại");
+      toast.error(err instanceof Error ? err.message : tr("teamsUi.financeLoadFailed"));
     } finally {
       setLoading(false);
     }
@@ -46,11 +47,11 @@ export function FinanceListPage() {
 
   return (
     <div className="admin-page">
-      <PageHeader title="Danh sách tài chính" description="Tổng hợp theo ngày phí trừ người dùng, số lần gọi và lượng Token" />
+      <PageHeader title={tr("teamsUi.financeTitle")} description={tr("teamsUi.financeDesc")} />
 
       <AdminFilterBar>
         <AdminChipFilter
-          label="Khoảng thời gian"
+          label={tr("teamsUi.timeRange")}
           value={days}
           options={DAY_OPTIONS}
           onChange={(v) => setDays(v as FinanceDays)}
@@ -59,11 +60,11 @@ export function FinanceListPage() {
       </AdminFilterBar>
 
       <PageSection
-        title="Danh sách tài chính"
+        title={tr("teamsUi.financeTitle")}
         description={
           rangeMismatch
-            ? "Dữ liệu không khớp với khoảng thời gian hiện tại, vui lòng tải lại"
-            : `$ ngày qua{days} ngày · Tổng hợp phí trừ và mức dùng của người dùng`
+            ? tr("teamsUi.rangeMismatch")
+            : tr("teamsUi.financeRangeDesc", { n: days })
         }
         bodyClassName="!pt-0"
       >
@@ -71,9 +72,9 @@ export function FinanceListPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Ngày</TableHead>
-                <TableHead>Số tiền trừ</TableHead>
-                <TableHead>Số lần gọi</TableHead>
+                <TableHead>{tr("teamsUi.colDate")}</TableHead>
+                <TableHead>{tr("teamsUi.colCharge")}</TableHead>
+                <TableHead>{tr("teamsUi.colCalls")}</TableHead>
                 <TableHead>Token</TableHead>
               </TableRow>
             </TableHeader>
@@ -81,13 +82,13 @@ export function FinanceListPage() {
               {loading ? (
                 <TableRow>
                   <TableCell colSpan={4} className="!text-center text-[var(--admin-muted)]">
-                    Đang tải…
+                    {tr("teamsUi.loading")}
                   </TableCell>
                 </TableRow>
               ) : rows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={4} className="!text-center text-[var(--admin-muted)]">
-                    Chưa có dữ liệu
+                    {tr("teamsUi.noData")}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -102,7 +103,7 @@ export function FinanceListPage() {
                   ))}
                   {totals ? (
                     <TableRow className="bg-[rgba(15,45,32,0.04)] font-medium">
-                      <TableCell>合计</TableCell>
+                      <TableCell>{tr("teamsUi.total")}</TableCell>
                       <TableCell>{points(totals.charge_fen)}</TableCell>
                       <TableCell>{totals.calls.toLocaleString()}</TableCell>
                       <TableCell>{totals.tokens.toLocaleString()}</TableCell>

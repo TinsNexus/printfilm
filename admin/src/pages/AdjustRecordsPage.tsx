@@ -14,6 +14,7 @@ import { PageHeader } from "@/components/ui/page";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { points } from "@/lib/points";
+import { tr } from "../i18n/translate.ts";
 
 type LedgerRes = PageResult<AdminLedger>;
 
@@ -21,7 +22,7 @@ type DirectionFilter = "" | "credit" | "debit";
 
 /** 调账方向文案：正数为调增，负数为调减 */
 function directionLabel(deltaFen: number): string {
-  return deltaFen >= 0 ? "Tăng" : "Giảm";
+  return tr(deltaFen >= 0 ? "teamsUi.credit" : "teamsUi.debit");
 }
 
 /** 管理端手动调账记录：仅展示 ref_type=admin 的钱包流水 */
@@ -48,7 +49,7 @@ export function AdjustRecordsPage() {
         }));
       } catch (err) {
         setData(null);
-        toast.error(err instanceof Error ? err.message : "Tải bản ghi điều chỉnh thất bại");
+        toast.error(err instanceof Error ? err.message : tr("teamsUi.adjustLoadFailed"));
       } finally {
         setLoading(false);
       }
@@ -64,7 +65,7 @@ export function AdjustRecordsPage() {
 
   return (
     <div className="admin-page">
-      <PageHeader title="Điều chỉnh thủ công" description="Biến động do điều chỉnh số dư thủ công trong quản lý người dùng, kèm người thao tác và ghi chú" />
+      <PageHeader title={tr("teamsUi.adjustTitle")} description={tr("teamsUi.adjustDesc")} />
 
       <AdminFilterBar>
         <AdminUserSearchSelect value={userId} onChange={setUserId} />
@@ -72,9 +73,9 @@ export function AdjustRecordsPage() {
           value={direction}
           onChange={(e) => setDirection(e.target.value as DirectionFilter)}
         >
-          <option value="">Tất cả hướng</option>
-          <option value="credit">Tăng</option>
-          <option value="debit">Giảm</option>
+          <option value="">{tr("teamsUi.allDirections")}</option>
+          <option value="credit">{tr("teamsUi.credit")}</option>
+          <option value="debit">{tr("teamsUi.debit")}</option>
         </Select>
         <AdminDateRangeFilter
           from={dateFrom}
@@ -93,13 +94,13 @@ export function AdjustRecordsPage() {
             void load(1);
           }}
         >
-          Lọc
+          {tr("teamsUi.filter")}
         </Button>
       </AdminFilterBar>
 
       <PageSection
-        title="Bản ghi điều chỉnh thủ công"
-        description={data ? `Tổng ${data.meta.total} mục` : undefined}
+        title={tr("teamsUi.adjustRecords")}
+        description={data ? tr("teamsUi.totalN", { n: data.meta.total }) : undefined}
         bodyClassName="!pt-0"
       >
         <div className="admin-table-wrap">
@@ -107,26 +108,26 @@ export function AdjustRecordsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>ID</TableHead>
-                <TableHead>Thời gian</TableHead>
-                <TableHead>Người dùng</TableHead>
-                <TableHead>Hướng</TableHead>
-                <TableHead>Biến động</TableHead>
-                <TableHead>Số dư sau</TableHead>
-                <TableHead>Người thao tác</TableHead>
-                <TableHead>Ghi chú</TableHead>
+                <TableHead>{tr("teamsUi.colTime")}</TableHead>
+                <TableHead>{tr("teamsUi.colUser")}</TableHead>
+                <TableHead>{tr("teamsUi.colDirection")}</TableHead>
+                <TableHead>{tr("teamsUi.colChange")}</TableHead>
+                <TableHead>{tr("teamsUi.colBalanceAfterShort")}</TableHead>
+                <TableHead>{tr("teamsUi.colOperator")}</TableHead>
+                <TableHead>{tr("teamsUi.colNote")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
                   <TableCell colSpan={8} className="!text-center text-[var(--admin-muted)]">
-                    Đang tải…
+                    {tr("teamsUi.loading")}
                   </TableCell>
                 </TableRow>
               ) : rows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={8} className="!text-center text-[var(--admin-muted)]">
-                    Chưa có bản ghi điều chỉnh thủ công
+                    {tr("teamsUi.noAdjustments")}
                   </TableCell>
                 </TableRow>
               ) : (

@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAdminTeamQuery } from "@/hooks/useAdminTeamQuery";
 import { cn } from "@/lib/utils";
+import { tr } from "../i18n/translate.ts";
 
 /** 团队二级详情：基本资料、成员与可追溯的团队消费记录。 */
 export function TeamDetailPage() {
@@ -28,22 +29,22 @@ export function TeamDetailPage() {
   useEffect(() => { activeTeam.current = id; setAdjustOpen(false); }, [id]);
   const { data: team, loading, error, reload } = useAdminTeamQuery<AdminTeam>(teamPaths.detail(Number.isSafeInteger(id) && id > 0 ? id : 0));
   return <div className="space-y-5">
-    <div className="flex flex-wrap items-center justify-between gap-3"><Button type="button" asChild variant="ghost"><Link to="/teams"><ArrowLeft className="h-4 w-4" />Quay lại danh sách nhóm</Link></Button><div className="flex gap-2"><Button type="button" variant="outline" disabled={loading} onClick={reload}><RefreshCw className="h-4 w-4" />Làm mới tổng quan nhóm</Button><Button type="button" disabled={!team || loading} onClick={() => setAdjustOpen(true)}>Đặt hạn mức chi tiêu</Button></div></div>
+    <div className="flex flex-wrap items-center justify-between gap-3"><Button type="button" asChild variant="ghost"><Link to="/teams"><ArrowLeft className="h-4 w-4" />{tr("teamsUi.backToList")}</Link></Button><div className="flex gap-2"><Button type="button" variant="outline" disabled={loading} onClick={reload}><RefreshCw className="h-4 w-4" />{tr("teamsUi.refreshOverview")}</Button><Button type="button" disabled={!team || loading} onClick={() => setAdjustOpen(true)}>{tr("teamsUi.setTeamLimit")}</Button></div></div>
     <TeamQueryFeedback loading={loading} error={error} empty={false} onRetry={reload} />
     {team && <>
       <div className="flex flex-wrap items-start gap-4 rounded-2xl border border-[var(--admin-border)] bg-white p-6">
         <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--admin-accent-soft)] text-[var(--admin-forest)]"><UsersRound className="h-7 w-7" /></span>
-        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-3"><h1 className="text-xl font-semibold">{team.name}</h1><Badge variant="info">Nhóm #{team.id}</Badge></div><p className="mt-2 break-words text-sm text-[var(--admin-muted)]">{team.description || "Chưa có giới thiệu nhóm"}</p><p className="mt-3 break-words text-xs text-[var(--admin-muted)]">Chủ sở hữu:{team.owner_nickname || "—"} · {team.owner_email} · #{team.owner_user_id}<br />Tạo lúc {teamDate(team.created_at)}</p></div>
+        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-3"><h1 className="text-xl font-semibold">{team.name}</h1><Badge variant="info">{tr("teamsUi.teamN", { id: team.id })}</Badge></div><p className="mt-2 break-words text-sm text-[var(--admin-muted)]">{team.description || tr("teamsUi.noDescription")}</p><p className="mt-3 break-words text-xs text-[var(--admin-muted)]">{tr("teamsUi.ownerLine", { name: team.owner_nickname || "—", email: team.owner_email, id: team.owner_user_id })}<br />{tr("teamsUi.createdAt", { time: teamDate(team.created_at) })}</p></div>
       </div>
       <AdminListStats items={[
-        { label: "在队成员", value: team.member_count, hint: `${team.project_count} 个团队项目` },
-        { label: "所有者个人积分", value: points(team.balance_fen), hint: `冻结 ${points(team.frozen_fen)}` },
-        { label: "团队月度上限", value: team.monthly_limit_fen === null ? "不限额" : points(team.monthly_limit_fen), hint: "预留 " + points(team.month_reserved_fen) },
-        { label: "本月已消费", value: points(team.month_spent_fen), hint: `${team.period} · 上海自然月` },
-        { label: "累计已消费", value: points(team.total_spent_fen), hint: "已结算金额，包含历史成员" },
+        { label: tr("teamsUi.activeMembers"), value: team.member_count, hint: tr("teamsUi.teamProjectsN", { n: team.project_count }) },
+        { label: tr("teamsUi.ownerPoints"), value: points(team.balance_fen), hint: tr("teamsUi.frozenAmount", { amount: points(team.frozen_fen) }) },
+        { label: tr("teamsUi.teamMonthlyLimit"), value: team.monthly_limit_fen === null ? tr("teamsUi.unlimited") : points(team.monthly_limit_fen), hint: tr("teamsUi.reservedAmount", { amount: points(team.month_reserved_fen) }) },
+        { label: tr("teamsUi.spentThisMonth"), value: points(team.month_spent_fen), hint: tr("teamsUi.periodShanghai", { period: team.period }) },
+        { label: tr("teamsUi.spentTotal"), value: points(team.total_spent_fen), hint: tr("teamsUi.spentTotalHint") },
       ]} />
-      <nav className="flex gap-2 border-b border-[var(--admin-border)] pb-3" aria-label="Điều hướng chi tiết nhóm">
-        {([['members', 'Thành viên nhóm'], ['usage', 'Bản ghi chi tiêu của nhóm'], ['wallet', 'Biến động ví nhóm lịch sử']] as const).map(([value, label]) => <Button key={value} type="button" variant={tab === value ? "soft" : "ghost"} aria-current={tab === value ? "page" : undefined} className={cn(tab === value && "font-bold")} onClick={() => { const next = new URLSearchParams(params); next.set("tab", value); if (value !== "usage") next.delete("member_id"); setParams(next); }}>{label}</Button>)}
+      <nav className="flex gap-2 border-b border-[var(--admin-border)] pb-3" aria-label={tr("teamsUi.detailNav")}>
+        {([['members', tr("teamsUi.tabMembers")], ['usage', tr("teamsUi.tabUsage")], ['wallet', tr("teamsUi.tabWallet")]] as const).map(([value, label]) => <Button key={value} type="button" variant={tab === value ? "soft" : "ghost"} aria-current={tab === value ? "page" : undefined} className={cn(tab === value && "font-bold")} onClick={() => { const next = new URLSearchParams(params); next.set("tab", value); if (value !== "usage") next.delete("member_id"); setParams(next); }}>{label}</Button>)}
       </nav>
       {tab === "members" ? <TeamMembersTable key={`members-${id}`} teamId={id} /> : tab === "wallet" ? <TeamWalletLedgerTable key={`wallet-${id}`} teamId={id} /> : <TeamUsageTable key={`usage-${id}-${params.get("member_id") || "all"}`} teamId={id} />}
       {adjustOpen && <TeamBudgetModal key={id} teamId={id} name={team.name} limit={team.monthly_limit_fen} onClose={() => setAdjustOpen(false)} onSaved={() => { if (id === activeTeam.current) reload(); }} />}

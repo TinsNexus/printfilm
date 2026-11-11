@@ -9,13 +9,14 @@ import { Button } from "@/components/ui/button";
 
 import { orderPaymentLabel } from "@/lib/orderPayment";
 import { ledgerKindLabel, orderStatusLabel, payTypeLabel } from "@/lib/statusLabels";
+import { tr } from "../../i18n/translate.ts";
 
 /** 钱包关联对象链接：兼容数字订单 ID 与历史商户单号。 */
 export function LedgerRefLink({ row }: { row: AdminLedger }) {
   if (row.ref_type === "order" && row.ref_id) {
     const id = Number(row.ref_id);
     if (Number.isFinite(id) && id > 0) {
-      return <AdminEntityLink kind="order" id={id} label={`Đơn hàng#${id}`} />;
+      return <AdminEntityLink kind="order" id={id} label={tr("teamsUi.orderN", { id })} />;
     }
     return (
       <Link
@@ -44,9 +45,9 @@ export function OrderDetailDialog({
   async function copyText(text: string) {
     try {
       await navigator.clipboard.writeText(text);
-      toast.success("Đã sao chép");
+      toast.success(tr("teamsUi.copied"));
     } catch {
-      toast.error("Sao chép thất bại");
+      toast.error(tr("teamsUi.copyFailed"));
     }
   }
 
@@ -55,12 +56,12 @@ export function OrderDetailDialog({
       open={open && !!orderDetail}
       onOpenChange={(nextOpen) => !nextOpen && onClose()}
       size="md"
-      title={orderDetail ? `Chi tiết đơn hàng #${orderDetail.id}` : "Chi tiết đơn hàng"}
+      title={orderDetail ? tr("teamsUi.orderDetailN", { id: orderDetail.id }) : tr("teamsUi.orderDetail")}
       subtitle={orderDetail?.out_trade_no}
       footer={
         orderDetail ? (
           <Button size="sm" variant="outline" onClick={() => void copyText(orderDetail.out_trade_no)}>
-            Sao chép mã đơn của merchant
+            {tr("teamsUi.copyOutTradeNo")}
           </Button>
         ) : undefined
       }
@@ -70,7 +71,7 @@ export function OrderDetailDialog({
           <AdminDetailMeta
             items={[
               {
-                label: "Người dùng",
+                label: tr("teamsUi.colUser"),
                 value: (
                   <AdminEntityLink
                     kind="user"
@@ -80,18 +81,18 @@ export function OrderDetailDialog({
                 ),
               },
               { label: "SKU", value: orderDetail.sku_id },
-              { label: "支付金额", value: orderPaymentLabel(orderDetail) },
-              { label: "到账积分", value: points(orderDetail.credit_fen) },
-              ...(orderDetail.payment_currency && orderDetail.payment_currency !== "cny" ? [{ label: "订单汇率", value: `1 ${orderDetail.payment_currency.toUpperCase()} = ${orderDetail.payment_exchange_rate || "—"} CNY` }] : []),
-              { label: "支付方式", value: payTypeLabel(orderDetail.pay_type) },
-              { label: "状态", value: orderStatusLabel(orderDetail.status) },
-              { label: "渠道单号", value: orderDetail.trade_no || "—" },
+              { label: tr("teamsUi.paidAmount"), value: orderPaymentLabel(orderDetail) },
+              { label: tr("teamsUi.creditedPoints"), value: points(orderDetail.credit_fen) },
+              ...(orderDetail.payment_currency && orderDetail.payment_currency !== "cny" ? [{ label: tr("teamsUi.orderRate"), value: `1 ${orderDetail.payment_currency.toUpperCase()} = ${orderDetail.payment_exchange_rate || "—"} CNY` }] : []),
+              { label: tr("teamsUi.payMethod"), value: payTypeLabel(orderDetail.pay_type) },
+              { label: tr("teamsUi.status"), value: orderStatusLabel(orderDetail.status) },
+              { label: tr("teamsUi.tradeNo"), value: orderDetail.trade_no || "—" },
               {
-                label: "Thời gian thanh toán",
+                label: tr("teamsUi.paidAt"),
                 value: orderDetail.paid_at ? new Date(orderDetail.paid_at).toLocaleString() : "—",
               },
               {
-                label: "Thời gian tạo",
+                label: tr("teamsUi.createdAtLabel"),
                 value: new Date(orderDetail.created_at).toLocaleString(),
                 full: true,
               },
@@ -113,14 +114,14 @@ export function LedgerDetailDialog({
       open={!!ledgerDetail}
       onOpenChange={(nextOpen) => !nextOpen && onClose()}
       size="md"
-      title={ledgerDetail ? `Chi tiết biến động #${ledgerDetail.id}` : "Chi tiết biến động"}
+      title={ledgerDetail ? tr("teamsUi.ledgerDetailN", { id: ledgerDetail.id }) : tr("teamsUi.ledgerDetail")}
     >
       {ledgerDetail ? (
         <AdminDetailSection>
           <AdminDetailMeta
             items={[
               {
-                label: "Người dùng",
+                label: tr("teamsUi.colUser"),
                 value: (
                   <AdminEntityLink
                     kind="user"
@@ -129,13 +130,13 @@ export function LedgerDetailDialog({
                   />
                 ),
               },
-              { label: "类型", value: ledgerKindLabel(ledgerDetail.kind) },
-              { label: "变动", value: points(ledgerDetail.delta_fen) },
-              { label: "剩余积分", value: points(ledgerDetail.balance_after) },
-              { label: "关联", value: <LedgerRefLink row={ledgerDetail} /> },
-              { label: "备注", value: ledgerDetail.note || "—" },
+              { label: tr("teamsUi.colKind"), value: ledgerKindLabel(ledgerDetail.kind) },
+              { label: tr("teamsUi.colChange"), value: points(ledgerDetail.delta_fen) },
+              { label: tr("teamsUi.pointsLeft"), value: points(ledgerDetail.balance_after) },
+              { label: tr("teamsUi.ref"), value: <LedgerRefLink row={ledgerDetail} /> },
+              { label: tr("teamsUi.colNote"), value: ledgerDetail.note || "—" },
               {
-                label: "Thời gian",
+                label: tr("teamsUi.colTime"),
                 value: new Date(ledgerDetail.created_at).toLocaleString(),
                 full: true,
               },
