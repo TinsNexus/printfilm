@@ -97,5 +97,6 @@ export const zhAdminRoutingSettings = {
     refErrors: "{n} 项参考上限待修正",
     refLimitAria: "{model} {media}上限",
     enabledCount: "已启用 {n} / {total}",
+    colModel: "模型",
   },
 } as const;

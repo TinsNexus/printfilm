@@ -129,6 +129,8 @@ export const enAdminOrders = {
       basisCost: "Charged by the recorded actual cost",
       basisUsage: "Charged by actual token usage and the configured rate",
       basisEstimate: "Charged by tokens estimated from settings",
+      domainStudio: "Studio",
+      colModel: "Model",
     },
   },
 } as const;

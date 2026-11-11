@@ -285,7 +285,7 @@ export function RoutingSettingsPanel() {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead><tr className="border-b text-xs text-[var(--admin-muted)]">
-                <th scope="col" className="px-2 py-3 font-medium">Model</th>
+                <th scope="col" className="px-2 py-3 font-medium">{tr("routing.colModel")}</th>
                 <th scope="col" className="px-2 py-3 font-medium">{tr("routing.colImages")}</th>
                 <th scope="col" className="px-2 py-3 font-medium">{tr("routing.colVideos")}</th>
                 <th scope="col" className="px-2 py-3 font-medium">{tr("routing.colAudios")}</th>

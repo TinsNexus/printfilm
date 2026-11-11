@@ -72,5 +72,6 @@ export const enAdminOssSettings = {
     queueNameHint: "Only used for async upload; keep the queue name in sync with the local worker settings.",
     queueNamePlaceholder: "e.g. oss_upload",
     configSource: "Config source: {source}",
+    alibabaOss: "Alibaba Cloud OSS",
   },
 } as const;

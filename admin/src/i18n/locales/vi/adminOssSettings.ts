@@ -72,5 +72,6 @@ export const viAdminOssSettings = {
     queueNameHint: "Chỉ dùng cho tải lên bất đồng bộ; giữ tên hàng đợi khớp với cấu hình Worker cục bộ.",
     queueNamePlaceholder: "Ví dụ oss_upload",
     configSource: "Nguồn cấu hình: {source}",
+    alibabaOss: "Alibaba Cloud OSS",
   },
 } as const;

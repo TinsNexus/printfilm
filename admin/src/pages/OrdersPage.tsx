@@ -327,7 +327,7 @@ export function OrdersPage() {
               <option value="">{tr("orders.ui.allDomains")}</option>
               <option value="kepu">{tr("orders.ui.domainKepu")}</option>
               <option value="drama">{tr("orders.ui.domainDrama")}</option>
-              <option value="studio">Studio</option>
+              <option value="studio">{tr("orders.ui.domainStudio")}</option>
             </Select>
             <Input
               placeholder="billing_key"
@@ -411,7 +411,7 @@ export function OrdersPage() {
                   <TableHead>{tr("orders.ui.colProject")}</TableHead>
                   <TableHead>{tr("orders.ui.colDomain")}</TableHead>
                   <TableHead>{tr("orders.ui.colCapability")}</TableHead>
-                  <TableHead>Model</TableHead>
+                  <TableHead>{tr("orders.ui.colModel")}</TableHead>
                   <TableHead>Tokens</TableHead>
                   <TableHead>{tr("orders.ui.colCharge")}</TableHead>
                   <TableHead>{tr("orders.ui.colBasis")}</TableHead>

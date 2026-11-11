@@ -62,7 +62,7 @@ export function OssSettingsPanel() {
 
   return <SettingsTabShell onSave={handleSave} saving={saving} saveLabel={tr("oss.saveLabel")}>
     <SettingsStatusBar title={tr("oss.statusTitle")} items={[
-      { id: "oss", label: "Alibaba Cloud OSS", ready: ossReady, readyText: tr("oss.fullyConfigured"), pendingText: form.oss_enabled ? tr("oss.needConnection") : tr("oss.notEnabled") },
+      { id: "oss", label: tr("oss.alibabaOss"), ready: ossReady, readyText: tr("oss.fullyConfigured"), pendingText: form.oss_enabled ? tr("oss.needConnection") : tr("oss.notEnabled") },
       { id: "public", label: tr("oss.publicAccess"), ready: Boolean(accessPreview && !publicBaseError), readyText: publicBase ? tr("oss.customUrl") : tr("oss.bucketDefaultUrl"), pendingText: tr("oss.pendingConfig") },
       { id: "async", label: tr("oss.uploadMode"), ready: form.oss_enabled && form.oss_upload_async, readyText: tr("oss.asyncUpload"), pendingText: form.oss_enabled ? tr("oss.syncUpload") : tr("oss.needsOss") },
     ]} extra={<span className="settings-status-extra">{tr("oss.configSource", { source: form.source === "db" ? tr("oss.sourceAdmin") : tr("oss.sourceEnv") })}</span>} />

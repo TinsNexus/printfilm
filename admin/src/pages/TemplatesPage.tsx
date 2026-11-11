@@ -16,14 +16,15 @@ import { PaginationBar } from "@/components/PaginationBar";
 import { TEMPLATE_PAGE_SIZE } from "@/lib/pagination";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page";
+import { tr } from "../i18n/translate.ts";
 
 type ListRes = { items: AdminTemplate[]; meta: PageMeta };
 type MetaRes = { categories: string[] };
 
 const STATUS_OPTIONS = [
-  { value: "", label: "Tất cả trạng thái" },
-  { value: "active", label: "Đã đăng" },
-  { value: "inactive", label: "Đã gỡ" },
+  { value: "", get label() { return tr("templates.ui.allStatuses"); } },
+  { value: "active", get label() { return tr("templates.ui.active"); } },
+  { value: "inactive", get label() { return tr("templates.ui.inactive"); } },
   { value: "premium", label: "Premium" },
 ];
 
@@ -82,7 +83,7 @@ export function TemplatesPage() {
       if (statusFilter === "inactive") params.set("is_active", "false");
       setData(await api<ListRes>(`/api/admin/templates?${params}`));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Tải thất bại");
+      toast.error(err instanceof Error ? err.message : tr("templates.ui.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -112,7 +113,7 @@ export function TemplatesPage() {
     const countFor = (cat: string) =>
       items.filter((t) => (t.category || []).includes(cat)).length;
     return [
-      { value: "", label: "Tất cả danh mục", count: items.length },
+      { value: "", label: tr("templates.ui.allCategories"), count: items.length },
       ...categories.map((cat) => ({
         value: cat,
         label: cat,
@@ -159,7 +160,7 @@ export function TemplatesPage() {
       });
       setOpen(true);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Tải chi tiết mẫu thất bại");
+      toast.error(err instanceof Error ? err.message : tr("templates.ui.detailFailed"));
     }
   }
 
@@ -196,7 +197,7 @@ export function TemplatesPage() {
           }),
         });
       } else {
-        if (!form.id.trim()) throw new Error("Vui lòng nhập ID mẫu");
+        if (!form.id.trim()) throw new Error(tr("templates.ui.idRequired"));
         await api(`/api/admin/templates`, {
           method: "POST",
           body: JSON.stringify({
@@ -224,11 +225,11 @@ export function TemplatesPage() {
           }),
         });
       }
-      toast.success("Đã lưu");
+      toast.success(tr("templates.ui.saved"));
       setOpen(false);
       await Promise.all([load(), loadMeta()]);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Lưu thất bại");
+      toast.error(err instanceof Error ? err.message : tr("templates.ui.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -240,7 +241,7 @@ export function TemplatesPage() {
       await api(`/api/admin/templates/${id}`, { method: "PATCH", body: JSON.stringify(body) });
       await load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Cập nhật thất bại");
+      toast.error(err instanceof Error ? err.message : tr("templates.ui.updateFailed"));
     }
   }
 
@@ -250,11 +251,11 @@ export function TemplatesPage() {
     setDeleting(true);
     try {
       await api(`/api/admin/templates/${deleteTarget}`, { method: "DELETE" });
-      toast.success("Đã xóa");
+      toast.success(tr("templates.ui.deleted"));
       setDeleteTarget(null);
       await Promise.all([load(), loadMeta()]);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Xóa thất bại");
+      toast.error(err instanceof Error ? err.message : tr("templates.ui.deleteFailed"));
     } finally {
       setDeleting(false);
     }
@@ -262,12 +263,12 @@ export function TemplatesPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader title="Quản lý mẫu"
-        description="Phong cách / nhân vật / prompt lấy theo trang này; dự án đã tạo cần khôi phục mẫu ở trang phân cảnh thì mới theo kịp."
+      <PageHeader title={tr("templates.ui.title")}
+        description={tr("templates.ui.pageDesc")}
         actions={
           <Button onClick={openCreate} className="gap-2">
             <Plus className="h-4 w-4" />
-            Tạo mẫu mới
+            {tr("templates.ui.newTemplate")}
           </Button>
         }
       />
@@ -276,13 +277,13 @@ export function TemplatesPage() {
         trailing={
           <>
             <LayoutGrid className="h-4 w-4" />
-            {filteredItems.length} / {data?.meta.total ?? 0} mục
+            {tr("templates.ui.countOf", { n: filteredItems.length, total: data?.meta.total ?? 0 })}
           </>
         }
       >
         <AdminSearchInput
           className="min-w-[220px] flex-1 max-w-md"
-          placeholder="Tìm tên / ID / mô tả / danh mục"
+          placeholder={tr("templates.ui.searchPlaceholder")}
           value={q}
           onChange={setQ}
           onKeyDown={(e) => {
@@ -302,7 +303,7 @@ export function TemplatesPage() {
           }}
         />
         <AdminChipFilter
-          label="Danh mục"
+          label={tr("templates.ui.category")}
           value={categoryFilter}
           options={categoryOptions}
           onChange={(v) => {
@@ -318,20 +319,20 @@ export function TemplatesPage() {
             void load(1);
           }}
         >
-          Lọc
+          {tr("templates.ui.filter")}
         </Button>
       </AdminFilterBar>
 
       {loading ? (
         <div className="template-grid-loading">
           <Loader2 className="h-6 w-6 animate-spin text-[#67c23a]" />
-          <span>Đang tải mẫu…</span>
+          <span>{tr("templates.ui.loading")}</span>
         </div>
       ) : filteredItems.length === 0 ? (
         <div className="template-grid-empty">
-          <p>Không có mẫu phù hợp</p>
+          <p>{tr("templates.ui.empty")}</p>
           <Button variant="outline" size="sm" onClick={openCreate}>
-            Tạo mẫu đầu tiên
+            {tr("templates.ui.createFirst")}
           </Button>
         </div>
       ) : (
@@ -371,9 +372,9 @@ export function TemplatesPage() {
 
       <AdminConfirmDialog
         open={Boolean(deleteTarget)}
-        title="Xóa mẫu"
-        description={deleteTarget ? `Xác nhận xóa mẫu “${deleteTarget}”? Mẫu đã được dự án tham chiếu thì không thể xóa.` : undefined}
-        confirmLabel="Xóa"
+        title={tr("templates.ui.deleteTitle")}
+        description={deleteTarget ? tr("templates.ui.deleteConfirm", { id: deleteTarget }) : undefined}
+        confirmLabel={tr("templates.ui.delete")}
         loading={deleting}
         destructive
         onOpenChange={(next) => {

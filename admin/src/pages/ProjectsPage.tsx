@@ -128,7 +128,7 @@ export function ProjectsPage() {
               <TableHead>{tr("projects.ui.colTitle")}</TableHead>
               <TableHead>{tr("projects.ui.colUser")}</TableHead>
               <TableHead>{tr("projects.ui.colTemplate")}</TableHead>
-              <TableHead>Pipeline</TableHead>
+              <TableHead>{tr("projects.ui.pipeline")}</TableHead>
               <TableHead>{tr("projects.ui.colStatus")}</TableHead>
               <TableHead>{tr("projects.ui.colProgress")}</TableHead>
               <TableHead>{tr("projects.ui.colShots")}</TableHead>
@@ -215,7 +215,7 @@ export function ProjectsPage() {
                     value: tr("projects.ui.statusLine", { status: projectStatusLabel(detail.status), progress: detail.progress, shots: detail.shot_count }),
                   },
                   { label: tr("projects.ui.colTemplate"), value: detail.template_id },
-                  { label: "Pipeline", value: detail.pipeline_mode },
+                  { label: tr("projects.ui.pipeline"), value: detail.pipeline_mode },
                   { label: tr("projects.ui.source"), value: detail.source_type || "—" },
                   {
                     label: tr("projects.ui.resolutionRatio"),
@@ -265,7 +265,7 @@ export function ProjectsPage() {
                       <th>{tr("projects.ui.colStatus")}</th>
                       <th>{tr("projects.ui.colDuration")}</th>
                       <th>{tr("projects.ui.colImage")}</th>
-                      <th>Video</th>
+                      <th>{tr("projects.ui.colVideo")}</th>
                       <th>{tr("projects.ui.colAudio")}</th>
                     </tr>
                   </thead>

@@ -90,6 +90,8 @@ export const zhAdminProjects = {
       statusLine: "{status} · {progress}% · 镜头 {shots}",
       shotsN: "镜头（{n}）",
       recentTasksN: "关联任务（最近 {n}）",
+      pipeline: "管线",
+      colVideo: "视频",
     },
     works: {
       loadFailed: "加载失败",

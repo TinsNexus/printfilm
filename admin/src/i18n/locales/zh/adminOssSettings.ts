@@ -72,5 +72,6 @@ export const zhAdminOssSettings = {
     queueNameHint: "仅用于异步上传；队列名称需与本地 Worker 配置一致。",
     queueNamePlaceholder: "例如 oss_upload",
     configSource: "配置来源：{source}",
+    alibabaOss: "阿里云 OSS",
   },
 } as const;

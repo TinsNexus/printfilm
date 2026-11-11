@@ -48,7 +48,7 @@ const DOMAIN_OPTIONS = [
   { value: "drama", get label() { return tr("dashUi.domain.drama"); } },
   { value: "kepu", get label() { return tr("dashUi.domain.kepu"); } },
   { value: "tools", get label() { return tr("dashUi.domain.tools"); } },
-  { value: "studio", label: "Studio" },
+  { value: "studio", get label() { return tr("dashUi.domain.studio"); } },
 ];
 
 const CAPABILITY_OPTIONS = [

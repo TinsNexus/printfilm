@@ -430,7 +430,7 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
                           <th>{tr("taskUi.dd.colTime")}</th>
                           <th>{tr("taskUi.dd.colCapability")}</th>
                           <th>billing_key</th>
-                          <th>Model</th>
+                          <th>{tr("taskUi.up.model")}</th>
                           <th>Tokens</th>
                           <th>{tr("taskUi.dd.colCharge")}</th>
                           <th>{tr("taskUi.dd.colBasis")}</th>

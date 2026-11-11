@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { validateTemplateDraft } from "@/lib/templateForm";
+import { tr } from "../../i18n/translate.ts";
 
 export type TemplateFormState = {
   id: string;
@@ -44,15 +45,15 @@ type TemplateEditorDialogProps = {
 type EditorTab = "basic" | "prompts" | "publish";
 
 const TABS: { id: EditorTab; label: string }[] = [
-  { id: "basic", label: "Thông tin cơ bản" },
-  { id: "prompts", label: "Prompt" },
-  { id: "publish", label: "Cài đặt phát hành" },
+  { id: "basic", get label() { return tr("templates.ui.tabBasic"); } },
+  { id: "prompts", get label() { return tr("templates.ui.tabPrompts"); } },
+  { id: "publish", get label() { return tr("templates.ui.tabPublish"); } },
 ];
 
 const RATIO_OPTIONS = [
-  { value: "16:9", label: "16:9 ngang" },
-  { value: "9:16", label: "9:16 dọc" },
-  { value: "1:1", label: "1:1 vuông" },
+  { value: "16:9", get label() { return tr("templates.ui.ratioLandscape"); } },
+  { value: "9:16", get label() { return tr("templates.ui.ratioPortrait"); } },
+  { value: "1:1", get label() { return tr("templates.ui.ratioSquare"); } },
   { value: "4:3", label: "4:3" },
   { value: "3:4", label: "3:4" },
 ];
@@ -111,16 +112,16 @@ export function TemplateEditorDialog({
       size="full"
       className="template-editor-dialog max-h-[92vh] overflow-hidden"
       bodyClassName="p-0 overflow-hidden"
-      title={editing ? `Chỉnh sửa mẫu · ${editing.name}` : "Tạo mẫu mới"}
-      subtitle={editing ? editing.id : "Điền thông tin hiển thị và giá trị mặc định khi tạo trước, rồi cấu hình prompt và trạng thái đăng nếu cần"}
+      title={editing ? tr("templates.ui.editTitle", { name: editing.name }) : tr("templates.ui.newTemplate")}
+      subtitle={editing ? editing.id : tr("templates.ui.newSubtitle")}
       footer={
         <>
           <Button variant="outline" disabled={saving} onClick={() => handleOpenChange(false)}>
-            Hủy
+            {tr("templates.ui.cancel")}
           </Button>
           <Button disabled={saving} onClick={requestSave}>
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-            {saving ? "Đang lưu…" : "Lưu mẫu"}
+            {saving ? tr("templates.ui.saving") : tr("templates.ui.save")}
           </Button>
         </>
       }
@@ -129,16 +130,16 @@ export function TemplateEditorDialog({
         <aside className="template-editor-preview">
           <div className="template-editor-preview-frame">
             {previewSrc ? (
-              <img src={previewSrc} alt="Xem trước ảnh bìa" className="template-editor-preview-img" />
+              <img src={previewSrc} alt={tr("templates.ui.coverPreview")} className="template-editor-preview-img" />
             ) : (
               <div className="template-editor-preview-empty">
                 <ImageOff className="h-10 w-10 text-[#c0c4cc]" />
-                <span>Xem trước ảnh bìa</span>
+                <span>{tr("templates.ui.coverPreview")}</span>
               </div>
             )}
           </div>
-          <div className="settings-price-note"><strong>{form.name || "Mẫu chưa đặt tên"}</strong><br />{form.default_ratio} · {form.shot_duration_min}–{form.shot_duration_max} giây / cảnh<br />{form.is_active ? "Lưu rồi đăng hiển thị" : "Lưu ở trạng thái gỡ"}</div>
-          <AdminField label="URL ảnh bìa" hint="Hỗ trợ đường dẫn tương đối (/static) hoặc HTTPS; nên dùng ảnh ngang 16:9.">
+          <div className="settings-price-note"><strong>{form.name || tr("templates.ui.unnamed")}</strong><br />{form.default_ratio} · {tr("templates.ui.durPerShot", { min: form.shot_duration_min, max: form.shot_duration_max })}<br />{form.is_active ? tr("templates.ui.saveListed") : tr("templates.ui.saveUnlisted")}</div>
+          <AdminField label={tr("templates.ui.coverUrl")} hint={tr("templates.ui.coverUrlHint")}>
             <Input
               className="admin-input h-9"
               placeholder="/static/templates/covers/xxx.png"
@@ -165,22 +166,22 @@ export function TemplateEditorDialog({
           </div>
 
           <div className="template-editor-panel">
-            {attempted && Object.keys(errors).length ? <div role="alert" className="template-editor-validation">Vui lòng hoàn thiện thông tin cơ bản trước:{Object.values(errors).join("；")}。</div> : null}
+            {attempted && Object.keys(errors).length ? <div role="alert" className="template-editor-validation">{tr("templates.ui.fixBasics", { errors: Object.values(errors).join(tr("templates.ui.listSep")) })}</div> : null}
             {tab === "basic" ? (
               <div className="template-editor-grid">
-                <h3 className="template-editor-section-title">Thông tin hiển thị</h3>
+                <h3 className="template-editor-section-title">{tr("templates.ui.secDisplay")}</h3>
                 {!editing ? (
-                  <AdminField label="ID mẫu" required error={attempted ? errors.id : undefined} hint="Định danh duy nhất của mẫu, không thể sửa sau khi tạo." className="template-editor-field--full">
+                  <AdminField label={tr("templates.ui.id")} required error={attempted ? errors.id : undefined} hint={tr("templates.ui.idHint")} className="template-editor-field--full">
                     <Input
                       className="admin-input h-9"
-                      placeholder="Ví dụ live_street_interview"
+                      placeholder={tr("templates.ui.idPlaceholder")}
                       maxLength={64}
                       value={form.id}
                       onChange={(e) => onChange({ id: e.target.value })}
                     />
                   </AdminField>
                 ) : null}
-                <AdminField label="Tên mẫu" required error={attempted ? errors.name : undefined} hint="Hiển thị trong danh sách mẫu người dùng chọn." className="template-editor-field--full">
+                <AdminField label={tr("templates.ui.name")} required error={attempted ? errors.name : undefined} hint={tr("templates.ui.nameHint")} className="template-editor-field--full">
                   <Input
                     className="admin-input h-9"
                     maxLength={128}
@@ -188,7 +189,7 @@ export function TemplateEditorDialog({
                     onChange={(e) => onChange({ name: e.target.value })}
                   />
                 </AdminField>
-                <AdminField label="Giới thiệu mẫu" optional hint="Mô tả ngắn chủ đề và hiệu ứng hình ảnh phù hợp." className="template-editor-field--full">
+                <AdminField label={tr("templates.ui.desc")} optional hint={tr("templates.ui.descHint")} className="template-editor-field--full">
                   <Textarea
                     value={form.description}
                     onChange={(e) => onChange({ description: e.target.value })}
@@ -196,16 +197,16 @@ export function TemplateEditorDialog({
                   />
                 </AdminField>
                 <AdminField
-                  label="Nhãn phân loại"
+                  label={tr("templates.ui.categories")}
                   hint={
                     categorySuggestions.length
-                      ? `Thường dùng: ${categorySuggestions.slice(0, 8).join("、")}${categorySuggestions.length > 8 ? "…" : ""}`
-                      : "Nhiều nhãn cách nhau bằng dấu phẩy tiếng Anh."
+                      ? tr("templates.ui.commonTags", { tags: categorySuggestions.slice(0, 8).join(tr("templates.ui.tagSep")) + (categorySuggestions.length > 8 ? "…" : "") })
+                      : tr("templates.ui.categoriesHint")
                   }
                 >
                   <Input
                     className="admin-input h-9"
-                    placeholder="Chân thực,Điện ảnh,Thương mại"
+                    placeholder={tr("templates.ui.categoriesPlaceholder")}
                     value={form.category}
                     onChange={(e) => onChange({ category: e.target.value })}
                   />
@@ -214,14 +215,14 @@ export function TemplateEditorDialog({
                     if (!current.includes(category)) onChange({ category: [...current, category].join(",") });
                   }}>+ {category}</button>)}</div> : null}
                 </AdminField>
-                <h3 className="template-editor-section-title">Giá trị mặc định khi tạo</h3>
+                <h3 className="template-editor-section-title">{tr("templates.ui.secDefaults")}</h3>
                 <AdminSelect
-                  label="Tỷ lệ khung mặc định"
+                  label={tr("templates.ui.defaultRatio")}
                   value={form.default_ratio}
                   options={RATIO_OPTIONS}
                   onChange={(v) => onChange({ default_ratio: v })}
                 />
-                <AdminField label="Thứ tự hiển thị" error={attempted ? errors.sort_order : undefined} hint="Số càng nhỏ càng đứng trước, có thể dùng số âm.">
+                <AdminField label={tr("templates.ui.sortOrder")} error={attempted ? errors.sort_order : undefined} hint={tr("templates.ui.sortOrderHint")}>
                   <Input
                     className="admin-input h-9"
                     type="number"
@@ -229,7 +230,7 @@ export function TemplateEditorDialog({
                     onChange={(e) => onChange({ sort_order: Number(e.target.value) })}
                   />
                 </AdminField>
-                <AdminField label="Thời lượng cảnh quay ngắn nhất (giây)" required error={attempted ? errors.shot_duration_min : undefined}>
+                <AdminField label={tr("templates.ui.durMin")} required error={attempted ? errors.shot_duration_min : undefined}>
                   <Input
                     className="admin-input h-9"
                     type="number"
@@ -239,7 +240,7 @@ export function TemplateEditorDialog({
                     onChange={(e) => onChange({ shot_duration_min: Number(e.target.value) })}
                   />
                 </AdminField>
-                <AdminField label="Thời lượng cảnh quay dài nhất (giây)" required error={attempted ? errors.shot_duration_max : undefined} hint="Không được nhỏ hơn thời lượng ngắn nhất.">
+                <AdminField label={tr("templates.ui.durMax")} required error={attempted ? errors.shot_duration_max : undefined} hint={tr("templates.ui.durMaxHint")}>
                   <Input
                     className="admin-input h-9"
                     type="number"
@@ -254,35 +255,35 @@ export function TemplateEditorDialog({
 
             {tab === "prompts" ? (
               <div className="template-editor-grid template-editor-grid--prompts">
-                <AdminField label="Prompt phong cách" optional hint="Mô tả phong cách hình ảnh, ánh sáng và màu sắc, sẽ làm phong cách nền cho việc tạo." className="template-editor-field--full">
+                <AdminField label={tr("templates.ui.stylePrompt")} optional hint={tr("templates.ui.stylePromptHint")} className="template-editor-field--full">
                   <Textarea
                     value={form.style_prefix}
                     onChange={(e) => onChange({ style_prefix: e.target.value })}
                     className="min-h-[100px] font-mono text-[13px]"
                   />
                 </AdminField>
-                <AdminField label="Prompt nhân vật" optional hint="Dùng cho yêu cầu ngoại hình và trang phục trong ảnh nhân vật." className="template-editor-field--full">
+                <AdminField label={tr("templates.ui.characterPrompt")} optional hint={tr("templates.ui.characterPromptHint")} className="template-editor-field--full">
                   <Textarea
                     value={form.character_prompt}
                     onChange={(e) => onChange({ character_prompt: e.target.value })}
                     className="min-h-[88px] font-mono text-[13px]"
                   />
                 </AdminField>
-                <AdminField label="Prompt bổ sung" optional hint="Bổ sung yêu cầu thống nhất cho việc tạo ảnh." className="template-editor-field--full">
+                <AdminField label={tr("templates.ui.extraPrompt")} optional hint={tr("templates.ui.extraPromptHint")} className="template-editor-field--full">
                   <Textarea
                     value={form.extra_prompt}
                     onChange={(e) => onChange({ extra_prompt: e.target.value })}
                     className="min-h-[88px] font-mono text-[13px]"
                   />
                 </AdminField>
-                <AdminField label="Ghi chú bổ sung cho model văn bản" optional hint="Ghi chú kịch bản và lập kế hoạch bổ sung cho model văn bản." className="template-editor-field--full">
+                <AdminField label={tr("templates.ui.llmNotes")} optional hint={tr("templates.ui.llmNotesHint")} className="template-editor-field--full">
                   <Textarea
                     value={form.llm_system_addon}
                     onChange={(e) => onChange({ llm_system_addon: e.target.value })}
                     className="min-h-[88px] font-mono text-[13px]"
                   />
                 </AdminField>
-                <AdminField label="Prompt phủ định" optional hint="Liệt kê nội dung hình ảnh hoặc hiệu ứng muốn tránh xuất hiện." className="template-editor-field--full">
+                <AdminField label={tr("templates.ui.negativePrompt")} optional hint={tr("templates.ui.negativePromptHint")} className="template-editor-field--full">
                   <Textarea
                     value={form.negative_prompt}
                     onChange={(e) => onChange({ negative_prompt: e.target.value })}
@@ -296,21 +297,21 @@ export function TemplateEditorDialog({
               <div className="template-editor-publish">
                 <div className="template-editor-publish-row">
                   <div>
-                    <strong>Đăng hiển thị</strong>
-                    <p>Khi tắt, người dùng sẽ không thấy trong danh sách chọn mẫu, các dự án hiện có không bị ảnh hưởng.</p>
+                    <strong>{tr("templates.ui.listed")}</strong>
+                    <p>{tr("templates.ui.listedHint")}</p>
                   </div>
                   <Switch checked={form.is_active} onCheckedChange={(v) => onChange({ is_active: v })} />
                 </div>
                 <div className="template-editor-publish-row">
                   <div>
-                    <strong>Mẫu Premium</strong>
-                    <p>Đánh dấu là mẫu cao cấp, có thể dùng để phân biệt quyền hạn hoặc chính sách tính phí.</p>
+                    <strong>{tr("templates.ui.premium")}</strong>
+                    <p>{tr("templates.ui.premiumHint")}</p>
                   </div>
                   <Switch checked={form.is_premium} onCheckedChange={(v) => onChange({ is_premium: v })} />
                 </div>
                 {editing ? (
                   <details className="mt-4 rounded-lg border p-3">
-                    <summary className="cursor-pointer text-sm font-medium">Cấu hình nâng cao (chỉ đọc)</summary>
+                    <summary className="cursor-pointer text-sm font-medium">{tr("templates.ui.advancedReadonly")}</summary>
                     <div className="mt-3 space-y-3">
                       <div>
                         <div className="mb-1 text-xs text-[var(--admin-muted)]">seedance_config</div>

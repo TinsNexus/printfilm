@@ -373,7 +373,7 @@ export function QueuesPage() {
                   <tr>
                     <th>{tr("taskUi.q.colTask")}</th>
                     <th>{tr("taskUi.status")}</th>
-                    <th>Upstream</th>
+                    <th>{tr("taskUi.upstream")}</th>
                     <th>{tr("taskUi.billing")}</th>
                     <th>{tr("taskUi.duration")}</th>
                     <th>{tr("taskUi.q.colUser")}</th>

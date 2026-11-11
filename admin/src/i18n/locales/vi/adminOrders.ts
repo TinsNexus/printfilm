@@ -129,6 +129,8 @@ export const viAdminOrders = {
       basisCost: "Trừ phí theo chi phí thực tế đã ghi",
       basisUsage: "Trừ phí theo lượng Token thực tế và đơn giá đã cấu hình",
       basisEstimate: "Trừ phí theo Token ước tính từ cấu hình",
+      domainStudio: "Studio",
+      colModel: "Model",
     },
   },
 } as const;

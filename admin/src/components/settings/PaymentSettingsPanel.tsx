@@ -137,7 +137,7 @@ export function PaymentSettingsPanel() {
   return <div className="space-y-5">
     <SettingsTabShell onSave={handleSave} saving={saving} disabled={Boolean(usdRateError)} saveLabel={tr("paymentSettings.saveLabel")}>
       <SettingsStatusBar title={tr("paymentSettings.statusTitle")} items={[
-        { id: "epay", label: "Epay", ready: epayReady, readyText: tr("paymentSettings.fullyConfigured"), pendingText: tr("paymentSettings.notConnected") },
+        { id: "epay", label: tr("paymentSettings.epay"), ready: epayReady, readyText: tr("paymentSettings.fullyConfigured"), pendingText: tr("paymentSettings.notConnected") },
         { id: "stripe", label: "Stripe", ready: stripeReady, readyText: tr("paymentSettings.fullyConfigured"), pendingText: form.stripe_enabled ? tr("paymentSettings.stripeIncomplete") : tr("paymentSettings.notEnabled") },
         { id: "billing", label: tr("paymentSettings.balanceBilling"), ready: form.billing_enabled, readyText: tr("paymentSettings.on"), pendingText: tr("paymentSettings.off") },
         { id: "smtp", label: tr("paymentSettings.email"), ready: smtpReady, readyText: tr("paymentSettings.fullyConfigured"), pendingText: form.smtp_enabled ? tr("paymentSettings.smtpIncomplete") : tr("paymentSettings.notEnabled") },

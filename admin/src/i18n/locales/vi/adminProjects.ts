@@ -90,6 +90,8 @@ export const viAdminProjects = {
       statusLine: "{status} · {progress}% · Cảnh quay {shots}",
       shotsN: "Cảnh quay ({n})",
       recentTasksN: "Tác vụ liên quan (gần nhất {n})",
+      pipeline: "Pipeline",
+      colVideo: "Video",
     },
     works: {
       loadFailed: "Tải thất bại",

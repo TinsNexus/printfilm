@@ -7,7 +7,7 @@ export const viAdminPaymentSettings = {
     couldLoadModelRates: "Tải bảng giá mô hình thất bại",
     couldQueryTokenfreeBalance: "Truy vấn số dư TokenFree thất bại",
     paymentReadiness: "Trạng thái sẵn sàng thanh toán",
-    epay: "EPay",
+    epay: "Epay",
     configured: "Đã cấu hình",
     incomplete: "Chưa đầy đủ",
     tokenBilling: "Tính phí theo token",

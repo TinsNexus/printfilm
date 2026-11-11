@@ -129,6 +129,8 @@ export const zhAdminOrders = {
       basisCost: "按记录的实际费用扣费",
       basisUsage: "按实际 Token 用量与配置单价扣费",
       basisEstimate: "按配置估算 Token 扣费",
+      domainStudio: "工作室",
+      colModel: "模型",
     },
   },
 } as const;

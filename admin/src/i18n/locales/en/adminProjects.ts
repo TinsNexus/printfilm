@@ -90,6 +90,8 @@ export const enAdminProjects = {
       statusLine: "{status} · {progress}% · {shots} shots",
       shotsN: "Shots ({n})",
       recentTasksN: "Related tasks (latest {n})",
+      pipeline: "Pipeline",
+      colVideo: "Video",
     },
     works: {
       loadFailed: "Failed to load",

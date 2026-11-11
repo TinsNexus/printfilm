@@ -2,6 +2,7 @@ import { Crown, ImageOff, Pencil, Trash2 } from "lucide-react";
 import type { AdminTemplate } from "@/api/client";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { tr } from "../../i18n/translate.ts";
 
 type TemplateCardProps = {
   template: AdminTemplate;
@@ -28,7 +29,7 @@ export function TemplateCard({
   onTogglePremium,
 }: TemplateCardProps) {
   const src = coverSrc(template.preview_cover);
-  const categories = template.category?.length ? template.category : ["Chưa phân loại"];
+  const categories = template.category?.length ? template.category : [tr("templates.ui.uncategorized")];
 
   return (
     <article
@@ -41,7 +42,7 @@ export function TemplateCard({
         type="button"
         className="template-card-cover"
         onClick={() => onEdit(template)}
-        aria-label={`Chỉnh sửa mẫu ${template.name}`}
+        aria-label={tr("templates.ui.editAria", { name: template.name })}
       >
         {src ? (
           <img src={src} alt={template.name} loading="lazy" className="template-card-cover-img" />
@@ -60,7 +61,7 @@ export function TemplateCard({
             </span>
           ) : null}
           {!template.is_active ? (
-            <span className="template-card-badge template-card-badge--off">Đã gỡ</span>
+            <span className="template-card-badge template-card-badge--off">{tr("templates.ui.inactive")}</span>
           ) : null}
         </div>
       </button>
@@ -72,14 +73,14 @@ export function TemplateCard({
             <p className="template-card-id">{template.id}</p>
           </div>
           <div className="template-card-actions">
-            <button type="button" className="template-card-icon-btn" onClick={() => onEdit(template)} title="Chỉnh sửa">
+            <button type="button" className="template-card-icon-btn" onClick={() => onEdit(template)} title={tr("templates.ui.edit")}>
               <Pencil className="h-4 w-4" />
             </button>
             <button
               type="button"
               className="template-card-icon-btn template-card-icon-btn--danger"
               onClick={() => onDelete(template.id)}
-              title="Xóa"
+              title={tr("templates.ui.delete")}
             >
               <Trash2 className="h-4 w-4" />
             </button>
@@ -89,7 +90,7 @@ export function TemplateCard({
         {template.description ? (
           <p className="template-card-desc">{template.description}</p>
         ) : (
-          <p className="template-card-desc template-card-desc--empty">Chưa có mô tả</p>
+          <p className="template-card-desc template-card-desc--empty">{tr("templates.ui.noDesc")}</p>
         )}
 
         <div className="template-card-tags">
@@ -103,7 +104,7 @@ export function TemplateCard({
 
         <div className="template-card-foot">
           <label className="template-card-toggle">
-            <span>Đăng</span>
+            <span>{tr("templates.ui.list")}</span>
             <Switch
               checked={template.is_active}
               onCheckedChange={(v) => onToggleActive(template.id, v)}
