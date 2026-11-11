@@ -33,7 +33,7 @@ export default function TeamDirectory({ compact = false }: { compact?: boolean }
       <button type="button" className="pf-team-directory-new" onClick={() => setCreateOpen(true)}><span><Plus size={25} /></span><strong>{tr('teamDirectory.buildCreativeTeam')}</strong><p>{tr('teamDirectory.inviteCollaboratorsStartFirstStory')}</p></button>
     </div>
     <TeamPagination page={page} total={listing.meta.total} onChange={setPage} />
-    {!compact && <div className="pf-team-directory-foot"><UsersRound size={20} /><p><strong>个人创作与团队协作，自由切换。</strong><br />个人项目保持私有，团队项目由所有伙伴共同完成。团队消费由所有者个人积分支付。</p></div>}
+    {!compact && <div className="pf-team-directory-foot"><UsersRound size={20} /><p><strong>{tr("teamDirectory.switchFreely")}</strong><br />{tr("teamDirectory.footNote")}</p></div>}
     <CreateTeamModal open={createOpen} onClose={() => setCreateOpen(false)} />
   </div>
 }
