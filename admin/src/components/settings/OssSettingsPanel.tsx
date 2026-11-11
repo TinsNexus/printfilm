@@ -73,10 +73,7 @@ export function OssSettingsPanel() {
         <Switch aria-label={tr("oss.enableOss")} checked={form.oss_enabled} onCheckedChange={(value) => patchField("oss_enabled", value)} />
       </div>
       <p className="mt-3 text-sm text-muted-foreground">
-        Chợ tài sản số luôn dùng thư mục marketplace/, không bị ảnh hưởng bởi cài đặt thư mục nghiệp vụ tạo bên dưới.
-        Tệp của chợ được tải lên với quyền riêng tư, truy cập qua chữ ký ngắn hạn, không dùng tên miền công khai.
-        Bucket phải ở chế độ riêng tư và không có chính sách Allow ẩn danh; lưu cấu hình ở trang này sẽ không tự sửa quyền của Bucket.
-        “Cấu hình đầy đủ” chỉ cho biết các mục đã được điền, quyền thực tế vẫn cần xác minh trên đám mây.
+        {tr("oss.marketplaceNote")}
       </p>
       <div className="settings-field-grid mt-5">
         <LabeledControl label={tr("oss.endpoint")} required={form.oss_enabled} error={endpointError} hint={tr("oss.endpointHint")}>

@@ -109,7 +109,7 @@ export function SiteSettingsPanel() {
             </LabeledControl>
           </div>
           <p className="settings-panel-footnote">
-            Cơ sở dữ liệu, Redis, SECRET_KEY và hạ tầng khác vẫn cấu hình qua biến môi trường máy chủ, không sửa ở trang này.
+            {tr("siteSettings.infraEnvNote")}
           </p>
         </SettingsPanel>
 

@@ -61,5 +61,6 @@ export const zhAdminSiteSettings = {
     iosBundleHint: "仅 iOS 使用；复用“支付与通知 → Apple 服务器连接”中的 Bundle ID，安卓无需填写。",
     iosNotConfigured: "iOS 尚未配置",
     appLinksNote: "iOS 需配置 Associated Domains，Android 需配置 App Links 并使用实际发布签名完成真机验证。保存域名不会自动修改 DNS、反向代理或客户端工程。",
+    infraEnvNote: "数据库、Redis、SECRET_KEY 等基础设施仍通过服务器环境变量配置，不在此页修改。",
   },
 } as const;

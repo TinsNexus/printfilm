@@ -61,5 +61,6 @@ export const enAdminSiteSettings = {
     iosBundleHint: "iOS only; reuses the Bundle ID from “Payment & notifications → Apple server connection”. Not needed for Android.",
     iosNotConfigured: "iOS not configured",
     appLinksNote: "iOS needs Associated Domains and Android needs App Links, verified on real devices with the actual release signing. Saving the domain does not change DNS, the reverse proxy or the client projects.",
+    infraEnvNote: "The database, Redis, SECRET_KEY and other infrastructure are still configured through server environment variables, not on this page.",
   },
 } as const;

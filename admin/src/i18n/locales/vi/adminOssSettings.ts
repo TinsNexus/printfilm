@@ -73,5 +73,6 @@ export const viAdminOssSettings = {
     queueNamePlaceholder: "Ví dụ oss_upload",
     configSource: "Nguồn cấu hình: {source}",
     alibabaOss: "Alibaba Cloud OSS",
+    marketplaceNote: "Chợ tài sản số luôn dùng thư mục marketplace/, không bị ảnh hưởng bởi cài đặt thư mục nghiệp vụ tạo bên dưới. Tệp của chợ được tải lên với quyền riêng tư, truy cập qua chữ ký ngắn hạn, không dùng tên miền công khai. Bucket phải ở chế độ riêng tư và không có chính sách Allow ẩn danh; lưu cấu hình ở trang này sẽ không tự sửa quyền của Bucket. “Cấu hình đầy đủ” chỉ cho biết các mục đã được điền, quyền thực tế vẫn cần xác minh trên đám mây.",
   },
 } as const;

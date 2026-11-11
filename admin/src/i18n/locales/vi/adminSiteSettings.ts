@@ -61,5 +61,6 @@ export const viAdminSiteSettings = {
     iosBundleHint: "Chỉ dùng cho iOS; dùng lại Bundle ID trong “Thanh toán và thông báo → Kết nối máy chủ Apple”, Android không cần điền.",
     iosNotConfigured: "iOS chưa được cấu hình",
     appLinksNote: "iOS cần cấu hình Associated Domains, Android cần cấu hình App Links và xác minh trên máy thật bằng chữ ký phát hành thực tế. Lưu tên miền sẽ không tự động sửa DNS, reverse proxy hay dự án client.",
+    infraEnvNote: "Cơ sở dữ liệu, Redis, SECRET_KEY và hạ tầng khác vẫn cấu hình qua biến môi trường máy chủ, không sửa ở trang này.",
   },
 } as const;

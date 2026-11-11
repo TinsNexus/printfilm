@@ -73,5 +73,6 @@ export const zhAdminOssSettings = {
     queueNamePlaceholder: "例如 oss_upload",
     configSource: "配置来源：{source}",
     alibabaOss: "阿里云 OSS",
+    marketplaceNote: "数字资产市场固定使用 marketplace/ 目录，不受下方生成业务目录设置影响。市场文件以私有权限上传，通过短时签名访问，不使用公开域名。Bucket 须为私有且不得存在匿名 Allow 策略；此页保存配置不会自动修改 Bucket 权限。“配置完整”仅表示配置项已填写，实际权限仍需云端验证。",
   },
 } as const;

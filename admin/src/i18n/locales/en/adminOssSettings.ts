@@ -73,5 +73,6 @@ export const enAdminOssSettings = {
     queueNamePlaceholder: "e.g. oss_upload",
     configSource: "Config source: {source}",
     alibabaOss: "Alibaba Cloud OSS",
+    marketplaceNote: "The marketplace always uses the marketplace/ folder, unaffected by the generation folders below. Marketplace files are uploaded privately and accessed via short-lived signatures, never a public domain. The bucket must be private with no anonymous Allow policy; saving here does not change bucket permissions. “Complete” only means the fields are filled in; verify actual permissions in the cloud.",
   },
 } as const;
