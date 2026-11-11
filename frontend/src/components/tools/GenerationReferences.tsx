@@ -49,7 +49,7 @@ export default function GenerationReferences({ mode, limits, value, onChange, on
     ...(max.audios > 0 ? ['audio' as const] : []),
   ]
   const sourceIsDisabled = disabled || allowedKinds.length === 0
-  const roleName = (role: ToolReferenceInput['role']) => role === 'first_frame' ? text(tr('generationReferences.firstFrame'), 'First frame') : role === 'last_frame' ? text(tr('generationReferences.lastFrame'), 'Last frame') : text(tr('generationReferences.references'), 'Reference')
+  const roleName = (role: ToolReferenceInput['role']) => role === 'first_frame' ? tr('generationReferences.firstFrame') : role === 'last_frame' ? tr('generationReferences.lastFrame') : tr('generationReferences.references')
 
   // 切换模式时关闭来源选择，避免把旧模式资料加入新模式。
   useEffect(() => { setPickerOpen(false) }, [mode])
@@ -68,13 +68,13 @@ export default function GenerationReferences({ mode, limits, value, onChange, on
   /** 校验并登记本地文件，文件在实际提交生成时统一上传。 */
   function addFiles(files: File[], role: ToolReferenceInput['role']) {
     if (!files.length || disabled) return
-    if (frameMode && files.length > 1) { onError(text(tr('generationReferences.eachFrameSlotTakesOne'), 'Choose one image per frame.')); return }
+    if (frameMode && files.length > 1) { onError(tr('generationReferences.eachFrameSlotTakesOne')); return }
     const incoming: GenerationReference[] = []
     for (const file of files) {
       const kind = generationReferenceFileKind(file)
-      if (!kind || !allowedKinds.includes(kind)) { onError(text(frameMode ? tr('generationReferences.firstLastFramesMustImage') : tr('generationReferences.currentModelDoesNotSupport'), frameMode ? 'Choose an image for each frame.' : 'The selected model does not support this reference type.')); return }
-      if (!file.size) { onError(text(tr('generationReferences.referenceFileCannotEmpty'), 'Reference files cannot be empty.')); return }
-      if (file.size > 40 * 1024 * 1024) { onError(text(tr('generationReferences.eachReferenceFileMust40'), 'Each reference file must be under 40 MB.')); return }
+      if (!kind || !allowedKinds.includes(kind)) { onError((frameMode ? tr('generationReferences.firstLastFramesMustImage') : tr('generationReferences.currentModelDoesNotSupport'))); return }
+      if (!file.size) { onError(tr('generationReferences.referenceFileCannotEmpty')); return }
+      if (file.size > 40 * 1024 * 1024) { onError(tr('generationReferences.eachReferenceFileMust40')); return }
       incoming.push({ id: crypto.randomUUID(), role: frameMode ? role : roleForReferenceKind[kind], kind, name: file.name, url: '', file })
     }
     try { add(incoming, role) } catch { /* add 已显示对应的数量上限提示。 */ }
@@ -97,36 +97,36 @@ export default function GenerationReferences({ mode, limits, value, onChange, on
       // 首尾帧替换点击的帧位；全能参考按媒体类型归位
       const role = frameMode ? targetRole : roleForReferenceKind[kind]
       if (value.some(item => item.assetId === asset.id && item.role === role) || incoming.some(item => item.assetId === asset.id && item.role === role)) { skipped += 1; continue }
-      incoming.push(referenceFromAsset(asset, role, text(tr('generationReferences.untitledAsset'), 'Untitled asset')))
+      incoming.push(referenceFromAsset(asset, role, tr('generationReferences.untitledAsset')))
     }
     if (!incoming.length) {
-      throw new Error(skipped ? text(tr('generationReferences.theseFilesAlreadyAddedNot'), 'These assets are already added or unsupported; choose others.') : text(tr('generationReferences.currentModelDoesNotSupport'), 'This reference type is not supported.'))
+      throw new Error(skipped ? tr('generationReferences.theseFilesAlreadyAddedNot') : tr('generationReferences.currentModelDoesNotSupport'))
     }
     add(incoming, frameMode ? targetRole : undefined)
-    if (skipped) onError(text(tr('generationReferences.skippedDuplicateUnsupportedFiles', { skipped }), `Skipped ${skipped} duplicated or unsupported assets.`))
+    if (skipped) onError(tr('generationReferences.skippedDuplicateUnsupportedFiles', { skipped }))
   }
 
   if (mode === 'text_to_video') return null
 
-  return <section className={`gen-video-references${frameMode ? ' is-frames' : ' is-omni'}`} aria-label={text(frameMode ? tr('generationReferences.firstLastFrameReferences') : tr('generationReferences.multiPurposeReferences'), frameMode ? 'Frame references' : 'Mixed references')}>
-    <header><span><ImagePlus size={15} />{text(frameMode ? tr('generationReferences.visualReferences') : tr('generationReferences.references'), frameMode ? 'Frame references' : 'References')}</span><small>{frameMode ? `${value.length}/2` : `${value.length}/12`}</small></header>
+  return <section className={`gen-video-references${frameMode ? ' is-frames' : ' is-omni'}`} aria-label={(frameMode ? tr('generationReferences.firstLastFrameReferences') : tr('generationReferences.multiPurposeReferences'))}>
+    <header><span><ImagePlus size={15} />{(frameMode ? tr('generationReferences.visualReferences') : tr('generationReferences.references'))}</span><small>{frameMode ? `${value.length}/2` : `${value.length}/12`}</small></header>
     {frameMode ? <div className="gen-frame-slots">{(['first_frame', 'last_frame'] as const).map((role, index) => {
       const reference = value.find(item => item.role === role)
       const unsupported = max.images <= index
       return <div className="gen-reference-slot" key={role} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); if (!disabled && !unsupported) addFiles(Array.from(event.dataTransfer.files), role) }}>
-        <div className="gen-reference-slot-title"><strong>{roleName(role)}</strong><small>{index === 0 ? text(tr('generationReferences.required'), 'Required') : text(tr('generationReferences.optional'), 'Optional')}</small></div>
-        {reference ? <div className="gen-reference-media"><ReferencePreview reference={reference} /><button type="button" className="gen-reference-remove" aria-label={text(tr('generationReferences.remove', { roleName: roleName(role) }), `Remove ${roleName(role)}`)} disabled={disabled} onClick={() => onChange(value.filter(item => item.id !== reference.id))}><X size={13} /></button><span title={reference.name}>{reference.name}</span></div>
-          : <div className="gen-reference-placeholder"><ImagePlus size={23} /><span>{unsupported ? text(tr('generationReferences.notSupportedCurrentModel'), 'Not supported') : text(index === 0 ? tr('generationReferences.setOpeningFrame') : tr('generationReferences.setClosingFrame'), index === 0 ? 'Set the opening shot' : 'Set the ending shot')}</span></div>}
-        <div className="gen-reference-source-actions"><button type="button" disabled={disabled || unsupported} onClick={() => chooseLocal(role)}><Upload size={13} />{text(tr('generationReferences.upload'), 'Upload')}</button><button type="button" disabled={disabled || unsupported} onClick={() => chooseLibrary(role)}><FolderOpen size={13} />{text(tr('generationReferences.assetLibrary'), 'Library')}</button></div>
+        <div className="gen-reference-slot-title"><strong>{roleName(role)}</strong><small>{index === 0 ? tr('generationReferences.required') : tr('generationReferences.optional')}</small></div>
+        {reference ? <div className="gen-reference-media"><ReferencePreview reference={reference} /><button type="button" className="gen-reference-remove" aria-label={tr('generationReferences.remove', { roleName: roleName(role) })} disabled={disabled} onClick={() => onChange(value.filter(item => item.id !== reference.id))}><X size={13} /></button><span title={reference.name}>{reference.name}</span></div>
+          : <div className="gen-reference-placeholder"><ImagePlus size={23} /><span>{unsupported ? tr('generationReferences.notSupportedCurrentModel') : (index === 0 ? tr('generationReferences.setOpeningFrame') : tr('generationReferences.setClosingFrame'))}</span></div>}
+        <div className="gen-reference-source-actions"><button type="button" disabled={disabled || unsupported} onClick={() => chooseLocal(role)}><Upload size={13} />{tr('generationReferences.upload')}</button><button type="button" disabled={disabled || unsupported} onClick={() => chooseLibrary(role)}><FolderOpen size={13} />{tr('generationReferences.assetLibrary')}</button></div>
       </div>
     })}</div> : <>
       <div className="gen-mixed-reference-grid" onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); addFiles(Array.from(event.dataTransfer.files), 'reference_image') }}>
-        {value.map(reference => <div key={reference.id} className="gen-reference-media"><ReferencePreview reference={reference} /><button type="button" className="gen-reference-remove" aria-label={text(tr('generationReferences.removeReference'), 'Remove reference')} disabled={disabled} onClick={() => onChange(value.filter(item => item.id !== reference.id))}><X size={13} /></button><span title={reference.name}>{reference.name}</span><small className="gen-reference-kind">{reference.kind === 'image' ? <ImagePlus size={12} /> : reference.kind === 'video' ? <Video size={12} /> : <AudioLines size={12} />}</small></div>)}
-        {value.length === 0 && <div className="gen-reference-placeholder"><ImagePlus size={26} /><span>{text(tr('generationReferences.imagesVideosAudio'), 'Images, video and audio')}</span><small>{text(tr('generationReferences.dropFilesHere'), 'Drop files here')}</small></div>}
+        {value.map(reference => <div key={reference.id} className="gen-reference-media"><ReferencePreview reference={reference} /><button type="button" className="gen-reference-remove" aria-label={tr('generationReferences.removeReference')} disabled={disabled} onClick={() => onChange(value.filter(item => item.id !== reference.id))}><X size={13} /></button><span title={reference.name}>{reference.name}</span><small className="gen-reference-kind">{reference.kind === 'image' ? <ImagePlus size={12} /> : reference.kind === 'video' ? <Video size={12} /> : <AudioLines size={12} />}</small></div>)}
+        {value.length === 0 && <div className="gen-reference-placeholder"><ImagePlus size={26} /><span>{tr('generationReferences.imagesVideosAudio')}</span><small>{tr('generationReferences.dropFilesHere')}</small></div>}
       </div>
-      <div className="gen-reference-source-actions gen-mixed-reference-actions"><button type="button" disabled={sourceIsDisabled || value.length >= 12} onClick={() => chooseLocal('reference_image')}><Upload size={14} />{text(tr('generationReferences.uploadFiles'), 'Upload')}</button><button type="button" disabled={sourceIsDisabled || value.length >= 12} onClick={() => chooseLibrary('reference_image')}><FolderOpen size={14} />{text(tr('generationReferences.chooseAssetLibrary'), 'Asset library')}</button></div>
+      <div className="gen-reference-source-actions gen-mixed-reference-actions"><button type="button" disabled={sourceIsDisabled || value.length >= 12} onClick={() => chooseLocal('reference_image')}><Upload size={14} />{tr('generationReferences.uploadFiles')}</button><button type="button" disabled={sourceIsDisabled || value.length >= 12} onClick={() => chooseLibrary('reference_image')}><FolderOpen size={14} />{tr('generationReferences.chooseAssetLibrary')}</button></div>
     </>}
-    <p className="gen-reference-limits">{frameMode ? text(tr('generationReferences.uploadFirstFrameOptionallyLast'), 'Set a first frame and an optional last frame.') : text(tr('generationReferences.imagesVideosAudioClips', { images: max.images, videos: max.videos, audios: max.audios }), `${max.images} images · ${max.videos} videos · ${max.audios} audio clips`)}</p>
+    <p className="gen-reference-limits">{frameMode ? tr('generationReferences.uploadFirstFrameOptionallyLast') : tr('generationReferences.imagesVideosAudioClips', { images: max.images, videos: max.videos, audios: max.audios })}</p>
     <input ref={fileInput} type="file" hidden multiple={!frameMode} accept={allowedKinds.map(kind => FILE_ACCEPT[kind]).join(',')} onChange={event => { addFiles(Array.from(event.target.files || []), targetRole); event.target.value = '' }} />
     <ToolReferenceAssetPicker open={pickerOpen} onClose={() => setPickerOpen(false)} allowedKinds={allowedKinds} multiple={!frameMode} onPick={pickAssets} />
   </section>

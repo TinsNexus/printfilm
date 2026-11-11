@@ -11,6 +11,6 @@ export const enFeHooks = {
     model: "Model",
   },
   useToolRunDetail: {
-    failedUpdateDetailsRetrying: "Failed to update details. Retrying",
+    failedUpdateDetailsRetrying: "Could not update details. Retrying.",
   },
 } as const;

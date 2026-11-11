@@ -107,7 +107,7 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
         const data = await listToolRuns(1, 6, { kind })
         if (disposed) return
         setRecent(data.items); setRecentTotal(data.total); setHistoryError('')
-      } catch (err) { if (!disposed) setHistoryError(err instanceof Error ? err.message : text(tr('generationPage.failedLoad'), 'Loading failed')) }
+      } catch (err) { if (!disposed) setHistoryError(err instanceof Error ? err.message : tr('generationPage.failedLoad')) }
       finally { if (!disposed) timer = setTimeout(refresh, 5000) }
     }
     void refresh()
@@ -121,8 +121,8 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
 
   function pickFiles(incoming: File[]) {
     const limit = referenceImageLimit
-    if (incoming.some(file => file.size > 40 * 1024 * 1024)) { setError(text(tr('generationPage.eachFileMust40Mb'), 'Each file must be under 40 MB')); return }
-    if (files.length + incoming.length > limit) { setError(text(tr('generationPage.chooseUpReferenceFiles', { limit }), `Choose up to ${limit} reference files`)); return }
+    if (incoming.some(file => file.size > 40 * 1024 * 1024)) { setError(tr('generationPage.eachFileMust40Mb')); return }
+    if (files.length + incoming.length > limit) { setError(tr('generationPage.chooseUpReferenceFiles', { limit })); return }
     setFiles(previous => [...previous, ...incoming]); setError('')
   }
 
@@ -164,13 +164,13 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
   async function submit(event: React.FormEvent) {
     event.preventDefault()
     if (submitting || !prompt.trim()) return
-    if (invalidParameters) { setError(text(tr('generationPage.chooseValidModelSettingsFirst'), 'Choose a valid model and settings first')); return }
+    if (invalidParameters) { setError(tr('generationPage.chooseValidModelSettingsFirst')); return }
     if (kind === 'video' && (referenceError || !quote || estimating || estimateError)) {
-      setError(referenceError || estimateError || text(tr('generationPage.waitCostEstimateFinish'), 'Wait for the cost estimate before generating'))
+      setError(referenceError || estimateError || tr('generationPage.waitCostEstimateFinish'))
       return
     }
     if (kind === 'image' && files.length > referenceImageLimit) {
-      setError(text(tr('generationPage.selectedModelSupportsUpReference', { referenceImageLimit }), `The selected model supports up to ${referenceImageLimit} reference files. Remove the extra files.`))
+      setError(tr('generationPage.selectedModelSupportsUpReference', { referenceImageLimit }))
       return
     }
     setSubmitting(true); setError(''); setNotice('')
@@ -178,9 +178,9 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
       const result = await runStudioTool({ toolId: kind === 'audio' ? 'audio' : kind === 'video' ? 't2v' : files.length ? 'i2i' : 't2i',
         prompt, files: kind === 'video' ? serializedReferences.files : files, ratio, duration, voice, modelId: model, resolution,
         ...(kind === 'video' ? { videoMode, references: serializedReferences.references, priceVersion: quote?.price_version ?? 0 } : {}) })
-      setNotice(text(tr('generationPage.taskSubmittedKeepsGeneratingEven', { task_id: result.task_id }), `Task ${result.task_id} queued. Generation continues after you leave.`))
+      setNotice(tr('generationPage.taskSubmittedKeepsGeneratingEven', { task_id: result.task_id }))
       setRevision(value => value + 1)
-    } catch (err) { setError(err instanceof Error ? err.message : text(tr('generationPage.submissionFailed'), 'Submission failed')) }
+    } catch (err) { setError(err instanceof Error ? err.message : tr('generationPage.submissionFailed')) }
     finally { setSubmitting(false) }
   }
   async function download(item: ToolRunRecord) {
@@ -188,31 +188,31 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
     try {
       const url = resolveToolMediaUrl(item.urls[0])
       triggerBlobDownload(await fetchMediaBlob(url), `printfilm_${kind}_${item.id}.${kind === 'video' ? 'mp4' : kind === 'audio' ? 'mp3' : 'png'}`)
-    } catch (err) { setError(err instanceof Error ? err.message : text(tr('generationPage.downloadFailed'), 'Download failed')) }
+    } catch (err) { setError(err instanceof Error ? err.message : tr('generationPage.downloadFailed')) }
     finally { setDownloading(null) }
   }
   const titles = {
-    video: [text(tr('generationPage.oneSentence'), 'One idea.'), text(tr('generationPage.nextScene'), 'Your next scene.')],
-    image: [text(tr('generationPage.oneSentence'), 'One idea.'), text(tr('generationPage.drawWhatImagine'), 'Bring it to life.')],
-    audio: [text(tr('generationPage.fewWords'), 'Your words.'), text(tr('generationPage.storySpeaks'), 'A voice to tell them.')],
+    video: [tr('generationPage.oneSentence'), tr('generationPage.nextScene')],
+    image: [tr('generationPage.oneSentence'), tr('generationPage.drawWhatImagine')],
+    audio: [tr('generationPage.fewWords'), tr('generationPage.storySpeaks')],
   }
-  const placeholder = kind === 'audio' ? text(tr('generationPage.enterTextReadAloud'), 'Enter the text you want to read…') : kind === 'image'
-    ? text(tr('generationPage.describeImageWantHowChange'), 'Describe an image or the changes to your references…')
-    : text(tr('generationPage.describeVideoSubjectActionSetting'), 'Describe your video: subject, action, setting, camera movement. Type @ to mention a reference you added below.')
+  const placeholder = kind === 'audio' ? tr('generationPage.enterTextReadAloud') : kind === 'image'
+    ? tr('generationPage.describeImageWantHowChange')
+    : tr('generationPage.describeVideoSubjectActionSetting')
 
   return <GenerationLayout kind={kind}>
     <header className={`gen-hero gen-hero-${kind}`}>
-      <div className="gen-eyebrow"><Icon size={22} />{text(kind === 'video' ? tr('generationPage.aiVideo') : kind === 'image' ? tr('generationPage.aiImage') : tr('generationPage.aiAudio'), `AI ${kind.toUpperCase()}`)}</div>
+      <div className="gen-eyebrow"><Icon size={22} />{(kind === 'video' ? tr('generationPage.aiVideo') : kind === 'image' ? tr('generationPage.aiImage') : tr('generationPage.aiAudio'))}</div>
       <h1>{titles[kind][0]}<span>{titles[kind][1]}</span></h1>
-      <p>{kind === 'audio' ? text(tr('generationPage.pickVoiceGiveWordsEmotion'), 'Choose a voice and give your words warmth.') : text(tr('generationPage.startIdeaLetInspirationFlow'), 'Start with an idea. Let inspiration happen.')}</p>
+      <p>{kind === 'audio' ? tr('generationPage.pickVoiceGiveWordsEmotion') : tr('generationPage.startIdeaLetInspirationFlow')}</p>
       <div className="gen-hero-art" aria-hidden>{kind === 'audio' ? <><AudioLines className="gen-wave" /><Mic /></> : <Icon />}</div>
     </header>
     <form className="gen-composer" onSubmit={submit}>
       {kind === 'image' && catalog?.billing_mode === 'fixed_media' && <div className="gen-price-summary">
         <MediaCostNotice modelId={model} resolution={resolution} />
       </div>}
-      {catalog && invalidParameters && <p className="gen-inline-error" role="alert">{text(tr('generationPage.currentModelDoesNotSupport'), 'These settings are not supported by the selected model. Please adjust them.')}</p>}
-      <div className="gen-composer-heading"><span><Sparkles size={15} />{text(kind === 'audio' ? tr('generationPage.textRead') : tr('generationPage.description'), kind === 'audio' ? 'Your script' : 'Your creative brief')}</span><small>{text(tr('generationPage.turnImaginationIntoNextPiece'), 'A little detail goes a long way')}</small></div>
+      {catalog && invalidParameters && <p className="gen-inline-error" role="alert">{tr('generationPage.currentModelDoesNotSupport')}</p>}
+      <div className="gen-composer-heading"><span><Sparkles size={15} />{(kind === 'audio' ? tr('generationPage.textRead') : tr('generationPage.description'))}</span><small>{tr('generationPage.turnImaginationIntoNextPiece')}</small></div>
       <div className="gen-input-area">
         {kind === 'video' && <GenerationReferences mode={videoMode} limits={referenceLimits} value={currentReferences}
           onChange={value => { setVideoReferences(previous => ({ ...previous, [videoMode]: value })); setError(''); setNotice('') }} onError={setError} disabled={submitting} />}
@@ -220,80 +220,80 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
           <span className="gen-ref-count"><ImagePlus size={14} />{files.length}/{referenceImageLimit}</span>
           <div className="gen-ref-grid">
             {previews.map((url, index) => <div className="gen-ref-item" key={url}>
-              <img src={url} alt={text(tr('generationPage.referenceImages'), 'Reference')} />
-              <button type="button" aria-label={text(tr('generationPage.removeReferenceFile'), 'Remove reference')} onClick={() => setFiles(items => items.filter((_, i) => i !== index))}><X size={13} /></button>
+              <img src={url} alt={tr('generationPage.referenceImages')} />
+              <button type="button" aria-label={tr('generationPage.removeReferenceFile')} onClick={() => setFiles(items => items.filter((_, i) => i !== index))}><X size={13} /></button>
             </div>)}
             {files.length < referenceImageLimit && <button type="button" className="gen-upload" onClick={() => upload.current?.click()}
               onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); pickFiles(Array.from(event.dataTransfer.files)) }}>
-              <Plus size={24} /><span>{text(tr('generationPage.chooseReferenceImage'), 'Add reference')}</span>
+              <Plus size={24} /><span>{tr('generationPage.chooseReferenceImage')}</span>
             </button>}
           </div>
           <input type="file" hidden ref={upload} multiple accept="image/png,image/jpeg,image/webp" onChange={event => { pickFiles(Array.from(event.target.files || [])); event.target.value = '' }} />
         </div>}
         <div className="gen-prompt-wrap">
-          <textarea ref={promptRef} aria-label={text(tr('generationPage.output'), 'Generation prompt')} placeholder={placeholder} maxLength={maxLength} value={prompt}
+          <textarea ref={promptRef} aria-label={tr('generationPage.output')} placeholder={placeholder} maxLength={maxLength} value={prompt}
             onChange={event => { setPrompt(event.target.value); setNotice(''); syncMention() }}
             onKeyDown={onPromptKeyDown} onKeyUp={syncMention} onClick={syncMention} onBlur={() => window.setTimeout(() => setMention(null), 120)} />
-          <span className="gen-counter">{prompt.length.toLocaleString()} / {maxLength.toLocaleString()}{kind === 'audio' ? text(tr('generationPage.aboutS', { ceil: Math.ceil(prompt.length / 4) }), ` · ~${Math.ceil(prompt.length / 4)} sec`) : ''}</span>
+          <span className="gen-counter">{prompt.length.toLocaleString()} / {maxLength.toLocaleString()}{kind === 'audio' ? tr('generationPage.aboutS', { ceil: Math.ceil(prompt.length / 4) }) : ''}</span>
         </div>
       </div>
       <div className="gen-toolbar">
-        {kind === 'video' && <GenerationSelect label={text(tr('generationPage.generationMode'), 'Generation mode')} icon={<Sparkles size={18} />} value={videoMode} disabled={submitting}
+        {kind === 'video' && <GenerationSelect label={tr('generationPage.generationMode')} icon={<Sparkles size={18} />} value={videoMode} disabled={submitting}
           onChange={value => { setVideoMode(value as VideoGenerationMode); setError(''); setNotice(''); setMention(null) }} options={[
-            { value: 'text_to_video', label: text(tr('generationPage.textVideo'), 'Text to video'), description: text(tr('generationPage.writeOneSentenceModelCreates'), 'Describe your idea without reference media') },
-            { value: 'first_last_frame', label: text(tr('generationPage.firstLastFrame'), 'First / last frame'), description: text(tr('generationPage.setFirstFrameOptionallyLast'), 'Choose the first frame and an optional final frame') },
-            { value: 'omni_reference', label: text(tr('generationPage.multiReference'), 'Omni reference'), description: text(tr('generationPage.imagesVideosAudioUp12', { images: referenceLimits.images, videos: referenceLimits.videos, audios: referenceLimits.audios }), `${referenceLimits.images} images / ${referenceLimits.videos} videos / ${referenceLimits.audios} audio clips · 12 total`) },
+            { value: 'text_to_video', label: tr('generationPage.textVideo'), description: tr('generationPage.writeOneSentenceModelCreates') },
+            { value: 'first_last_frame', label: tr('generationPage.firstLastFrame'), description: tr('generationPage.setFirstFrameOptionallyLast') },
+            { value: 'omni_reference', label: tr('generationPage.multiReference'), description: tr('generationPage.imagesVideosAudioUp12', { images: referenceLimits.images, videos: referenceLimits.videos, audios: referenceLimits.audios }) },
           ]} />}
-        {kind === 'audio' ? <span className="gen-control gen-model">{model || text(tr('generationPage.siteDefaultModel'), 'Default model')}</span> : <GenerationSelect label={text(tr('generationPage.model'), 'Model')} icon={<Icon size={19} />} value={model} onChange={setModel} options={models.filter(item => item.available !== false).map(item => ({ value: item.id, label: item.label, description: item.pricing_hint }))} />}
-        {kind === 'audio' ? <GenerationSelect label={text(tr('generationPage.voice'), 'Voice')} icon={<Mic size={18} />} value={voice} onChange={setVoice} options={[
-          { value: 'narrator_calm', label: text(tr('generationPage.calmNarrator'), 'Calm narrator'), description: text(tr('generationPage.steadyNaturalGreatStoryNarration'), 'Steady and natural, for narration') },
-          { value: 'warm_storyteller', label: text(tr('generationPage.warmStoryteller'), 'Warm storyteller'), description: text(tr('generationPage.softFriendlyGreatHeartwarmingStories'), 'Warm and gentle, for storytelling') },
-          { value: 'teacher_clear', label: text(tr('generationPage.clearMaleVoice'), 'Clear male voice'), description: text(tr('generationPage.clearBriskGreatExplainers'), 'Clear and bright, for explainers') },
+        {kind === 'audio' ? <span className="gen-control gen-model">{model || tr('generationPage.siteDefaultModel')}</span> : <GenerationSelect label={tr('generationPage.model')} icon={<Icon size={19} />} value={model} onChange={setModel} options={models.filter(item => item.available !== false).map(item => ({ value: item.id, label: item.label, description: item.pricing_hint }))} />}
+        {kind === 'audio' ? <GenerationSelect label={tr('generationPage.voice')} icon={<Mic size={18} />} value={voice} onChange={setVoice} options={[
+          { value: 'narrator_calm', label: tr('generationPage.calmNarrator'), description: tr('generationPage.steadyNaturalGreatStoryNarration') },
+          { value: 'warm_storyteller', label: tr('generationPage.warmStoryteller'), description: tr('generationPage.softFriendlyGreatHeartwarmingStories') },
+          { value: 'teacher_clear', label: tr('generationPage.clearMaleVoice'), description: tr('generationPage.clearBriskGreatExplainers') },
         ]} /> : <>
-          <GenerationSelect label={text(tr('generationPage.resolution'), 'Resolution')} value={resolution} onChange={setResolution} options={allowedResolutions.map(value => ({ value, label: value, description: selectedModel?.prices?.[value] ? `¥${selectedModel.prices[value]}/${kind === 'video' ? tr('generationPage.s') : tr('generationPage.images')}` : '' }))} />
-          <GenerationSelect label={text(tr('generationPage.aspectRatio'), 'Aspect ratio')} value={ratio} onChange={setRatio} options={(selectedModel?.allowed_aspect_ratios ?? []).map(value => ({ value, label: value, icon: value === '1:1' ? <Square size={19} /> : value === '9:16' || value === '3:4' ? <RectangleVertical size={19} /> : <RectangleHorizontal size={21} /> }))} />
-          {kind === 'video' && <GenerationSelect label={text(tr('generationPage.videoDuration'), 'Duration')} icon={<Clock3 size={18} />} value={duration} onChange={setDuration} options={Array.from({ length: (selectedModel?.duration_max ?? 30) - (selectedModel?.duration_min ?? 4) + 1 }, (_, index) => (selectedModel?.duration_min ?? 4) + index).map(value => ({ value: `${value}s`, label: text(tr('generationPage.s2', { value }), `${value} sec`), description: text(tr('generationPage.oneClipPerGeneration', { resolution }), `${resolution} · One video per request`) }))} />}
-          <span className="gen-control gen-output-count"><Layers size={17} /><span><small>{text(tr('generationPage.count'), 'Output')}</small><strong>× 1</strong></span></span>
+          <GenerationSelect label={tr('generationPage.resolution')} value={resolution} onChange={setResolution} options={allowedResolutions.map(value => ({ value, label: value, description: selectedModel?.prices?.[value] ? `¥${selectedModel.prices[value]}/${kind === 'video' ? tr('generationPage.s') : tr('generationPage.images')}` : '' }))} />
+          <GenerationSelect label={tr('generationPage.aspectRatio')} value={ratio} onChange={setRatio} options={(selectedModel?.allowed_aspect_ratios ?? []).map(value => ({ value, label: value, icon: value === '1:1' ? <Square size={19} /> : value === '9:16' || value === '3:4' ? <RectangleVertical size={19} /> : <RectangleHorizontal size={21} /> }))} />
+          {kind === 'video' && <GenerationSelect label={tr('generationPage.videoDuration')} icon={<Clock3 size={18} />} value={duration} onChange={setDuration} options={Array.from({ length: (selectedModel?.duration_max ?? 30) - (selectedModel?.duration_min ?? 4) + 1 }, (_, index) => (selectedModel?.duration_min ?? 4) + index).map(value => ({ value: `${value}s`, label: tr('generationPage.s2', { value }), description: tr('generationPage.oneClipPerGeneration', { resolution }) }))} />}
+          <span className="gen-control gen-output-count"><Layers size={17} /><span><small>{tr('generationPage.count')}</small><strong>× 1</strong></span></span>
         </>}
         {kind === 'video' && <PromptMentionPopover open={Boolean(mention)} items={mentionItems} anchorRect={mention?.rect ?? null}
           activeIndex={mentionActiveIndex} onActiveIndexChange={setMentionActiveIndex} onSelect={selectMention} onClose={() => setMention(null)} />}
         <div className="gen-submit-group">
           {kind === 'video' ? <div className="gen-estimate" aria-live="polite">
-            {estimateError ? <><strong>{text('预计消耗暂不可用', 'Estimate unavailable')}</strong><button type="button" onClick={retryEstimate}>{text('重新计算', 'Retry estimate')}</button></> : quote ? <>
-              <span>{text('预计消耗', 'Estimated cost')} <strong>{quote.billing_enabled ? points(quote.estimate_fen) : text('本次不扣费', 'No charge')}</strong></span>
-              <small>{text(quote.billing_enabled ? quote.billing_mode === 'fixed_media' ? `${duration.replace('s', '')} 秒 × 1 条 · 按当前价格结算` : '按当前配置估算，最终按实际用量结算' : '当前站点未开启计费', quote.billing_enabled ? quote.billing_mode === 'fixed_media' ? `${duration.replace('s', '')} sec × 1 video · Current pricing` : 'Estimated; settled on actual usage' : 'Billing is disabled on this site')}</small>
-            </> : <span>{text(estimating ? '正在计算预计消耗…' : referenceError || '选择模型和参数后显示预计消耗', estimating ? 'Estimating cost…' : referenceError ? 'Add valid reference media to estimate cost' : 'Choose a model and settings to estimate cost')}</span>}
-          </div> : <span>{text('生成记录自动保存', 'Creations saved automatically')}</span>}
-          <button className="gen-primary" disabled={submitting || !prompt.trim() || invalidParameters || (kind === 'video' && Boolean(referenceError || !quote || estimating || estimateError))} type="submit">{submitting ? <Loader2 className="gen-spin" size={18} /> : <Icon size={18} />}{text(submitting ? '提交中' : kind === 'audio' ? '生成语音' : '创作', submitting ? 'Submitting' : 'Generate')}</button>
+            {estimateError ? <><strong>{tr('generationPage.estimateUnavailable')}</strong><button type="button" onClick={retryEstimate}>{tr('generationPage.retryEstimate')}</button></> : quote ? <>
+              <span>{tr('generationPage.estimatedCost')} <strong>{quote.billing_enabled ? points(quote.estimate_fen) : tr('generationPage.noCharge')}</strong></span>
+              <small>{quote.billing_enabled ? quote.billing_mode === 'fixed_media' ? tr('generationPage.fixedMediaQuote', { seconds: duration.replace('s', '') }) : tr('generationPage.estimatedQuote') : tr('generationPage.billingDisabled')}</small>
+            </> : <span>{estimating ? tr('generationPage.estimatingCost') : referenceError || tr('generationPage.chooseModelForEstimate')}</span>}
+          </div> : <span>{tr('generationPage.creationsSavedAutomatically')}</span>}
+          <button className="gen-primary" disabled={submitting || !prompt.trim() || invalidParameters || (kind === 'video' && Boolean(referenceError || !quote || estimating || estimateError))} type="submit">{submitting ? <Loader2 className="gen-spin" size={18} /> : <Icon size={18} />}{submitting ? tr('generationPage.submitting') : kind === 'audio' ? tr('generationPage.generateSpeech') : tr('generationPage.create')}</button>
         </div>
       </div>
     </form>
     {referenceError && <p className="gen-inline-error" role="alert">{referenceError}</p>}
     {estimateError && <p className="gen-inline-error" role="alert">{estimateError}</p>}
     {error && <BillingErrorNotice message={error} />}
-    {notice && <div className="gen-notice" role="status"><Check size={18} />{notice}<Link to={`/tasks?kind=${kind}`}>{text(tr('generationPage.viewTasks'), 'View task')}<ArrowRight size={15} /></Link></div>}
+    {notice && <div className="gen-notice" role="status"><Check size={18} />{notice}<Link to={`/tasks?kind=${kind}`}>{tr('generationPage.viewTasks')}<ArrowRight size={15} /></Link></div>}
     <section className="gen-recent">
-      <header><h2>{text(tr('generationPage.recentGenerations'), 'Recent creations')}</h2><Link to={`/tasks?kind=${kind}`}>{text(tr('generationPage.viewAll', { recentTotal }), `View all ${recentTotal}`)}<ArrowRight size={17} /></Link></header>
+      <header><h2>{tr('generationPage.recentGenerations')}</h2><Link to={`/tasks?kind=${kind}`}>{tr('generationPage.viewAll', { recentTotal })}<ArrowRight size={17} /></Link></header>
       {historyError && <p className="gen-inline-error" role="alert">{historyError}</p>}
-      {!recent.length && !historyError ? <div className="gen-empty"><Icon size={34} /><strong>{text(tr('generationPage.ideasStartHere'), 'Your next idea starts here')}</strong><p>{text(tr('generationPage.submitFirstGenerationResultsAppear'), 'Submit your first generation. Your creations will appear here.')}</p></div> : <div className="gen-gallery">
+      {!recent.length && !historyError ? <div className="gen-empty"><Icon size={34} /><strong>{tr('generationPage.ideasStartHere')}</strong><p>{tr('generationPage.submitFirstGenerationResultsAppear')}</p></div> : <div className="gen-gallery">
         {recent.map(item => <article key={item.id} className="gen-gallery-item">
-          <button type="button" className="gen-gallery-preview" onClick={() => openDetail(item)} aria-label={text(tr('generationPage.viewGenerationDetails', { prompt: item.prompt || '未命名创作' }), `View generation details: ${item.prompt || 'Untitled creation'}`)}>
+          <button type="button" className="gen-gallery-preview" onClick={() => openDetail(item)} aria-label={tr('generationPage.viewGenerationDetails', { prompt: item.prompt || '未命名创作' })}>
             {kind === 'image' && (item.preview_url || item.urls[0]) ? <img src={resolveToolMediaUrl(item.preview_url || item.urls[0])} alt={item.prompt} /> : kind === 'video' && item.urls[0] ? <video src={resolveToolMediaUrl(item.urls[0])} poster={resolveToolMediaUrl(item.preview_url)} muted preload="metadata" /> : kind === 'video' && item.preview_url ? <img src={resolveToolMediaUrl(item.preview_url)} alt={item.prompt} /> : <Icon size={38} />}
-            <span className={`gen-result-status is-${item.status}`}>{text(item.status === 'succeeded' ? tr('generationPage.done') : item.status === 'failed' ? tr('generationPage.failed') : item.status === 'cancelled' ? tr('generationPage.cancelled') : tr('generationPage.processing'), item.status)}</span>
-            <span className="gen-cover-overlay" aria-hidden><Eye size={20} /><span>{text(tr('generationPage.viewDetails'), 'View details')}</span></span>
+            <span className={`gen-result-status is-${item.status}`}>{(item.status === 'succeeded' ? tr('generationPage.done') : item.status === 'failed' ? tr('generationPage.failed') : item.status === 'cancelled' ? tr('generationPage.cancelled') : tr('generationPage.processing'))}</span>
+            <span className="gen-cover-overlay" aria-hidden><Eye size={20} /><span>{tr('generationPage.viewDetails')}</span></span>
           </button>
           {kind === 'audio' && item.urls[0] && <audio controls src={resolveToolMediaUrl(item.urls[0])} preload="metadata" />}
-          <div className="gen-gallery-caption"><button type="button" className="gen-gallery-title" title={item.prompt} onClick={() => openDetail(item)}>{item.prompt || text(tr('generationPage.untitledCreation'), 'Untitled creation')}</button>{item.status === 'succeeded' && item.urls[0] && <button type="button" className="gen-icon-button" disabled={downloading === item.id} onClick={() => void download(item)} aria-label={text(tr('generationPage.download'), 'Download')}><Download size={16} /></button>}</div>
+          <div className="gen-gallery-caption"><button type="button" className="gen-gallery-title" title={item.prompt} onClick={() => openDetail(item)}>{item.prompt || tr('generationPage.untitledCreation')}</button>{item.status === 'succeeded' && item.urls[0] && <button type="button" className="gen-icon-button" disabled={downloading === item.id} onClick={() => void download(item)} aria-label={tr('generationPage.download')}><Download size={16} /></button>}</div>
         </article>)}
       </div>}
     </section>
     {detail && detailAsset && <AssetDetailDialog asset={detailAsset} onClose={closeDetail}
       notice={<section className="pf-asset-detail-prompt"><div className="pf-asset-detail-text">
-        <p role="status">{text(detail.status === 'succeeded' ? tr('generationPage.done') : detail.status === 'failed' ? tr('generationPage.generationFailed') : detail.status === 'cancelled' ? tr('generationPage.cancelled') : tr('generationPage.generatingResultsUpdateAutomatically'), detail.status === 'succeeded' ? 'Completed' : detail.status === 'failed' ? 'Generation failed' : detail.status === 'cancelled' ? 'Cancelled' : 'Generating. Results will update automatically.')}</p>
+        <p role="status">{(detail.status === 'succeeded' ? tr('generationPage.done') : detail.status === 'failed' ? tr('generationPage.generationFailed') : detail.status === 'cancelled' ? tr('generationPage.cancelled') : tr('generationPage.generatingResultsUpdateAutomatically'))}</p>
         {(detail.error || detailError) && <p role="alert">{formatGenerationErrorMessage(detail.error || detailError)}</p>}
       </div></section>}
-      actions={detail.urls.length > 1 && <div className="pf-asset-detail-utilities" role="group" aria-label={text(tr('generationPage.results'), 'Generation results')}>
-        {detail.urls.map((url, index) => <button type="button" key={url} className="pf-btn pf-btn-sm" aria-pressed={resultIndex === index} onClick={() => selectResult(index)}>{text(tr('generationPage.result', { n: index + 1 }), `Result ${index + 1}`)}</button>)}
+      actions={detail.urls.length > 1 && <div className="pf-asset-detail-utilities" role="group" aria-label={tr('generationPage.results')}>
+        {detail.urls.map((url, index) => <button type="button" key={url} className="pf-btn pf-btn-sm" aria-pressed={resultIndex === index} onClick={() => selectResult(index)}>{tr('generationPage.result', { n: index + 1 })}</button>)}
       </div>}>
     </AssetDetailDialog>}
   </GenerationLayout>

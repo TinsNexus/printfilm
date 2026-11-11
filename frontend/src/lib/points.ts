@@ -1,15 +1,17 @@
+import { getActiveLocale, LOCALE_DATE, type Locale } from '../i18n/detect.ts'
 /** Wallet quantities already use integer hundredths of CNY: 1 stored unit = 1 point. */
-export function pointLocale(): 'zh' | 'en' {
-  return typeof document !== 'undefined' && document.documentElement.lang.startsWith('en') ? 'en' : 'zh'
+// 积分单位：按界面语言显示
+const POINT_UNIT: Record<Locale, string> = { zh: '积分', en: 'Points', vi: 'điểm' }
+
+/** 当前界面语言（与 tr() 一致） */
+export function pointLocale(): Locale {
+  return getActiveLocale()
 }
 
-export function pointText(zh: string, en: string): string {
-  return pointLocale() === 'en' ? en : zh
-}
-
-export function points(value: unknown, locale: 'zh' | 'en' = pointLocale()): string {
+/** 积分数值 + 单位，按语言分组千位 */
+export function points(value: unknown, locale: Locale = pointLocale()): string {
   return typeof value === 'number' && Number.isSafeInteger(value)
-    ? `${value.toLocaleString(locale === 'en' ? 'en-US' : 'zh-CN')} ${locale === 'en' ? 'Points' : '积分'}` : '—'
+    ? `${value.toLocaleString(LOCALE_DATE[locale])} ${POINT_UNIT[locale]}` : '—'
 }
 
 /** No rounding, exponent notation, fractions or yuan conversion for account inputs. */

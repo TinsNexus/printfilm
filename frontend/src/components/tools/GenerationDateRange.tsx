@@ -2,8 +2,8 @@ import { useEffect, useId, useState, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { ArrowRight, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { useAnchoredPopover } from '../../hooks/useAnchoredPopover'
-import { useGenerationText } from '../../lib/generationMedia'
 import { tr } from '../../i18n/translate.ts'
+import { getActiveLocale, LOCALE_DATE } from '../../i18n/detect.ts'
 
 function dayKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -14,7 +14,6 @@ function shiftMonth(value: Date, amount: number) { return new Date(value.getFull
 type Props = { from: string; to: string; onChange: (from: string, to: string) => void }
 
 export default function GenerationDateRange({ from, to, onChange }: Props) {
-  const text = useGenerationText()
   const { open, setOpen, triggerRef, panelRef, position } = useAnchoredPopover(610, 510)
   const [draftFrom, setDraftFrom] = useState(from)
   const [draftTo, setDraftTo] = useState(to)
@@ -31,12 +30,12 @@ export default function GenerationDateRange({ from, to, onChange }: Props) {
     return () => cancelAnimationFrame(frame)
   }, [open, from, today, panelRef])
   const presets = [
-    { label: text(tr('generationDateRange.allTime'), 'All time'), start: '', end: '' },
+    { label: tr('generationDateRange.allTime'), start: '', end: '' },
     ...[7, 30].map(days => {
       const start = new Date(); start.setDate(start.getDate() - days + 1)
-      return { label: text(tr('generationDateRange.lastDays', { days }), `Last ${days} days`), start: dayKey(start), end: today }
+      return { label: tr('generationDateRange.lastDays', { days }), start: dayKey(start), end: today }
     }),
-    { label: text(tr('generationDateRange.month'), 'This month'), start: dayKey(shiftMonth(new Date(), 0)), end: today },
+    { label: tr('generationDateRange.month'), start: dayKey(shiftMonth(new Date(), 0)), end: today },
   ]
 
   function pick(value: string) {
@@ -67,8 +66,8 @@ export default function GenerationDateRange({ from, to, onChange }: Props) {
     const rangeStart = draftFrom < end ? draftFrom : end
     const rangeEnd = draftFrom < end ? end : draftFrom
     return <div className={`gen-calendar-month ${offset ? 'is-second' : ''}`}>
-      <div className="gen-calendar-month-label">{current.toLocaleDateString(text('zh-CN', 'en-US'), { year: 'numeric', month: 'long' })}</div>
-      <div className="gen-calendar-weekdays">{text(tr('generationDateRange.mTWTF'), 'M T W T F S S').split(' ').map((day, index) => <span key={index}>{day}</span>)}</div>
+      <div className="gen-calendar-month-label">{current.toLocaleDateString(LOCALE_DATE[getActiveLocale()], { year: 'numeric', month: 'long' })}</div>
+      <div className="gen-calendar-weekdays">{tr('generationDateRange.mTWTF').split(' ').map((day, index) => <span key={index}>{day}</span>)}</div>
       <div className="gen-calendar-grid" onPointerLeave={() => setHovered('')}>
         {Array.from({ length: start }, (_, index) => <span key={`blank-${index}`} />)}
         {Array.from({ length: days }, (_, index) => {
@@ -84,26 +83,26 @@ export default function GenerationDateRange({ from, to, onChange }: Props) {
       </div>
     </div>
   }
-  const display = from ? `${from.replaceAll('-', '.')} — ${(to || from).replaceAll('-', '.')}` : text(tr('generationDateRange.allTime'), 'All time')
+  const display = from ? `${from.replaceAll('-', '.')} — ${(to || from).replaceAll('-', '.')}` : tr('generationDateRange.allTime')
 
   return <div className={`gen-date-control ${from ? 'has-value' : ''}`}>
     <button type="button" className={`gen-date-trigger ${open ? 'is-open' : ''}`} ref={triggerRef}
-      aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined} aria-label={text(tr('generationDateRange.chooseDateRange'), 'Choose date range')}
+      aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined} aria-label={tr('generationDateRange.chooseDateRange')}
       onClick={() => { setDraftFrom(from); setDraftTo(to); setHovered(''); setMonth(shiftMonth(from ? parseDay(from) : new Date(), 0)); setOpen(previous => !previous) }}>
       <CalendarDays size={17} aria-hidden /><span>{display}</span><ChevronDown size={14} aria-hidden />
     </button>
-    {from && <button type="button" className="gen-date-clear" aria-label={text(tr('generationDateRange.clearDateFilter'), 'Clear date filter')} onClick={() => onChange('', '')}><X size={13} /></button>}
-    {open && createPortal(<div ref={panelRef} style={position} className="gen-floating gen-calendar-popup" role="dialog" id={id} aria-label={text(tr('generationDateRange.chooseTimeRange'), 'Select date range')}>
-      <header className="gen-calendar-header"><span><CalendarDays size={17} />{text(tr('generationDateRange.chooseTimeRange'), 'Select date range')}</span><button type="button" className="gen-plain-icon" aria-label={text(tr('generationDateRange.closeDatePicker'), 'Close date picker')} onClick={() => { setOpen(false); triggerRef.current?.focus() }}><X size={16} /></button></header>
+    {from && <button type="button" className="gen-date-clear" aria-label={tr('generationDateRange.clearDateFilter')} onClick={() => onChange('', '')}><X size={13} /></button>}
+    {open && createPortal(<div ref={panelRef} style={position} className="gen-floating gen-calendar-popup" role="dialog" id={id} aria-label={tr('generationDateRange.chooseTimeRange')}>
+      <header className="gen-calendar-header"><span><CalendarDays size={17} />{tr('generationDateRange.chooseTimeRange')}</span><button type="button" className="gen-plain-icon" aria-label={tr('generationDateRange.closeDatePicker')} onClick={() => { setOpen(false); triggerRef.current?.focus() }}><X size={16} /></button></header>
       <div className="gen-calendar-presets">{presets.map(preset => <button type="button" key={preset.label}
         className={draftFrom === preset.start && draftTo === preset.end ? 'is-active' : ''}
         onClick={() => { setDraftFrom(preset.start); setDraftTo(preset.end); setHovered(''); setMonth(shiftMonth(preset.start ? parseDay(preset.start) : new Date(), 0)) }}>{preset.label}{draftFrom === preset.start && draftTo === preset.end && <Check size={12} />}</button>)}</div>
-      <div className="gen-calendars"><button type="button" className="gen-calendar-prev gen-plain-icon" aria-label={text(tr('generationDateRange.previousMonth'), 'Previous month')} onClick={() => setMonth(value => shiftMonth(value, -1))}><ChevronLeft size={18} /></button>
+      <div className="gen-calendars"><button type="button" className="gen-calendar-prev gen-plain-icon" aria-label={tr('generationDateRange.previousMonth')} onClick={() => setMonth(value => shiftMonth(value, -1))}><ChevronLeft size={18} /></button>
         {calendar(0)}{calendar(1)}
-        <button type="button" className="gen-calendar-next gen-plain-icon" aria-label={text(tr('generationDateRange.nextMonth'), 'Next month')} onClick={() => setMonth(value => shiftMonth(value, 1))}><ChevronRight size={18} /></button>
+        <button type="button" className="gen-calendar-next gen-plain-icon" aria-label={tr('generationDateRange.nextMonth')} onClick={() => setMonth(value => shiftMonth(value, 1))}><ChevronRight size={18} /></button>
       </div>
-      <footer className="gen-calendar-footer"><div><span>{draftFrom || text(tr('generationDateRange.startDate'), 'Start date')}</span><ArrowRight size={14} /><span>{draftTo || (draftFrom ? text(tr('generationDateRange.chooseEndDate'), 'Choose end date') : text(tr('generationDateRange.endDate'), 'End date'))}</span></div>
-        <button type="button" className="gen-primary" onClick={() => { onChange(draftFrom, draftFrom ? draftTo || draftFrom : ''); setOpen(false); triggerRef.current?.focus() }}>{text(tr('generationDateRange.applyFilter'), 'Apply')}</button>
+      <footer className="gen-calendar-footer"><div><span>{draftFrom || tr('generationDateRange.startDate')}</span><ArrowRight size={14} /><span>{draftTo || (draftFrom ? tr('generationDateRange.chooseEndDate') : tr('generationDateRange.endDate'))}</span></div>
+        <button type="button" className="gen-primary" onClick={() => { onChange(draftFrom, draftFrom ? draftTo || draftFrom : ''); setOpen(false); triggerRef.current?.focus() }}>{tr('generationDateRange.applyFilter')}</button>
       </footer>
     </div>, document.body)}
   </div>

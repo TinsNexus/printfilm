@@ -60,16 +60,16 @@ export default function ToolReferenceAssetPicker({ open, onClose, allowedKinds, 
       void listToolReferenceAssets({ kind: requestKind, q: query, page, pageSize }, controller.signal).then(result => {
         if (!active) return
         setItems(result.items); setTotal(result.total)
-      }).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : text(tr('toolReferenceAssetPicker.failedLoadAssetLibrary'), 'Could not load assets')) })
+      }).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : tr('toolReferenceAssetPicker.failedLoadAssetLibrary')) })
         .finally(() => { if (active) setLoading(false) })
     }, 180)
     return () => { active = false; controller.abort(); window.clearTimeout(timer) }
   }, [open, kind, query, page, text])
 
   const visibleItems = items.filter(asset => allowedKinds.includes(toolReferenceAssetKind(asset)))
-  const labels = { image: text(tr('toolReferenceAssetPicker.image'), 'Images'), video: text(tr('toolReferenceAssetPicker.video'), 'Videos'), audio: text(tr('toolReferenceAssetPicker.audio'), 'Audio') }
+  const labels = { image: tr('toolReferenceAssetPicker.image'), video: tr('toolReferenceAssetPicker.video'), audio: tr('toolReferenceAssetPicker.audio') }
   const options = [
-    ...(allowedKinds.length === 3 ? [{ value: 'all' as const, label: text(tr('toolReferenceAssetPicker.all'), 'All') }] : []),
+    ...(allowedKinds.length === 3 ? [{ value: 'all' as const, label: tr('toolReferenceAssetPicker.all') }] : []),
     ...allowedKinds.map(value => ({ value, label: labels[value] })),
   ]
 
@@ -78,34 +78,34 @@ export default function ToolReferenceAssetPicker({ open, onClose, allowedKinds, 
     if (!selected.length || busy || loading) return
     setBusy(true); setError('')
     try { await onPick(selected); onClose() }
-    catch (cause) { setError(cause instanceof Error ? cause.message : text(tr('toolReferenceAssetPicker.selectionFailed'), 'Could not use these assets')) }
+    catch (cause) { setError(cause instanceof Error ? cause.message : tr('toolReferenceAssetPicker.selectionFailed')) }
     finally { setBusy(false) }
   }
 
   // 多选时切换筛选/翻页保留已选，单选维持原行为。
   const resetSelection = () => { if (!multiple) setSelected([]) }
 
-  return <Modal open={open} onClose={onClose} title={text(tr('toolReferenceAssetPicker.chooseReferencesAssetLibrary'), 'Choose reference assets')} size="lg" dismissible={!busy} className="gen-reference-picker"
+  return <Modal open={open} onClose={onClose} title={tr('toolReferenceAssetPicker.chooseReferencesAssetLibrary')} size="lg" dismissible={!busy} className="gen-reference-picker"
     footer={<>
-      <button type="button" className="pf-btn" disabled={busy} onClick={onClose}>{text(tr('toolReferenceAssetPicker.cancel'), 'Cancel')}</button>
-      <button type="button" className="pf-btn pf-btn-lime" disabled={!selected.length || loading || busy} onClick={() => void confirm()}>{busy ? text(tr('toolReferenceAssetPicker.selecting'), 'Selecting…') : multiple && selected.length > 1 ? text(tr('toolReferenceAssetPicker.useFiles', { length: selected.length }), `Use ${selected.length} assets`) : text(tr('toolReferenceAssetPicker.useSelected'), 'Use asset')}</button>
+      <button type="button" className="pf-btn" disabled={busy} onClick={onClose}>{tr('toolReferenceAssetPicker.cancel')}</button>
+      <button type="button" className="pf-btn pf-btn-lime" disabled={!selected.length || loading || busy} onClick={() => void confirm()}>{busy ? tr('toolReferenceAssetPicker.selecting') : multiple && selected.length > 1 ? tr('toolReferenceAssetPicker.useFiles', { length: selected.length }) : tr('toolReferenceAssetPicker.useSelected')}</button>
     </>}>
-    <AssetBanner title={text(tr('toolReferenceAssetPicker.putExistingMaterialWorkAgain'), 'Create with your existing assets')}>{multiple ? text(tr('toolReferenceAssetPicker.selectSeveralImagesVideosAudio'), 'Pick several images, videos or audio clips at once; all of them join this generation as references.') : text(tr('toolReferenceAssetPicker.chooseImageVideoAudioClip'), 'Choose an image, video or audio asset available in this workspace.')}</AssetBanner>
+    <AssetBanner title={tr('toolReferenceAssetPicker.putExistingMaterialWorkAgain')}>{multiple ? tr('toolReferenceAssetPicker.selectSeveralImagesVideosAudio') : tr('toolReferenceAssetPicker.chooseImageVideoAudioClip')}</AssetBanner>
     <div className="pf-library-toolbar">
       <AssetTypeFilter options={options} value={kind} disabled={busy} onChange={value => { setKind(value); setPage(1); resetSelection() }} />
-      <AssetSearch value={query} onChange={value => { setQuery(value); setPage(1); resetSelection() }} placeholder={text(tr('toolReferenceAssetPicker.searchAssetNamesDescriptions'), 'Search assets')} />
+      <AssetSearch value={query} onChange={value => { setQuery(value); setPage(1); resetSelection() }} placeholder={tr('toolReferenceAssetPicker.searchAssetNamesDescriptions')} />
     </div>
     {error && <BillingErrorNotice message={error} />}
-    {loading ? <div className="gen-reference-picker-loading" role="status"><Loader2 size={20} className="gen-spin" />{text(tr('toolReferenceAssetPicker.loadingAssets'), 'Loading assets…')}</div> : <AssetGrid picker>
+    {loading ? <div className="gen-reference-picker-loading" role="status"><Loader2 size={20} className="gen-spin" />{tr('toolReferenceAssetPicker.loadingAssets')}</div> : <AssetGrid picker>
       {visibleItems.map(asset => <AssetCard key={asset.id} asset={{ ...asset, type: toolReferenceAssetKind(asset) }} selected={selected.some(item => item.id === asset.id)}
-        subtitle={asset.project_id ? text(tr('toolReferenceAssetPicker.project', { project_id: asset.project_id }), `Project #${asset.project_id}`) : text(tr('toolReferenceAssetPicker.assetLibrary'), 'Asset library')}
+        subtitle={asset.project_id ? tr('toolReferenceAssetPicker.project', { project_id: asset.project_id }) : tr('toolReferenceAssetPicker.assetLibrary')}
         footer={labels[toolReferenceAssetKind(asset)]} onOpen={() => { if (!busy) toggle(asset) }} />)}
     </AssetGrid>}
-    {!loading && !visibleItems.length && !error && <AssetEmpty>{text(tr('toolReferenceAssetPicker.nothingChooseHereTryAnother'), 'No assets found. Try another type or upload a local file.')}</AssetEmpty>}
+    {!loading && !visibleItems.length && !error && <AssetEmpty>{tr('toolReferenceAssetPicker.nothingChooseHereTryAnother')}</AssetEmpty>}
     {total > pageSize && <div className="gen-reference-picker-pagination">
-      <span>{text(tr('toolReferenceAssetPicker.itemsPage', { total, page, ceil: Math.ceil(total / pageSize) }), `${total} assets · Page ${page} of ${Math.ceil(total / pageSize)}`)}{multiple && selected.length ? text(tr('toolReferenceAssetPicker.selected', { length: selected.length }), ` · ${selected.length} selected`) : ''}</span>
-      <button type="button" className="pf-btn pf-btn-sm" disabled={loading || busy || page <= 1} onClick={() => { setPage(value => value - 1); resetSelection() }}><ChevronLeft size={14} />{text(tr('toolReferenceAssetPicker.previous'), 'Previous')}</button>
-      <button type="button" className="pf-btn pf-btn-sm" disabled={loading || busy || page * pageSize >= total} onClick={() => { setPage(value => value + 1); resetSelection() }}>{text(tr('toolReferenceAssetPicker.next'), 'Next')}<ChevronRight size={14} /></button>
+      <span>{tr('toolReferenceAssetPicker.itemsPage', { total, page, ceil: Math.ceil(total / pageSize) })}{multiple && selected.length ? tr('toolReferenceAssetPicker.selected', { length: selected.length }) : ''}</span>
+      <button type="button" className="pf-btn pf-btn-sm" disabled={loading || busy || page <= 1} onClick={() => { setPage(value => value - 1); resetSelection() }}><ChevronLeft size={14} />{tr('toolReferenceAssetPicker.previous')}</button>
+      <button type="button" className="pf-btn pf-btn-sm" disabled={loading || busy || page * pageSize >= total} onClick={() => { setPage(value => value + 1); resetSelection() }}>{tr('toolReferenceAssetPicker.next')}<ChevronRight size={14} /></button>
     </div>}
   </Modal>
 }

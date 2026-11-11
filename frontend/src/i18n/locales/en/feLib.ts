@@ -41,6 +41,11 @@ export const enFeLib = {
     teamSpendingLimited: "Team spending is limited",
     checkLimitTeamWalletTeam: "{message}. Check your limit in the team wallet; the team balance and top-ups are managed by the owner.",
     got: "Got it",
+    insufficientPoints: "Insufficient Points",
+    doNotHaveEnoughPoints: "You do not have enough Points. Please top up to continue.",
+    topUp: "Top up",
+    ok: "OK",
+    insufficientPointsRequiredAvailablePlease: "Insufficient Points: required {p}, available {p2}. Please top up.",
   },
   publicCapabilities: {
     voiceGenerationTemporarilyUnavailableChoose: "Voice generation is temporarily unavailable. Choose an existing voice or upload audio.",

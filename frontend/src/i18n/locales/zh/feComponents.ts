@@ -38,6 +38,13 @@ export const zhFeComponents = {
   },
   monthlyUsageCard: {
     tokenUsage: "Token 用量",
+    monthlyUsage: "本月使用情况",
+    chargedActualUpstreamTokenUsage: "按上游 Token 实际用量计费",
+    monthlyPointsUsed: "本月积分消耗",
+    availablePoints: "可用积分",
+    hold: "冻结中",
+    calls: "调用 {calls} 次",
+    topUp: "去充值",
   },
   paymentBrandIcon: {
     alipay: "支付宝",
@@ -505,5 +512,27 @@ export const zhFeComponents = {
     visualStyle: "画面风格",
     chooseVisualStyle: "选择画面风格",
     setOneVisualDirectionCharacters: "为角色和场景设置统一的视觉方向。",
+  },
+  billingAlertHost: {
+    pointsUsageReminder: "积分消费提醒",
+    spendingHasReachedPleaseCheck: "累计消费已达到 {p}，请注意账户可用积分。",
+  },
+  mediaCostNotice: {
+    points: "积分",
+    image: "张",
+    second: "秒",
+    estimated: "预计",
+  },
+  pricingWalletCard: {
+    points: "**** 积分",
+    points2: "**** 积分",
+    points3: "**** 积分",
+    debt: "欠费",
+    spendable: "实际可消费",
+  },
+  projectMediaCostSummary: {
+    pendingImages: "待生成图片：",
+    pendingVideos: "待生成视频：",
+    estimated: "预计",
   },
 } as const;

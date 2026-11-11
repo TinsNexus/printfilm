@@ -41,6 +41,11 @@ export const zhFeLib = {
     teamSpendingLimited: "团队消费受限",
     checkLimitTeamWalletTeam: "{message}。请在团队钱包查看本人额度；团队余额与充值由所有者管理。",
     got: "知道了",
+    insufficientPoints: "积分不足",
+    doNotHaveEnoughPoints: "当前积分不足以开始生成，请先充值。",
+    topUp: "去充值",
+    ok: "知道了",
+    insufficientPointsRequiredAvailablePlease: "积分不足：需要 {p}，当前 {p2}，请先充值",
   },
   publicCapabilities: {
     voiceGenerationTemporarilyUnavailableChoose: "音色生成暂时停用，可选择已有音色或上传音频。",

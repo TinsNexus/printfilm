@@ -35,7 +35,7 @@ export function useToolRunDetail() {
         if (record.status === 'queued' || record.status === 'running') timer = setTimeout(refresh, 5000)
       } catch (cause) {
         if (disposed || epoch !== workspaceScope.epoch) return
-        setError(cause instanceof Error ? cause.message : text(tr('useToolRunDetail.failedUpdateDetailsRetrying'), 'Could not update details. Retrying.'))
+        setError(cause instanceof Error ? cause.message : tr('useToolRunDetail.failedUpdateDetailsRetrying'))
         timer = setTimeout(refresh, 10000)
       }
     }

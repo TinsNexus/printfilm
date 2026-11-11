@@ -1,4 +1,4 @@
-import { points, pointText } from '../lib/points'
+import { points } from '../lib/points'
 import { useEffect, useState } from 'react'
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import AppShell from '../components/layout/AppShell'
@@ -12,6 +12,7 @@ import ComingSoon from '../components/ui/ComingSoon'
 import { useI18n } from '../i18n'
 import TeamDirectory from '../features/teams/TeamDirectory'
 import { USER_UPDATED_EVENT } from '../lib/userEvents'
+import { tr } from '../i18n/translate.ts'
 
 type SettingsTab = 'account' | 'subscription' | 'team' | 'notify' | 'security'
 
@@ -69,7 +70,7 @@ function AccountSettings() {
     let active = true
     setWalletError('')
     api.wallet().then((value) => { if (active) setWallet(value) }).catch((error: unknown) => {
-      if (active) setWalletError(error instanceof Error ? error.message : pointText('积分账户暂不可用，请稍后重试。', 'Your Points account is temporarily unavailable. Please try again later.'))
+      if (active) setWalletError(error instanceof Error ? error.message : tr('settingsPage.pointsAccountTemporarilyUnavailablePlease'))
     })
     return () => { active = false }
   }, [tab])
@@ -124,8 +125,8 @@ function AccountSettings() {
               <div className="pf-settings-balance">
                 <div><span className="pf-muted">{t('settings.balance')}</span><strong>{points(wallet?.balance_fen)}</strong></div>
                 <div><span className="pf-muted">{t('settings.frozen')}</span><em>{points(wallet?.frozen_fen)}</em></div>
-                {wallet?.debt_fen !== undefined && <div><span>{pointText('欠费', 'Debt')}</span><em>{points(wallet.debt_fen)}</em></div>}
-                {wallet?.spendable_fen !== undefined && <div><span>{pointText('实际可消费', 'Spendable')}</span><em>{points(wallet.spendable_fen)}</em></div>}
+                {wallet?.debt_fen !== undefined && <div><span>{tr('settingsPage.debt')}</span><em>{points(wallet.debt_fen)}</em></div>}
+                {wallet?.spendable_fen !== undefined && <div><span>{tr('settingsPage.spendable')}</span><em>{points(wallet.spendable_fen)}</em></div>}
               </div>
               <MonthlyUsageCard variant="compact" showTopup={false} />
               <UsageChargeRecords variant="compact" />

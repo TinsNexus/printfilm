@@ -41,6 +41,11 @@ export const viFeLib = {
     teamSpendingLimited: "Chi tiêu nhóm bị giới hạn",
     checkLimitTeamWalletTeam: "{message}. Vui lòng xem hạn mức của bạn trong ví nhóm; số dư và nạp tiền của nhóm do chủ sở hữu quản lý.",
     got: "Đã hiểu",
+    insufficientPoints: "Không đủ điểm",
+    doNotHaveEnoughPoints: "Số điểm hiện tại không đủ để bắt đầu tạo, vui lòng nạp tiền trước.",
+    topUp: "Nạp tiền",
+    ok: "Đã hiểu",
+    insufficientPointsRequiredAvailablePlease: "Không đủ điểm: cần {p}, hiện có {p2}, vui lòng nạp tiền trước",
   },
   publicCapabilities: {
     voiceGenerationTemporarilyUnavailableChoose: "Tạo giọng nói tạm thời bị dừng, có thể chọn giọng có sẵn hoặc tải âm thanh lên.",

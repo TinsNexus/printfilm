@@ -38,6 +38,13 @@ export const viFeComponents = {
   },
   monthlyUsageCard: {
     tokenUsage: "Lượng Token",
+    monthlyUsage: "Mức dùng tháng này",
+    chargedActualUpstreamTokenUsage: "Tính phí theo lượng Token thực tế của upstream",
+    monthlyPointsUsed: "Điểm đã dùng tháng này",
+    availablePoints: "Điểm khả dụng",
+    hold: "Đang tạm giữ",
+    calls: "{calls} lượt gọi",
+    topUp: "Nạp tiền",
   },
   paymentBrandIcon: {
     alipay: "Alipay",
@@ -505,5 +512,27 @@ export const viFeComponents = {
     visualStyle: "Phong cách hình ảnh",
     chooseVisualStyle: "Chọn phong cách hình ảnh",
     setOneVisualDirectionCharacters: "Đặt hướng thị giác thống nhất cho nhân vật và bối cảnh.",
+  },
+  billingAlertHost: {
+    pointsUsageReminder: "Nhắc nhở chi tiêu điểm",
+    spendingHasReachedPleaseCheck: "Tổng chi tiêu đã đạt {p}, vui lòng chú ý số điểm khả dụng trong tài khoản.",
+  },
+  mediaCostNotice: {
+    points: "điểm",
+    image: "ảnh",
+    second: "giây",
+    estimated: "Dự kiến",
+  },
+  pricingWalletCard: {
+    points: "**** điểm",
+    points2: "**** điểm",
+    points3: "**** điểm",
+    debt: "Nợ phí",
+    spendable: "Có thể chi tiêu",
+  },
+  projectMediaCostSummary: {
+    pendingImages: "Ảnh chờ tạo: ",
+    pendingVideos: "Video chờ tạo: ",
+    estimated: "Dự kiến",
   },
 } as const;
