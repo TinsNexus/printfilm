@@ -1,15 +1,15 @@
+import { points } from "@/lib/points";
 import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { api, type AdminLedger, type AdminOrder, type AdminUsageEventListRes, type PageMeta } from "@/api/client";
+import type { AdminLedger, AdminOrder, AdminUsageEventListRes, PageResult } from "@/api/client";
+import { listAdminLedger, listAdminOrders, listAdminUsageEvents } from "@/api/finance";
 import { AdminDateRangeFilter } from "@/components/admin/AdminDateRangeFilter";
-import { AdminDetailMeta, AdminDetailSection } from "@/components/admin/AdminDetailLayout";
 import { AdminEntityLink } from "@/components/admin/AdminEntityLink";
 import { AdminFilterBar } from "@/components/admin/AdminFilterBar";
-import { AdminModal } from "@/components/admin/AdminModal";
 import { AdminUserSearchSelect } from "@/components/admin/AdminUserSearchSelect";
+import { LedgerDetailDialog, LedgerRefLink, OrderDetailDialog } from "@/components/finance/FinanceDetailDialogs";
 import { PaginationBar } from "@/components/PaginationBar";
-import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,46 +18,24 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/ui/page";
 import { useAdminDetailQuery } from "@/hooks/useAdminDetailQuery";
-import { fenToYuan } from "@/lib/utils";
-import { ledgerKindLabel, orderStatusLabel, payTypeLabel, taskDomainLabel } from "@/lib/statusLabels";
-import { formatDateTime, useI18n } from "@/i18n";
-import { tr } from "@/i18n/translate";
 
-type OrderRes = { items: AdminOrder[]; meta: PageMeta };
-type LedgerRes = { items: AdminLedger[]; meta: PageMeta };
+import { orderPaymentLabel } from "@/lib/orderPayment";
+import { ledgerKindLabel, orderStatusLabel, payTypeLabel, taskDomainLabel } from "@/lib/statusLabels";
+import { tr } from "../i18n/translate.ts";
+
+type OrderRes = PageResult<AdminOrder>;
+type LedgerRes = PageResult<AdminLedger>;
 
 const ORDER_TABS = new Set(["orders", "ledger", "usage"]);
 
+// 将 URL 中的 Tab 限定为已有的财务列表，兼容无参数入口。
 function tabFromSearch(raw: string | null): string {
   return raw && ORDER_TABS.has(raw) ? raw : "orders";
 }
 
-function ledgerRefLink(row: AdminLedger) {
-  if (row.ref_type === "order" && row.ref_id) {
-    const id = Number(row.ref_id);
-    if (Number.isFinite(id) && id > 0) {
-      return <AdminEntityLink kind="order" id={id} label={tr("orders.order", { id })} />;
-    }
-    return (
-      <Link
-        to={`/orders?tab=orders&trade=${encodeURIComponent(row.ref_id)}`}
-        className="admin-link font-mono text-xs"
-      >
-        {row.ref_id}
-      </Link>
-    );
-  }
-  if (!row.ref_type && !row.ref_id) return "—";
-  return (
-    <span className="font-mono text-xs">
-      {row.ref_type}/{row.ref_id}
-    </span>
-  );
-}
-
 // 充值订单、钱包流水与用量明细
 export function OrdersPage() {
-  const { t: tx } = useI18n();
+  // 列表筛选与分页分别保留，切换 Tab 不清空其他列表状态。
   const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState(() => tabFromSearch(searchParams.get("tab")));
   const [orderStatus, setOrderStatus] = useState("");
@@ -72,6 +50,7 @@ export function OrdersPage() {
   const [usageDomain, setUsageDomain] = useState("");
   const [usageBillingKey, setUsageBillingKey] = useState("");
   const [usageCapability, setUsageCapability] = useState("");
+  const [usageModel, setUsageModel] = useState("");
   const [usageBasis, setUsageBasis] = useState("");
   const [usageDateFrom, setUsageDateFrom] = useState("");
   const [usageDateTo, setUsageDateTo] = useState("");
@@ -82,47 +61,43 @@ export function OrdersPage() {
   const [ledgerDetail, setLedgerDetail] = useState<AdminLedger | null>(null);
   const orderQuery = useAdminDetailQuery("order");
 
+  // 按当前筛选加载充值订单，分页仍由服务端完成。
   async function loadOrders(page = orderPage) {
     try {
-      const params = new URLSearchParams({ page: String(page), page_size: String(DEFAULT_PAGE_SIZE) });
-      if (orderStatus) params.set("status", orderStatus);
-      if (orderUserId) params.set("user_id", String(orderUserId));
-      setOrders(await api<OrderRes>(`/api/admin/orders?${params}`));
+      setOrders(await listAdminOrders(page, { status: orderStatus, userId: orderUserId }));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : tx("orders.couldLoadOrders"));
+      toast.error(err instanceof Error ? err.message : tr("orders.ui.loadOrdersFailed"));
     }
   }
 
+  // 加载钱包流水；与调账页、用户详情共享请求参数映射。
   async function loadLedger(page = ledgerPage) {
     try {
-      const params = new URLSearchParams({ page: String(page), page_size: String(DEFAULT_PAGE_SIZE) });
-      if (ledgerKind) params.set("kind", ledgerKind);
-      if (ledgerUserId) params.set("user_id", String(ledgerUserId));
-      setLedger(await api<LedgerRes>(`/api/admin/ledger?${params}`));
+      setLedger(await listAdminLedger(page, { kind: ledgerKind, userId: ledgerUserId }));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : tx("orders.couldLoadLedger"));
+      toast.error(err instanceof Error ? err.message : tr("orders.ui.loadLedgerFailed"));
     }
   }
 
+  // 支持快捷筛选覆盖尚未提交到 React state 的用量条件。
   async function loadUsage(
     page = usagePage,
-    overrides?: { billing_key?: string; capability?: string },
+    overrides?: { billing_key?: string; capability?: string; model?: string },
   ) {
     try {
-      const params = new URLSearchParams({ page: String(page), page_size: String(DEFAULT_PAGE_SIZE) });
-      if (usageUserId) params.set("user_id", String(usageUserId));
-      if (usageTaskId.trim()) params.set("task_run_id", usageTaskId.trim());
-      if (usageDomain) params.set("domain", usageDomain);
-      const billingKey = overrides?.billing_key ?? usageBillingKey.trim();
-      const capability = overrides?.capability ?? usageCapability.trim();
-      if (billingKey) params.set("billing_key", billingKey);
-      if (capability) params.set("capability", capability);
-      if (usageBasis) params.set("billing_basis", usageBasis);
-      if (usageDateFrom) params.set("created_from", `${usageDateFrom}T00:00:00`);
-      if (usageDateTo) params.set("created_to", `${usageDateTo}T23:59:59`);
-      setUsage(await api<AdminUsageEventListRes>(`/api/admin/usage-events?${params}`));
+      setUsage(await listAdminUsageEvents(page, {
+        userId: usageUserId,
+        taskRunId: usageTaskId.trim(),
+        domain: usageDomain,
+        billingKey: overrides?.billing_key ?? usageBillingKey.trim(),
+        capability: overrides?.capability ?? usageCapability.trim(),
+        model: overrides?.model ?? usageModel.trim(),
+        billingBasis: usageBasis,
+        dateFrom: usageDateFrom,
+        dateTo: usageDateTo,
+      }));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : tx("orders.couldLoadUsage"));
+      toast.error(err instanceof Error ? err.message : tr("orders.ui.loadUsageFailed"));
     }
   }
 
@@ -157,9 +132,7 @@ export function OrdersPage() {
     if (!tradeNo) return;
     void (async () => {
       try {
-        const res = await api<OrderRes>(
-          `/api/admin/orders?page=1&page_size=1&out_trade_no=${encodeURIComponent(tradeNo)}`,
-        );
+        const res = await listAdminOrders(1, { pageSize: 1, outTradeNo: tradeNo });
         const hit = res.items[0];
         if (hit) {
           setOrderDetail(hit);
@@ -172,6 +145,7 @@ export function OrdersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
+  // 将激活列表同步到 URL，保证刷新和跨页深链保持一致。
   function onTabChange(next: string) {
     setTab(next);
     const params = new URLSearchParams(searchParams);
@@ -180,31 +154,22 @@ export function OrdersPage() {
     setSearchParams(params, { replace: true });
   }
 
-  async function copyText(text: string) {
-    try {
-      await navigator.clipboard.writeText(text);
-      toast.success(tx("orders.copied"));
-    } catch {
-      toast.error(tx("orders.copyFailed"));
-    }
-  }
-
   return (
     <div className="admin-list-page">
-      <PageHeader description={tx("orders.viewTopUpOrders")} />
+      <PageHeader title={tr("orders.ui.title")} description={tr("orders.ui.desc")} />
       <Tabs value={tab} onValueChange={onTabChange}>
         <TabsList>
-          <TabsTrigger value="orders">{tx("orders.topUpOrders")}</TabsTrigger>
-          <TabsTrigger value="ledger">{tx("orders.walletLedger")}</TabsTrigger>
-          <TabsTrigger value="usage">{tx("orders.usageDetails")}</TabsTrigger>
+          <TabsTrigger value="orders">{tr("orders.ui.tabOrders")}</TabsTrigger>
+          <TabsTrigger value="ledger">{tr("orders.ui.tabLedger")}</TabsTrigger>
+          <TabsTrigger value="usage">{tr("orders.ui.tabUsage")}</TabsTrigger>
         </TabsList>
         <TabsContent value="orders" className="space-y-4">
           <AdminFilterBar>
             <Select value={orderStatus} onChange={(e) => setOrderStatus(e.target.value)}>
-              <option value="">{tx("orders.allStatuses")}</option>
-              <option value="pending">{tx("orders.pendingPayment")}</option>
-              <option value="paid">{tx("orders.paid")}</option>
-              <option value="closed">{tx("orders.closed")}</option>
+              <option value="">{tr("orders.ui.allStatuses")}</option>
+              <option value="pending">{tr("status.pendingPayment")}</option>
+              <option value="paid">{tr("status.paid")}</option>
+              <option value="closed">{tr("status.closed")}</option>
             </Select>
             <AdminUserSearchSelect value={orderUserId} onChange={(id) => setOrderUserId(id)} />
             <Button
@@ -216,7 +181,7 @@ export function OrdersPage() {
                 void loadOrders(1);
               }}
             >
-              {tx("orders.filter")}
+              {tr("orders.ui.filter")}
             </Button>
           </AdminFilterBar>
           <div className="rounded-lg border bg-background">
@@ -224,16 +189,16 @@ export function OrdersPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>ID</TableHead>
-                  <TableHead>{tx("orders.merchantOrder")}</TableHead>
-                  <TableHead>{tx("orders.user")}</TableHead>
+                  <TableHead>{tr("orders.ui.colOutTradeNo")}</TableHead>
+                  <TableHead>{tr("orders.ui.colUser")}</TableHead>
                   <TableHead>SKU</TableHead>
-                  <TableHead>{tx("orders.amount")}</TableHead>
-                  <TableHead>{tx("orders.credited")}</TableHead>
-                  <TableHead>{tx("orders.payment")}</TableHead>
-                  <TableHead>{tx("orders.status")}</TableHead>
-                  <TableHead>{tx("orders.channelOrder")}</TableHead>
-                  <TableHead>{tx("orders.paid2")}</TableHead>
-                  <TableHead>{tx("orders.created")}</TableHead>
+                  <TableHead>{tr("orders.ui.colAmount")}</TableHead>
+                  <TableHead>{tr("orders.ui.colCreditedPoints")}</TableHead>
+                  <TableHead>{tr("orders.ui.colPayType")}</TableHead>
+                  <TableHead>{tr("orders.ui.colStatus")}</TableHead>
+                  <TableHead>{tr("orders.ui.colTradeNo")}</TableHead>
+                  <TableHead>{tr("orders.ui.colPaidAt")}</TableHead>
+                  <TableHead>{tr("orders.ui.colCreatedAt")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -252,8 +217,8 @@ export function OrdersPage() {
                       <AdminEntityLink kind="user" id={o.user_id} label={o.user_email ?? undefined} />
                     </TableCell>
                     <TableCell>{o.sku_id}</TableCell>
-                    <TableCell>¥{fenToYuan(o.amount_fen)}</TableCell>
-                    <TableCell>¥{fenToYuan(o.credit_fen)}</TableCell>
+                    <TableCell>{orderPaymentLabel(o)}</TableCell>
+                    <TableCell>{points(o.credit_fen)}</TableCell>
                     <TableCell>{payTypeLabel(o.pay_type)}</TableCell>
                     <TableCell>
                       <Badge variant={o.status === "paid" ? "success" : "secondary"}>
@@ -262,10 +227,10 @@ export function OrdersPage() {
                     </TableCell>
                     <TableCell className="font-mono text-xs">{o.trade_no || "—"}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {o.paid_at ? formatDateTime(o.paid_at) : "—"}
+                      {o.paid_at ? new Date(o.paid_at).toLocaleString() : "—"}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {formatDateTime(o.created_at)}
+                      {new Date(o.created_at).toLocaleString()}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -284,14 +249,14 @@ export function OrdersPage() {
         <TabsContent value="ledger" className="space-y-4">
           <AdminFilterBar>
             <Select value={ledgerKind} onChange={(e) => setLedgerKind(e.target.value)}>
-              <option value="">{tx("orders.allTypes")}</option>
-              <option value="topup">{tx("orders.topUp")}</option>
-              <option value="grant">{tx("orders.grant")}</option>
-              <option value="adjust">{tx("orders.adjustment")}</option>
-              <option value="freeze">{tx("orders.hold")}</option>
-              <option value="unfreeze">{tx("orders.release")}</option>
-              <option value="settle">{tx("orders.settlement")}</option>
-              <option value="refund">{tx("orders.refund")}</option>
+              <option value="">{tr("orders.ui.allKinds")}</option>
+              <option value="topup">{tr("status.topUp")}</option>
+              <option value="grant">{tr("status.grant")}</option>
+              <option value="adjust">{tr("status.adjustment")}</option>
+              <option value="freeze">{tr("status.hold")}</option>
+              <option value="unfreeze">{tr("status.release")}</option>
+              <option value="settle">{tr("status.settlement")}</option>
+              <option value="refund">{tr("status.refund")}</option>
             </Select>
             <AdminUserSearchSelect value={ledgerUserId} onChange={(id) => setLedgerUserId(id)} />
             <Button
@@ -303,7 +268,7 @@ export function OrdersPage() {
                 void loadLedger(1);
               }}
             >
-              {tx("orders.filter")}
+              {tr("orders.ui.filter")}
             </Button>
           </AdminFilterBar>
           <div className="rounded-lg border bg-background">
@@ -311,13 +276,13 @@ export function OrdersPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>ID</TableHead>
-                  <TableHead>{tx("orders.user")}</TableHead>
-                  <TableHead>{tx("orders.change")}</TableHead>
-                  <TableHead>{tx("orders.balance")}</TableHead>
-                  <TableHead>{tx("orders.type")}</TableHead>
-                  <TableHead>{tx("orders.reference")}</TableHead>
-                  <TableHead>{tx("orders.note")}</TableHead>
-                  <TableHead>{tx("orders.time")}</TableHead>
+                  <TableHead>{tr("orders.ui.colUser")}</TableHead>
+                  <TableHead>{tr("orders.ui.colChange")}</TableHead>
+                  <TableHead>{tr("orders.ui.colPointsAfter")}</TableHead>
+                  <TableHead>{tr("orders.ui.colKind")}</TableHead>
+                  <TableHead>{tr("orders.ui.colRef")}</TableHead>
+                  <TableHead>{tr("orders.ui.colNote")}</TableHead>
+                  <TableHead>{tr("orders.ui.colTime")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -329,16 +294,16 @@ export function OrdersPage() {
                     </TableCell>
                     <TableCell className={e.delta_fen >= 0 ? "text-emerald-700" : "text-red-600"}>
                       {e.delta_fen >= 0 ? "+" : ""}
-                      ¥{fenToYuan(e.delta_fen)}
+                      {points(e.delta_fen)}
                     </TableCell>
-                    <TableCell>¥{fenToYuan(e.balance_after)}</TableCell>
+                    <TableCell>{points(e.balance_after)}</TableCell>
                     <TableCell>
                       <Badge variant="secondary">{ledgerKindLabel(e.kind)}</Badge>
                     </TableCell>
-                    <TableCell>{ledgerRefLink(e)}</TableCell>
+                    <TableCell><LedgerRefLink row={e} /></TableCell>
                     <TableCell className="max-w-[200px] truncate">{e.note}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {formatDateTime(e.created_at)}
+                      {new Date(e.created_at).toLocaleString()}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -357,13 +322,12 @@ export function OrdersPage() {
         <TabsContent value="usage" className="space-y-4">
           <AdminFilterBar>
             <AdminUserSearchSelect value={usageUserId} onChange={(id) => setUsageUserId(id)} />
-            <Input placeholder={tx("orders.taskId")} value={usageTaskId} onChange={(e) => setUsageTaskId(e.target.value)} />
+            <Input placeholder={tr("orders.ui.taskId")} value={usageTaskId} onChange={(e) => setUsageTaskId(e.target.value)} />
             <Select value={usageDomain} onChange={(e) => setUsageDomain(e.target.value)}>
-              <option value="">{tx("orders.allDomains")}</option>
-              <option value="kepu">{tx("orders.explainer")}</option>
-              <option value="drama">{tx("orders.drama")}</option>
-              <option value="studio">{tx("orders.studio")}</option>
-              <option value="api">{tx("orders.openApi")}</option>
+              <option value="">{tr("orders.ui.allDomains")}</option>
+              <option value="kepu">{tr("orders.ui.domainKepu")}</option>
+              <option value="drama">{tr("orders.ui.domainDrama")}</option>
+              <option value="studio">{tr("orders.ui.domainStudio")}</option>
             </Select>
             <Input
               placeholder="billing_key"
@@ -371,18 +335,23 @@ export function OrdersPage() {
               onChange={(e) => setUsageBillingKey(e.target.value)}
             />
             <Select value={usageCapability} onChange={(e) => setUsageCapability(e.target.value)}>
-              <option value="">{tx("orders.allCapabilities")}</option>
-              <option value="llm">{tx("orders.llmText")}</option>
-              <option value="image">{tx("orders.image")}</option>
-              <option value="video">{tx("orders.video")}</option>
-              <option value="tts">{tx("orders.voice")}</option>
+              <option value="">{tr("orders.ui.allCapabilities")}</option>
+              <option value="llm">{tr("orders.ui.capLlm")}</option>
+              <option value="image">{tr("orders.ui.capImage")}</option>
+              <option value="video">{tr("orders.ui.capVideo")}</option>
+              <option value="tts">{tr("orders.ui.capTts")}</option>
             </Select>
+            <Input
+              placeholder={tr("orders.ui.modelPlaceholder")}
+              value={usageModel}
+              onChange={(e) => setUsageModel(e.target.value)}
+            />
             <Select value={usageBasis} onChange={(e) => setUsageBasis(e.target.value)}>
-              <option value="">{tx("orders.allBillingBases")}</option>
-              <option value="estimate">{tx("orders.estimated")}</option>
-              <option value="upstream">{tx("orders.measuredUpstream")}</option>
-              <option value="upstream_usage">{tx("orders.measuredToken")}</option>
-              <option value="upstream_cost">{tx("orders.measuredCost")}</option>
+              <option value="">{tr("orders.ui.allBases")}</option>
+              <option value="estimate">{tr("orders.ui.estimated")}</option>
+              <option value="upstream">{tr("orders.ui.measured")}</option>
+              <option value="upstream_usage">{tr("orders.ui.measuredTokens")}</option>
+              <option value="upstream_cost">{tr("orders.ui.measuredCost")}</option>
             </Select>
             <AdminDateRangeFilter
               from={usageDateFrom}
@@ -399,11 +368,26 @@ export function OrdersPage() {
               onClick={() => {
                 setUsageBillingKey("llm_chat");
                 setUsageCapability("llm");
+                setUsageModel("");
                 setUsagePage(1);
-                void loadUsage(1, { billing_key: "llm_chat", capability: "llm" });
+                void loadUsage(1, { billing_key: "llm_chat", capability: "llm", model: "" });
               }}
             >
-              {tx("orders.llmUsage")}
+              {tr("orders.ui.llmUsage")}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="admin-filter-action"
+              onClick={() => {
+                setUsageBillingKey("");
+                setUsageCapability("video");
+                setUsageModel("seedance-2.5");
+                setUsagePage(1);
+                void loadUsage(1, { billing_key: "", capability: "video", model: "seedance-2.5" });
+              }}
+            >
+              Seedance 2.5
             </Button>
             <Button
               size="sm"
@@ -414,31 +398,30 @@ export function OrdersPage() {
                 void loadUsage(1);
               }}
             >
-              {tx("orders.filter")}
+              {tr("orders.ui.filter")}
             </Button>
           </AdminFilterBar>
           <div className="rounded-lg border bg-background">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>{tx("orders.time")}</TableHead>
-                  <TableHead>{tx("orders.user")}</TableHead>
-                  <TableHead>{tx("orders.task")}</TableHead>
-                  <TableHead>{tx("orders.project")}</TableHead>
-                  <TableHead>{tx("orders.domain")}</TableHead>
-                  <TableHead>{tx("orders.capability")}</TableHead>
-                  <TableHead>{tx("orders.model")}</TableHead>
+                  <TableHead>{tr("orders.ui.colTime")}</TableHead>
+                  <TableHead>{tr("orders.ui.colUser")}</TableHead>
+                  <TableHead>{tr("orders.ui.colTask")}</TableHead>
+                  <TableHead>{tr("orders.ui.colProject")}</TableHead>
+                  <TableHead>{tr("orders.ui.colDomain")}</TableHead>
+                  <TableHead>{tr("orders.ui.colCapability")}</TableHead>
+                  <TableHead>{tr("orders.ui.colModel")}</TableHead>
                   <TableHead>Tokens</TableHead>
-                  <TableHead>{tx("orders.charged")}</TableHead>
-                  <TableHead>{tx("orders.upstreamCost")}</TableHead>
-                  <TableHead>{tx("orders.billingBasis")}</TableHead>
+                  <TableHead>{tr("orders.ui.colCharge")}</TableHead>
+                  <TableHead>{tr("orders.ui.colBasis")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {(usage?.items ?? []).map((row) => (
                   <TableRow key={row.id}>
                     <TableCell className="text-xs text-muted-foreground">
-                      {row.created_at ? formatDateTime(row.created_at) : "—"}
+                      {row.created_at ? new Date(row.created_at).toLocaleString() : "—"}
                     </TableCell>
                     <TableCell>
                       <AdminEntityLink kind="user" id={row.user_id} label={row.user_email ?? undefined} />
@@ -447,7 +430,7 @@ export function OrdersPage() {
                       {row.task_run_id ? (
                         <AdminEntityLink kind="task" id={row.task_run_id} />
                       ) : (
-                        tx("orders.historicalUnlinked")
+                        tr("orders.ui.legacyUnlinked")
                       )}
                     </TableCell>
                     <TableCell className="text-xs">
@@ -463,8 +446,7 @@ export function OrdersPage() {
                     <TableCell>{row.capability ?? row.billing_key}</TableCell>
                     <TableCell className="max-w-[120px] truncate text-xs">{row.model || "—"}</TableCell>
                     <TableCell>{row.total_tokens ?? 0}</TableCell>
-                    <TableCell>¥{fenToYuan(row.charge_fen ?? 0)}</TableCell>
-                    <TableCell>¥{fenToYuan(row.cost_fen ?? 0)}</TableCell>
+                    <TableCell>{points(row.charge_fen ?? 0)}</TableCell>
                     <TableCell>
                       <Badge
                         variant={
@@ -474,13 +456,13 @@ export function OrdersPage() {
                         }
                         title={
                           row.billing_basis === "upstream_cost"
-                            ? tx("orders.chargedActualCostReturned")
+                            ? tr("orders.ui.basisCost")
                             : row.billing_basis === "upstream_usage"
-                              ? tx("orders.chargedTokenfreeUsageTokens")
-                              : tx("orders.upstreamReturnedUsageCharged")
+                              ? tr("orders.ui.basisUsage")
+                              : tr("orders.ui.basisEstimate")
                         }
                       >
-                        {row.billing_basis_label ?? (row.estimated ? tx("orders.estimated") : tx("orders.measured"))}
+                        {row.billing_basis_label ?? (row.estimated ? tr("orders.ui.estimated") : tr("orders.ui.measured"))}
                       </Badge>
                     </TableCell>
                   </TableRow>
@@ -499,95 +481,15 @@ export function OrdersPage() {
         </TabsContent>
       </Tabs>
 
-      <AdminModal
-        open={orderQuery.isOpen && !!orderDetail}
-        onOpenChange={(open) => {
-          if (!open) {
-            setOrderDetail(null);
-            orderQuery.close();
-          }
+      <OrderDetailDialog
+        orderDetail={orderDetail}
+        open={orderQuery.isOpen}
+        onClose={() => {
+          setOrderDetail(null);
+          orderQuery.close();
         }}
-        size="md"
-        title={orderDetail ? tx("orders.orderDetails", { orderDetailId: orderDetail.id }) : tx("orders.orderDetails2")}
-        subtitle={orderDetail?.out_trade_no}
-        footer={
-          orderDetail ? (
-            <Button size="sm" variant="outline" onClick={() => void copyText(orderDetail.out_trade_no)}>
-              {tx("orders.copyMerchantOrder")}
-            </Button>
-          ) : undefined
-        }
-      >
-        {orderDetail ? (
-          <AdminDetailSection>
-            <AdminDetailMeta
-              items={[
-                {
-                  label: tx("orders.user"),
-                  value: (
-                    <AdminEntityLink
-                      kind="user"
-                      id={orderDetail.user_id}
-                      label={orderDetail.user_email ?? undefined}
-                    />
-                  ),
-                },
-                { label: "SKU", value: orderDetail.sku_id },
-                { label: tx("orders.amount"), value: `¥${fenToYuan(orderDetail.amount_fen)}` },
-                { label: tx("orders.credited"), value: `¥${fenToYuan(orderDetail.credit_fen)}` },
-                { label: tx("orders.paymentMethod"), value: payTypeLabel(orderDetail.pay_type) },
-                { label: tx("orders.status"), value: orderStatusLabel(orderDetail.status) },
-                { label: tx("orders.channelOrder"), value: orderDetail.trade_no || "—" },
-                {
-                  label: tx("orders.paid2"),
-                  value: orderDetail.paid_at ? formatDateTime(orderDetail.paid_at) : "—",
-                },
-                {
-                  label: tx("orders.created"),
-                  value: formatDateTime(orderDetail.created_at),
-                  full: true,
-                },
-              ]}
-            />
-          </AdminDetailSection>
-        ) : null}
-      </AdminModal>
-
-      <AdminModal
-        open={!!ledgerDetail}
-        onOpenChange={(open) => !open && setLedgerDetail(null)}
-        size="md"
-        title={ledgerDetail ? tx("orders.ledgerDetails", { ledgerDetailId: ledgerDetail.id }) : tx("orders.ledgerDetails2")}
-      >
-        {ledgerDetail ? (
-          <AdminDetailSection>
-            <AdminDetailMeta
-              items={[
-                {
-                  label: tx("orders.user"),
-                  value: (
-                    <AdminEntityLink
-                      kind="user"
-                      id={ledgerDetail.user_id}
-                      label={ledgerDetail.user_email ?? undefined}
-                    />
-                  ),
-                },
-                { label: tx("orders.type"), value: ledgerKindLabel(ledgerDetail.kind) },
-                { label: tx("orders.change"), value: `¥${fenToYuan(ledgerDetail.delta_fen)}` },
-                { label: tx("orders.balance"), value: `¥${fenToYuan(ledgerDetail.balance_after)}` },
-                { label: tx("orders.reference"), value: ledgerRefLink(ledgerDetail) },
-                { label: tx("orders.note"), value: ledgerDetail.note || "—" },
-                {
-                  label: tx("orders.time"),
-                  value: formatDateTime(ledgerDetail.created_at),
-                  full: true,
-                },
-              ]}
-            />
-          </AdminDetailSection>
-        ) : null}
-      </AdminModal>
+      />
+      <LedgerDetailDialog ledgerDetail={ledgerDetail} onClose={() => setLedgerDetail(null)} />
     </div>
   );
 }

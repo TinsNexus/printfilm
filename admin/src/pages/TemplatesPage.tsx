@@ -16,16 +16,15 @@ import { PaginationBar } from "@/components/PaginationBar";
 import { TEMPLATE_PAGE_SIZE } from "@/lib/pagination";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page";
-import { useI18n } from "@/i18n";
-import { tr } from "@/i18n/translate";
+import { tr } from "../i18n/translate.ts";
 
 type ListRes = { items: AdminTemplate[]; meta: PageMeta };
 type MetaRes = { categories: string[] };
 
 const STATUS_OPTIONS = [
-  { value: "", get label() { return tr("templates.allStatuses") } },
-  { value: "active", get label() { return tr("templates.listed") } },
-  { value: "inactive", get label() { return tr("templates.unlisted") } },
+  { value: "", get label() { return tr("templates.ui.allStatuses"); } },
+  { value: "active", get label() { return tr("templates.ui.active"); } },
+  { value: "inactive", get label() { return tr("templates.ui.inactive"); } },
   { value: "premium", label: "Premium" },
 ];
 
@@ -56,7 +55,6 @@ function seedreamText(cfg: Record<string, unknown> | undefined, key: string): st
 
 // 模板管理：封面卡片网格 + 分类筛选 + 全局 UI 组件
 export function TemplatesPage() {
-  const { t: tx } = useI18n();
   const [page, setPage] = useState(1);
   const [data, setData] = useState<ListRes | null>(null);
   const [categories, setCategories] = useState<string[]>([]);
@@ -85,7 +83,7 @@ export function TemplatesPage() {
       if (statusFilter === "inactive") params.set("is_active", "false");
       setData(await api<ListRes>(`/api/admin/templates?${params}`));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : tx("templates.failedLoad"));
+      toast.error(err instanceof Error ? err.message : tr("templates.ui.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -115,7 +113,7 @@ export function TemplatesPage() {
     const countFor = (cat: string) =>
       items.filter((t) => (t.category || []).includes(cat)).length;
     return [
-      { value: "", label: tr("templates.allCategories"), count: items.length },
+      { value: "", label: tr("templates.ui.allCategories"), count: items.length },
       ...categories.map((cat) => ({
         value: cat,
         label: cat,
@@ -162,7 +160,7 @@ export function TemplatesPage() {
       });
       setOpen(true);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : tx("templates.couldLoadTemplateDetails"));
+      toast.error(err instanceof Error ? err.message : tr("templates.ui.detailFailed"));
     }
   }
 
@@ -171,7 +169,7 @@ export function TemplatesPage() {
     setSaving(true);
     try {
       const category = form.category
-        .split(",")
+        .split(/[,，]/)
         .map((s) => s.trim())
         .filter(Boolean);
       if (editing) {
@@ -199,7 +197,7 @@ export function TemplatesPage() {
           }),
         });
       } else {
-        if (!form.id.trim()) throw new Error(tx("templates.enterTemplateId"));
+        if (!form.id.trim()) throw new Error(tr("templates.ui.idRequired"));
         await api(`/api/admin/templates`, {
           method: "POST",
           body: JSON.stringify({
@@ -227,11 +225,11 @@ export function TemplatesPage() {
           }),
         });
       }
-      toast.success(tx("templates.saved"));
+      toast.success(tr("templates.ui.saved"));
       setOpen(false);
       await Promise.all([load(), loadMeta()]);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : tx("templates.saveFailed"));
+      toast.error(err instanceof Error ? err.message : tr("templates.ui.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -243,7 +241,7 @@ export function TemplatesPage() {
       await api(`/api/admin/templates/${id}`, { method: "PATCH", body: JSON.stringify(body) });
       await load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : tx("templates.updateFailed"));
+      toast.error(err instanceof Error ? err.message : tr("templates.ui.updateFailed"));
     }
   }
 
@@ -253,11 +251,11 @@ export function TemplatesPage() {
     setDeleting(true);
     try {
       await api(`/api/admin/templates/${deleteTarget}`, { method: "DELETE" });
-      toast.success(tx("templates.deleted"));
+      toast.success(tr("templates.ui.deleted"));
       setDeleteTarget(null);
       await Promise.all([load(), loadMeta()]);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : tx("templates.deleteFailed"));
+      toast.error(err instanceof Error ? err.message : tr("templates.ui.deleteFailed"));
     } finally {
       setDeleting(false);
     }
@@ -265,12 +263,12 @@ export function TemplatesPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader
-        description={tx("templates.styleCharacterPromptsPage")}
+      <PageHeader title={tr("templates.ui.title")}
+        description={tr("templates.ui.pageDesc")}
         actions={
           <Button onClick={openCreate} className="gap-2">
             <Plus className="h-4 w-4" />
-            {tx("templates.newTemplate")}
+            {tr("templates.ui.newTemplate")}
           </Button>
         }
       />
@@ -279,13 +277,13 @@ export function TemplatesPage() {
         trailing={
           <>
             <LayoutGrid className="h-4 w-4" />
-            {tx("templates.itemsCount", { n: filteredItems.length, total: data?.meta.total ?? 0 })}
+            {tr("templates.ui.countOf", { n: filteredItems.length, total: data?.meta.total ?? 0 })}
           </>
         }
       >
         <AdminSearchInput
           className="min-w-[220px] flex-1 max-w-md"
-          placeholder={tx("templates.searchNameIdDescription")}
+          placeholder={tr("templates.ui.searchPlaceholder")}
           value={q}
           onChange={setQ}
           onKeyDown={(e) => {
@@ -305,7 +303,7 @@ export function TemplatesPage() {
           }}
         />
         <AdminChipFilter
-          label={tx("templates.category")}
+          label={tr("templates.ui.category")}
           value={categoryFilter}
           options={categoryOptions}
           onChange={(v) => {
@@ -321,20 +319,20 @@ export function TemplatesPage() {
             void load(1);
           }}
         >
-          {tx("templates.filter")}
+          {tr("templates.ui.filter")}
         </Button>
       </AdminFilterBar>
 
       {loading ? (
         <div className="template-grid-loading">
           <Loader2 className="h-6 w-6 animate-spin text-[#67c23a]" />
-          <span>{tx("templates.loadingTemplates")}</span>
+          <span>{tr("templates.ui.loading")}</span>
         </div>
       ) : filteredItems.length === 0 ? (
         <div className="template-grid-empty">
-          <p>{tx("templates.matchingTemplates")}</p>
+          <p>{tr("templates.ui.empty")}</p>
           <Button variant="outline" size="sm" onClick={openCreate}>
-            {tx("templates.createFirstTemplate")}
+            {tr("templates.ui.createFirst")}
           </Button>
         </div>
       ) : (
@@ -374,9 +372,9 @@ export function TemplatesPage() {
 
       <AdminConfirmDialog
         open={Boolean(deleteTarget)}
-        title={tx("templates.deleteTemplate")}
-        description={deleteTarget ? tx("templates.deleteTemplateTemplatesReferenced", { deleteTarget }) : undefined}
-        confirmLabel={tx("templates.delete")}
+        title={tr("templates.ui.deleteTitle")}
+        description={deleteTarget ? tr("templates.ui.deleteConfirm", { id: deleteTarget }) : undefined}
+        confirmLabel={tr("templates.ui.delete")}
         loading={deleting}
         destructive
         onOpenChange={(next) => {

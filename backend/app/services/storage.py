@@ -94,6 +94,67 @@ def _download_timeout(timeout: float | httpx.Timeout) -> httpx.Timeout:
     return httpx.Timeout(connect=min(30.0, seconds), read=seconds, write=60.0, pool=30.0)
 
 
+class RetryableMediaDownloadError(RuntimeError):
+    """上游成片已成功，下载被中断。调用方应沿原任务重试下载，不要重新生成。"""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        provider_task_id: str = "",
+        counts_attempt: bool = True,
+    ) -> None:
+        super().__init__(message)
+        self.provider_task_id = (provider_task_id or "").strip()
+        # 正文下载失败才计入次数；查询抖动或「尚未就绪」不消耗下载额度
+        self.counts_attempt = bool(counts_attempt)
+
+
+def _walk_download_errors(exc: BaseException):
+    """沿着 cause/context 看一小段，避免只看最外层包装。"""
+    current: BaseException | None = exc
+    seen: list[int] = []
+    while current is not None and id(current) not in seen and len(seen) < 6:
+        seen.append(id(current))
+        yield current
+        current = current.__cause__ or current.__context__
+
+
+def is_retryable_download_error(exc: BaseException) -> bool:
+    """连接被对端掐断、读超时或不完整体，适合沿原任务重试下载。"""
+    retryable_types = (
+        httpx.RemoteProtocolError,
+        httpx.ReadTimeout,
+        httpx.ConnectError,
+        httpx.ConnectTimeout,
+        httpx.ReadError,
+        httpx.WriteError,
+        httpx.NetworkError,
+        httpx.PoolTimeout,
+    )
+    markers = (
+        "peer closed",
+        "incomplete download",
+        "complete message body",
+        "connection reset",
+        "connection aborted",
+        "broken pipe",
+        "10054",
+    )
+    for current in _walk_download_errors(exc):
+        if isinstance(current, RetryableMediaDownloadError):
+            return True
+        if isinstance(current, retryable_types):
+            return True
+        text = str(current or "").lower()
+        if any(marker in text for marker in markers):
+            return True
+    return False
+
+
+_is_retryable_download_error = is_retryable_download_error
+
+
 # 下载远程文件到 dest；TokenFree 成片 URL 可传 Bearer headers
 async def download_to(
     url: str,
@@ -101,35 +162,56 @@ async def download_to(
     *,
     timeout: float | httpx.Timeout = 300.0,
     headers: dict[str, str] | None = None,
+    retries: int = 3,
 ) -> Path:
+    import asyncio
+
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_name(dest.name + ".part")
-    try:
-        async with httpx.AsyncClient(timeout=_download_timeout(timeout), follow_redirects=True) as client:
-            async with client.stream("GET", url, headers=headers) as resp:
-                resp.raise_for_status()
-                expected = resp.headers.get("Content-Length")
-                written = 0
-                with tmp.open("wb") as handle:
-                    async for chunk in resp.aiter_bytes(64 * 1024):
-                        if chunk:
-                            handle.write(chunk)
-                            written += len(chunk)
-        if written <= 0:
-            raise RuntimeError(f"empty download: {url}")
-        if expected and expected.isdigit() and written != int(expected):
-            raise RuntimeError(
-                f"incomplete download: {url} got {written} bytes, expected {expected}"
-            )
-        tmp.replace(dest)
-    except BaseException:
+    attempts = max(1, int(retries))
+    last_exc: BaseException | None = None
+    for attempt in range(attempts):
         try:
             if tmp.exists():
                 tmp.unlink(missing_ok=True)
-        except OSError:
-            logger.warning("failed to remove partial download %s", tmp)
-        raise
-    return dest
+            async with httpx.AsyncClient(timeout=_download_timeout(timeout), follow_redirects=True) as client:
+                async with client.stream("GET", url, headers=headers) as resp:
+                    resp.raise_for_status()
+                    expected = resp.headers.get("Content-Length")
+                    written = 0
+                    with tmp.open("wb") as handle:
+                        async for chunk in resp.aiter_bytes(64 * 1024):
+                            if chunk:
+                                handle.write(chunk)
+                                written += len(chunk)
+            if written <= 0:
+                raise RuntimeError(f"empty download: {url}")
+            if expected and expected.isdigit() and written != int(expected):
+                raise RuntimeError(
+                    f"incomplete download: {url} got {written} bytes, expected {expected}"
+                )
+            tmp.replace(dest)
+            return dest
+        except BaseException as exc:
+            last_exc = exc
+            try:
+                if tmp.exists():
+                    tmp.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("failed to remove partial download %s", tmp)
+            if attempt + 1 < attempts and _is_retryable_download_error(exc):
+                logger.warning(
+                    "download retry %s/%s url=%s err=%s",
+                    attempt + 1,
+                    attempts,
+                    (url or "")[:120],
+                    exc,
+                )
+                await asyncio.sleep(1.5 + attempt * 2.0)
+                continue
+            raise
+    assert last_exc is not None
+    raise last_exc
 
 
 def file_to_data_uri(path: Path) -> str:

@@ -1,4 +1,4 @@
-"""整集分镜预算：合并过碎草稿。"""
+"""整集分镜预算：默认不设上限；显式传入才合并。"""
 
 from app.services.drama.fragment_budget import (
     cap_llm_fragment_items,
@@ -6,7 +6,7 @@ from app.services.drama.fragment_budget import (
     merge_fragment_drafts,
     trim_episode_fragment_drafts,
 )
-from app.services.drama.build_fragments import EPISODE_DURATION_BUDGET_SEC, EPISODE_FRAGMENT_MAX
+from app.services.drama.build_fragments import FRAGMENT_TOTAL_MAX
 
 
 def _draft(content: str, *, duration: int | None = None, scene: str | None = None) -> dict:
@@ -20,24 +20,21 @@ def _draft(content: str, *, duration: int | None = None, scene: str | None = Non
     }
 
 
-def test_trim_merges_down_to_max_count():
-    drafts = [
-        _draft(f"@duration:8\n镜{i}内容。", scene="教室")
-        for i in range(15)
-    ]
+def test_trim_default_keeps_all_shots():
+    """默认不设整集上限，15 条短镜应全部保留。"""
+    drafts = [_draft(f"@duration:8\n镜{i}内容。", scene="教室") for i in range(15)]
     trimmed = trim_episode_fragment_drafts(drafts)
-    assert len(trimmed) <= EPISODE_FRAGMENT_MAX
-    assert sum(draft_duration_sec(d) for d in trimmed) <= EPISODE_DURATION_BUDGET_SEC + 15
+    assert len(trimmed) == 15
 
 
-def test_trim_prefers_same_scene_neighbors():
+def test_trim_respects_explicit_max_count():
     drafts = [
         _draft("@duration:6\nA对白。", scene="教室"),
         _draft("@duration:6\nB对白。", scene="教室"),
         _draft("@duration:6\nC对白。", scene="操场"),
         _draft("@duration:6\nD对白。", scene="操场"),
     ]
-    trimmed = trim_episode_fragment_drafts(drafts, max_count=2, max_total_sec=999)
+    trimmed = trim_episode_fragment_drafts(drafts, max_count=2, max_total_sec=0)
     assert len(trimmed) == 2
     assert "A对白" in trimmed[0]["content"]
     assert "B对白" in trimmed[0]["content"]
@@ -61,7 +58,12 @@ def test_merge_compress_scales_blocks_not_single_tag():
     assert draft_duration_sec(merged) == 8
 
 
-def test_cap_llm_fragment_items_merges_lines():
+def test_cap_llm_fragment_items_no_cap_by_default():
+    items = [{"duration_sec": 6, "lines": [f"第{i}句。"], "scene_name": "场1"} for i in range(12)]
+    assert len(cap_llm_fragment_items(items)) == 12
+
+
+def test_cap_llm_fragment_items_merges_when_limit_set():
     items = [
         {"duration_sec": 6, "lines": ["第一句。"], "scene_name": "场1"},
         {"duration_sec": 6, "lines": ["第二句。"], "scene_name": "场1"},
@@ -72,3 +74,25 @@ def test_cap_llm_fragment_items_merges_lines():
     capped = cap_llm_fragment_items(items, max_items=3)
     assert len(capped) == 3
     assert len(capped[-1]["lines"]) >= 2
+
+
+def test_trim_preserves_full_script_coverage():
+    """多场规则切分后应保留全部镜，不得为预算并成少镜。"""
+    drafts = []
+    for scene_i in range(3):
+        for shot_i in range(4):
+            lines = [f"@duration:3\n画面{scene_i}-{shot_i}-{k}。" for k in range(5)]
+            drafts.append(
+                _draft(
+                    "【BGM：测试】\n" + "\n".join(lines),
+                    duration=15,
+                    scene=f"场景{scene_i}",
+                )
+            )
+    assert len(drafts) == 12
+    trimmed = trim_episode_fragment_drafts(drafts)
+    assert len(trimmed) == 12
+    assert all(draft_duration_sec(d) <= FRAGMENT_TOTAL_MAX for d in trimmed)
+    joined = "\n".join(str(d["content"]) for d in trimmed)
+    assert "画面0-" in joined
+    assert "画面2-" in joined

@@ -2,40 +2,87 @@
 
 方舟原生是 POST /contents/generations/tasks。TokenFree 走 OpenAI Videos 兼容接口：
 POST /v1/videos、GET /v1/videos/:id、GET /v1/videos/:id/content。
+
+New API doubao 插件约定（见 QuantumNous/new-api PR #4042）：
+- 文案放顶层 `prompt`（插件会清掉 content 里的 text 再追加 prompt）
+- 参考图/音/视频放 **`metadata.content`**（不要包一层 `metadata.input`）
+- 时长用顶层 `seconds`；也可在 metadata 里带方舟字段（ratio/resolution 等）
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from app.services.media_ref_limits import MAX_REFERENCE_IMAGES
-from app.services.tokenfree_gateway import TOKENFREE_CHANNEL_ID
+
+
+async def post_video_create(client: Any, method: str, url: str, *, request_call: Any = None, **kwargs: Any) -> Any:
+    """MiniMax 插件明确拒绝分辨率枚举时，仅转换大小写重试一次。"""
+    if request_call is None:
+        from app.services.tasks.upstream import observed_request
+
+        request_call = observed_request
+    response = await request_call(client, method, url, **kwargs)
+    body = kwargs.get("json")
+    if response.status_code != 400 or not isinstance(body, dict):
+        return response
+    if str(body.get("model") or "").lower() != "minimax-h3":
+        return response
+    try:
+        error = response.json()
+    except ValueError:
+        return response
+    if not isinstance(error, dict) or error.get("code") != "plugin_usage_invalid" or extract_video_task_id(error):
+        return response
+    metadata = body.get("metadata")
+    resolution = metadata.get("resolution") if isinstance(metadata, dict) else None
+    alternatives = {"480p": "480P", "768p": "768P", "480P": "480p", "768P": "768p"}
+    if resolution not in alternatives:
+        return response
+    retry_body = {**body, "metadata": {**metadata, "resolution": alternatives[resolution]}}
+    return await request_call(client, method, url, **{**kwargs, "json": retry_body})
 
 # 方舟原生异步视频任务前缀
 ARK_VIDEO_TASK_PREFIX = "/contents/generations/tasks"
 # TokenFree OpenAI Videos 兼容前缀（相对 /v1）
 NEWAPI_VIDEO_TASK_PREFIX = "/videos"
+# 9Router 创建视频任务路径（透传 xAI Grok Imagine）
+NINEROUTER_VIDEO_CREATE_PATH = "/videos/generations"
 # 任务成功态（方舟 + New API / OpenAI Videos）
-VIDEO_SUCCESS_STATUSES = {"succeeded", "success", "completed", "complete"}
+VIDEO_SUCCESS_STATUSES = {"succeeded", "success", "completed", "complete", "done"}
 # 任务失败态
 VIDEO_FAILED_STATUSES = {"failed", "cancelled", "canceled", "expired", "failure"}
 
 
+def uses_9router_gateway() -> bool:
+    """后台开关选了 9Router 时，ark 层的图/视频/TTS 改走 9Router 标准接口（渠道 id 仍是 tokenfree，需先排除）。"""
+    from app.services.nine_router.config import is_9router_active
+
+    return is_9router_active()
+
+
+def uses_piapi_gateway() -> bool:
+    """后台开关选了 PiAPI 时，ark 层的图/视频改走 PiAPI 统一任务接口（渠道 id 仍是 tokenfree，需先排除）。"""
+    from app.services.piapi.config import is_piapi_active
+
+    return is_piapi_active()
+
+
 def uses_tokenfree_video(*, base_url: str = "", channel_id: str = "") -> bool:
-    """判断该基址/渠道是否走 New API 视频路径（而非方舟原生）。"""
-    if (channel_id or "").strip().lower() == TOKENFREE_CHANNEL_ID:
-        return True
-    raw = (base_url or "").strip().lower()
-    if "tokenfree.com" in raw:
-        return True
-    if "volces.com" in raw or "volcengineapi.com" in raw:
-        return False
-    return False
+    """视频只走 TokenFree / New API；9Router / PiAPI 开启时不走该路径。"""
+    del base_url, channel_id
+    return not (uses_9router_gateway() or uses_piapi_gateway())
 
 
 def remap_video_path(path: str, *, base_url: str = "", channel_id: str = "") -> str:
     """TokenFree 上将方舟任务路径改写成 /videos 与 /videos/{id}。"""
     normalized = path if str(path).startswith("/") else f"/{path}"
+    if uses_9router_gateway():
+        # 9Router：POST /videos/generations 创建，GET /videos/{request_id} 查询
+        if normalized == ARK_VIDEO_TASK_PREFIX:
+            return NINEROUTER_VIDEO_CREATE_PATH
+        if normalized.startswith(ARK_VIDEO_TASK_PREFIX + "/"):
+            return NEWAPI_VIDEO_TASK_PREFIX + normalized[len(ARK_VIDEO_TASK_PREFIX) :]
+        return normalized
     if not uses_tokenfree_video(base_url=base_url, channel_id=channel_id):
         return normalized
     if normalized == ARK_VIDEO_TASK_PREFIX or normalized.startswith(ARK_VIDEO_TASK_PREFIX + "/"):
@@ -58,6 +105,36 @@ def is_tokenfree_content_url(url: str) -> bool:
     return raw.rstrip("/").endswith("/content")
 
 
+async def resolve_tokenfree_media_download_url(
+    url: str,
+    *,
+    api_key: str,
+    timeout: float = 30.0,
+) -> str:
+    """探测 TokenFree content：若 302 到 TOS/CDN 直链则改走直链（避免经网关拉大文件中断）。"""
+    import httpx
+
+    raw = (url or "").strip()
+    if not raw or not is_tokenfree_content_url(raw):
+        return raw
+    key = (api_key or "").strip()
+    if not key:
+        return raw
+    headers = {"Authorization": f"Bearer {key}"}
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=min(20.0, float(timeout)), read=float(timeout), write=30.0, pool=20.0),
+            follow_redirects=False,
+        ) as client:
+            async with client.stream("GET", raw, headers=headers) as resp:
+                loc = (resp.headers.get("location") or "").strip()
+                if resp.status_code in {301, 302, 303, 307, 308} and loc.startswith(("http://", "https://")):
+                    return loc
+    except Exception:  # noqa: BLE001
+        return raw
+    return raw
+
+
 def _media_url_from_item(item: dict[str, Any], key: str) -> str | None:
     """从 content 项取出 image_url / audio_url 的公网地址。"""
     raw = item.get(key)
@@ -67,14 +144,45 @@ def _media_url_from_item(item: dict[str, Any], key: str) -> str | None:
     return None
 
 
+def _content_media_only(
+    content: list[Any],
+    allowed_image_urls: list[str],
+) -> list[dict[str, Any]]:
+    """抽出图/音频项；图按 allowed 截断去重。文案由顶层 prompt 承担。"""
+    allowed = set(allowed_image_urls)
+    used: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for item in content:
+        if not isinstance(item, dict):
+            continue
+        kind = item.get("type")
+        if kind == "image_url":
+            url = _media_url_from_item(item, "image_url")
+            if not url or url not in allowed or url in used:
+                continue
+            used.add(url)
+            out.append(item)
+            continue
+        if kind in {"audio_url", "video_url"}:
+            out.append(item)
+    return out
+
+
 def wrap_seedance_payload_for_newapi(payload: dict[str, Any]) -> dict[str, Any]:
     """把方舟 Seedance body 转成 TokenFree POST /v1/videos 请求体。
 
-    TokenFree 会把 metadata.input 转成下游插件 `{model, input}`。
-    下游 Seedance 只认 reference_image_urls / first_frame_url，不认 content/images。
-    多参考时禁止再写顶层 image / images，也不要把同一批图塞进 content，否则会按张数重复计数并触发参考图上限。
+    正确形状（与 New API doubao 插件一致）：
+    `{model, prompt, seconds, metadata:{content:[图/音…], ratio, resolution, …}}`
+    禁止再包 `metadata.input`——插件会把嵌套 input 原样丢进上游，顶层 content 只剩 prompt 文本。
     """
+    from app.services.media_model_presets import resolve_preset_alias
+    from app.services.tokenfree_pricing import canonicalize_channel_model_id
+
     src = dict(payload)
+    # 预设别名（如 2-5→2.5、mini→2.0）后再规范化目录 id
+    if src.get("model"):
+        aliased = resolve_preset_alias(str(src["model"])) or str(src["model"])
+        src["model"] = canonicalize_channel_model_id(aliased)
     content = src.get("content")
     # texts 全部文案；images/audios 按 content 顺序；roles 用来区分首帧 vs 多参考
     texts: list[str] = []
@@ -108,76 +216,112 @@ def wrap_seedance_payload_for_newapi(payload: dict[str, Any]) -> dict[str, Any]:
             duration_text = str(duration).strip()
     ratio = str(src.get("ratio") or "").strip()
     uses_reference_images = any(role == "reference_image" for role in image_roles)
-    capped_images: list[str] = []
-    capped_roles: list[str] = []
+    unique_images: list[str] = []
+    unique_roles: list[str] = []
     seen_urls: set[str] = set()
     for url, role in zip(images, image_roles):
         if url in seen_urls:
             continue
         seen_urls.add(url)
-        capped_images.append(url)
-        capped_roles.append(role)
-        if len(capped_images) >= MAX_REFERENCE_IMAGES:
-            break
-    images = capped_images
-    image_roles = capped_roles
-    meta_input: dict[str, Any] = {}
-    if duration_text:
-        meta_input["duration"] = duration_text
-    if ratio and ratio.lower() != "adaptive":
-        meta_input["aspect_ratio"] = ratio
-    resolution = str(src.get("resolution") or "").strip()
-    if resolution:
-        meta_input["resolution"] = resolution
-    if "generate_audio" in src:
-        meta_input["generate_audio"] = bool(src.get("generate_audio"))
-    if "watermark" in src:
-        meta_input["watermark"] = bool(src.get("watermark"))
-    if "return_last_frame" in src:
-        meta_input["return_last_frame"] = bool(src.get("return_last_frame"))
+        unique_images.append(url)
+        unique_roles.append(role)
+    # Model strategy validation owns reference limits; transport must never silently drop references.
+    images = unique_images
+    image_roles = unique_roles
+
+    # 方舟字段直接挂在 metadata 根上（插件 UnmarshalMetadata → requestPayload）
+    metadata: dict[str, Any] = {}
     if isinstance(content, list) and content:
-        if uses_reference_images:
-            # 下游会把 content 里的图也算进参考图上限，多参考只留文案/音频
-            text_audio = [
+        media = _content_media_only(content, images if images else [])
+        # 无图时仍可能有首帧；allowed 空则只保留音/视频
+        if not images:
+            media = [
                 item
                 for item in content
-                if not (isinstance(item, dict) and item.get("type") == "image_url")
+                if isinstance(item, dict) and item.get("type") in {"audio_url", "video_url"}
             ]
-            if text_audio:
-                meta_input["content"] = text_audio
-        else:
-            meta_input["content"] = content
+        if media:
+            metadata["content"] = media
+    if duration_text:
+        try:
+            metadata["duration"] = int(duration_text)
+        except (TypeError, ValueError):
+            metadata["duration"] = duration_text
+    if ratio and ratio.lower() != "adaptive":
+        # 方舟字段名是 ratio，不是 aspect_ratio
+        metadata["ratio"] = ratio
+    resolution = str(src.get("resolution") or "").strip()
+    if resolution:
+        metadata["resolution"] = resolution
+    if "generate_audio" in src:
+        metadata["generate_audio"] = bool(src.get("generate_audio"))
+    if "watermark" in src:
+        metadata["watermark"] = bool(src.get("watermark"))
+    if "return_last_frame" in src:
+        metadata["return_last_frame"] = bool(src.get("return_last_frame"))
+
     first_frame_url: str | None = None
-    last_frame_url: str | None = None
-    if images:
-        if uses_reference_images:
-            # 多参考：全部图只走 reference_image_urls（含衔接尾帧）
-            meta_input["reference_image_urls"] = images
-        else:
-            # 纯首/尾帧：与 reference_* 互斥，按 role 填
-            meta_input["images"] = images
-            for url, role in zip(images, image_roles):
-                if role == "first_frame" and not first_frame_url:
-                    first_frame_url = url
-                elif role == "last_frame":
-                    last_frame_url = url
-            first_frame_url = first_frame_url or images[0]
-            meta_input["first_frame_url"] = first_frame_url
-            if last_frame_url:
-                meta_input["last_frame_url"] = last_frame_url
-    if audios:
-        meta_input["reference_audio_urls"] = audios[:10]
+    if images and not uses_reference_images:
+        for url, role in zip(images, image_roles):
+            if role == "first_frame":
+                first_frame_url = url
+                break
+        first_frame_url = first_frame_url or images[0]
+
     out: dict[str, Any] = {
         "model": src.get("model"),
         "prompt": prompt,
-        "metadata": {"input": meta_input},
+        "metadata": metadata,
     }
     if duration_text:
         out["seconds"] = duration_text
+    # 纯首帧：顶层 image 供插件 HasImage() 路径；content 里仍带 role=first_frame
     if first_frame_url:
         out["image"] = first_frame_url
-    elif images and not uses_reference_images:
-        out["image"] = images[0]
+    return out
+
+
+def wrap_seedance_payload_for_9router(payload: dict[str, Any]) -> dict[str, Any]:
+    """把方舟 Seedance body 转成 9Router POST /v1/videos/generations 请求体（xAI 风格，字段原样透传）。
+
+    只保留 model / prompt / duration / aspect_ratio / resolution 与首帧图；
+    Seedance 专有字段（metadata、参考图、音频、水印等）上游不认，丢弃。
+    """
+    src = dict(payload)
+    content = src.get("content")
+    texts: list[str] = []
+    first_image: str | None = None
+    if isinstance(content, list):
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") == "text":
+                piece = str(item.get("text") or "").strip()
+                if piece:
+                    texts.append(piece)
+            elif item.get("type") == "image_url":
+                url = _media_url_from_item(item, "image_url")
+                role = str(item.get("role") or "").strip()
+                if url and (role == "first_frame" or first_image is None):
+                    first_image = url
+    out: dict[str, Any] = {
+        "model": src.get("model"),
+        "prompt": "\n".join(texts) or str(src.get("prompt") or "").strip() or ".",
+    }
+    duration = src.get("duration")
+    if duration is not None:
+        try:
+            out["duration"] = int(duration)
+        except (TypeError, ValueError):
+            pass
+    ratio = str(src.get("ratio") or "").strip()
+    if ratio and ratio.lower() != "adaptive":
+        out["aspect_ratio"] = ratio
+    resolution = str(src.get("resolution") or "").strip()
+    if resolution:
+        out["resolution"] = resolution
+    if first_image:
+        out["image"] = {"url": first_image}
     return out
 
 
@@ -187,10 +331,15 @@ def prepare_video_create_body(
     base_url: str = "",
     channel_id: str = "",
 ) -> dict[str, Any]:
-    """按渠道决定是否包装 Seedance 请求体。"""
-    if uses_tokenfree_video(base_url=base_url, channel_id=channel_id):
-        return wrap_seedance_payload_for_newapi(body)
-    return body
+    """TokenFree 包装成 POST /v1/videos 请求体；9Router / PiAPI 使用各自的专用包装。"""
+    del base_url, channel_id
+    if uses_piapi_gateway():
+        from app.services.piapi.video import wrap_seedance_payload_for_piapi
+
+        return wrap_seedance_payload_for_piapi(body)
+    if uses_9router_gateway():
+        return wrap_seedance_payload_for_9router(body)
+    return wrap_seedance_payload_for_newapi(body)
 
 
 def unwrap_video_task_payload(data: dict[str, Any] | None) -> dict[str, Any]:
@@ -199,7 +348,7 @@ def unwrap_video_task_payload(data: dict[str, Any] | None) -> dict[str, Any]:
         return {}
     inner = data.get("data")
     if isinstance(inner, dict) and any(
-        key in inner for key in ("status", "url", "content", "task_id", "id", "video_url")
+        key in inner for key in ("status", "url", "content", "task_id", "id", "video_url", "request_id", "video")
     ):
         merged = dict(data)
         merged.update(inner)
@@ -228,10 +377,12 @@ def extract_video_task_id(data: dict[str, Any] | None) -> str | None:
     if not isinstance(data, dict):
         return None
     payload = unwrap_video_task_payload(data)
-    for key in ("task_id", "taskId"):
+    for key in ("task_id", "taskId", "request_id"):
         found = _scalar_task_id(payload.get(key))
         if found:
-            return found
+            conn = _scalar_task_id(data.get("_9router_connection_id"))
+            # 9Router：任务 id 与 connection id 合并保存，轮询时拆开
+            return f"{found}|{conn}" if conn and key == "request_id" else found
     found = _scalar_task_id(data.get("data"))
     if found:
         return found
@@ -241,7 +392,7 @@ def extract_video_task_id(data: dict[str, Any] | None) -> str | None:
 def format_video_task_error(err: Any) -> str:
     """把上游 error 对象收成可读短句。"""
     if isinstance(err, dict):
-        for key in ("message", "msg", "error"):
+        for key in ("message", "msg", "error", "raw_message"):
             value = err.get(key)
             if isinstance(value, str) and value.strip():
                 return value.strip()
@@ -260,12 +411,39 @@ def extract_video_result_url(data: dict[str, Any]) -> str | None:
         value = data.get(key)
         if isinstance(value, str) and value.strip().startswith(("http://", "https://", "/")):
             return value.strip()
+    # 9Router：{"status":"done","video":{"url":...}}；兼容 OpenAI 风格 data[0].url
+    items = data.get("data")
+    if isinstance(items, list) and items and isinstance(items[0], dict):
+        value = items[0].get("url")
+        if isinstance(value, str) and value.strip().startswith(("http://", "https://")):
+            return value.strip()
+    video = data.get("video")
+    if isinstance(video, dict):
+        value = video.get("url")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
     content = data.get("content")
     if isinstance(content, dict):
         for key in ("video_url", "url"):
             value = content.get(key)
             if isinstance(value, str) and value.strip():
                 return value.strip()
+    # PiAPI：{"output": {"video": "https://..."}}；Kling 2.6 及更早还有 works[].video.resource
+    output = data.get("output")
+    if isinstance(output, dict):
+        for key in ("video", "video_url"):
+            value = output.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        works = output.get("works")
+        if isinstance(works, list):
+            for work in works:
+                clip = work.get("video") if isinstance(work, dict) else None
+                if isinstance(clip, dict):
+                    for key in ("resource_without_watermark", "resource"):
+                        value = clip.get(key)
+                        if isinstance(value, str) and value.strip():
+                            return value.strip()
     return None
 
 

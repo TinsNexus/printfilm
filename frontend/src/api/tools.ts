@@ -1,19 +1,25 @@
 /** 独立创作工具 API：/api/tools/* */
 
 import { throwApiError } from '../lib/apiError'
-import { tr } from '../i18n/translate'
+import { API_BASE, createJsonRequester } from './client'
+import { apiErrorMessage } from './http'
+import type { DramaAsset } from './drama'
+import type { AssetDetailReference } from '../lib/assetDetailReferences'
+import { tv } from '../i18n/tv'
 
-function defaultApiBase() {
-  if (typeof window !== 'undefined' && window.location?.hostname) {
-    const { protocol, hostname } = window.location
-    return `${protocol}//${hostname}:8000`
-  }
-  return 'http://127.0.0.1:8000'
+/** 工具请求统一处理登录失效；仅生成入口沿用全局计费提示。 */
+function requestToolJson<T>(
+  path: string,
+  fallback: string,
+  init?: RequestInit,
+  notifyBilling = false,
+): Promise<T> {
+  return createJsonRequester((response, detail) => {
+    if (response.status === 401) throw new Error(tv('未登录', 'Chưa đăng nhập'))
+    if (notifyBilling) throwApiError(response.status, detail, fallback)
+    throw new Error(apiErrorMessage(detail, fallback))
+  })<T>(path, init)
 }
-
-const _viteApiBase = import.meta.env.VITE_API_BASE
-const API_BASE =
-  _viteApiBase === undefined || _viteApiBase === null ? defaultApiBase() : String(_viteApiBase)
 
 export type ToolRunResult = {
   kind: string
@@ -33,6 +39,12 @@ export type ToolTaskResult = {
 
 export type ToolRunRecord = {
   id: number
+  source?: 'task' | 'tool'
+  record_key?: string
+  domain?: string | null
+  task_type?: string | null
+  text_content?: string | null
+  billing_status?: string | null
   tool_id: string
   kind: string
   status: string
@@ -40,9 +52,18 @@ export type ToolRunRecord = {
   preview_url?: string | null
   urls: string[]
   task_id?: string | null
-  params?: Record<string, string> | null
+  params?: Record<string, unknown> | null
+  references?: AssetDetailReference[]
   error?: string | null
   created_at: string
+  platform_task_id?: number | null
+  provider_task_id?: string | null
+  provider_name?: string | null
+  provider_status?: string | null
+  queue_type?: string | null
+  started_at?: string | null
+  finished_at?: string | null
+  billing_charged_fen?: number | null
 }
 
 export type ToolRunList = {
@@ -50,6 +71,7 @@ export type ToolRunList = {
   total: number
   page: number
   page_size: number
+  counts?: Record<string, number>
 }
 
 // 将 /static 相对路径补全为可访问地址
@@ -62,16 +84,9 @@ export function resolveToolMediaUrl(url?: string | null): string {
   return url
 }
 
-// 解析 FastAPI 错误详情
-function errorMessage(detail: unknown, fallback: string): string {
-  if (typeof detail === 'string') return detail
-  if (Array.isArray(detail)) {
-    return detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join('; ')
-  }
-  return fallback
-}
-
 export type ToolRunPayload = {
+  modelId?: string
+  resolution?: string
   toolId: string
   prompt?: string
   negative?: string
@@ -81,14 +96,59 @@ export type ToolRunPayload = {
   pack?: string
   duration?: string
   motion?: string
+  voice?: string
   files?: File[]
+  videoMode?: 'text_to_video' | 'first_last_frame' | 'omni_reference'
+  references?: ToolReferenceInput[]
+  priceVersion?: number
+}
+
+/** 上传仅提交文件索引，资产仅提交 ID；媒体地址由服务端校验归属后读取。 */
+export type ToolReferenceInput = {
+  role: 'first_frame' | 'last_frame' | 'reference_image' | 'reference_video' | 'reference_audio'
+  file_index?: number
+  asset_id?: number
+}
+
+export type ToolReferenceAsset = DramaAsset & { media_kind: 'image' | 'video' | 'audio' }
+export type StudioToolEstimatePayload = {
+  tool_id: string
+  model_id: string
+  resolution: string
+  ratio: string
+  duration: string
+  video_mode: NonNullable<ToolRunPayload['videoMode']>
+  references: ToolReferenceInput[]
+}
+export type StudioToolEstimate = {
+  estimate_fen: number
+  estimate_yuan: number | string
+  billing_enabled: boolean
+  billing_mode: 'fixed_media' | 'legacy'
+  price_version: number | null
+}
+
+/** 生成前只读报价，不上传媒体、不创建任务或冻结余额。 */
+export function estimateStudioTool(payload: StudioToolEstimatePayload, signal?: AbortSignal): Promise<StudioToolEstimate> {
+  return requestToolJson('/api/tools/estimate', tv('预计消耗暂不可用', 'Tạm thời không có chi phí dự kiến'), { method: 'POST', body: JSON.stringify(payload), signal })
+}
+
+/** 服务端分页查询当前用户可引用的资产媒体。 */
+export function listToolReferenceAssets({ kind, q = '', page = 1, pageSize = 24 }: {
+  kind?: 'image' | 'video' | 'audio'; q?: string; page?: number; pageSize?: number
+}, signal?: AbortSignal): Promise<{ items: ToolReferenceAsset[]; total: number; page: number; page_size: number }> {
+  const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
+  if (kind) qs.set('kind', kind)
+  if (q) qs.set('q', q)
+  return requestToolJson(`/api/tools/reference-assets?${qs}`, tv('加载资产库失败', 'Tải thư viện tài sản thất bại'), { signal })
 }
 
 // 提交工具生成（multipart）
 export async function runStudioTool(payload: ToolRunPayload): Promise<ToolRunResult> {
-  const token = localStorage.getItem('token')
   const body = new FormData()
   body.append('tool_id', payload.toolId)
+  body.append('model_id', payload.modelId || '')
+  body.append('resolution', payload.resolution || '')
   body.append('prompt', payload.prompt || '')
   body.append('negative', payload.negative || '')
   body.append('ratio', payload.ratio || '')
@@ -97,61 +157,35 @@ export async function runStudioTool(payload: ToolRunPayload): Promise<ToolRunRes
   body.append('pack', payload.pack || '')
   body.append('duration', payload.duration || '')
   body.append('motion', payload.motion || '')
+  body.append('voice', payload.voice || 'narrator_calm')
+  if (payload.videoMode) body.append('video_mode', payload.videoMode)
+  if (payload.references) body.append('references', JSON.stringify(payload.references))
+  if (payload.priceVersion !== undefined) body.append('price_version', String(payload.priceVersion))
   for (const file of payload.files || []) {
     body.append('files', file)
   }
-  const res = await fetch(`${API_BASE}/api/tools/run`, {
-    method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    body,
-  })
-  if (res.status === 401) throw new Error(tr('tools.errors.notLoggedIn'))
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throwApiError(res.status, err.detail, tr('lib.generationFailed'))
-  }
-  return res.json()
+  return requestToolJson('/api/tools/run', tv('生成失败', 'Tạo thất bại'), { method: 'POST', body }, true)
 }
 
 // 查询视频任务状态
 export async function pollStudioToolTask(taskId: string): Promise<ToolTaskResult> {
-  const token = localStorage.getItem('token')
-  const res = await fetch(`${API_BASE}/api/tools/tasks/${encodeURIComponent(taskId)}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  })
-  if (res.status === 401) throw new Error(tr('tools.errors.notLoggedIn'))
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(errorMessage(err.detail, tr('lib.queryFailed')))
-  }
-  return res.json()
+  return requestToolJson(`/api/tools/tasks/${encodeURIComponent(taskId)}`, tv('查询失败', 'Truy vấn thất bại'))
 }
 
 // 个人中心：分页拉取工具创作记录
-export async function listToolRuns(page = 1, pageSize = 8): Promise<ToolRunList> {
-  const token = localStorage.getItem('token')
+export type ToolRunFilters = { kind?: string; status?: string; task_id?: string; created_from?: string; created_to?: string }
+
+export async function listToolRuns(page = 1, pageSize = 8, filters: ToolRunFilters = {}): Promise<ToolRunList> {
   const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
-  const res = await fetch(`${API_BASE}/api/tools/runs?${qs}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  })
-  if (res.status === 401) throw new Error(tr('tools.errors.notLoggedIn'))
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(errorMessage(err.detail, tr('lib.failedLoad')))
-  }
-  return res.json()
+  for (const [key, value] of Object.entries(filters)) if (value) qs.set(key, value)
+  return requestToolJson(`/api/tools/runs?${qs}`, tv('加载失败', 'Tải thất bại'))
+}
+
+export async function getGenerationConfig(): Promise<{ models: Record<string, string> }> {
+  return requestToolJson('/api/tools/config', tv('加载模型配置失败', 'Tải cấu hình model thất bại'))
 }
 
 // 个人中心：单条创作详情（含 OSS 结果地址）
 export async function getToolRun(runId: number): Promise<ToolRunRecord> {
-  const token = localStorage.getItem('token')
-  const res = await fetch(`${API_BASE}/api/tools/runs/${runId}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  })
-  if (res.status === 401) throw new Error(tr('tools.errors.notLoggedIn'))
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(errorMessage(err.detail, tr('lib.failedLoad')))
-  }
-  return res.json()
+  return requestToolJson(`/api/tools/runs/${runId}`, tv('加载失败', 'Tải thất bại'))
 }

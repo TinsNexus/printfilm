@@ -10,12 +10,10 @@ import {
 import { AdminEntityLink } from "@/components/admin/AdminEntityLink";
 import { Button } from "@/components/ui/button";
 import { formatDramaGenerationStatus } from "@/lib/dramaLabels";
-import { useI18n } from "@/i18n";
-import { tr } from "@/i18n/translate";
+import { tr } from "../../i18n/translate.ts";
 
 /** 漫剧分镜详情 */
 export function DramaFragmentDetailPage() {
-  const { t: tx } = useI18n();
   const { fragmentId } = useParams<{ fragmentId: string }>();
   const navigate = useNavigate();
   const [detail, setDetail] = useState<AdminDramaFragment | null>(null);
@@ -31,14 +29,14 @@ export function DramaFragmentDetailPage() {
     void api<AdminDramaFragment>(`/api/admin/drama-fragments/${id}`)
       .then(setDetail)
       .catch((err) => {
-        toast.error(err instanceof Error ? err.message : tr("fragmentDetail.failedLoad"));
+        toast.error(err instanceof Error ? err.message : tr("dramaUi.loadFailed"));
         navigate("/drama-fragments", { replace: true });
       })
       .finally(() => setLoading(false));
   }, [id, navigate]);
 
   if (loading && !detail) {
-    return <div className="admin-detail-page-loading">{tx("fragmentDetail.loading")}</div>;
+    return <div className="admin-detail-page-loading">{tr("dramaUi.loading")}</div>;
   }
   if (!detail) return null;
 
@@ -48,25 +46,25 @@ export function DramaFragmentDetailPage() {
         <Button variant="ghost" size="sm" className="admin-detail-back" asChild>
           <Link to="/drama-fragments">
             <ArrowLeft className="h-4 w-4" />
-            {tx("fragmentDetail.backShots")}
+            {tr("dramaUi.backToShots")}
           </Link>
         </Button>
         <div className="admin-detail-page-heading">
-          <h2 className="admin-detail-page-title">{tx("fragmentDetail.fragTitle", { id: detail.id })}</h2>
+          <h2 className="admin-detail-page-title">{tr("dramaUi.shotTitle", { id: detail.id })}</h2>
           <p className="admin-detail-page-sub">
-            {tx("fragmentDetail.episodeLine", { name: detail.episode_name ?? detail.episode_id })}{" "}
+            {tr("dramaUi.episodeOf", { name: detail.episode_name ?? detail.episode_id })} ·{" "}
             <AdminEntityLink kind="drama" id={detail.project_id} label={detail.project_title ?? undefined} />
           </p>
         </div>
         <div className="admin-detail-page-actions">
           <Button size="sm" variant="outline" asChild>
-            <Link to={`/drama-episodes/${detail.episode_id}`}>{tx("fragmentDetail.openEpisode")}</Link>
+            <Link to={`/drama-episodes/${detail.episode_id}`}>{tr("dramaUi.openEpisode")}</Link>
           </Button>
         </div>
       </div>
 
       {(detail.cover || detail.video) ? (
-        <AdminDetailSection title={tx("fragmentDetail.mediaPreview")}>
+        <AdminDetailSection title={tr("dramaUi.secMedia")}>
           <div className="admin-detail-media">
             {detail.video ? (
               <video src={detail.video} controls className="max-w-full" />
@@ -77,36 +75,36 @@ export function DramaFragmentDetailPage() {
         </AdminDetailSection>
       ) : null}
 
-      <AdminDetailSection title={tx("fragmentDetail.basicInfo")}>
+      <AdminDetailSection title={tr("dramaUi.secBasic")}>
         <AdminDetailMeta
           items={[
-            { label: tx("fragmentDetail.no"), value: detail.sort_order },
+            { label: tr("dramaUi.order"), value: detail.sort_order },
             {
-              label: tx("fragmentDetail.episode"),
+              label: tr("dramaUi.episode"),
               value: (
                 <Link to={`/drama-episodes/${detail.episode_id}`} className="admin-link">
-                  {detail.episode_name ?? tx("fragmentDetail.episode2", { detailEpisode_id: detail.episode_id })}
+                  {detail.episode_name ?? tr("dramaUi.episodeN", { id: detail.episode_id })}
                 </Link>
               ),
             },
             {
-              label: tx("fragmentDetail.project"),
+              label: tr("dramaUi.project"),
               value: <AdminEntityLink kind="drama" id={detail.project_id} label={detail.project_title ?? undefined} />,
             },
-            { label: tx("fragmentDetail.duration"), value: detail.duration_sec != null ? `${detail.duration_sec}s` : "—" },
-            { label: tx("fragmentDetail.generationStatus"), value: formatDramaGenerationStatus(detail.generation_status) },
-            { label: tx("fragmentDetail.assetReferenceCount"), value: detail.asset_ref_count },
-            { label: tx("fragmentDetail.scriptText"), value: detail.content || "—", full: true },
+            { label: tr("dramaUi.duration"), value: detail.duration_sec != null ? `${detail.duration_sec}s` : "—" },
+            { label: tr("dramaUi.genStatus"), value: formatDramaGenerationStatus(detail.generation_status) },
+            { label: tr("dramaUi.assetRefCount"), value: detail.asset_ref_count },
+            { label: tr("dramaUi.scriptText"), value: detail.content || "—", full: true },
           ]}
         />
       </AdminDetailSection>
 
       {(detail.asset_ids ?? []).length > 0 ? (
-        <AdminDetailSection title={tx("fragmentDetail.linkedAssets")}>
+        <AdminDetailSection title={tr("dramaUi.relatedAssets")}>
           <div className="flex flex-wrap gap-2">
             {(detail.asset_ids ?? []).map((assetId) => (
               <Button key={assetId} size="sm" variant="outline" asChild>
-                <Link to={`/drama-assets/${assetId}`}>{tx("fragmentDetail.assetN", { id: assetId })}</Link>
+                <Link to={`/drama-assets/${assetId}`}>{tr("dramaUi.assetN", { id: assetId })}</Link>
               </Button>
             ))}
           </div>
@@ -114,7 +112,7 @@ export function DramaFragmentDetailPage() {
       ) : null}
 
       {detail.params ? (
-        <AdminDetailSection title={tx("fragmentDetail.parametersJson")}>
+        <AdminDetailSection title={tr("dramaUi.jsonParams")}>
           <pre className="admin-json-preview">{JSON.stringify(detail.params, null, 2)}</pre>
         </AdminDetailSection>
       ) : null}

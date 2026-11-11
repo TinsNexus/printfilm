@@ -1,16 +1,16 @@
 /** Client-side video download + zip (no server pack endpoint). */
 
 import JSZip from 'jszip'
-import { tr } from '../i18n/translate'
+import { tv } from '../i18n/tv'
 
 export function safeDownloadBasename(title: string, projectId: number): string {
-  const raw = (title || tr('lib.untitled')).trim() || tr('lib.untitled')
+  const raw = (title || tv('未命名作品', 'Tác phẩm chưa đặt tên')).trim() || tv('未命名作品', 'Tác phẩm chưa đặt tên')
   const cleaned = raw
     .replace(/[<>:"/\\|?*\x00-\x1f]+/g, '_')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 60)
-  return `${cleaned || tr('lib.untitled')}_p${projectId}`
+  return `${cleaned || tv('未命名作品', 'Tác phẩm chưa đặt tên')}_p${projectId}`
 }
 
 export function triggerBlobDownload(blob: Blob, filename: string) {
@@ -27,7 +27,7 @@ export function triggerBlobDownload(blob: Blob, filename: string) {
 export async function fetchMediaBlob(url: string): Promise<Blob> {
   const res = await fetch(url, { mode: 'cors', credentials: 'omit' })
   if (!res.ok) {
-    throw new Error(tr('lib.downloadFailed', { resStatus: res.status }))
+    throw new Error(tv(`下载失败（${res.status}）`, `Tải xuống thất bại (${res.status})`))
   }
   return res.blob()
 }
@@ -52,7 +52,7 @@ export async function zipVideosClient(
   onProgress?: (done: number, total: number) => void,
 ): Promise<{ blob: Blob; filename: string }> {
   if (!items.length) {
-    throw new Error(tr('lib.chooseFinishedProject'))
+    throw new Error(tv('请选择已完成的项目', 'Vui lòng chọn dự án đã hoàn tất'))
   }
   const zip = new JSZip()
   const used = new Set<string>()

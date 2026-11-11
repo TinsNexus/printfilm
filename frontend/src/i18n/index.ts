@@ -9,5 +9,3 @@ export {
   type Locale,
 } from './detect'
 export { messages, type Messages } from './messages'
-export { tr } from './translate'
-export { tMarkup, tRich } from './rich'

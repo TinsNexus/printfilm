@@ -3,6 +3,9 @@ import { useCallback, useEffect, useRef } from 'react'
 import type { Edge, Node } from '@xyflow/react'
 import { dramaApi } from '../../../api/drama'
 import { CANVAS_AUTO_SAVE_MS, type CanvasAssetNodeData } from './canvasTypes'
+import { tv } from '../../../i18n/tv'
+
+export type CanvasSaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error'
 
 type UseCanvasAutoSaveArgs = {
   projectId: number
@@ -12,9 +15,10 @@ type UseCanvasAutoSaveArgs = {
   enabled: boolean
   onSaved: () => void
   onError: (message: string) => void
+  onStatus?: (status: CanvasSaveStatus) => void
 }
 
-/** 脏数据防抖保存到 drama canvas API */
+/** 脏数据防抖保存到 drama canvas API；保存中再改会继续刷到最新快照 */
 export function useCanvasAutoSave({
   projectId,
   nodes,
@@ -23,9 +27,12 @@ export function useCanvasAutoSave({
   enabled,
   onSaved,
   onError,
+  onStatus,
 }: UseCanvasAutoSaveArgs) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const savingRef = useRef(false)
+  const queuedRef = useRef(false)
+  const dirtyEpochRef = useRef(0)
   const latestRef = useRef({ nodes, edges, projectId })
   latestRef.current = { nodes, edges, projectId }
 
@@ -35,41 +42,63 @@ export function useCanvasAutoSave({
       nodes: Node<CanvasAssetNodeData>[]
       edges: Edge[]
     }) => {
-      if (savingRef.current) return
-      const base = latestRef.current
-      const payload = {
-        projectId: base.projectId,
-        nodes: override?.nodes ?? base.nodes,
-        edges: override?.edges ?? base.edges,
+      if (savingRef.current) {
+        queuedRef.current = true
+        return
       }
       savingRef.current = true
+      onStatus?.('saving')
+      let oneShot = override
       try {
-        await dramaApi.saveCanvas({
-          project_id: payload.projectId,
-          nodes: payload.nodes.map((n) => ({
-            id: n.id,
-            type: n.type,
-            position: n.position,
-            data: n.data,
-          })),
-          edges: payload.edges.map((e) => ({
-            id: e.id,
-            source: e.source,
-            target: e.target,
-          })),
-        })
-        onSaved()
+        while (true) {
+          queuedRef.current = false
+          const epoch = dirtyEpochRef.current
+          const base = latestRef.current
+          const payloadNodes = oneShot?.nodes ?? base.nodes
+          const payloadEdges = oneShot?.edges ?? base.edges
+          oneShot = undefined
+          await dramaApi.saveCanvas({
+            project_id: base.projectId,
+            nodes: payloadNodes.map((n) => ({
+              id: n.id,
+              type: n.type,
+              position: n.position,
+              data: n.data,
+            })),
+            edges: payloadEdges.map((e) => ({
+              id: e.id,
+              source: e.source,
+              target: e.target,
+            })),
+          })
+          if (queuedRef.current || dirtyEpochRef.current !== epoch) {
+            continue
+          }
+          onSaved()
+          onStatus?.('saved')
+          return
+        }
       } catch (err) {
-        onError(err instanceof Error ? err.message : '自动保存失败')
+        onStatus?.('error')
+        onError(err instanceof Error ? err.message : tv('自动保存失败', 'Tự động lưu thất bại'))
+        // 网络闪断时保持 dirty，便于稍后自动重试 / Ctrl+S
+        throw err
       } finally {
         savingRef.current = false
+        if (queuedRef.current) {
+          queuedRef.current = false
+          void flush()
+        }
       }
     },
-    [onError, onSaved],
+    [onError, onSaved, onStatus],
   )
 
   useEffect(() => {
     if (!enabled || !dirty) return
+
+    dirtyEpochRef.current += 1
+    onStatus?.('dirty')
 
     if (timerRef.current) clearTimeout(timerRef.current)
     timerRef.current = setTimeout(() => {
@@ -79,7 +108,7 @@ export function useCanvasAutoSave({
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current)
     }
-  }, [dirty, enabled, nodes, edges, flush])
+  }, [dirty, enabled, nodes, edges, flush, onStatus])
 
   return { flush }
 }

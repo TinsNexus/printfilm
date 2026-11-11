@@ -2,11 +2,10 @@ import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { loginAsAdmin } from "@/api/client";
-import { useI18n } from "@/i18n";
+import { tr } from "../i18n/translate.ts";
 
 // Admin login — film-lab ops aesthetic
 export function LoginPage() {
-  const { t: tx } = useI18n();
   const navigate = useNavigate();
   /*
    * email login email
@@ -23,10 +22,10 @@ export function LoginPage() {
     setLoading(true);
     try {
       await loginAsAdmin(email.trim(), password);
-      toast.success(tx("login.signed"));
+      toast.success(tr("ui.loginOk"));
       navigate("/", { replace: true });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : tx("login.signFailed"));
+      toast.error(err instanceof Error ? err.message : tr("ui.loginFailed"));
     } finally {
       setLoading(false);
     }
@@ -36,7 +35,7 @@ export function LoginPage() {
 
   return (
     <div className="login-shell">
-      <section className="login-brand" aria-label={tx("login.brand")}>
+      <section className="login-brand" aria-label={tr("ui.brand")}>
         <div className="login-sprocket" aria-hidden>
           {sprocketOffsets.map((top) => (
             <span key={top} style={{ top }} />
@@ -52,10 +51,10 @@ export function LoginPage() {
 
       <section className="login-panel">
         <div className="login-form-wrap">
-          <h2>{tx("login.signAdmin")}</h2>
+          <h2>{tr("ui.loginTitle")}</h2>
           <form onSubmit={onSubmit}>
             <div className="login-field">
-              <label htmlFor="email">{tx("login.email")}</label>
+              <label htmlFor="email">{tr("ui.email")}</label>
               <input
                 id="email"
                 type="email"
@@ -66,7 +65,7 @@ export function LoginPage() {
               />
             </div>
             <div className="login-field">
-              <label htmlFor="password">{tx("login.password")}</label>
+              <label htmlFor="password">{tr("ui.password")}</label>
               <input
                 id="password"
                 type="password"
@@ -77,7 +76,7 @@ export function LoginPage() {
               />
             </div>
             <button className="login-submit" type="submit" disabled={loading}>
-              {loading ? tx("login.verifying") : tx("login.enterConsole")}
+              {tr(loading ? "ui.verifying" : "ui.enterConsole")}
             </button>
           </form>
         </div>

@@ -1,7 +1,6 @@
 import { BarChart3, Clapperboard, LayoutDashboard, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useI18n } from "@/i18n";
-import { tr } from "@/i18n/translate";
+import { tr } from "../../i18n/translate.ts";
 
 /** 仪表盘主板块 */
 export type DashboardSection = "overview" | "usage" | "finance" | "projects";
@@ -12,10 +11,10 @@ const SECTIONS: {
   desc: string;
   icon: typeof LayoutDashboard;
 }[] = [
-  { id: "overview", get label() { return tr("dashTabs.businessOverview") }, get desc() { return tr("dashTabs.keyMetricsTrends") }, icon: LayoutDashboard },
-  { id: "usage", get label() { return tr("dashTabs.usageAnalysis") }, get desc() { return tr("dashTabs.callsDistribution") }, icon: BarChart3 },
-  { id: "finance", get label() { return tr("dashTabs.finance") }, get desc() { return tr("dashTabs.topUpsCosts") }, icon: Wallet },
-  { id: "projects", get label() { return tr("dashTabs.projectsOperations") }, get desc() { return tr("dashTabs.productionShortcuts") }, icon: Clapperboard },
+  { id: "overview", get label() { return tr("dashUi.sec.overview"); }, get desc() { return tr("dashUi.sec.overviewDesc"); }, icon: LayoutDashboard },
+  { id: "usage", get label() { return tr("dashUi.sec.usage"); }, get desc() { return tr("dashUi.sec.usageDesc"); }, icon: BarChart3 },
+  { id: "finance", get label() { return tr("dashUi.sec.finance"); }, get desc() { return tr("dashUi.sec.financeDesc"); }, icon: Wallet },
+  { id: "projects", get label() { return tr("dashUi.sec.projects"); }, get desc() { return tr("dashUi.sec.projectsDesc"); }, icon: Clapperboard },
 ];
 
 type DashboardSectionTabsProps = {
@@ -25,9 +24,8 @@ type DashboardSectionTabsProps = {
 
 /** 仪表盘板块切换 */
 export function DashboardSectionTabs({ value, onChange }: DashboardSectionTabsProps) {
-  const { t: tx } = useI18n();
   return (
-    <div className="admin-dashboard-section-tabs" role="tablist" aria-label={tx("dashTabs.dashboardSections")}>
+    <div className="admin-dashboard-section-tabs" role="tablist" aria-label={tr("dashUi.sectionsAria")}>
       {SECTIONS.map((item) => {
         const active = value === item.id;
         const Icon = item.icon;

@@ -1,7 +1,5 @@
 /** 获客短视频宣传页（/method）文案：对标交付方法论结构，不承诺效果 */
 
-import type { Locale } from '../i18n/detect'
-
 export const METHOD_START_URL = 'https://www.printfilm.com/studio/new'
 export const METHOD_GEO_URL = 'https://www.geohao.com/'
 
@@ -395,5 +393,4 @@ const en: MethodLandingCopy = {
   jsonLdHeadline: 'PRINTFILM lead-gen short video: production SOP, GEO companion, distribution, and human review',
 }
 
-// 越南语落地页暂无正式译本，回退英文
-export const METHOD_LANDING: Record<Locale, MethodLandingCopy> = { zh, en, vi: en }
+export const METHOD_LANDING: Record<'zh' | 'en', MethodLandingCopy> = { zh, en }

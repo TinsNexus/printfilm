@@ -16,7 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { PageHeader } from "@/components/ui/page";
 import { useAdminDetailQuery } from "@/hooks/useAdminDetailQuery";
 import { auditStatusLabel, visibilityLabel } from "@/lib/statusLabels";
-import { formatDateTime, useI18n } from "@/i18n";
+import { tr } from "../i18n/translate.ts";
 
 type ListRes = { items: AdminWork[]; meta: PageMeta };
 
@@ -29,7 +29,6 @@ function coverSrc(url: string | null | undefined): string {
 
 // 作品审核：搜索、预览与只读详情
 export function WorksPage() {
-  const { t: tx } = useI18n();
   const [auditStatus, setAuditStatus] = useState("");
   const [visibility, setVisibility] = useState("");
   const [q, setQ] = useState("");
@@ -48,7 +47,7 @@ export function WorksPage() {
       if (userId) params.set("user_id", String(userId));
       setData(await api<ListRes>(`/api/admin/works?${params}`));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : tx("works.failedLoad"));
+      toast.error(err instanceof Error ? err.message : tr("projects.works.loadFailed"));
     }
   }
 
@@ -66,10 +65,10 @@ export function WorksPage() {
   async function patchWork(id: number, body: { visibility?: string; audit_status?: string }) {
     try {
       await api(`/api/admin/works/${id}`, { method: "PATCH", body: JSON.stringify(body) });
-      toast.success(tx("works.updated"));
+      toast.success(tr("projects.works.updated"));
       await load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : tx("works.updateFailed"));
+      toast.error(err instanceof Error ? err.message : tr("projects.works.updateFailed"));
     }
   }
 
@@ -80,12 +79,12 @@ export function WorksPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader description={tx("works.adjustVisibilityReviewStatus")} />
+      <PageHeader title={tr("projects.works.title")} description={tr("projects.works.desc")} />
       <AdminFilterBar>
         <AdminSearchInput
           value={q}
           onChange={setQ}
-          placeholder={tx("works.searchTitle")}
+          placeholder={tr("projects.works.searchTitle")}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               setPage(1);
@@ -95,16 +94,16 @@ export function WorksPage() {
         />
         <AdminUserSearchSelect value={userId} onChange={(id) => setUserId(id)} />
         <Select value={auditStatus} onChange={(e) => setAuditStatus(e.target.value)}>
-          <option value="">{tx("works.allReviewStates")}</option>
-          <option value="pending">{tx("works.pendingReview")}</option>
-          <option value="passed">{tx("works.approved")}</option>
-          <option value="rejected">{tx("works.rejected")}</option>
+          <option value="">{tr("projects.works.allAudit")}</option>
+          <option value="pending">{tr("status.pendingReview")}</option>
+          <option value="passed">{tr("status.approved")}</option>
+          <option value="rejected">{tr("status.rejected")}</option>
         </Select>
         <Select value={visibility} onChange={(e) => setVisibility(e.target.value)}>
-          <option value="">{tx("works.allVisibility")}</option>
-          <option value="public">{tx("works.public")}</option>
-          <option value="private">{tx("works.private")}</option>
-          <option value="unlisted">{tx("works.unlisted")}</option>
+          <option value="">{tr("projects.works.allVisibility")}</option>
+          <option value="public">{tr("status.public")}</option>
+          <option value="private">{tr("status.private")}</option>
+          <option value="unlisted">{tr("status.unlisted")}</option>
         </Select>
         <Button
           size="sm"
@@ -115,21 +114,21 @@ export function WorksPage() {
             void load(1);
           }}
         >
-          {tx("works.filter")}
+          {tr("projects.ui.filter")}
         </Button>
       </AdminFilterBar>
       <div className="rounded-lg border bg-background">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>{tx("works.cover")}</TableHead>
+              <TableHead>{tr("projects.ui.cover")}</TableHead>
               <TableHead>ID</TableHead>
-              <TableHead>{tx("works.title")}</TableHead>
-              <TableHead>{tx("works.user")}</TableHead>
-              <TableHead>{tx("works.visibility")}</TableHead>
-              <TableHead>{tx("works.review")}</TableHead>
-              <TableHead>{tx("works.published")}</TableHead>
-              <TableHead>{tx("works.actions")}</TableHead>
+              <TableHead>{tr("projects.ui.colTitle")}</TableHead>
+              <TableHead>{tr("projects.ui.colUser")}</TableHead>
+              <TableHead>{tr("projects.works.visibility")}</TableHead>
+              <TableHead>{tr("projects.works.audit")}</TableHead>
+              <TableHead>{tr("projects.works.publishedAt")}</TableHead>
+              <TableHead>{tr("projects.works.actions")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -170,22 +169,22 @@ export function WorksPage() {
                   </Badge>
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">
-                  {formatDateTime(w.published_at)}
+                  {new Date(w.published_at).toLocaleString()}
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-wrap gap-1">
                     <Button size="sm" variant="outline" onClick={() => openWork(w)}>
-                      {tx("works.details")}
+                      {tr("projects.ui.details")}
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => void patchWork(w.id, { audit_status: "passed" })}>
-                      {tx("works.approve")}
+                      {tr("projects.works.approve")}
                     </Button>
                     <Button
                       size="sm"
                       variant="outline"
                       onClick={() => void patchWork(w.id, { audit_status: "rejected" })}
                     >
-                      {tx("works.reject")}
+                      {tr("projects.works.reject")}
                     </Button>
                     <Button
                       size="sm"
@@ -196,7 +195,7 @@ export function WorksPage() {
                         })
                       }
                     >
-                      {w.visibility === "public" ? tx("works.makePrivate") : tx("works.makePublic")}
+                      {w.visibility === "public" ? tr("projects.works.makePrivate") : tr("projects.works.makePublic")}
                     </Button>
                   </div>
                 </TableCell>
@@ -223,13 +222,13 @@ export function WorksPage() {
           }
         }}
         size="lg"
-        title={detail?.title ?? tx("works.workDetails")}
-        subtitle={detail ? tx("works.work", { detailId: detail.id }) : undefined}
+        title={detail?.title ?? tr("projects.works.detailTitle")}
+        subtitle={detail ? tr("projects.works.workN", { id: detail.id }) : undefined}
       >
         {detail ? (
           <>
             {(detail.cover_url || detail.video_url) ? (
-              <AdminDetailSection title={tx("works.mediaPreview")}>
+              <AdminDetailSection title={tr("projects.ui.secMedia")}>
                 <div className="admin-detail-media">
                   {detail.cover_url ? (
                     <img src={coverSrc(detail.cover_url)} alt={detail.title} />
@@ -240,11 +239,11 @@ export function WorksPage() {
                 </div>
               </AdminDetailSection>
             ) : null}
-            <AdminDetailSection title={tx("works.basicInfo")}>
+            <AdminDetailSection title={tr("projects.ui.secBasic")}>
               <AdminDetailMeta
                 items={[
                   {
-                    label: tx("works.user"),
+                    label: tr("projects.ui.colUser"),
                     value: (
                       <AdminEntityLink
                         kind="user"
@@ -254,18 +253,18 @@ export function WorksPage() {
                     ),
                   },
                   {
-                    label: tx("works.linkedProject"),
+                    label: tr("projects.works.relatedProject"),
                     value: detail.project_id ? (
                       <AdminEntityLink kind="project" id={detail.project_id} />
                     ) : (
                       "—"
                     ),
                   },
-                  { label: tx("works.visibility"), value: visibilityLabel(detail.visibility) },
-                  { label: tx("works.review"), value: auditStatusLabel(detail.audit_status) },
+                  { label: tr("projects.works.visibility"), value: visibilityLabel(detail.visibility) },
+                  { label: tr("projects.works.audit"), value: auditStatusLabel(detail.audit_status) },
                   {
-                    label: tx("works.published"),
-                    value: formatDateTime(detail.published_at),
+                    label: tr("projects.works.publishedAt"),
+                    value: new Date(detail.published_at).toLocaleString(),
                     full: true,
                   },
                 ]}
@@ -274,7 +273,7 @@ export function WorksPage() {
             {detail.video_url ? (
               <Button size="sm" variant="outline" asChild>
                 <a href={detail.video_url} target="_blank" rel="noreferrer">
-                  {tx("works.openVideoNewWindow")}
+                  {tr("projects.works.openVideo")}
                 </a>
               </Button>
             ) : null}

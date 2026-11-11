@@ -10,13 +10,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
-import { formatDateTime, useI18n } from "@/i18n";
+import { tr } from "../../i18n/translate.ts";
 
 type ListRes = { items: AdminDramaEpisode[]; meta: PageMeta };
 
 /** 全站漫剧分集列表 */
 export function DramaEpisodesPage() {
-  const { t: tx } = useI18n();
   const [searchParams] = useSearchParams();
   const initialProjectId = searchParams.get("project_id");
 
@@ -34,7 +33,7 @@ export function DramaEpisodesPage() {
       if (projectId.trim()) params.set("project_id", projectId.trim());
       setData(await api<ListRes>(`/api/admin/drama-episodes?${params}`));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : tx("dramaEpisodes.failedLoad"));
+      toast.error(err instanceof Error ? err.message : tr("dramaUi.loadFailed"));
     }
   }
 
@@ -45,11 +44,11 @@ export function DramaEpisodesPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader description={tx("dramaEpisodes.allDramaEpisodesSite")} />
+      <PageHeader title={tr("dramaUi.episodesTitle")} description={tr("dramaUi.episodesDesc")} />
       <AdminFilterBar>
-        <Input placeholder={tx("dramaEpisodes.episodeNameProjectTitle")} value={q} onChange={(e) => setQ(e.target.value)} />
+        <Input placeholder={tr("dramaUi.episodeSearch")} value={q} onChange={(e) => setQ(e.target.value)} />
         <AdminUserSearchSelect value={userId} onChange={setUserId} />
-        <Input placeholder={tx("dramaEpisodes.projectId")} value={projectId} onChange={(e) => setProjectId(e.target.value)} />
+        <Input placeholder={tr("dramaUi.projectId")} value={projectId} onChange={(e) => setProjectId(e.target.value)} />
         <Button
           size="sm"
           variant="secondary"
@@ -59,7 +58,7 @@ export function DramaEpisodesPage() {
             void load(1);
           }}
         >
-          {tx("dramaEpisodes.filter")}
+          {tr("dramaUi.filter")}
         </Button>
       </AdminFilterBar>
 
@@ -68,12 +67,12 @@ export function DramaEpisodesPage() {
           <thead>
             <tr>
               <th>ID</th>
-              <th>{tx("dramaEpisodes.name")}</th>
-              <th>{tx("dramaEpisodes.project")}</th>
-              <th>{tx("dramaEpisodes.user")}</th>
-              <th>{tx("dramaEpisodes.shots")}</th>
-              <th>{tx("dramaEpisodes.shotPlan")}</th>
-              <th>{tx("dramaEpisodes.updated")}</th>
+              <th>{tr("dramaUi.name")}</th>
+              <th>{tr("dramaUi.project")}</th>
+              <th>{tr("dramaUi.user")}</th>
+              <th>{tr("dramaUi.shotCount")}</th>
+              <th>{tr("dramaUi.shotPlan")}</th>
+              <th>{tr("dramaUi.updatedAt")}</th>
               <th></th>
             </tr>
           </thead>
@@ -95,11 +94,11 @@ export function DramaEpisodesPage() {
                 <td>{row.fragment_count}</td>
                 <td className="text-xs text-[var(--admin-muted)]">{row.fragment_plan_status || "—"}</td>
                 <td className="text-xs text-[var(--admin-muted)]">
-                  {row.updated_at ? formatDateTime(row.updated_at) : "—"}
+                  {row.updated_at ? new Date(row.updated_at).toLocaleString() : "—"}
                 </td>
                 <td>
                   <Button size="sm" variant="outline" asChild>
-                    <Link to={`/drama-episodes/${row.id}`}>{tx("dramaEpisodes.view")}</Link>
+                    <Link to={`/drama-episodes/${row.id}`}>{tr("dramaUi.view")}</Link>
                   </Button>
                 </td>
               </tr>
@@ -107,7 +106,7 @@ export function DramaEpisodesPage() {
             {(data?.items.length ?? 0) === 0 ? (
               <tr>
                 <td colSpan={8} className="!text-center text-[var(--admin-muted)]">
-                  {tx("dramaEpisodes.episodes")}
+                  {tr("dramaUi.noEpisodes")}
                 </td>
               </tr>
             ) : null}

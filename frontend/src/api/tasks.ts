@@ -1,35 +1,10 @@
 import { throwApiError } from '../lib/apiError'
+import { createJsonRequester } from './client'
 
-function defaultApiBase() {
-  if (typeof window !== 'undefined' && window.location?.hostname) {
-    const { protocol, hostname } = window.location
-    return `${protocol}//${hostname}:8000`
-  }
-  return 'http://127.0.0.1:8000'
-}
-
-const _viteApiBase = import.meta.env.VITE_API_BASE
-const API_BASE =
-  _viteApiBase === undefined || _viteApiBase === null ? defaultApiBase() : String(_viteApiBase)
-
-function authHeaders(): HeadersInit {
-  const token = localStorage.getItem('token')
-  return token
-    ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
-    : { 'Content-Type': 'application/json' }
-}
-
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: { ...authHeaders(), ...(init?.headers || {}) },
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throwApiError(res.status, err.detail, `HTTP ${res.status}`)
-  }
-  return res.json() as Promise<T>
-}
+/** 任务 API 沿用 HTTP 状态回退文案，共用统一传输层。 */
+const request = createJsonRequester((response, detail) =>
+  throwApiError(response.status, detail, `HTTP ${response.status}`),
+)
 
 export type TaskEventOut = {
   id: number
@@ -53,6 +28,10 @@ export type TaskRunOut = {
   id: number
   domain: string
   task_type: string
+  execution_mode?: 'direct' | 'queued'
+  queue_type?: 'text' | 'image' | 'video'
+  provider_name?: string | null
+  provider_status?: string | null
   status: string
   progress_percent?: number
   current_step_key?: string | null
@@ -89,6 +68,7 @@ export const tasksApi = {
     page_size?: number
     domain?: string
     task_type?: string
+    queue_type?: 'text' | 'image' | 'video'
     status?: string
     target_type?: string
     target_id?: number
@@ -99,6 +79,7 @@ export const tasksApi = {
     if (params.page_size) q.set('page_size', String(params.page_size))
     if (params.domain) q.set('domain', params.domain)
     if (params.task_type) q.set('task_type', params.task_type)
+    if (params.queue_type) q.set('queue_type', params.queue_type)
     if (params.status) q.set('status', params.status)
     if (params.target_type) q.set('target_type', params.target_type)
     if (params.target_id) q.set('target_id', String(params.target_id))

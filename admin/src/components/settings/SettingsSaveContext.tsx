@@ -7,12 +7,13 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { tr } from "@/i18n/translate";
+import { tr } from "@/i18n";
 
 export type SettingsSaveAction = {
   onSave: () => void | Promise<void>;
   saving?: boolean;
   label?: string;
+  disabled?: boolean;
 };
 
 type SettingsSaveContextValue = {
@@ -32,7 +33,8 @@ export function SettingsSaveProvider({ children }: { children: ReactNode }) {
         prev &&
         next &&
         prev.saving === next.saving &&
-        (prev.label ?? tr("ui.save")) === (next.label ?? tr("ui.save"))
+        prev.disabled === next.disabled &&
+        (prev.label ?? tr("settingsUi.save")) === (next.label ?? tr("settingsUi.save"))
       ) {
         // 同步最新 onSave，避免闭包过期；不触发无意义重渲染依赖
         prev.onSave = next.onSave;

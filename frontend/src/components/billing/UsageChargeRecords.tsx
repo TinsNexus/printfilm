@@ -1,9 +1,9 @@
+import { points } from '../../lib/points'
 import { useCallback, useEffect, useState } from 'react'
 import { api, type UsageChargeRecord } from '../../api'
 import Pagination from '../ui/Pagination'
 import { pageCountOf } from '../../lib/pagination'
-import { useI18n } from '../../i18n'
-import { tr } from '../../i18n/translate'
+import { tv } from '../../i18n/tv'
 
 /** 格式化相对时间展示 */
 function formatWhen(iso?: string | null) {
@@ -32,7 +32,6 @@ type UsageChargeRecordsProps = {
 
 /** 使用扣费记录列表：按次展示 LLM / 生图 / 生视频等计费明细 */
 export default function UsageChargeRecords({ variant = 'compact' }: UsageChargeRecordsProps) {
-  const { t: tx } = useI18n()
   /*
    * items 当前页记录
    * page 当前页码
@@ -66,7 +65,7 @@ export default function UsageChargeRecords({ variant = 'compact' }: UsageChargeR
       setPage(nextPage)
       setItems(res.items)
     } catch (e) {
-      setError(e instanceof Error ? e.message : tr('usageCharges.couldLoadChargeRecords'))
+      setError(e instanceof Error ? e.message : tv('加载扣费记录失败', 'Tải bản ghi trừ phí thất bại'))
       setItems([])
       setTotal(0)
     } finally {
@@ -86,16 +85,16 @@ export default function UsageChargeRecords({ variant = 'compact' }: UsageChargeR
   return (
     <section className={`pf-usage-records${variant === 'compact' ? ' is-compact' : ''}`}>
       <header className="pf-usage-records-head">
-        <h3>{tx('usageCharges.usageChargeRecords')}</h3>
-        <p className="pf-muted">{tx('usageCharges.tokenUsageChargeDetails')}</p>
+        <h3>{tv("使用扣费记录", "Bản ghi trừ phí sử dụng")}</h3>
+        <p className="pf-muted">{tv("每次 AI 调用的 token 用量与扣费明细", "Lượng token và chi tiết trừ phí của mỗi lần gọi AI")}</p>
       </header>
 
-      {loading ? <p className="pf-muted">{tx('usageCharges.loading')}</p> : null}
+      {loading ? <p className="pf-muted">{tv("加载中…", "Đang tải…")}</p> : null}
       {error ? <p className="pf-error">{error}</p> : null}
 
       {!loading && !error && items.length === 0 ? (
         <div className="pf-settings-empty">
-          <p>{tx('usageCharges.chargeRecordsYet')}</p>
+          <p>{tv("暂无扣费记录", "Chưa có bản ghi trừ phí")}</p>
         </div>
       ) : null}
 
@@ -109,12 +108,12 @@ export default function UsageChargeRecords({ variant = 'compact' }: UsageChargeR
                   <em className="pf-muted">
                     {item.context}
                     {item.total_tokens > 0 ? ` · ${formatTokens(item.total_tokens)} tokens` : ''}
-                    {item.estimated ? tx('usageCharges.estimated') : ''}
+                    {item.estimated ? tv(' · 估算', ' · ước tính') : ''}
                   </em>
                 </span>
                 <span className="pf-settings-list-meta pf-usage-record-meta">
                   <strong className="pf-usage-record-charge">
-                    {item.charge_fen > 0 ? `-¥${item.charge_yuan.toFixed(2)}` : '—'}
+                    {item.charge_fen > 0 ? `-${points(item.charge_fen)}` : '—'}
                   </strong>
                   <em className="pf-muted">{formatWhen(item.created_at)}</em>
                 </span>
@@ -132,7 +131,7 @@ export default function UsageChargeRecords({ variant = 'compact' }: UsageChargeR
           pageSize={pageSize}
           onPageSizeChange={handlePageSizeChange}
           onChange={setPage}
-          ariaLabel={tx('usageCharges.chargeRecordPages')}
+          ariaLabel={tv("扣费记录分页", "Phân trang bản ghi trừ phí")}
         />
       ) : null}
     </section>

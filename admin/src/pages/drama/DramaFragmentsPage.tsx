@@ -1,3 +1,4 @@
+import { Select } from "@/components/ui/select";
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -11,13 +12,12 @@ import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page";
 import { DRAMA_GENERATION_STATUSES, formatDramaGenerationStatus } from "@/lib/dramaLabels";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
-import { useI18n } from "@/i18n";
+import { tr } from "../../i18n/translate.ts";
 
 type ListRes = { items: AdminDramaFragment[]; meta: PageMeta };
 
 /** 全站漫剧分镜列表 */
 export function DramaFragmentsPage() {
-  const { t: tx } = useI18n();
   const [searchParams] = useSearchParams();
   const initialProjectId = searchParams.get("project_id");
   const initialEpisodeId = searchParams.get("episode_id");
@@ -40,7 +40,7 @@ export function DramaFragmentsPage() {
       if (generationStatus.trim()) params.set("generation_status", generationStatus.trim());
       setData(await api<ListRes>(`/api/admin/drama-fragments?${params}`));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : tx("dramaFragments.failedLoad"));
+      toast.error(err instanceof Error ? err.message : tr("dramaUi.loadFailed"));
     }
   }
 
@@ -51,24 +51,24 @@ export function DramaFragmentsPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader description={tx("dramaFragments.allDramaShotsSite")} />
+      <PageHeader title={tr("dramaUi.shotsTitle")} description={tr("dramaUi.shotsDesc")} />
       <AdminFilterBar>
-        <Input placeholder={tx("dramaFragments.contentEpisodeNameProject")} value={q} onChange={(e) => setQ(e.target.value)} />
+        <Input placeholder={tr("dramaUi.shotSearch")} value={q} onChange={(e) => setQ(e.target.value)} />
         <AdminUserSearchSelect value={userId} onChange={setUserId} />
-        <Input placeholder={tx("dramaFragments.projectId")} value={projectId} onChange={(e) => setProjectId(e.target.value)} />
-        <Input placeholder={tx("dramaFragments.episodeId")} value={episodeId} onChange={(e) => setEpisodeId(e.target.value)} />
-        <select
+        <Input placeholder={tr("dramaUi.projectId")} value={projectId} onChange={(e) => setProjectId(e.target.value)} />
+        <Input placeholder={tr("dramaUi.episodeId")} value={episodeId} onChange={(e) => setEpisodeId(e.target.value)} />
+        <Select
           className="admin-native-select"
           value={generationStatus}
           onChange={(e) => setGenerationStatus(e.target.value)}
         >
-          <option value="">{tx("dramaFragments.allGenerationStates")}</option>
+          <option value="">{tr("dramaUi.allGenStatus")}</option>
           {DRAMA_GENERATION_STATUSES.map((s) => (
             <option key={s} value={s}>
               {formatDramaGenerationStatus(s)}
             </option>
           ))}
-        </select>
+        </Select>
         <Button
           size="sm"
           variant="secondary"
@@ -78,7 +78,7 @@ export function DramaFragmentsPage() {
             void load(1);
           }}
         >
-          {tx("dramaFragments.filter")}
+          {tr("dramaUi.filter")}
         </Button>
       </AdminFilterBar>
 
@@ -87,13 +87,13 @@ export function DramaFragmentsPage() {
           <thead>
             <tr>
               <th>ID</th>
-              <th>{tx("dramaFragments.no")}</th>
-              <th>{tx("dramaFragments.content")}</th>
-              <th>{tx("dramaFragments.episode")}</th>
-              <th>{tx("dramaFragments.project")}</th>
-              <th>{tx("dramaFragments.duration")}</th>
-              <th>{tx("dramaFragments.generation")}</th>
-              <th>{tx("dramaFragments.assets")}</th>
+              <th>{tr("dramaUi.order")}</th>
+              <th>{tr("dramaUi.content")}</th>
+              <th>{tr("dramaUi.episode")}</th>
+              <th>{tr("dramaUi.project")}</th>
+              <th>{tr("dramaUi.duration")}</th>
+              <th>{tr("dramaUi.generation")}</th>
+              <th>{tr("dramaUi.assets")}</th>
               <th></th>
             </tr>
           </thead>
@@ -114,7 +114,7 @@ export function DramaFragmentsPage() {
                 <td>{row.asset_ref_count}</td>
                 <td>
                   <Button size="sm" variant="outline" asChild>
-                    <Link to={`/drama-fragments/${row.id}`}>{tx("dramaFragments.view")}</Link>
+                    <Link to={`/drama-fragments/${row.id}`}>{tr("dramaUi.view")}</Link>
                   </Button>
                 </td>
               </tr>
@@ -122,7 +122,7 @@ export function DramaFragmentsPage() {
             {(data?.items.length ?? 0) === 0 ? (
               <tr>
                 <td colSpan={9} className="!text-center text-[var(--admin-muted)]">
-                  {tx("dramaFragments.shots")}
+                  {tr("dramaUi.noShots")}
                 </td>
               </tr>
             ) : null}

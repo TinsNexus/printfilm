@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { FolderOpen, Plus, X } from 'lucide-react'
 import { useCanvasStore } from './CanvasStore'
 import { ADD_NODE_OPTIONS, CANVAS_NODE_OPTION_BY_KIND, type CanvasNodeKind } from './canvasTypes'
-import { tr } from '../../../i18n/translate'
+import { tv } from '../../../i18n/tv'
 
 type CanvasLeftToolbarProps = {
   onSelectNode: (kind: CanvasNodeKind) => void
@@ -45,9 +45,9 @@ export function CanvasLeftToolbar({ onSelectNode }: CanvasLeftToolbarProps) {
           <button
             type="button"
             className={`fc-icon-btn is-primary${panelOpen ? ' is-open' : ''}`}
-            aria-label={panelOpen ? tr('canvasLeft.closeAddNode') : tr('canvasLeft.addNode')}
+            aria-label={panelOpen ? tv('关闭添加节点', 'Đóng thêm nút') : tv('添加节点', 'Thêm nút')}
             aria-expanded={panelOpen}
-            title={tr('canvasLeft.addNode')}
+            title={tv("添加节点", "Thêm nút")}
             onClick={(event) => {
               event.stopPropagation()
               setPanelOpen((v) => !v)
@@ -58,7 +58,7 @@ export function CanvasLeftToolbar({ onSelectNode }: CanvasLeftToolbarProps) {
           </button>
 
           {panelOpen ? (
-            <div className="fc-add-panel-bridge" role="menu" aria-label={tr('canvasLeft.nodeTypesAdd')}>
+            <div className="fc-add-panel-bridge" role="menu" aria-label={tv("添加节点类型", "Loại nút cần thêm")}>
               <div className="fc-add-panel">
                 {ADD_NODE_OPTIONS.map((option) => {
                   const Icon = option.icon
@@ -87,8 +87,8 @@ export function CanvasLeftToolbar({ onSelectNode }: CanvasLeftToolbarProps) {
         <button
           type="button"
           className={`fc-icon-btn${folderOpen ? ' is-active' : ''}`}
-          aria-label={tr('canvasLeft.assetFolder')}
-          title={tr('canvasLeft.assetFolder')}
+          aria-label={tv("资产文件夹", "Thư mục tài sản")}
+          title={tv("资产文件夹", "Thư mục tài sản")}
           aria-expanded={folderOpen}
           onClick={() => {
             setFolderOpen((v) => !v)
@@ -99,10 +99,10 @@ export function CanvasLeftToolbar({ onSelectNode }: CanvasLeftToolbarProps) {
         </button>
 
         {folderOpen ? (
-          <div className="fc-folder-panel" role="dialog" aria-label={tr('canvasLeft.canvasNodeList')}>
-            <h4>{tr('canvasLeft.canvasNodes')}</h4>
+          <div className="fc-folder-panel" role="dialog" aria-label={tv("画布节点列表", "Danh sách nút canvas")}>
+            <h4>{tv("画布节点", "Nút canvas")}</h4>
             {nodes.length === 0 ? (
-              <p className="fc-folder-empty">{tr('canvasLeft.nodesYetClickAdd')}</p>
+              <p className="fc-folder-empty">{tv("暂无节点，点击 + 添加", "Chưa có nút, bấm + để thêm")}</p>
             ) : (
               nodes.map((node) => {
                 const option = CANVAS_NODE_OPTION_BY_KIND[node.data.kind]

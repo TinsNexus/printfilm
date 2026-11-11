@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { EPISODE_COUNT_PRESETS } from '../../lib/dramaImageStyles'
-import { useI18n } from '../../i18n'
+import { tv } from '../../i18n/tv'
 
 const CUSTOM_MIN = 1
 const CUSTOM_MAX = 999
@@ -29,7 +29,6 @@ function parseCustom(raw: string): number | null {
 
 // 渲染集数选择弹层
 export function DramaEpisodeCountPopover({ value, onChange, disabled = false }: Props) {
-  const { t: tx } = useI18n()
   /*
    * open 弹层开关
    * customInput 自定义输入
@@ -93,13 +92,13 @@ export function DramaEpisodeCountPopover({ value, onChange, disabled = false }: 
         aria-haspopup="dialog"
         onClick={toggle}
       >
-        <span>{tx('episodeCount.episodesN', { n: value })}</span>
+        <span>{value} {tv("集", "tập")}</span>
         <ChevronDown size={13} strokeWidth={2} className={open ? 'is-open' : ''} />
       </button>
 
       {open ? (
-        <div className="drama-ep-count-panel" role="dialog" aria-label={tx('episodeCount.customEpisodeCount')}>
-          <p className="drama-ep-count-title">{tx('episodeCount.customEpisodeCount')}</p>
+        <div className="drama-ep-count-panel" role="dialog" aria-label={tv("自定义集数", "Số tập tùy chỉnh")}>
+          <p className="drama-ep-count-title">{tv("自定义集数", "Số tập tùy chỉnh")}</p>
           <div className="drama-ep-count-presets">
             {EPISODE_COUNT_PRESETS.map((count) => (
               <button
@@ -108,12 +107,12 @@ export function DramaEpisodeCountPopover({ value, onChange, disabled = false }: 
                 className={value === count ? 'is-active' : ''}
                 onClick={() => selectPreset(count)}
               >
-                {tx('episodeCount.episodesN', { n: count })}
+                {count} {tv("集", "tập")}
               </button>
             ))}
           </div>
           <div className="drama-ep-count-custom">
-            <p>{tx('episodeCount.customEpisodeCount')}</p>
+            <p>{tv("自定义集数", "Số tập tùy chỉnh")}</p>
             <div className="drama-ep-count-custom-row">
               <input
                 type="number"
@@ -126,7 +125,7 @@ export function DramaEpisodeCountPopover({ value, onChange, disabled = false }: 
                 className={usingCustom ? 'is-custom' : ''}
               />
               <button type="button" className="drama-ep-count-confirm" onClick={applyCustom}>
-                {tx('episodeCount.ok')}
+                {tv("确定", "Xác định")}
               </button>
             </div>
           </div>

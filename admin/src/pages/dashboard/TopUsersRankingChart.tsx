@@ -1,7 +1,7 @@
 import type { AdminTopUser, AdminUsageBucket } from "@/api/client";
 import type { DashboardMetric } from "@/pages/dashboard/DashboardFilters";
 import { UsageDistributionChart } from "@/pages/dashboard/UsageDistributionChart";
-import { tr } from "@/i18n/translate";
+import { tr } from "../../i18n/translate.ts";
 
 /** 用户排行转为柱状图数据桶 */
 export function topUsersToBuckets(users: AdminTopUser[]): AdminUsageBucket[] {
@@ -9,7 +9,6 @@ export function topUsersToBuckets(users: AdminTopUser[]): AdminUsageBucket[] {
     key: String(user.user_id),
     calls: user.calls,
     charge_fen: user.charge_fen,
-    cost_fen: user.cost_fen ?? 0,
   }));
 }
 
@@ -31,7 +30,7 @@ type TopUsersRankingChartProps = {
 export function TopUsersRankingChart({ users, metric }: TopUsersRankingChartProps) {
   const rows = topUsersToBuckets(users);
   if (rows.length === 0) {
-    return <div className="admin-chart-empty">{tr("ui.rankingYet")}</div>;
+    return <div className="admin-chart-empty">{tr("dashUi.noRanking")}</div>;
   }
 
   return (

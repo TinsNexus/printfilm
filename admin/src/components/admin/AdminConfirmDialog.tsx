@@ -1,7 +1,7 @@
-import { Loader2 } from "lucide-react";
+import { AlertTriangle, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AdminModal } from "@/components/admin/AdminModal";
-import { tr } from "@/i18n/translate";
+import { tr } from "../../i18n/translate.ts";
 
 type AdminConfirmDialogProps = {
   open: boolean;
@@ -30,9 +30,9 @@ export function AdminConfirmDialog({
   return (
     <AdminModal
       open={open}
-      onOpenChange={onOpenChange}
+      onOpenChange={(nextOpen) => { if (!loading) onOpenChange(nextOpen); }}
       size="md"
-      title={title}
+      title={<span className="admin-ui-confirm-title"><span className={destructive ? "admin-ui-confirm-icon is-danger" : "admin-ui-confirm-icon"}>{destructive ? <AlertTriangle className="h-5 w-5" aria-hidden="true" /> : <Check className="h-5 w-5" aria-hidden="true" />}</span><span>{title}</span></span>}
       subtitle={description}
       footer={
         <>
@@ -42,9 +42,10 @@ export function AdminConfirmDialog({
           <Button
             variant={destructive ? "destructive" : "default"}
             disabled={loading}
+            aria-busy={loading}
             onClick={onConfirm}
           >
-            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
             {confirmLabel}
           </Button>
         </>

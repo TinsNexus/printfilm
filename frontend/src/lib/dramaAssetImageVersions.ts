@@ -1,6 +1,6 @@
 /** 资产形象历史版本读写 */
 import { resolveDramaMediaUrl, type DramaAsset } from '../api/drama'
-import { tr } from '../i18n/translate'
+import { tv } from '../i18n/tv'
 
 export type AssetImageVersion = {
   id: string
@@ -9,6 +9,7 @@ export type AssetImageVersion = {
   prompt?: string | null
   createdAt?: string
   source?: string
+  mediaMetadata?: Record<string, unknown>
 }
 
 // 从 params.image_versions 读取可展示的历史形象
@@ -29,6 +30,7 @@ export function readAssetImageVersions(asset: DramaAsset | null | undefined): As
       prompt: typeof row.prompt === 'string' ? row.prompt : null,
       createdAt: typeof row.createdAt === 'string' ? row.createdAt : undefined,
       source: typeof row.source === 'string' ? row.source : undefined,
+      mediaMetadata: row.media_metadata && typeof row.media_metadata === 'object' ? row.media_metadata as Record<string, unknown> : undefined,
     })
   }
   return out
@@ -39,10 +41,8 @@ export function resolveAssetImageVersionUrl(version: AssetImageVersion): string 
 }
 
 export function formatAssetImageVersionLabel(version: AssetImageVersion): string {
-  const src = (version.source || '').toLowerCase()
-  if (src === 'upload') return tr('lib.upload')
-  if (src === 'replaced') return tr('lib.replaced')
-  if (src === 'generate') return tr('lib.generated')
-  if (src === 'restored') return tr('lib.restored')
-  return tr('lib.history')
+  const src = String(version.mediaMetadata?.source || '').toLowerCase()
+  if (src === 'upload') return tv('上传', 'Tải lên')
+  if (src === 'generated') return tv('AI 生成', 'AI tạo')
+  return tv('历史版本', 'Phiên bản lịch sử')
 }

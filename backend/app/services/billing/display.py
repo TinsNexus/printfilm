@@ -13,9 +13,12 @@ from app.models import UsageEvent
 from app.services.billing.pricing import parse_upstream_cost_fen
 
 _BASIS_LABELS = {
+    "fixed_media": "站内固定价",
     "estimate": "估算",
     "upstream_usage": "实测(token)",
     "upstream_cost": "实测(费用)",
+    "official_rule": "官方价目",
+    "newapi_log": "New API 账单",
     "unknown": "实测(未分类)",
 }
 
@@ -46,6 +49,10 @@ def resolve_billing_basis(*, estimated: bool, raw_usage_json: str | None = None)
                 raw = parsed
         except json.JSONDecodeError:
             raw = None
+    if isinstance(raw, dict):
+        basis = str(raw.get("billing_basis") or "")
+        if basis in {"official_rule", "newapi_log", "fixed_media"}:
+            return basis
     usage = raw.get("usage") if isinstance(raw, dict) and isinstance(raw.get("usage"), dict) else raw
     if isinstance(usage, dict):
         if parse_upstream_cost_fen({"usage": usage}) is not None:

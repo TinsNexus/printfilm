@@ -85,3 +85,23 @@ def test_seedance_prompt_text_post_mode_strips_cues():
     assert "【字幕" not in prompt
     assert "同步字幕" not in prompt
     assert "禁止在画面内烧录字幕" in prompt
+
+
+def test_build_seedance_generate_body_defaults_no_burn():
+    """缺省不传开关时按后期模式：禁止烧录字幕。"""
+    from app.services.drama.build_seedance_generate_body import build_seedance_generate_body
+
+    body = build_seedance_generate_body(
+        {
+            "content": "@duration:4\n【对白·慢速清晰·同步字幕】禹：水患未平。",
+            "reference": [],
+            "duration_fallback": 4,
+        }
+    )
+    text = ""
+    for item in body.get("content") or []:
+        if isinstance(item, dict) and item.get("type") == "text":
+            text += str(item.get("text") or "")
+    assert "禁止在画面内烧录字幕" in text
+    assert "同步字幕" not in text
+    assert "烧录简体中文字幕" not in text

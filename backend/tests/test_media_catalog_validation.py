@@ -81,20 +81,23 @@ def test_catalog_payload_uses_tokenfree_routing() -> None:
         ],
         defaults=DefaultModels(image_model="seedream-5.0", video_model="seedance-2.5"),
     )
-    assert payload["defaults"]["video_model"] == "seedance-2-5"
-    assert payload["defaults"]["image_model"] == "seedream-5-0-pro"
-    assert any(m["id"] == "seedance-2-5" for m in payload["video_models"])
-    assert any(m["id"] == "seedream-5-0-pro" for m in payload["image_models"])
-    # 点分旧 id 不得残留为独立目录行
-    assert not any(m["id"] == "seedream-5.0" for m in payload["image_models"])
-    assert not any(m["id"] in {"seedance-2", "seedance-2.5"} for m in payload["video_models"])
+    assert payload["defaults"]["video_model"] == "seedance-2.5"
+    assert payload["defaults"]["image_model"] == "seedream-5.0"
+    assert any(m["id"] == "seedance-2.5" for m in payload["video_models"])
+    assert any(m["id"] == "seedream-5.0" for m in payload["image_models"])
+    assert any(m["id"] == "seedream-5.0-pro" for m in payload["image_models"])
+    assert any(m["id"] == "seedance-2.0-fast" for m in payload["video_models"])
+    # 连字符旧 id 不得残留为独立目录行
+    assert not any(m["id"] == "seedream-5-0-pro" for m in payload["image_models"])
+    assert not any(m["id"] in {"seedance-2", "seedance-2-5"} for m in payload["video_models"])
     # recommended 落在规范 id 上
     img_by_id = {m["id"]: m for m in payload["image_models"]}
-    assert img_by_id["seedream-5-0-pro"]["recommended"] is True
+    assert img_by_id["seedream-5.0"]["recommended"] is True
     assert all(m["provider"] == "tokenfree" for m in payload["video_models"])
     assert not any("kie" in m["id"] for m in payload["video_models"])
     assert not any("方舟" in m["label"] for m in payload["video_models"])
     labels = [m["label"] for m in payload["video_models"]]
     assert "Seedance 2.0" in labels
-    assert "Seedance 2.0 Mini" in labels
+    assert "Seedance 2.0 Fast" in labels
     assert "Seedance 2.5" in labels
+    assert "MiniMax H3" in labels

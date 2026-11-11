@@ -38,9 +38,10 @@ FRAGMENT_DURATION_MAX = 15
 FRAGMENT_SOFT_MAX = 15
 # 单分镜总时长硬上限（短剧节奏；Seedance 仍支持更长，此处刻意收紧）
 FRAGMENT_TOTAL_MAX = 15
-# 整集分镜条数 / 时长预算（重新分镜与规则切分共用）
-EPISODE_FRAGMENT_MAX = 10
-EPISODE_DURATION_BUDGET_SEC = 90
+# 整集镜数/时长：0 = 不设上限（完整呈现剧本；单镜仍受 FRAGMENT_TOTAL_MAX 约束）
+# 保留常量名供旧调用方传入显式上限；默认 trim 不再为凑预算丢内容。
+EPISODE_FRAGMENT_MAX = 0
+EPISODE_DURATION_BUDGET_SEC = 0
 # 重要角色：roleType / title / tags 命中则需要人物介绍叠字
 IMPORTANT_ROLE_RE = re.compile(r"主角|男主|女主|重要|反派|BOSS|核心|主人公")
 # 次要定位：默认不介绍
@@ -74,6 +75,22 @@ DIALOGUE_WITH_ACTION_BODY_RE = re.compile(
 )
 # 括号内为口播类型标记（非舞台动作），禁止拆成画面行
 VOICE_TYPE_ACTION_RE = re.compile(r"^(?:vo|os|旁白|VO|OS)$", re.I)
+# 画布 @asset:123 含冒号，禁止被当成「角色名：台词」
+_ASSET_MENTION_MASK_RE = re.compile(r"@asset:\d+")
+_ASSET_MENTION_MASK = "@asset_"
+
+
+def _mask_asset_mentions(text: str) -> str:
+    """临时去掉 @asset:id 中的冒号，避免叙事分类误判。"""
+    return _ASSET_MENTION_MASK_RE.sub(
+        lambda m: m.group(0).replace(":", "_", 1),
+        text or "",
+    )
+
+
+def _unmask_asset_mentions(text: str) -> str:
+    """还原被 mask 的 @asset_id → @asset:id。"""
+    return (text or "").replace("@asset_", "@asset:")
 
 
 def normalize_scene_location_name(raw: str) -> str:
@@ -459,44 +476,50 @@ def _format_narrative_line(line: str) -> str:
     trimmed = line.strip()
     if not trimmed:
         return trimmed
-    if trimmed.startswith("【画面") or trimmed.startswith("【旁白") or trimmed.startswith("【对白"):
+    # 分类时屏蔽 @asset:id，避免把资产占位冒号当成「说话人：台词」
+    masked = _mask_asset_mentions(trimmed)
+
+    def _out(prefixed: str) -> str:
+        return _unmask_asset_mentions(prefixed)
+
+    if masked.startswith("【画面") or masked.startswith("【旁白") or masked.startswith("【对白"):
         # 已打标但仍可能是误判的「对白·空镜：…」→ 纠正为画面
-        body = _strip_production_prefix(trimmed)
+        body = _strip_production_prefix(masked)
         kind = classify_voice_body(body)
         if kind == "visual" or (
-            (trimmed.startswith("【对白") or trimmed.startswith("【旁白"))
-            and _is_visual_description_line(trimmed)
+            (masked.startswith("【对白") or masked.startswith("【旁白"))
+            and _is_visual_description_line(masked)
         ):
-            return f"{VISUAL_PREFIX}{body}"
-        if kind == "dialogue" and trimmed.startswith("【旁白"):
-            return f"{DIALOGUE_PREFIX}{body}"
-        if kind == "inner" and not trimmed.startswith("【内心独白"):
-            return f"【内心独白·同步字幕】{body}"
+            return _out(f"{VISUAL_PREFIX}{body}")
+        if kind == "dialogue" and masked.startswith("【旁白"):
+            return _out(f"{DIALOGUE_PREFIX}{body}")
+        if kind == "inner" and not masked.startswith("【内心独白"):
+            return _out(f"【内心独白·同步字幕】{body}")
         return trimmed
-    if trimmed.startswith("【空镜"):
-        return f"【空镜·可仅环境音与 BGM】{trimmed}"
-    if _is_visual_description_line(trimmed):
-        if trimmed.startswith("△") or trimmed.startswith("Δ"):
-            body = trimmed.replace("Δ", "△", 1) if trimmed.startswith("Δ") else trimmed
-            return f"{VISUAL_PREFIX}{body}"
-        return f"{VISUAL_PREFIX}{trimmed}"
-    kind = classify_voice_body(trimmed)
+    if masked.startswith("【空镜"):
+        return _out(f"【空镜·可仅环境音与 BGM】{masked}")
+    if _is_visual_description_line(masked):
+        if masked.startswith("△") or masked.startswith("Δ"):
+            body = masked.replace("Δ", "△", 1) if masked.startswith("Δ") else masked
+            return _out(f"{VISUAL_PREFIX}{body}")
+        return _out(f"{VISUAL_PREFIX}{masked}")
+    kind = classify_voice_body(masked)
     if kind == "visual":
-        return f"{VISUAL_PREFIX}{trimmed}"
+        return _out(f"{VISUAL_PREFIX}{masked}")
     if kind == "dialogue":
-        return f"{DIALOGUE_PREFIX}{trimmed}"
+        return _out(f"{DIALOGUE_PREFIX}{masked}")
     if kind == "inner":
-        return f"【内心独白·同步字幕】{trimmed}"
+        return _out(f"【内心独白·同步字幕】{masked}")
     if kind == "narration":
-        return f"【旁白·慢速清晰·同步字幕】{trimmed}"
+        return _out(f"【旁白·慢速清晰·同步字幕】{masked}")
     # 角色对白：排除空镜/景别等冒号标签，避免「空镜：…」被当成「角色名：台词」
-    if re.match(r"^[^（(:：\n]{1,16}[（(][^）)]*[）)]\s*[：:].+", trimmed):
-        return f"{DIALOGUE_PREFIX}{trimmed}"
-    colon_speaker = re.match(r"^([^：:\n]{1,16})[：:](.+)$", trimmed)
-    if colon_speaker and not VISUAL_SHOT_LABEL_RE.match(trimmed):
-        return f"{DIALOGUE_PREFIX}{trimmed}"
+    if re.match(r"^[^（(:：\n]{1,16}[（(][^）)]*[）)]\s*[：:].+", masked):
+        return _out(f"{DIALOGUE_PREFIX}{masked}")
+    colon_speaker = re.match(r"^([^：:\n]{1,16})[：:](.+)$", masked)
+    if colon_speaker and not VISUAL_SHOT_LABEL_RE.match(masked):
+        return _out(f"{DIALOGUE_PREFIX}{masked}")
     # 纯画面/动作描述：明确禁止配音，避免被全局字幕 cue 误读为旁白
-    return f"{VISUAL_PREFIX}{trimmed}"
+    return _out(f"{VISUAL_PREFIX}{masked}")
 
 
 def _speakable_body(line: str) -> str:

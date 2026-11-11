@@ -1,106 +1,104 @@
-import { tr } from "@/i18n/translate";
+// 状态标签：getter 在读取时按当前语言取文案（tr 只依赖 i18n/translate，node 单测可直接导入）
+import { tr } from "../i18n/translate.ts";
 /** Project pipeline status → Chinese label */
 export const PROJECT_STATUS_LABELS: Record<string, string> = {
-  get DRAFT() { return tr("status.draft") },
-  get SCRIPTING() { return tr("status.scriptGenerating") },
-  get SCRIPT_READY() { return tr("status.scriptReady") },
-  get IMAGING() { return tr("status.storyboardImagesGenerating") },
-  get IMAGE_READY() { return tr("status.storyboardImagesReady") },
-  get VIDEOING() { return tr("status.videoGenerating") },
-  get VIDEO_READY() { return tr("status.videoReady") },
-  get AUDIOING() { return tr("status.voicing") },
-  get COMPOSING() { return tr("status.composing") },
-  get AUDITING() { return tr("status.review") },
-  get DONE() { return tr("status.done") },
-  get REJECTED() { return tr("status.rejected") },
-  get FAILED() { return tr("status.failed") },
-  get CANCELLED() { return tr("status.cancelled") },
+  get DRAFT() { return tr("status.draft"); },
+  get SCRIPTING() { return tr("status.scriptGenerating"); },
+  get SCRIPT_READY() { return tr("status.scriptReady"); },
+  get IMAGING() { return tr("status.storyboardImagesGenerating"); },
+  get IMAGE_READY() { return tr("status.storyboardImagesReady"); },
+  get VIDEOING() { return tr("status.videoGenerating"); },
+  get VIDEO_READY() { return tr("status.videoReady"); },
+  get AUDIOING() { return tr("status.voicing"); },
+  get COMPOSING() { return tr("status.composing"); },
+  get AUDITING() { return tr("status.review"); },
+  get DONE() { return tr("status.done"); },
+  get REJECTED() { return tr("status.rejected"); },
+  get FAILED() { return tr("status.failed"); },
+  get CANCELLED() { return tr("status.cancelled"); },
 };
 
 /** Order payment status → Chinese */
 export const ORDER_STATUS_LABELS: Record<string, string> = {
-  get pending() { return tr("status.pendingPayment") },
-  get paid() { return tr("status.paid") },
-  get closed() { return tr("status.closed") },
+  get pending() { return tr("status.pendingPayment"); },
+  get paid() { return tr("status.paid"); },
+  get closed() { return tr("status.closed"); },
 };
 
 /** Work audit / visibility → Chinese */
 export const AUDIT_STATUS_LABELS: Record<string, string> = {
-  get pending() { return tr("status.pendingReview") },
-  get passed() { return tr("status.approved") },
-  get rejected() { return tr("status.rejected") },
+  get pending() { return tr("status.pendingReview"); },
+  get passed() { return tr("status.approved"); },
+  get rejected() { return tr("status.rejected"); },
 };
 
 export const VISIBILITY_LABELS: Record<string, string> = {
-  get public() { return tr("status.public") },
-  get private() { return tr("status.private") },
-  get unlisted() { return tr("status.unlisted") },
+  get public() { return tr("status.public"); },
+  get private() { return tr("status.private"); },
+  get unlisted() { return tr("status.unlisted"); },
 };
 
 /** Wallet ledger kind → Chinese */
 export const LEDGER_KIND_LABELS: Record<string, string> = {
-  get topup() { return tr("status.topUp") },
-  get grant() { return tr("status.grant") },
-  get adjust() { return tr("status.adjustment") },
-  get freeze() { return tr("status.hold") },
-  get unfreeze() { return tr("status.release") },
-  get settle() { return tr("status.settlement") },
-  get refund() { return tr("status.refund") },
+  get topup() { return tr("status.topUp"); },
+  get grant() { return tr("status.grant"); },
+  get adjust() { return tr("status.adjustment"); },
+  get freeze() { return tr("status.hold"); },
+  get unfreeze() { return tr("status.release"); },
+  get settle() { return tr("status.settlement"); },
+  get refund() { return tr("status.refund"); },
 };
 
 /** Payment channel → Chinese */
 export const PAY_TYPE_LABELS: Record<string, string> = {
-  get alipay() { return tr("status.alipay") },
-  get wxpay() { return tr("status.wechat") },
+  get alipay() { return tr("status.alipay"); },
+  get wxpay() { return tr("status.wechat"); },
+  get stripe() { return tr("status.stripeCard"); },
 };
 
 /** Unified task platform status → Chinese */
 export const TASK_STATUS_LABELS: Record<string, string> = {
-  get pending() { return tr("status.queued") },
-  get leased() { return tr("status.leased") },
-  get running() { return tr("status.running") },
-  get awaiting_poll() { return tr("status.awaitingPoll") },
-  get awaiting_review() { return tr("status.pendingReview") },
-  get cancel_requested() { return tr("status.cancelling") },
-  get succeeded() { return tr("status.succeeded") },
-  get failed() { return tr("status.failed") },
-  get cancelled() { return tr("status.cancelled") },
+  get pending() { return tr("status.queued"); },
+  get leased() { return tr("status.leased"); },
+  get running() { return tr("status.running"); },
+  get awaiting_poll() { return tr("status.awaitingPoll"); },
+  get awaiting_review() { return tr("status.pendingReview"); },
+  get cancel_requested() { return tr("status.cancelling"); },
+  get succeeded() { return tr("status.succeeded"); },
+  get failed() { return tr("status.failed"); },
+  get cancelled() { return tr("status.cancelled"); },
 };
 
 /** Task domain → Chinese */
 export const TASK_DOMAIN_LABELS: Record<string, string> = {
-  get drama() { return tr("status.drama") },
-  get kepu() { return tr("status.aiShortVideo") },
-  get tools() { return tr("status.tools") },
-  get studio() { return tr("status.studio") },
-  get api() { return tr("status.openApi") },
+  get drama() { return tr("status.drama"); },
+  get kepu() { return tr("status.aiShortVideo"); },
+  get tools() { return tr("status.tools"); },
+  get studio() { return tr("status.studio"); },
 };
 
 /** Task type → Chinese（轻量同步 + 平台任务） */
 export const TASK_TYPE_LABELS: Record<string, string> = {
-  get agent_chat() { return tr("status.dramaAssistantChat") },
-  get skill_optimize() { return tr("status.skillPromptOptimization") },
-  get voice_prompt() { return tr("status.characterVoiceDescription") },
-  get content_expand() { return tr("status.topicExpansion") },
-  get script_summary() { return tr("status.scriptSummary") },
-  get episode_script() { return tr("status.episodeScript") },
-  get fragment_plan() { return tr("status.aiShotPlanning") },
-  get fragment_video() { return tr("status.shotVideo") },
-  get seed_assets() { return tr("status.assetExtraction") },
-  get asset_image() { return tr("status.assetImage") },
-  get asset_video() { return tr("status.assetVideo") },
-  get voice_synthesis() { return tr("status.voiceSynthesis") },
-  get project_pipeline() { return tr("status.explainerPipeline") },
-  get shot_regen_image() { return tr("status.singleShotRedraw") },
-  get shot_regen_video() { return tr("status.singleShotVideo") },
-  get shot_regen_audio() { return tr("status.singleShotVoice") },
-  get project_regen_audio() { return tr("status.wholeFilmVoice") },
-  get project_compose_only() { return tr("status.composeOnly") },
-  get v1_image() { return tr("status.apiImage") },
-  get v1_video() { return tr("status.apiVideo") },
-  v1_seedance: "API Seedance",
-  get tool_image() { return tr("status.toolImage") },
-  get tool_video() { return tr("status.toolVideo") },
+  get agent_chat() { return tr("status.dramaAssistantChat"); },
+  get skill_optimize() { return tr("status.skillPromptOptimization"); },
+  get voice_prompt() { return tr("status.characterVoiceDescription"); },
+  get content_expand() { return tr("status.topicExpansion"); },
+  get script_summary() { return tr("status.scriptSummary"); },
+  get episode_script() { return tr("status.episodeScript"); },
+  get fragment_plan() { return tr("status.aiShotPlanning"); },
+  get fragment_video() { return tr("status.shotVideo"); },
+  get seed_assets() { return tr("status.assetExtraction"); },
+  get asset_image() { return tr("status.assetImage"); },
+  get asset_video() { return tr("status.assetVideo"); },
+  get voice_synthesis() { return tr("status.voiceSynthesis"); },
+  get project_pipeline() { return tr("status.explainerPipeline"); },
+  get shot_regen_image() { return tr("status.singleShotRedraw"); },
+  get shot_regen_video() { return tr("status.singleShotVideo"); },
+  get shot_regen_audio() { return tr("status.singleShotVoice"); },
+  get project_regen_audio() { return tr("status.wholeFilmVoice"); },
+  get project_compose_only() { return tr("status.composeOnly"); },
+  get tool_image() { return tr("status.toolImage"); },
+  get tool_video() { return tr("status.toolVideo"); },
 };
 
 // Resolve project status display text
@@ -148,13 +146,11 @@ export function taskTypeLabel(taskType: string): string {
   return TASK_TYPE_LABELS[taskType] ?? taskType;
 }
 
-/**
- * Filter options for project status select (value stays English for API).
- * 用函数而非模块级常量：标签随当前界面语言取值，常量会在导入时固化语言。
- */
+/** Filter options for project status select (value stays English for API) */
+// 函数而非常量：每次调用按当前语言生成选项
 export function projectStatusOptions(): { value: string; label: string }[] {
   return [
     { value: "", label: tr("status.allStatuses") },
-    ...Object.entries(PROJECT_STATUS_LABELS).map(([value, label]) => ({ value, label })),
+    ...Object.keys(PROJECT_STATUS_LABELS).map((value) => ({ value, label: PROJECT_STATUS_LABELS[value] })),
   ];
 }

@@ -69,16 +69,25 @@ export function readVisualPrompt(asset: DramaAsset): string {
   const name = asset.name || ''
 
   const canvas = params.canvas
+  const canvasObj = canvas && typeof canvas === 'object' ? (canvas as Record<string, unknown>) : null
   const canvasGen =
-    canvas && typeof canvas === 'object'
-      ? (canvas as Record<string, unknown>).generation
+    canvasObj && canvasObj.generation && typeof canvasObj.generation === 'object'
+      ? (canvasObj.generation as Record<string, unknown>)
       : null
   const canvasPrompt =
-    canvasGen && typeof canvasGen === 'object'
-      ? String((canvasGen as Record<string, unknown>).prompt || '').trim()
-      : ''
+    canvasGen ? String(canvasGen.prompt || '').trim() : ''
+  /* save_canvas 会把整颗 xyflow 节点写入 params.canvas，提示词在 data.promptHint */
+  const canvasNodeData =
+    canvasObj && canvasObj.data && typeof canvasObj.data === 'object'
+      ? (canvasObj.data as Record<string, unknown>)
+      : null
+  const canvasNodePrompt = canvasNodeData
+    ? String(canvasNodeData.promptHint || '').trim()
+    : ''
   const stored =
-    String(params.visualPrompt || params.visualImage || canvasPrompt || '').trim()
+    String(
+      params.visualPrompt || params.visualImage || canvasPrompt || canvasNodePrompt || '',
+    ).trim()
 
   if (stored && !isWeakVisualPrompt(stored, name, kind)) {
     return stored

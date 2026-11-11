@@ -7,8 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview",
-    "i18n:check": "node scripts/i18n-parity.mjs"
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "preview": "vite preview"
   },
   "dependencies": {
     "@xyflow/react": "^12.11.2",

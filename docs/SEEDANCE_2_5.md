@@ -12,6 +12,8 @@
 
 拆镜与分集产品规则见：[EPISODE_RULES.md](./EPISODE_RULES.md)、[SHOT_SPLITTING.md](./SHOT_SPLITTING.md)。
 
+MiniMax-H3 插件兼容（2026-10-22）：TokenFree 同一模型的 `h3` 插件使用小写 `480p/768p`，`compshare-h3` 插件使用大写 `480P/768P`，见[公开插件计费配置](https://www.tokenfree.com/api/pricing)。内部参数保持小写；仅当创建接口明确返回 HTTP 400、`code=plugin_usage_invalid` 且未返回任务号时，提交层转换分辨率大小写重试一次，不更改档位、时长、画幅或正文。超时、成功及其他错误不触发此兼容重试，每次请求保留独立上游记录。该错误重试后仍失败时停止，不继续进行画幅回退。
+
 ---
 
 ## 1. 模型定位（相对 2.0）
@@ -171,7 +173,7 @@
 | 脚本 `@duration` 合计 | `duration`（钳制约 4–30） |
 | 分镜正文 + 强制约束块 | `content[]` 中 `type=text` |
 | 角色/场景封面 | `image_url` + `role=reference_image` |
-| 角色/旁白试听 | **暂不提交** `reference_audio`；口播由 `generate_audio` 自发挥 |
+| 角色/旁白试听 | 已绑且本镜开口 → `audio_url` + `role=reference_audio`；未绑则口播由 `generate_audio` 自发挥 |
 | 原生配音 | `generate_audio: true` |
 | 水印 | `watermark: false` |
 | 尾帧 | `return_last_frame: true` |
@@ -180,10 +182,9 @@
 
 1. 【强制约束：视频画面风格】  
 2. 【强制约束：音频、字幕与配乐】  
-3. 角色形象 / 场景 / 道具 → 参考图序号  
-4. 正文：`@asset` →「名称（参考图 N）」（正文已有同名则不叠写）；`@duration:N` → `00:00-00:04` 时间区间  
-
-（角色/旁白音色 → 参考音频：暂关）  
+3. 角色音色 / 旁白音色 → 参考音频序号（有绑定时）  
+4. 角色形象 / 场景 / 道具 → 参考图序号  
+5. 正文：`@asset` →「名称（参考图 N）」（正文已有同名则不叠写）；`@duration:N` → `00:00-00:04` 时间区间  
 
 分镜 cue：
 

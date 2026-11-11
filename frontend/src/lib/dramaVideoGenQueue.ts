@@ -2,7 +2,7 @@
 import { dramaApi, type DramaAsset } from '../api/drama'
 import type { VideoGenerationOptions } from './dramaVideoGenerationOptions'
 import { syncAssetVideoJobToUnified } from './dramaGenQueue'
-import { tr } from '../i18n/translate'
+import { tv } from '../i18n/tv'
 
 export type DramaVideoGenStatus = 'queued' | 'running' | 'done' | 'failed'
 
@@ -146,27 +146,44 @@ function isVideoMediaUrl(url: string | null | undefined): boolean {
   return Boolean(url && VIDEO_URL_RE.test(url))
 }
 
+/** 瞬时断连 / 后端热重载导致的 Failed to fetch，轮询时应重试而非判失败 */
+function isTransientFetchError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err || '')
+  return /failed to fetch|networkerror|load failed|connection reset|连接被重置|网络/i.test(msg)
+}
+
 // 轮询直到资产生视频结束（必须等到 mp4，不能把旧封面图当完成）
 async function waitForAssetVideo(projectId: number, assetId: number): Promise<DramaAsset> {
   const started = Date.now()
+  let transientStreak = 0
   while (Date.now() - started < POLL_TIMEOUT_MS) {
-    const list = await dramaApi.listAssets(projectId)
-    const latest = list.find((a) => a.id === assetId)
-    if (!latest) throw new Error(tr('lib.assetDoesExist'))
-    const status = readGenerationStatus(latest)
-    if (status === 'failed') {
-      const gen = (latest.params || {}).generation as { error?: string } | undefined
-      throw new Error(String(gen?.error || tr('lib.videoGenerationFailed')))
-    }
-    if (status === 'done' && latest.url) {
-      return latest
-    }
-    if (status !== 'generating' && isVideoMediaUrl(latest.url)) {
-      return latest
+    try {
+      const list = await dramaApi.listAssets(projectId)
+      transientStreak = 0
+      const latest = list.find((a) => a.id === assetId)
+      if (!latest) throw new Error(tv('资产不存在', 'Tài sản không tồn tại'))
+      const status = readGenerationStatus(latest)
+      if (status === 'failed') {
+        const gen = (latest.params || {}).generation as { error?: string } | undefined
+        throw new Error(String(gen?.error || tv('生视频失败', 'Tạo video thất bại')))
+      }
+      if (status === 'done' && latest.url) {
+        return latest
+      }
+      if (status !== 'generating' && status !== 'queued' && isVideoMediaUrl(latest.url)) {
+        return latest
+      }
+    } catch (err) {
+      if (isTransientFetchError(err) && transientStreak < 8) {
+        transientStreak += 1
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
+        continue
+      }
+      throw err
     }
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
   }
-  throw new Error(tr('lib.videoGenerationTimedOut'))
+  throw new Error(tv('生视频超时，请刷新后重试', 'Tạo video quá thời gian, vui lòng làm mới rồi thử lại'))
 }
 
 // 有限并发轮询后端结果
@@ -179,7 +196,7 @@ async function pollJob(job: InternalJob) {
     emit()
     job.resolve(asset)
   } catch (err) {
-    const message = err instanceof Error ? err.message : tr('lib.videoGenerationFailed')
+    const message = err instanceof Error ? err.message : tv('生视频失败', 'Tạo video thất bại')
     job.status = 'failed'
     job.error = message
     job.finishedAt = Date.now()
@@ -230,7 +247,7 @@ function startJob(job: InternalJob) {
       waitingPoll.push(job)
       pump()
     } catch (err) {
-      const message = err instanceof Error ? err.message : tr('lib.videoGenerationFailed')
+      const message = err instanceof Error ? err.message : tv('生视频失败', 'Tạo video thất bại')
       job.status = 'failed'
       job.error = message
       job.finishedAt = Date.now()
@@ -275,7 +292,7 @@ export function enqueueDramaVideoGen(input: EnqueueInput): Promise<DramaAsset> {
       id: makeJobId(),
       projectId: input.projectId,
       assetId: input.assetId,
-      assetName: (input.assetName || '').trim() || tr('lib.video', { inputAssetId: input.assetId }),
+      assetName: (input.assetName || '').trim() || tv(`视频 ${input.assetId}`, `Video ${input.assetId}`),
       prompt: input.prompt,
       options: input.options || {},
       referenceAssetIds: input.referenceAssetIds || [],
@@ -297,19 +314,23 @@ export function enqueueDramaVideoGen(input: EnqueueInput): Promise<DramaAsset> {
 export function resumeDramaVideoGensFromAssets(
   projectId: number,
   assets: DramaAsset[],
+  onAssetUpdate?: (asset: DramaAsset) => void,
 ): void {
   for (const asset of assets) {
     if (asset.project_id !== projectId) continue
     if ((asset.type || '').toLowerCase() !== 'video') continue
     const status = readGenerationStatus(asset)
-    if (status !== 'generating') continue
-    if (isDramaAssetVideoBusy(asset.id)) continue
+    if (status !== 'generating' && status !== 'queued') continue
+    // enqueue 会复用在途轮询；重新进入画布也需要接上完成结果。
     void enqueueDramaVideoGen({
       projectId,
       assetId: asset.id,
       assetName: asset.name || undefined,
       prompt: '',
       resumeOnly: true,
+    }).then((latest) => {
+      // 旧任务完成后的微任务不能覆盖刚开始的下一次生成。
+      if (!isDramaAssetVideoBusy(asset.id)) onAssetUpdate?.(latest)
     }).catch(() => {
       /* 面板会显示失败 */
     })

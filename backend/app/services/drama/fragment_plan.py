@@ -25,7 +25,9 @@ from app.services.drama.build_fragments import (
     build_character_binding,
     build_summary_character_lookup,
     _bindings_mentioned_in_text,
+    split_episode_content_into_scenes,
 )
+from app.services.drama.agents import MIN_EPISODE_CONTENT_CHARS
 from app.services.seedance_segments import is_production_meta_line
 from app.services.drama.fragment_asset_limit import (
     FRAGMENT_MAX_CHARACTERS,
@@ -35,6 +37,11 @@ from app.services.drama.fragment_asset_limit import (
 )
 from app.services.drama.fragment_budget import cap_llm_fragment_items, trim_episode_fragment_drafts
 from app.services.drama.fragment_content_duration import sum_fragment_content_duration_seconds
+from app.services.drama.fragment_dialogue import (
+    asset_names_by_id,
+    dialogue_coverage_insufficient,
+    timed_spoken_lines,
+)
 from app.services.drama.fragment_plan_prompt import (
     FRAGMENT_PLAN_SYSTEM_PROMPT,
     build_fragment_plan_user_prompt,
@@ -298,6 +305,7 @@ def normalize_llm_fragment_items(
         if str(getattr(a, "type", "") or "") in {"prop", "material", "none"}
     ]
     summary_lookup = build_summary_character_lookup(summary)
+    asset_names = asset_names_by_id(assets)
     # introduced 本剧已介绍角色（含更早分集）
     introduced: set[str] = set(already_introduced or ())
     drafts: list[dict[str, Any]] = []
@@ -385,6 +393,7 @@ def normalize_llm_fragment_items(
         used = 0
         # timed_blocks 本 LLM 镜内各行 (时长, 文本行)；超软/硬上限时拆成多条 Fragment
         timed_blocks: list[tuple[int, list[str]]] = []
+        has_spoken_lines = False
         inject_bindings = [*bindings, *prop_bindings]
         for line in lines:
             stripped = line.strip()
@@ -398,6 +407,14 @@ def normalize_llm_fragment_items(
                     formatted = _strip_subtitle_instruction(formatted)
                 if scene_asset_id and scene_name and scene_name in formatted and f"@asset:{scene_asset_id}" not in formatted:
                     formatted = formatted.replace(scene_name, f"@asset:{scene_asset_id} {scene_name}", 1)
+                spoken_blocks = timed_spoken_lines(formatted, asset_names)
+                if spoken_blocks is not None:
+                    has_spoken_lines = True
+                    timed_blocks.extend(
+                        (duration, [f"@duration:{duration}", text])
+                        for duration, text in spoken_blocks
+                    )
+                    continue
                 line_dur = _clamp_duration(_estimate_line_duration(formatted))
                 if line_dur <= 0:
                     continue
@@ -411,6 +428,7 @@ def normalize_llm_fragment_items(
         # 仅在单镜可容纳范围内按 LLM 时长缩段；超硬上限仍走拆镜逻辑
         if (
             llm_target > 0
+            and not has_spoken_lines
             and block_sum > llm_target
             and block_sum <= FRAGMENT_TOTAL_MAX
         ):
@@ -561,6 +579,38 @@ def normalize_llm_fragment_items(
     return drafts
 
 
+def llm_fragment_coverage_insufficient(
+    episode_body: str,
+    drafts: list[dict[str, Any]],
+    *,
+    assets: list[Any] | None = None,
+    check_dialogue: bool = True,
+) -> bool:
+    """
+    校验场次数量与源剧本主要口播覆盖，不足时回退规则切分。
+    短正文单场允许 1 镜；续拆时跳过已锁定口播的全量比对。
+    assets 用于还原台词中的引用；不设整集镜数上限。
+    """
+    body = (episode_body or "").strip()
+    if not body:
+        return False
+    compact = re.sub(r"\s+", "", body)
+    scenes = split_episode_content_into_scenes(body)
+    n = len(drafts)
+    # 多场：至少一场一镜
+    if len(scenes) >= 2 and n < len(scenes):
+        return True
+    if check_dialogue and dialogue_coverage_insufficient(body, drafts, assets=assets):
+        return True
+    if n >= 2:
+        return False
+    if len(scenes) >= 2:
+        return True
+    if len(compact) >= MIN_EPISODE_CONTENT_CHARS:
+        return True
+    return False
+
+
 async def plan_fragments_with_llm(
     *,
     episode_name: str,
@@ -646,6 +696,12 @@ async def plan_fragments_with_llm(
     if not drafts:
         raise RuntimeError("LLM 分镜规范化后为空")
     drafts = trim_episode_fragment_drafts(drafts)
+    if llm_fragment_coverage_insufficient(
+        episode_body, drafts, assets=assets, check_dialogue=not bool(locked)
+    ):
+        raise RuntimeError(
+            f"LLM 分镜覆盖不足（{len(drafts)} 条）：场次或主要对白缺失，将回退规则切分"
+        )
     logger.info(
         "LLM 分镜完成 episode=%s ep_no=%s fragments=%s introduced_before=%s locked=%s",
         episode_name,

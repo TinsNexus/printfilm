@@ -3,8 +3,7 @@ import { useEffect } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { AgentSkillPicker } from './AgentSkillPicker'
 import { useAgentSkillSelection } from '../../hooks/useAgentSkillSelection'
-import { useI18n } from '../../i18n'
-import { tr } from '../../i18n/translate'
+import { tv } from '../../i18n/tv'
 
 type FragmentPlanSkillModalProps = {
   open: boolean
@@ -18,13 +17,12 @@ type FragmentPlanSkillModalProps = {
 /** 覆盖分镜前让用户勾选 Skill */
 export function FragmentPlanSkillModal({
   open,
-  title = tr('planSkill.aiRePlanShots'),
+  title = tv('AI 重新分镜', 'AI chia lại phân cảnh'),
   message,
-  confirmText = tr('planSkill.startShotPlanning'),
+  confirmText = tv('开始分镜', 'Bắt đầu chia phân cảnh'),
   onCancel,
   onConfirm,
 }: FragmentPlanSkillModalProps) {
-  const { t: tx } = useI18n()
   const { skills, selectedIds, toggleSkill, selectAll, selectNone, uploadSkill, uploading, uploadError } =
     useAgentSkillSelection()
 
@@ -70,7 +68,7 @@ export function FragmentPlanSkillModal({
           </div>
         </div>
         <div className="pf-dialog-skill-block">
-          <div className="pf-dialog-skill-label">{tx('planSkill.skillsUseTime')}</div>
+          <div className="pf-dialog-skill-label">{tv("本次使用的 Skill", "Skill dùng lần này")}</div>
           <AgentSkillPicker
             skills={skills}
             selectedIds={selectedIds}
@@ -80,12 +78,12 @@ export function FragmentPlanSkillModal({
             onUpload={(file) => void uploadSkill(file)}
             uploading={uploading}
             uploadError={uploadError}
-            emptyText={tx('planSkill.skillsYetUploadMd')}
+            emptyText={tv("还没有 Skill，可上传 .md", "Chưa có Skill, có thể tải lên .md")}
           />
         </div>
         <div className="pf-dialog-actions">
           <button type="button" className="pf-dialog-btn pf-dialog-btn-ghost" onClick={onCancel}>
-            {tx('planSkill.cancel')}
+            {tv("取消", "Hủy")}
           </button>
           <button type="submit" className="pf-dialog-btn pf-dialog-btn-danger">
             {confirmText}

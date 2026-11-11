@@ -10,14 +10,13 @@ import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page";
-import { fenToYuan } from "@/lib/utils";
-import { formatDateTime, useI18n } from "@/i18n";
+import { points } from "@/lib/points";
+import { tr } from "../i18n/translate.ts";
 
 type ListRes = { items: AdminDramaProject[]; meta: PageMeta };
 
 /** 漫剧项目列表：点击进入二级详情页 */
 export function DramaProjectsPage() {
-  const { t: tx } = useI18n();
   const [page, setPage] = useState(1);
   const [q, setQ] = useState("");
   const [userId, setUserId] = useState<number | null>(null);
@@ -34,7 +33,7 @@ export function DramaProjectsPage() {
       if (assetsSeedStatus.trim()) params.set("assets_seed_status", assetsSeedStatus.trim());
       setData(await api<ListRes>(`/api/admin/drama-projects?${params}`));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : tx("dramaProjects.failedLoad"));
+      toast.error(err instanceof Error ? err.message : tr("dramaUi.loadFailed"));
     }
   }
 
@@ -45,13 +44,13 @@ export function DramaProjectsPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader description={tx("dramaProjects.dramaProjectsEpisodesAssets")} />
+      <PageHeader title={tr("dramaUi.projectsTitle")} description={tr("dramaUi.projectsDesc")} />
       <AdminFilterBar>
-        <Input placeholder={tx("dramaProjects.titleDescription")} value={q} onChange={(e) => setQ(e.target.value)} />
+        <Input placeholder={tr("dramaUi.titleDesc")} value={q} onChange={(e) => setQ(e.target.value)} />
         <AdminUserSearchSelect value={userId} onChange={(id) => setUserId(id)} />
-        <Input placeholder={tx("dramaProjects.summaryStatus")} value={summaryStatus} onChange={(e) => setSummaryStatus(e.target.value)} />
+        <Input placeholder={tr("dramaUi.summaryStatus")} value={summaryStatus} onChange={(e) => setSummaryStatus(e.target.value)} />
         <Input
-          placeholder={tx("dramaProjects.assetExtractionStatus")}
+          placeholder={tr("dramaUi.assetSeedStatus")}
           value={assetsSeedStatus}
           onChange={(e) => setAssetsSeedStatus(e.target.value)}
         />
@@ -64,7 +63,7 @@ export function DramaProjectsPage() {
             void load(1);
           }}
         >
-          {tx("dramaProjects.filter")}
+          {tr("dramaUi.filter")}
         </Button>
       </AdminFilterBar>
       <div className="admin-table-wrap">
@@ -72,14 +71,14 @@ export function DramaProjectsPage() {
           <thead>
             <tr>
               <th>ID</th>
-              <th>{tx("dramaProjects.title")}</th>
-              <th>{tx("dramaProjects.user")}</th>
-              <th>{tx("dramaProjects.episodes")}</th>
-              <th>{tx("dramaProjects.assets")}</th>
-              <th>{tx("dramaProjects.cost")}</th>
-              <th>{tx("dramaProjects.summary")}</th>
-              <th>{tx("dramaProjects.assetExtraction")}</th>
-              <th>{tx("dramaProjects.updated")}</th>
+              <th>{tr("dramaUi.colTitle")}</th>
+              <th>{tr("dramaUi.user")}</th>
+              <th>{tr("dramaUi.episodeCount")}</th>
+              <th>{tr("dramaUi.assets")}</th>
+              <th>{tr("dramaUi.cost")}</th>
+              <th>{tr("dramaUi.summary")}</th>
+              <th>{tr("dramaUi.assetExtraction")}</th>
+              <th>{tr("dramaUi.updatedAt")}</th>
               <th></th>
             </tr>
           </thead>
@@ -97,15 +96,15 @@ export function DramaProjectsPage() {
                 </td>
                 <td>{row.episode_count ?? 0}</td>
                 <td>{row.asset_count ?? 0}</td>
-                <td>¥{fenToYuan(row.charge_fen ?? 0)}</td>
+                <td>{points(row.charge_fen ?? 0)}</td>
                 <td className="text-xs text-[var(--admin-muted)]">{row.summary_status || "—"}</td>
                 <td className="text-xs text-[var(--admin-muted)]">{row.assets_seed_status || "—"}</td>
                 <td className="text-xs text-[var(--admin-muted)]">
-                  {row.updated_at ? formatDateTime(row.updated_at) : "—"}
+                  {row.updated_at ? new Date(row.updated_at).toLocaleString() : "—"}
                 </td>
                 <td>
                   <Button size="sm" variant="outline" asChild>
-                    <Link to={`/drama-projects/${row.id}`}>{tx("dramaProjects.details")}</Link>
+                    <Link to={`/drama-projects/${row.id}`}>{tr("dramaUi.details")}</Link>
                   </Button>
                 </td>
               </tr>
@@ -113,7 +112,7 @@ export function DramaProjectsPage() {
             {(data?.items.length ?? 0) === 0 ? (
               <tr>
                 <td colSpan={10} className="!text-center text-[var(--admin-muted)]">
-                  {tx("dramaProjects.projects")}
+                  {tr("dramaUi.noProjects")}
                 </td>
               </tr>
             ) : null}

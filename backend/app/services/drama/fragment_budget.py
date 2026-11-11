@@ -11,6 +11,8 @@ from app.services.drama.build_fragments import (
     FRAGMENT_DURATION_MAX,
     FRAGMENT_DURATION_MIN,
     FRAGMENT_TOTAL_MAX,
+    _coalesce_timed_blocks_to_budget,
+    _join_header_and_blocks,
     parse_fragment_timed_blocks,
     repair_fragment_timed_layout,
     split_overlong_fragment_content,
@@ -116,7 +118,11 @@ def _proportional_int_durations(
 
 
 def _rescale_fragment_duration_tags(content: str, target_sec: int) -> str:
-    """合并/压缩后保留多段 @duration，仅按比例缩放使合计等于 target_sec。"""
+    """
+    合并/压缩后保留多段 @duration，使合计等于 target_sec。
+    拍数过多（n * 最小秒 > 目标）时先合并相邻拍，避免缩放失败导致 tagged 虚高、
+    整集 trim 一路并成 1 镜。
+    """
     header, blocks = parse_fragment_timed_blocks(content)
     if not blocks:
         return content
@@ -124,19 +130,11 @@ def _rescale_fragment_duration_tags(content: str, target_sec: int) -> str:
     if current <= 0:
         return content
     target = max(FRAGMENT_DURATION_MIN, min(FRAGMENT_TOTAL_MAX, int(target_sec)))
-    new_durs = (
-        [min(FRAGMENT_DURATION_MAX, max(FRAGMENT_DURATION_MIN, d)) for d, _ in blocks]
-        if current == target
-        else _proportional_int_durations([d for d, _ in blocks], target)
-    )
-    rebuilt: list[str] = [*header]
-    for (_, rows), new_d in zip(blocks, new_durs):
-        for ln in rows:
-            if _DURATION_LINE.match(ln.strip()):
-                rebuilt.append(f"@duration:{new_d}")
-            else:
-                rebuilt.append(ln)
-    return "\n".join(rebuilt).strip()
+    if current == target and len(blocks) * FRAGMENT_DURATION_MIN <= target:
+        return content
+    # 拍数塞不下目标秒数时必须合并，不能只靠比例缩放（最小 3s/拍）
+    packed = _coalesce_timed_blocks_to_budget(blocks, target)
+    return _join_header_and_blocks(header, packed)
 
 
 def merge_fragment_drafts(
@@ -163,6 +161,10 @@ def merge_fragment_drafts(
             f"{content}\n@duration:{duration}".strip(),
             duration,
         )
+    # 以缩放后真实 tagged 为准，避免虚高秒数让 trim 继续合并到只剩 1 镜
+    actual = sum_fragment_content_duration_seconds(content)
+    if actual > 0:
+        duration = min(FRAGMENT_TOTAL_MAX, actual)
     return {
         "content": content,
         "duration_sec": duration,
@@ -219,26 +221,53 @@ def trim_episode_fragment_drafts(
     max_count: int = EPISODE_FRAGMENT_MAX,
     max_total_sec: int = EPISODE_DURATION_BUDGET_SEC,
 ) -> list[dict[str, Any]]:
-    """合并相邻短镜，使条数与总时长贴近短剧预算。"""
+    """
+    规范化整集分镜草稿：单镜压进硬上限；默认不设整集条数/总时长上限，
+    避免为凑 90s/6 镜把剧本内容合并丢掉。显式传入 max_count / max_total_sec > 0 时才合并。
+    """
     if not drafts:
         return drafts
     merged = [dict(d) for d in drafts]
 
-    while len(merged) > max_count:
-        idx = _pick_merge_index(merged)
-        if idx is None:
-            break
-        merged[idx] = merge_fragment_drafts(merged[idx], merged[idx + 1])
-        merged.pop(idx + 1)
+    # 先把单镜 tagged 压进硬上限
+    for i, draft in enumerate(merged):
+        tagged = draft_duration_sec(draft)
+        if tagged > FRAGMENT_TOTAL_MAX:
+            content = _rescale_fragment_duration_tags(str(draft.get("content") or ""), FRAGMENT_TOTAL_MAX)
+            merged[i] = {
+                **draft,
+                "content": content,
+                "duration_sec": min(
+                    FRAGMENT_TOTAL_MAX,
+                    draft_duration_sec({"content": content}) or FRAGMENT_TOTAL_MAX,
+                ),
+            }
 
-    while sum(draft_duration_sec(d) for d in merged) > max_total_sec and len(merged) > 1:
-        idx = _pick_merge_index(merged, compress=True)
-        if idx is None:
-            break
-        merged[idx] = merge_fragment_drafts(merged[idx], merged[idx + 1], compress=True)
-        merged.pop(idx + 1)
+    if max_count > 0:
+        while len(merged) > max_count:
+            idx = _pick_merge_index(merged)
+            if idx is None:
+                break
+            merged[idx] = merge_fragment_drafts(merged[idx], merged[idx + 1])
+            merged.pop(idx + 1)
 
-    # 合并后若单条仍超硬上限，按 @duration 再拆（极少见）
+    if max_total_sec > 0:
+        min_keep = max(1, (max_total_sec + FRAGMENT_TOTAL_MAX - 1) // FRAGMENT_TOTAL_MAX)
+        while (
+            sum(draft_duration_sec(d) for d in merged) > max_total_sec
+            and len(merged) > min_keep
+        ):
+            before = sum(draft_duration_sec(d) for d in merged)
+            idx = _pick_merge_index(merged, compress=True)
+            if idx is None:
+                break
+            merged[idx] = merge_fragment_drafts(merged[idx], merged[idx + 1], compress=True)
+            merged.pop(idx + 1)
+            after = sum(draft_duration_sec(d) for d in merged)
+            if after >= before:
+                break
+
+    # 单条仍超硬上限则再拆
     expanded: list[dict[str, Any]] = []
     for draft in merged:
         content = repair_fragment_timed_layout(
@@ -267,8 +296,8 @@ def trim_episode_fragment_drafts(
 
 
 def cap_llm_fragment_items(items: list[Any], max_items: int = EPISODE_FRAGMENT_MAX) -> list[Any]:
-    """LLM 返回过多条时，先合并 lines 再规范化，避免一集碎成十几镜。"""
-    if len(items) <= max_items:
+    """可选：LLM 返回过多条时合并 lines。max_items<=0 表示不截断，完整保留模型规划。"""
+    if max_items <= 0 or len(items) <= max_items:
         return items
     merged: list[dict[str, Any]] = [dict(x) for x in items if isinstance(x, dict)]
     while len(merged) > max_items:

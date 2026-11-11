@@ -79,14 +79,15 @@ def is_seedream_pro_model(model: str | None) -> bool:
         return False
     if "seedream-4" in mid or "4.5" in mid or "4-5" in mid:
         return False
-    if "lite" in mid:
+    if "lite" in mid or "flash" in mid:
         return False
-    if "kie-" in mid:
-        return False
-    if "5-0-pro" in mid or "5.0-pro" in mid or "seedream-5.0" in mid:
+    # 仅明确带 pro 的算 Pro；裸 seedream-5.0 是标准档
+    if "5-0-pro" in mid or "5.0-pro" in mid:
         return True
+    if mid in {"seedream-5.0", "seedream-5-0", "seedream-5", "seedream5.0", "seedream5"}:
+        return False
     if "seedream-5" in mid or "seedream/5" in mid:
-        return "lite" not in mid
+        return "pro" in mid
     # 未标明版本的 seedream 默认按 Pro
     return True
 
@@ -140,16 +141,26 @@ def resolve_seedream_model_endpoint(model_id: str | None) -> str:
     routed = resolve_upstream_model("image", logical_id)
     if routed:
         return routed
-    if mid in {"", "seedream-5.0", "seedream-5", "5.0"}:
-        return resolve_upstream_model("image", "seedream-5-0-pro") or settings.model_image or "seedream-5-0-pro"
+    if mid in {"", "5.0"}:
+        return (
+            resolve_upstream_model("image", "seedream-5.0-pro")
+            or settings.model_image
+            or "seedream-5.0-pro"
+        )
+    if mid in {"seedream-5.0", "seedream-5-0", "seedream-5", "seedream5.0", "seedream5"}:
+        return resolve_upstream_model("image", "seedream-5.0") or "seedream-5.0"
+    if mid in {"seedream-5.0-pro", "seedream-5-0-pro"}:
+        return resolve_upstream_model("image", "seedream-5.0-pro") or "seedream-5.0-pro"
+    if mid in {"seedream-5.0-flash", "seedream-5-0-flash"}:
+        return resolve_upstream_model("image", "seedream-5.0-flash") or "seedream-5.0-flash"
     if mid in {"seedream-4.5", "seedream-4", "4.5"}:
         return (
-            resolve_upstream_model("image", "seedream-4-5")
+            resolve_upstream_model("image", "seedream-4.5")
             or (settings.model_image_45 or "").strip()
             or settings.model_image
-            or "seedream-4-5"
+            or "seedream-4.5"
         )
-    return model_id or settings.model_image or "seedream-5-0-pro"
+    return model_id or settings.model_image or "seedream-5.0-pro"
 
 
 # 将清晰度 + 比例解析为 size；Pro / 紧凑模型自动降档

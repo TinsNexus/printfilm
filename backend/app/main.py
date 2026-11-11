@@ -6,16 +6,18 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.api import auth, billing, projects, tasks, templates, tools
-from app.api import api_keys as user_api_keys
-from app.api.v1 import router as v1_router
+from app.api import auth, billing, capabilities, creation, projects, tasks, templates, tools
+from app.api import teams, team_billing, team_content, team_edit_locks
 from app.api.admin import router as admin_router
 from app.api.drama import router as drama_router
 from app.config import get_settings
 from app.database import AsyncSessionLocal, engine, init_db
 from app.logging_setup import configure_logging
 from app.models import Template, User
+from app.openapi_docs import API_DESCRIPTION, OPENAPI_TAGS, build_openapi
+from app.startup_database_retry import run_database_startup_steps
 from app.services.tasks.runtime import runtime_summary, start_task_runtime, stop_task_runtime
 from app.services.templates_seed import TEMPLATES
 
@@ -24,7 +26,48 @@ settings = get_settings()
 configure_logging(level="INFO", sql_echo=settings.sql_echo)
 logger = logging.getLogger("app.http")
 
-app = FastAPI(title=settings.app_name, version="0.2.0")
+app = FastAPI(
+    title=settings.app_name,
+    version="0.2.0",
+    summary="AI 视频创作平台接口",
+    description=API_DESCRIPTION,
+    openapi_tags=OPENAPI_TAGS,
+    swagger_ui_parameters={"docExpansion": "none", "filter": True, "displayRequestDuration": True},
+)
+
+
+def chinese_openapi() -> dict:
+    """为 Swagger、ReDoc 和 OpenAPI JSON 提供统一的中文元数据。"""
+    return build_openapi(app)
+
+
+app.openapi = chinese_openapi
+
+from app.wallet_cutover_middleware import middleware as wallet_cutover_middleware
+app.middleware("http")(wallet_cutover_middleware)
+
+
+@app.middleware("http")
+async def media_price_context(request: Request, call_next):
+    from app.services.media_models.prices import expected_price_version
+    from fastapi.responses import JSONResponse
+    raw = request.headers.get("X-Media-Price-Version")
+    if raw is not None and (not raw.isdigit() or len(raw) > 18):
+        return JSONResponse(status_code=422, content={"detail": "无效的媒体价格版本"})
+    token = expected_price_version.set(int(raw) if raw is not None else None)
+    try:
+        return await call_next(request)
+    finally:
+        expected_price_version.reset(token)
+
+
+from app.services.media_models import MediaValidationError
+
+
+@app.exception_handler(MediaValidationError)
+async def media_validation_error(_request, exc):
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=422, content={"detail": [{"loc": ["body", exc.field], "msg": str(exc), "type": "media_parameter"}]})
 
 origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 # Allow LAN devices (phone/tablet) hitting Vite on private IPs
@@ -49,7 +92,8 @@ app.add_middleware(
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     # 业务可读请求日志（跳过静态资源；高频轮询默认不打）
-    path = request.url.path
+    from app.marketplace.app_logging import safe_request_path
+    path = safe_request_path(request.url.path)
     started = time.perf_counter()
     response = await call_next(request)
     elapsed_ms = (time.perf_counter() - started) * 1000
@@ -83,35 +127,77 @@ static_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 app.include_router(auth.router, prefix="/api")
+app.include_router(capabilities.router, prefix="/api")
 app.include_router(templates.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
+app.include_router(creation.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
 app.include_router(billing.router, prefix="/api")
 app.include_router(tools.router, prefix="/api")
-app.include_router(user_api_keys.router, prefix="/api")
-app.include_router(v1_router, prefix="/api")
 app.include_router(drama_router, prefix="/api")
+app.include_router(teams.router, prefix="/api")
+app.include_router(teams.invitation_router, prefix="/api")
+app.include_router(team_billing.router, prefix="/api")
+app.include_router(team_content.router, prefix="/api")
+app.include_router(team_content.personal_router, prefix="/api")
+app.include_router(team_edit_locks.router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
 
+# 下游扩展仅注册独立路由和初始化，不改变原发布、生成及存储逻辑。
+from app.marketplace.bootstrap import install as install_marketplace
+install_marketplace(app)
 
-@app.on_event("startup")
-async def on_startup() -> None:
-    await init_db()
-    await _apply_schema_patches()
+
+async def _load_startup_model_settings() -> None:
     async with AsyncSessionLocal() as db:
         from app.services.model_settings import load_model_settings_cache
 
         await load_model_settings_cache(db)
-    await seed_templates()
-    await bootstrap_admins()
-    await seed_agent_skills()
+
+
+@app.on_event("startup")
+async def on_startup() -> None:
+    """限时完成数据库和附属服务。任何一步失败或超时都继续监听，避免健康检查把预发判死。"""
+    import asyncio
+
+    database_steps = (_load_startup_model_settings,)
+    seed_steps: tuple = ()
+    if settings.database_bootstrap_enabled:
+        database_steps = (
+            init_db,
+            _apply_schema_patches,
+            _load_startup_model_settings,
+        )
+        seed_steps = (seed_templates, bootstrap_admins, seed_agent_skills)
+    else:
+        logger.info("Database bootstrap disabled; loading model settings from the existing database")
+
+    async def run_step(label: str, awaitable, timeout: float) -> None:
+        """单步失败或超时后释放卡住的连接，不阻止后续启动。"""
+        try:
+            await asyncio.wait_for(awaitable, timeout)
+        except Exception:
+            logger.exception("%s失败或超时，API 继续监听", label)
+            try:
+                await engine.dispose()
+            except Exception:
+                logger.exception("释放数据库连接失败")
+
+    await run_step("数据库启动", run_database_startup_steps(database_steps, dispose=engine.dispose), 60)
+    if seed_steps:
+        await run_step("模板与管理员初始化", run_database_startup_steps(seed_steps, dispose=engine.dispose), 600)
     try:
         from app.services import oss as oss_svc
 
         oss_svc.ensure_browser_cors()
     except Exception:  # noqa: BLE001
-        pass
-    await start_task_runtime()
+        logger.exception("OSS CORS 设置失败")
+    from app.marketplace.app_bootstrap import start_app_services
+    await run_step("App 服务启动", start_app_services(), 15)
+    await run_step("任务运行时启动", start_task_runtime(), 15)
+    from app.marketplace.bootstrap import apply_marketplace_switch
+    # 补列完成后再按系统设置建市场表并启动 Worker。关闭时不建表。
+    await run_step("数字资产市场启动", apply_marketplace_switch(), 20)
 
 
 @app.on_event("shutdown")
@@ -119,7 +205,13 @@ async def on_shutdown() -> None:
     """Release Postgres pool on uvicorn worker exit."""
     from app.database import dispose_engine
 
+    from app.marketplace.runtime import stop_marketplace_runtime
+    from app.marketplace.app_bootstrap import stop_app_services
+    await stop_app_services()
+    await stop_marketplace_runtime()
     await stop_task_runtime()
+    from app.wallet_cutover_middleware import _engine as cutover_engine
+    await cutover_engine.dispose()
     await dispose_engine()
 
 
@@ -135,9 +227,22 @@ async def _pg_columns(conn, table: str) -> set[str]:
     return {row[0] for row in result.fetchall()}
 
 
-async def _apply_schema_patches() -> None:
+async def _apply_schema_patches(engine_override: AsyncEngine | None = None) -> None:
     """Lightweight additive migrations（仅 PostgreSQL）。"""
-    async with engine.begin() as conn:
+    target_engine = engine_override if engine_override is not None else engine
+    async with target_engine.begin() as conn:
+        # 现有 SQLite 测试库由 create_all 建表；以下补列只适用于 PostgreSQL。
+        if conn.dialect.name != "postgresql":
+            return
+        # 补列拿不到锁时尽快失败并在下次启动重试，避免一直占着启动过程。
+        await conn.execute(text("SET LOCAL lock_timeout = '5s'"))
+        from app.team_schema import apply_team_schema_patches
+
+        await apply_team_schema_patches(conn)
+        from app.media_schema import apply_media_schema_patches
+        await apply_media_schema_patches(conn)
+        from app.payment_schema import apply_payment_schema_patches
+        await apply_payment_schema_patches(conn)
         scols = await _pg_columns(conn, "shots")
         if "segment_script" not in scols:
             await conn.execute(text("ALTER TABLE shots ADD COLUMN segment_script TEXT DEFAULT ''"))
@@ -149,6 +254,11 @@ async def _apply_schema_patches() -> None:
         pcols = await _pg_columns(conn, "projects")
         if "pipeline_mode" not in pcols:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN pipeline_mode VARCHAR(32) DEFAULT 'full'"))
+        if "creation_session_id" not in pcols:
+            await conn.execute(text("ALTER TABLE projects ADD COLUMN creation_session_id INTEGER"))
+        if "target_duration_sec" not in pcols:
+            await conn.execute(text("ALTER TABLE projects ADD COLUMN target_duration_sec INTEGER DEFAULT 60"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_projects_creation_session_id ON projects (creation_session_id)"))
         if "output_ratio" not in pcols:
             await conn.execute(text("ALTER TABLE projects ADD COLUMN output_ratio VARCHAR(16) DEFAULT ''"))
         if "voice_id" not in pcols:
@@ -185,12 +295,19 @@ async def _apply_schema_patches() -> None:
             await conn.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR(16) DEFAULT 'user'"))
         if "avatar_url" not in ucols:
             await conn.execute(text("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(512) DEFAULT ''"))
+        asset_cols = await _pg_columns(conn, "marketplace_assets")
+        if asset_cols and "display_width" not in asset_cols:
+            await conn.execute(text("ALTER TABLE marketplace_assets ADD COLUMN display_width INTEGER"))
+        if asset_cols and "display_height" not in asset_cols:
+            await conn.execute(text("ALTER TABLE marketplace_assets ADD COLUMN display_height INTEGER"))
         if "phone" not in ucols:
             await conn.execute(text("ALTER TABLE users ADD COLUMN phone VARCHAR(32) DEFAULT ''"))
         if "billing_alert_last_milestone_fen" not in ucols:
             await conn.execute(
                 text("ALTER TABLE users ADD COLUMN billing_alert_last_milestone_fen INTEGER DEFAULT 0")
             )
+        if "closed_at" not in ucols:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN closed_at TIMESTAMPTZ NULL"))
 
         # UsageEvent.drama_project_id for drama module billing
         uecols = await _pg_columns(conn, "usage_events")
@@ -205,6 +322,20 @@ async def _apply_schema_patches() -> None:
 
         # Task platform additive columns
         trcols = await _pg_columns(conn, "task_runs")
+        if "queue_type" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN queue_type VARCHAR(16) NOT NULL DEFAULT 'text'"))
+            await conn.execute(text("""
+                UPDATE task_runs SET queue_type = CASE
+                    WHEN task_type = 'project_pipeline' AND payload->>'phase' = 'assets' THEN 'image'
+                    WHEN task_type = 'project_pipeline' AND payload->>'phase' IN ('videos', 'compose', 'produce') THEN 'video'
+                    WHEN task_type LIKE '%video%' OR task_type IN ('v1_seedance', 'project_compose_only') THEN 'video'
+                    WHEN task_type LIKE '%image%' THEN 'image'
+                    ELSE 'text' END
+            """))
+        if "provider_name" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN provider_name VARCHAR(64)"))
+        if "provider_status" not in trcols:
+            await conn.execute(text("ALTER TABLE task_runs ADD COLUMN provider_status VARCHAR(32)"))
         if "dedupe_key" not in trcols:
             await conn.execute(text("ALTER TABLE task_runs ADD COLUMN dedupe_key VARCHAR(128)"))
         if "batch_key" not in trcols:
@@ -229,6 +360,7 @@ async def _apply_schema_patches() -> None:
             await conn.execute(text("ALTER TABLE task_runs ADD COLUMN billing_refunded_fen INTEGER DEFAULT 0"))
         if "billing_status" not in trcols:
             await conn.execute(text("ALTER TABLE task_runs ADD COLUMN billing_status VARCHAR(16) DEFAULT 'none'"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_task_runs_queue_due ON task_runs (queue_type, status, next_action_at, priority, id)"))
 
         # Drop leftover worker-era columns that block the new task platform.
         legacy_task_run_cols = (
@@ -247,6 +379,65 @@ async def _apply_schema_patches() -> None:
                 continue
             await conn.execute(text(f"DROP INDEX IF EXISTS ix_task_runs_{col}"))
             await conn.execute(text(f"ALTER TABLE task_runs DROP COLUMN {col}"))
+
+        # Marketplace additive columns. The marketplace bootstrap creates new tables;
+        # these columns keep existing work drafts compatible with the new sale modes.
+        mcols = await _pg_columns(conn, "marketplace_works")
+        if mcols:
+            if "sale_type" not in mcols:
+                await conn.execute(text("ALTER TABLE marketplace_works ADD COLUMN sale_type VARCHAR(24) DEFAULT 'copyright_contact'"))
+            if "unlock_price_fen" not in mcols:
+                await conn.execute(text("ALTER TABLE marketplace_works ADD COLUMN unlock_price_fen BIGINT DEFAULT 0"))
+            if "share_bps" not in mcols:
+                await conn.execute(text("ALTER TABLE marketplace_works ADD COLUMN share_bps INTEGER"))
+            if "deleted_at" not in mcols:
+                await conn.execute(text("ALTER TABLE marketplace_works ADD COLUMN deleted_at TIMESTAMPTZ"))
+
+        # The marketplace tables are intentionally created from their own metadata,
+        # but create_all() does not alter tables from an earlier deployment.  Keep
+        # upgrades additive and idempotent so a server can be restarted against an
+        # existing database without a manual migration step.  Defaults make these
+        # additions safe for historical rows; newly written records still use the
+        # ORM defaults and publication snapshots remain immutable.
+        marketplace_columns: dict[str, dict[str, str]] = {
+            "marketplace_series": {
+                "sale_type": "VARCHAR(24) DEFAULT 'copyright_contact'",
+                "copyright_price_fen": "BIGINT DEFAULT 0",
+                "share_bps": "INTEGER",
+                "free_episode_count": "INTEGER NOT NULL DEFAULT 0",
+                "deleted_at": "TIMESTAMPTZ",
+            },
+            "marketplace_series_episodes": {
+                "source": "VARCHAR(30) NOT NULL DEFAULT 'external'",
+                "preview_status": "VARCHAR(24) DEFAULT 'none'",
+                "preview_key": "VARCHAR(512)",
+                "preview_attempts": "INTEGER DEFAULT 0",
+                "playback_status": "VARCHAR(24) DEFAULT 'none'",
+                "playback_manifest_key": "VARCHAR(512)",
+                "playback_attempts": "INTEGER DEFAULT 0",
+            },
+            "marketplace_publications": {
+                "preview_key": "VARCHAR(512)",
+                "preview_status": "VARCHAR(24) DEFAULT 'pending'",
+                "preview_attempts": "INTEGER DEFAULT 0",
+                "preview_error": "TEXT DEFAULT ''",
+                "playback_manifest_key": "VARCHAR(512)",
+                "playback_status": "VARCHAR(24) DEFAULT 'pending'",
+                "playback_attempts": "INTEGER DEFAULT 0",
+                "playback_error": "TEXT DEFAULT ''",
+            },
+        }
+        for table, additions in marketplace_columns.items():
+            columns = await _pg_columns(conn, table)
+            # A missing table is expected on a first boot before marketplace's
+            # startup handler runs create_all(); simply let that handler create it.
+            if not columns:
+                continue
+            for column, definition in additions.items():
+                if column not in columns:
+                    await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}"))
+        from app.marketplace.locale_schema import ensure_locale_columns
+        await conn.run_sync(ensure_locale_columns)
 
 
 async def bootstrap_admins() -> None:
@@ -315,7 +506,13 @@ async def seed_templates() -> None:
         await db.commit()
 
 
-@app.get("/api/health")
+@app.get(
+    "/api/health",
+    tags=["系统状态"],
+    summary="查看服务健康摘要",
+    description="无需登录。返回应用名称、模型配置摘要、数据库连接池和任务运行时状态；ok 表示任务运行时是否健康。此接口不会执行数据库业务读写或模型调用，不能代替业务接口验收。",
+    response_description="应用配置与任务运行时健康摘要，即使 ok 为 false 仍返回 HTTP 200。",
+)
 async def health() -> dict:
     from app.config import reload_settings
 

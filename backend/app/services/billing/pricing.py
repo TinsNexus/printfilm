@@ -16,6 +16,16 @@ SKUS: list[dict[str, Any]] = [
 
 ORDER_EXPIRE_SECONDS = 300
 
+# Fixed retail USD prices; never derive these from an accounting FX rate.
+USD_TOPUP_PRICES = {"topup_10": 1499, "topup_49": 6999, "topup_99": 13999, "topup_199": 27999}
+
+
+def topup_prices(sku: dict) -> dict[str, int]:
+    prices = {"CNY": int(sku["amount_fen"])}
+    if sku["id"] in USD_TOPUP_PRICES:
+        prices["USD"] = USD_TOPUP_PRICES[sku["id"]]
+    return prices
+
 # Kie 1 credit ≈ $0.005；按约 7 CNY/USD 折合 ¥0.035 ≈ 3.5 分（可配置）
 DEFAULT_KIE_FEN_PER_CREDIT = 3.5
 
@@ -107,7 +117,7 @@ def parse_upstream_cost_fen(
     data: dict[str, Any] | None,
     settings: Settings | None = None,
 ) -> int | None:
-    """从 New API quota / 火山 usage / Kie credits 解析上游成本（分）；无则 None。"""
+    """从 New API quota / 火山 usage 解析上游成本（分）；无则 None。"""
     if not data:
         return None
     usage = data.get("usage") if isinstance(data.get("usage"), dict) else data
@@ -140,13 +150,6 @@ def parse_upstream_cost_fen(
                 return max(0, int(math.ceil(float(usage[key]) * 100)))
             except (TypeError, ValueError):
                 pass
-    # Kie：任务级 creditsConsumed（usage 内或顶层）
-    credits = usage.get("creditsConsumed")
-    if credits is None:
-        credits = data.get("creditsConsumed")
-    converted = kie_credits_to_cost_fen(credits, settings)
-    if converted is not None:
-        return converted
     return None
 
 
@@ -183,11 +186,38 @@ def charge_fen_for_usage(
     生图无 quota 时：按张官方价，避免 8 元/百万 token 低估约十倍。
     """
     s = settings or get_settings()
+    # 视频：优先官方表达式（常按 tokens）或清晰度×时长；有 New API quota 时走账单额度。
+    if not _raw_has_newapi_quota(raw_usage):
+        video_fen, video_basis = _video_resolution_duration_fen(
+            billing_key,
+            raw_usage=raw_usage,
+            settings=s,
+            model=model,
+            tokens=tokens,
+        )
+        if video_fen is not None and video_fen > 0:
+            if video_basis and isinstance(raw_usage, dict):
+                raw_usage["billing_basis"] = video_basis
+            charge = user_charge_fen(video_fen, s)
+            return video_fen, charge, False
     upstream_cost = parse_upstream_cost_fen(raw_usage, settings=s)
     if upstream_cost is not None and upstream_cost > 0:
         cost = upstream_cost
         charge = user_charge_fen(cost, s)
         return cost, charge, True
+    verified, basis = _verified_rule_fen(
+        tokens,
+        billing_key,
+        raw_usage=raw_usage,
+        settings=s,
+        model=model,
+        size=size,
+    )
+    if verified is not None and verified > 0:
+        if basis and isinstance(raw_usage, dict):
+            raw_usage["billing_basis"] = basis
+        charge = user_charge_fen(verified, s)
+        return verified, charge, False
     if (billing_key or "").strip() == "seedream":
         catalog = _catalog_image_fen_if_per_call(
             s, model, size=size or _image_size_from_raw(raw_usage)
@@ -199,8 +229,171 @@ def charge_fen_for_usage(
     return cost, charge, False
 
 
+def _usage_block(raw_usage: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(raw_usage, dict):
+        return {}
+    usage = raw_usage.get("usage") if isinstance(raw_usage.get("usage"), dict) else {}
+    merged = dict(usage)
+    for key in (
+        "seconds",
+        "duration",
+        "duration_sec",
+        "resolution",
+        "size",
+        "image_size",
+        "input_video_seconds",
+        "audio_characters",
+        "image_count",
+        "results",
+        "tier",
+        "tokens",
+        "total_tokens",
+    ):
+        if raw_usage.get(key) is not None and merged.get(key) is None:
+            merged[key] = raw_usage.get(key)
+    # 统一给表达式 u("tokens") 用
+    if not merged.get("tokens"):
+        for key in ("total_tokens", "completion_tokens"):
+            try:
+                n = int(merged.get(key) or 0)
+            except (TypeError, ValueError):
+                n = 0
+            if n > 0:
+                merged["tokens"] = n
+                break
+    return merged
+
+
+def _raw_has_newapi_quota(raw_usage: dict[str, Any] | None) -> bool:
+    """单次响应里是否带了 New API 消耗额度。"""
+    if not isinstance(raw_usage, dict):
+        return False
+    usage = raw_usage.get("usage") if isinstance(raw_usage.get("usage"), dict) else {}
+    return _extract_newapi_quota(raw_usage, usage if isinstance(usage, dict) else {}) is not None
+
+
+def _is_video_billing(billing_key: str, model: str) -> bool:
+    """是否按视频秒价结算。"""
+    key = (billing_key or "").strip().lower()
+    mid = (model or "").strip().lower()
+    if key.startswith("seedance"):
+        return True
+    return any(token in mid for token in ("seedance", "minimax", "wan", "veo", "kling", "hailuo", "video"))
+
+
+def _fact_seconds(facts: dict[str, Any]) -> float:
+    """从用量里取片长（秒）。"""
+    for key in ("seconds", "duration", "duration_sec"):
+        try:
+            value = float(facts.get(key) or 0)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            return value
+    return 0.0
+
+
+def _video_has_official_expr(model: str) -> bool:
+    """价目是否有可核实的视频表达式（秒或 tokens）。"""
+    from app.services.tokenfree_pricing import canonicalize_channel_model_id, lookup_rate
+
+    rate = lookup_rate(model)
+    if rate is None:
+        mapped = canonicalize_channel_model_id(model)
+        rate = lookup_rate(mapped) if mapped else None
+    return bool(rate and rate.billing_expr)
+
+
+def _video_resolution_duration_fen(
+    billing_key: str,
+    *,
+    raw_usage: dict[str, Any] | None,
+    settings: Settings,
+    model: str,
+    tokens: int = 0,
+) -> tuple[int | None, str]:
+    """视频实扣：官方表达式（tokens/秒）或清晰度秒价 × 时长。没有片长时返回 (None, '')。"""
+    if not _is_video_billing(billing_key, model):
+        return None, ""
+    facts = _usage_block(raw_usage)
+    seconds = _fact_seconds(facts)
+    if seconds <= 0:
+        return None, ""
+    from app.services.tokenfree_pricing import charge_fen_official_video, normalize_video_resolution
+
+    resolution = normalize_video_resolution(str(facts.get("resolution") or ""), settings)
+    try:
+        usage_tokens = int(facts.get("tokens") or 0)
+    except (TypeError, ValueError):
+        usage_tokens = 0
+    tok = usage_tokens or int(tokens or 0)
+    fen = charge_fen_official_video(
+        seconds,
+        settings,
+        model=model,
+        resolution=resolution,
+        tokens=tok if tok > 0 else None,
+    )
+    if fen <= 0:
+        return None, ""
+    basis = "official_rule" if _video_has_official_expr(model) else ""
+    return fen, basis
+
+
+def _verified_rule_fen(
+    tokens: int,
+    billing_key: str,
+    *,
+    raw_usage: dict[str, Any] | None,
+    settings: Settings,
+    model: str,
+    size: str,
+) -> tuple[int | None, str]:
+    """用价目规则报价。返回 (分, basis)；对不上价目时分是本地回退且 basis 为空。"""
+    from app.services.billingexpr import quote_verified_charge_fen
+
+    facts = _usage_block(raw_usage)
+    parsed = parse_usage_dict(raw_usage)
+    prompt = int(parsed.get("prompt_tokens") or 0)
+    completion = int(parsed.get("completion_tokens") or 0)
+    if size and not facts.get("resolution"):
+        facts["resolution"] = size
+    if facts.get("resolution"):
+        facts["resolution"] = str(facts["resolution"]).strip().lower()
+    key = (billing_key or "").strip()
+    if (key.startswith("seedance") or "video" in (model or "").lower()) and not facts.get("resolution"):
+        from app.services.tokenfree_pricing import normalize_video_resolution
+
+        facts["resolution"] = normalize_video_resolution("", settings)
+    quoted = quote_verified_charge_fen(
+        model=model,
+        prompt=prompt,
+        completion=completion,
+        total=int(tokens or 0),
+        usage=facts,
+        settings=settings,
+    )
+    if quoted is not None and quoted > 0:
+        return quoted, "official_rule"
+    if key.startswith("seedance") or "video" in (model or "").lower():
+        from app.services.tokenfree_pricing import charge_fen_official_video, normalize_video_resolution
+
+        try:
+            secs = float(facts.get("seconds") or 0)
+        except (TypeError, ValueError):
+            secs = 0
+        if secs > 0:
+            res = normalize_video_resolution(str(facts.get("resolution") or ""), settings)
+            return charge_fen_official_video(secs, settings, model=model, resolution=res), ""
+    return None, ""
+
+
 def _catalog_image_fen_if_per_call(settings: Settings, model: str, *, size: str = "") -> int | None:
-    """gpt-image / Seedream 按张价；token 计价模型返回 None。"""
+    """gpt-image / Seedream 按张价。
+
+    Seedream 在 TokenFree 价目里常标成 token/表达式，但 /responses 经常回 0 token；
+    此时仍走官方生图价（images_* 表达式或保底），禁止落到 0 元。
+    """
     from app.services.tokenfree_image import is_seedream_family, tokenfree_working_image_model
     from app.services.tokenfree_pricing import charge_fen_official_image, lookup_rate, resolve_billing_image_size
 
@@ -209,12 +402,15 @@ def _catalog_image_fen_if_per_call(settings: Settings, model: str, *, size: str 
     if not mid:
         mid = "gpt-image-2"
     rate = lookup_rate(mid)
-    if rate and rate.billing == "token":
+    # 纯 token 模型（非 Seedream 族）无 token 时不要误用按张表
+    if rate and rate.billing == "token" and not (
+        is_seedream_family(raw) or "seedream" in mid.lower()
+    ):
         return None
     resolved = resolve_billing_image_size(settings, model=raw, size=size)
     if rate and rate.billing == "per_call" and rate.cny_per_call > 0:
         return charge_fen_official_image(settings, model=mid, size=resolved)
-    if is_seedream_family(raw) or "gpt-image" in mid.lower():
+    if is_seedream_family(raw) or "gpt-image" in mid.lower() or "seedream" in mid.lower():
         return charge_fen_official_image(settings, model=mid, size=resolved)
     return None
 
@@ -253,13 +449,6 @@ def billing_key_label(billing_key: str) -> str:
     cap = billing_key_to_capability(billing_key)
     labels = {"llm": "LLM 对话", "image": "图片生成", "video": "视频生成", "tts": "语音合成"}
     return labels.get(cap, billing_key or "其他")
-
-
-def billing_model_rate_rows(settings: Settings | None = None) -> list[dict[str, Any]]:
-    """管理端展示：推荐模型走 TokenFree /api/pricing；无缓存时仍列出短名单。"""
-    from app.services.tokenfree_pricing import build_official_rate_rows, cached_rates
-
-    return build_official_rate_rows(cached_rates(), settings)
 
 
 def sku_by_id(sku_id: str) -> dict[str, Any] | None:

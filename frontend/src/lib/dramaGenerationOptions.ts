@@ -1,7 +1,7 @@
 /** 漫剧生图：模型 / 比例 / 清晰度选项（模型列表与参数来自后台 TokenFree 目录） */
 
 import type { MediaModelOption, MediaModelsCatalog } from '../api'
-import { tr } from '../i18n/translate'
+import { tv } from '../i18n/tv'
 
 export type ImageGenerationModelId = string
 
@@ -35,7 +35,7 @@ export const GENERATION_ASPECT_RATIO_OPTIONS: Array<{
   id: GenerationAspectRatioId
   label: string
 }> = [
-  { id: 'auto', get label() { return tr('lib.auto') } },
+  { id: 'auto', label: tv('自动', 'Tự động') },
   { id: '16:9', label: '16:9' },
   { id: '21:9', label: '21:9' },
   { id: '9:16', label: '9:16' },
@@ -69,19 +69,40 @@ export function defaultOptionsForAssetKind(kind: string | undefined | null): Ima
   return { ...DEFAULT_IMAGE_GENERATION_OPTIONS }
 }
 
+const ASPECT_RATIO_IDS = new Set(GENERATION_ASPECT_RATIO_OPTIONS.map((o) => o.id))
+
+/** 从节点/资产 params 读取已保存的生图选项（非法字段回退默认） */
+export function readImageGenerationOptions(
+  raw: Record<string, unknown> | null | undefined,
+  kind?: string | null,
+): ImageGenerationOptions {
+  const defaults = defaultOptionsForAssetKind(kind)
+  if (!raw || typeof raw !== 'object') return { ...defaults }
+  const modelId = typeof raw.model_id === 'string' ? raw.model_id.trim() : ''
+  const aspect = String(raw.aspect_ratio || '').trim() as GenerationAspectRatioId
+  const resolution = String(raw.resolution || '').trim() as GenerationResolution
+  const styleId = typeof raw.image_style_id === 'string' ? raw.image_style_id.trim() : ''
+  return {
+    model_id: modelId || defaults.model_id,
+    aspect_ratio: ASPECT_RATIO_IDS.has(aspect) ? aspect : defaults.aspect_ratio,
+    resolution: GENERATION_RESOLUTION_OPTIONS.includes(resolution) ? resolution : defaults.resolution,
+    image_style_id: styleId || defaults.image_style_id,
+  }
+}
+
 /** 格式化比例·清晰度触发文案 */
 export function formatOutputSettingsLabel(
   aspectRatio: GenerationAspectRatioId,
   resolution: GenerationResolution,
 ): string {
-  if (aspectRatio === 'auto') return tr('lib.auto2', { resolution })
+  if (aspectRatio === 'auto') return tv(`自动 · ${resolution}`, `Tự động · ${resolution}`)
   return `${aspectRatio} · ${resolution}`
 }
 
 /** 解析模型展示名（无目录时回退 id） */
 export function getImageModelLabel(modelId: string | undefined | null): string {
   const id = (modelId || '').trim()
-  return id || tr('lib.imageModel')
+  return id || tv('图片模型', 'Model hình ảnh')
 }
 
 /** 任意非空字符串均可作为生图模型 id */
@@ -106,7 +127,8 @@ export function resolutionsForImageModel(
   imageModels?: MediaModelOption[],
 ): GenerationResolution[] {
   const row = findImageModelRow(modelId, catalog, imageModels)
-  const raw = row?.allowed_resolutions
+  const raw = row?.available_resolutions ?? row?.allowed_resolutions
+  if (Array.isArray(raw) && raw.length === 0) return []
   if (Array.isArray(raw) && raw.length > 0) {
     const filtered = raw.filter((r): r is GenerationResolution =>
       GENERATION_RESOLUTION_OPTIONS.includes(r as GenerationResolution),

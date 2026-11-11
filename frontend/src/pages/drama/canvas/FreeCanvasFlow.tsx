@@ -4,6 +4,7 @@ import {
   Background,
   MiniMap,
   ReactFlow,
+  SelectionMode,
   useReactFlow,
   type Connection,
   type Edge,
@@ -71,22 +72,29 @@ export function FreeCanvasFlow({ projectId }: FreeCanvasFlowProps) {
     setPaneAddMenu(null)
   }, [])
 
-  /** 空白处双击：在落点弹出新建节点菜单 */
+  /** 空白处双击：在落点弹出新建节点菜单（需关闭 zoomOnDoubleClick） */
   const handlePaneDoubleClick = useCallback(
     (event: MouseEvent) => {
       const target = event.target as HTMLElement | null
       if (!target) return
       if (
         target.closest(
-          '.react-flow__node, .react-flow__edge, .react-flow__controls, .react-flow__minimap, .fc-pane-add-menu, .fc-generate-panel, button, input, textarea, [contenteditable="true"]',
+          '.react-flow__node, .react-flow__edge, .react-flow__handle, .react-flow__controls, .react-flow__minimap, .fc-pane-add-menu, .fc-generate-panel, .fc-asset-node, button, input, textarea, a, [contenteditable="true"]',
         )
       ) {
         return
       }
-      if (!target.closest('.react-flow__pane') && !target.closest('.react-flow__viewport')) {
+      // pane / background / viewport 空白都算
+      if (
+        !target.closest('.react-flow__pane') &&
+        !target.closest('.react-flow__viewport') &&
+        !target.closest('.react-flow__background') &&
+        !target.classList.contains('free-canvas-flow')
+      ) {
         return
       }
       event.preventDefault()
+      event.stopPropagation()
       const flow = screenToFlowPosition({ x: event.clientX, y: event.clientY })
       setPaneAddMenu({
         screen: { x: event.clientX, y: event.clientY },
@@ -157,6 +165,8 @@ export function FreeCanvasFlow({ projectId }: FreeCanvasFlowProps) {
         onConnect={onConnect}
         onNodeDragStart={handleNodeDragStart}
         onNodeDragStop={handleNodeDragStop}
+        onSelectionDragStart={handleNodeDragStart}
+        onSelectionDragStop={handleNodeDragStop}
         isValidConnection={isValidConnection}
         onPaneClick={handlePaneClick}
         deleteKeyCode={['Backspace', 'Delete']}
@@ -164,6 +174,13 @@ export function FreeCanvasFlow({ projectId }: FreeCanvasFlowProps) {
         snapGrid={CANVAS_SNAP_GRID}
         minZoom={0.2}
         maxZoom={2}
+        zoomOnDoubleClick={false}
+        selectionOnDrag
+        selectionMode={SelectionMode.Partial}
+        selectionKeyCode="Shift"
+        multiSelectionKeyCode={['Meta', 'Control']}
+        panOnDrag={[1, 2]}
+        panActivationKeyCode="Space"
         proOptions={{ hideAttribution: true }}
         defaultEdgeOptions={{ type: 'default' }}
       >

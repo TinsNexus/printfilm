@@ -1,7 +1,7 @@
 /** 分镜正文只读渲染：把 @asset:id 显示为带缩略图的关联标签 */
 import { Fragment, useMemo } from 'react'
 import { resolveDramaMediaUrl, type DramaAsset } from '../../api/drama'
-import { tr } from '../../i18n/translate'
+import { tv } from '../../i18n/tv'
 
 type Props = {
   content: string
@@ -40,7 +40,7 @@ export function EpisodeEditContentView({ content, assets, onOpenAsset }: Props) 
   const parts = useMemo(() => splitContentParts(content || ''), [content])
 
   if (!content.trim()) {
-    return <p className="drama-ep-content-empty">{tr('lib.scriptContentYetClick')}</p>
+    return <p className="drama-ep-content-empty">{tv("暂无脚本内容，点击「编辑」开始填写", "Chưa có nội dung kịch bản, bấm “Chỉnh sửa” để bắt đầu điền")}</p>
   }
 
   return (
@@ -60,7 +60,7 @@ export function EpisodeEditContentView({ content, assets, onOpenAsset }: Props) 
         }
         const asset = byId.get(part.assetId)
         const preview = asset ? resolveDramaMediaUrl(asset.cover || asset.url) : ''
-        const label = asset?.name || tr('lib.asset4', { partAssetId: part.assetId })
+        const label = asset?.name || tv(`资产 ${part.assetId}`, `Tài sản ${part.assetId}`)
         return (
           <button
             key={`a-${idx}-${part.assetId}`}

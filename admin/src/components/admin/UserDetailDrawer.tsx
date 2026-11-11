@@ -1,3 +1,4 @@
+import { points } from "@/lib/points";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -6,8 +7,9 @@ import {
   type AdminOrder,
   type AdminUsageEvent,
   type AdminUserRow,
-  type PageMeta,
+  type PageResult,
 } from "@/api/client";
+import { listAdminLedger, listAdminOrders, listAdminUsageEvents } from "@/api/finance";
 import {
   AdminDetailMeta,
   AdminDetailSection,
@@ -17,12 +19,12 @@ import { AdminEntityLink } from "@/components/admin/AdminEntityLink";
 import { AdminModal } from "@/components/admin/AdminModal";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatAccountId } from "@/lib/admin-account";
-import { fenToYuan } from "@/lib/utils";
-import { ledgerKindLabel, orderStatusLabel } from "@/lib/statusLabels";
-import { formatDateTime, useI18n } from "@/i18n";
-import { tr } from "@/i18n/translate";
 
-type ListRes<T> = { items: T[]; meta: PageMeta };
+import { orderPaymentLabel } from "@/lib/orderPayment";
+import { ledgerKindLabel, orderStatusLabel } from "@/lib/statusLabels";
+import { tr } from "../../i18n/translate.ts";
+
+type ListRes<T> = PageResult<T>;
 
 type UserDetailDrawerProps = {
   userId: number | null;
@@ -33,7 +35,6 @@ type UserDetailDrawerProps = {
 
 /** 用户只读明细：基本信息 + 订单/流水/用量聚合 */
 export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: UserDetailDrawerProps) {
-  const { t: tx } = useI18n();
   const [user, setUser] = useState<AdminUserRow | null>(initialUser ?? null);
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [ledger, setLedger] = useState<AdminLedger[]>([]);
@@ -49,16 +50,16 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
           initialUser?.id === userId
             ? Promise.resolve({ items: [initialUser], meta: { page: 1, page_size: 1, total: 1 } })
             : api<ListRes<AdminUserRow>>(`/api/admin/users?page=1&page_size=1&q=${userId}`),
-          api<ListRes<AdminOrder>>(`/api/admin/orders?page=1&page_size=8&user_id=${userId}`),
-          api<ListRes<AdminLedger>>(`/api/admin/ledger?page=1&page_size=8&user_id=${userId}`),
-          api<ListRes<AdminUsageEvent>>(`/api/admin/usage-events?page=1&page_size=20&user_id=${userId}`),
+          listAdminOrders(1, { pageSize: 8, userId }),
+          listAdminLedger(1, { pageSize: 8, userId }),
+          listAdminUsageEvents(1, { pageSize: 20, userId }),
         ]);
         setUser(userRes.items[0] ?? initialUser ?? null);
         setOrders(orderRes.items);
         setLedger(ledgerRes.items);
         setUsage(usageRes.items);
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : tr("userDrawer.couldLoadUserDetails"));
+        toast.error(err instanceof Error ? err.message : tr("users.ui.drawerLoadFailed"));
       } finally {
         setLoading(false);
       }
@@ -70,12 +71,12 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
       open={open}
       onOpenChange={onOpenChange}
       size="xl"
-      title={tx("userDrawer.userDetails")}
+      title={tr("users.ui.drawerTitle")}
       subtitle={
         user
-          ? tx("userDrawer.subtitle", { email: user.email, id: formatAccountId(user.id) })
+          ? `${user.email} · ID：${formatAccountId(user.id)}`
           : loading
-            ? tx("userDrawer.loading")
+            ? tr("users.ui.loading")
             : "—"
       }
       bodyClassName="!pt-2"
@@ -83,23 +84,23 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
       {user ? (
         <Tabs defaultValue="info" className="admin-detail-tabs">
           <TabsList>
-            <TabsTrigger value="info">{tx("userDrawer.basicInfo")}</TabsTrigger>
-            <TabsTrigger value="orders">{tx("userDrawer.recentOrders")}</TabsTrigger>
-            <TabsTrigger value="ledger">{tx("userDrawer.walletLedger")}</TabsTrigger>
-            <TabsTrigger value="usage">{tx("userDrawer.usageSummary")}</TabsTrigger>
+            <TabsTrigger value="info">{tr("users.ui.tabInfo")}</TabsTrigger>
+            <TabsTrigger value="orders">{tr("users.ui.tabOrders")}</TabsTrigger>
+            <TabsTrigger value="ledger">{tr("users.ui.tabLedger")}</TabsTrigger>
+            <TabsTrigger value="usage">{tr("users.ui.tabUsage")}</TabsTrigger>
           </TabsList>
           <TabsContent value="info">
             <AdminDetailSection>
               <AdminDetailMeta
                 items={[
-                  { label: tx("userDrawer.nickname"), value: user.nickname || "—" },
-                  { label: tx("userDrawer.phone"), value: user.phone || "—" },
-                  { label: tx("userDrawer.role"), value: user.role },
-                  { label: tx("userDrawer.balance"), value: `¥${fenToYuan(user.balance_fen)}` },
-                  { label: tx("userDrawer.hold"), value: `¥${fenToYuan(user.frozen_fen)}` },
+                  { label: tr("users.ui.colNickname"), value: user.nickname || "—" },
+                  { label: tr("users.ui.colPhone"), value: user.phone || "—" },
+                  { label: tr("users.ui.colRole"), value: user.role },
+                  { label: tr("users.ui.availablePoints"), value: points(user.balance_fen) },
+                  { label: tr("users.ui.colFrozen"), value: points(user.frozen_fen) },
                   {
-                    label: tx("userDrawer.registered"),
-                    value: user.created_at ? formatDateTime(user.created_at) : "—",
+                    label: tr("users.ui.colRegistered"),
+                    value: user.created_at ? new Date(user.created_at).toLocaleString() : "—",
                     full: true,
                   },
                 ]}
@@ -111,26 +112,26 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
               <table>
                 <thead>
                   <tr>
-                    <th>{tx("userDrawer.order")}</th>
-                    <th>{tx("userDrawer.amount")}</th>
-                    <th>{tx("userDrawer.status")}</th>
-                    <th>{tx("userDrawer.time")}</th>
+                    <th>{tr("users.ui.colOrderNo")}</th>
+                    <th>{tr("users.ui.colAmount")}</th>
+                    <th>{tr("users.ui.colStatus")}</th>
+                    <th>{tr("users.ui.colTime")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {orders.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="!text-center text-[var(--admin-muted)]">
-                        {tx("userDrawer.orders")}
+                        {tr("users.ui.noOrders")}
                       </td>
                     </tr>
                   ) : (
                     orders.map((o) => (
                       <tr key={o.id}>
                         <td className="font-mono text-xs">{o.out_trade_no}</td>
-                        <td>¥{fenToYuan(o.amount_fen)}</td>
+                        <td>{orderPaymentLabel(o)}</td>
                         <td>{orderStatusLabel(o.status)}</td>
-                        <td className="text-xs">{formatDateTime(o.created_at)}</td>
+                        <td className="text-xs">{new Date(o.created_at).toLocaleString()}</td>
                       </tr>
                     ))
                   )}
@@ -143,25 +144,25 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
               <table>
                 <thead>
                   <tr>
-                    <th>{tx("userDrawer.type")}</th>
-                    <th>{tx("userDrawer.change")}</th>
-                    <th>{tx("userDrawer.balance2")}</th>
-                    <th>{tx("userDrawer.note")}</th>
+                    <th>{tr("users.ui.colKind")}</th>
+                    <th>{tr("users.ui.colChange")}</th>
+                    <th>{tr("users.ui.colPointsAfter")}</th>
+                    <th>{tr("users.ui.colNote")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {ledger.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="!text-center text-[var(--admin-muted)]">
-                        {tx("userDrawer.ledgerEntries")}
+                        {tr("users.ui.noLedger")}
                       </td>
                     </tr>
                   ) : (
                     ledger.map((row) => (
                       <tr key={row.id}>
                         <td>{ledgerKindLabel(row.kind)}</td>
-                        <td>¥{fenToYuan(row.delta_fen)}</td>
-                        <td>¥{fenToYuan(row.balance_after)}</td>
+                        <td>{points(row.delta_fen)}</td>
+                        <td>{points(row.balance_after)}</td>
                         <td className="max-w-[200px] truncate text-xs">{row.note || "—"}</td>
                       </tr>
                     ))
@@ -175,29 +176,27 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
               <table>
                 <thead>
                   <tr>
-                    <th>{tx("userDrawer.time")}</th>
-                    <th>{tx("userDrawer.capability")}</th>
-                    <th>{tx("userDrawer.charged")}</th>
-                    <th>{tx("userDrawer.cost")}</th>
-                    <th>{tx("userDrawer.task")}</th>
+                    <th>{tr("users.ui.colTime")}</th>
+                    <th>{tr("users.ui.colCapability")}</th>
+                    <th>{tr("users.ui.colCharge")}</th>
+                    <th>{tr("users.ui.colTask")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {usage.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="!text-center text-[var(--admin-muted)]">
-                        {tx("userDrawer.usage")}
+                      <td colSpan={4} className="!text-center text-[var(--admin-muted)]">
+                        {tr("users.ui.noUsage")}
                       </td>
                     </tr>
                   ) : (
                     usage.map((row) => (
                       <tr key={row.id}>
                         <td className="text-xs">
-                          {row.created_at ? formatDateTime(row.created_at) : "—"}
+                          {row.created_at ? new Date(row.created_at).toLocaleString() : "—"}
                         </td>
                         <td>{row.capability || "—"}</td>
-                        <td>¥{fenToYuan(row.charge_fen ?? 0)}</td>
-                        <td>¥{fenToYuan(row.cost_fen ?? 0)}</td>
+                        <td>{points(row.charge_fen ?? 0)}</td>
                         <td>
                           {row.task_run_id ? (
                             <AdminEntityLink kind="task" id={row.task_run_id} />
@@ -214,7 +213,7 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
           </TabsContent>
         </Tabs>
       ) : loading ? (
-        <div className="py-10 text-center text-sm text-[var(--admin-muted)]">{tx("userDrawer.loading")}</div>
+        <div className="py-10 text-center text-sm text-[var(--admin-muted)]">{tr("users.ui.loading")}</div>
       ) : null}
     </AdminModal>
   );

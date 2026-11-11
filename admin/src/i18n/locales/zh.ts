@@ -1,41 +1,66 @@
-import { zhAdminPeriodKpis } from "./zh/adminPeriodKpis";
-import { zhAdminSettingsPage } from "./zh/adminSettingsPage";
-import { zhAdminLogin } from "./zh/adminLogin";
-import { zhAdminTemplateCard } from "./zh/adminTemplateCard";
-import { zhAdminDashTabs } from "./zh/adminDashTabs";
-import { zhAdminShared } from "./zh/adminShared";
-import { zhAdminInsightMaps } from "./zh/adminInsightMaps";
-import { zhAdminDramaEpisodes } from "./zh/adminDramaEpisodes";
-import { zhAdminDramaAssetDetail } from "./zh/adminDramaAssetDetail";
-import { zhAdminDramaFragments } from "./zh/adminDramaFragments";
-import { zhAdminDramaAssets } from "./zh/adminDramaAssets";
-import { zhAdminDramaProjects } from "./zh/adminDramaProjects";
-import { zhAdminSiteSettings } from "./zh/adminSiteSettings";
-import { zhAdminDramaFragmentDetail } from "./zh/adminDramaFragmentDetail";
-import { zhAdminOssSettings } from "./zh/adminOssSettings";
-import { zhAdminDramaEpisodeDetail } from "./zh/adminDramaEpisodeDetail";
-import { zhAdminDashboardInsights } from "./zh/adminDashboardInsights";
-import { zhAdminFinance } from "./zh/adminFinance";
-import { zhAdminRoutingSettings } from "./zh/adminRoutingSettings";
-import { zhAdminDashboardFilters } from "./zh/adminDashboardFilters";
-import { zhAdminTemplates } from "./zh/adminTemplates";
-import { zhAdminUserDrawer } from "./zh/adminUserDrawer";
-import { zhAdminRuntimeSettings } from "./zh/adminRuntimeSettings";
-import { zhAdminTemplateEditor } from "./zh/adminTemplateEditor";
-import { zhAdminWorks } from "./zh/adminWorks";
-import { zhAdminDramaDetail } from "./zh/adminDramaDetail";
-import { zhAdminUsers } from "./zh/adminUsers";
-import { zhAdminProjects } from "./zh/adminProjects";
-import { zhAdminQueues } from "./zh/adminQueues";
-import { zhAdminPaymentSettings } from "./zh/adminPaymentSettings";
-import { zhAdminDashboard } from "./zh/adminDashboard";
-import { zhAdminTaskDetail } from "./zh/adminTaskDetail";
-import { zhAdminOrders } from "./zh/adminOrders";
-import { zhAdminLayout } from "./zh/adminLayout";
-import { zhAdminStatus } from "./zh/adminStatus";
-import { zhShell } from "./zh/shell";
+import { zhAdminMarketplaceOps } from "./zh/adminMarketplaceOps.ts";
+import { zhAdminTeamsUi } from "./zh/adminTeamsUi.ts";
+import { zhAdminDramaUi } from "./zh/adminDramaUi.ts";
+import { zhAdminDashboardUi } from "./zh/adminDashboardUi.ts";
+import { zhAdminTaskUi } from "./zh/adminTaskUi.ts";
+import { zhAdminMarketplaceStatus } from "./zh/adminMarketplaceStatus.ts";
+import { zhAdminMarketplaceErrors } from "./zh/adminMarketplaceErrors.ts";
+import { zhAdminTaskObservability } from "./zh/adminTaskObservability.ts";
+import { zhAdminWalletMigration } from "./zh/adminWalletMigration.ts";
+import { zhAdminAppleSettings } from "./zh/adminAppleSettings.ts";
+import { zhAdminMediaPrices } from "./zh/adminMediaPrices.ts";
+import { zhAdminSettingsUi } from "./zh/adminSettingsUi.ts";
+import { zhAdminPeriodKpis } from "./zh/adminPeriodKpis.ts";
+import { zhAdminSettingsPage } from "./zh/adminSettingsPage.ts";
+import { zhAdminLogin } from "./zh/adminLogin.ts";
+import { zhAdminTemplateCard } from "./zh/adminTemplateCard.ts";
+import { zhAdminDashTabs } from "./zh/adminDashTabs.ts";
+import { zhAdminShared } from "./zh/adminShared.ts";
+import { zhAdminInsightMaps } from "./zh/adminInsightMaps.ts";
+import { zhAdminDramaEpisodes } from "./zh/adminDramaEpisodes.ts";
+import { zhAdminDramaAssetDetail } from "./zh/adminDramaAssetDetail.ts";
+import { zhAdminDramaFragments } from "./zh/adminDramaFragments.ts";
+import { zhAdminDramaAssets } from "./zh/adminDramaAssets.ts";
+import { zhAdminDramaProjects } from "./zh/adminDramaProjects.ts";
+import { zhAdminSiteSettings } from "./zh/adminSiteSettings.ts";
+import { zhAdminDramaFragmentDetail } from "./zh/adminDramaFragmentDetail.ts";
+import { zhAdminOssSettings } from "./zh/adminOssSettings.ts";
+import { zhAdminDramaEpisodeDetail } from "./zh/adminDramaEpisodeDetail.ts";
+import { zhAdminDashboardInsights } from "./zh/adminDashboardInsights.ts";
+import { zhAdminFinance } from "./zh/adminFinance.ts";
+import { zhAdminRoutingSettings } from "./zh/adminRoutingSettings.ts";
+import { zhAdminDashboardFilters } from "./zh/adminDashboardFilters.ts";
+import { zhAdminTemplates } from "./zh/adminTemplates.ts";
+import { zhAdminUserDrawer } from "./zh/adminUserDrawer.ts";
+import { zhAdminRuntimeSettings } from "./zh/adminRuntimeSettings.ts";
+import { zhAdminTemplateEditor } from "./zh/adminTemplateEditor.ts";
+import { zhAdminWorks } from "./zh/adminWorks.ts";
+import { zhAdminDramaDetail } from "./zh/adminDramaDetail.ts";
+import { zhAdminUsers } from "./zh/adminUsers.ts";
+import { zhAdminProjects } from "./zh/adminProjects.ts";
+import { zhAdminQueues } from "./zh/adminQueues.ts";
+import { zhAdminPaymentSettings } from "./zh/adminPaymentSettings.ts";
+import { zhAdminDashboard } from "./zh/adminDashboard.ts";
+import { zhAdminTaskDetail } from "./zh/adminTaskDetail.ts";
+import { zhAdminOrders } from "./zh/adminOrders.ts";
+import { zhAdminLayout } from "./zh/adminLayout.ts";
+import { zhAdminStatus } from "./zh/adminStatus.ts";
+import { zhShell } from "./zh/shell.ts";
 
 export const zh = {
+  ...zhAdminMarketplaceOps,
+  ...zhAdminTeamsUi,
+  ...zhAdminDramaUi,
+  ...zhAdminDashboardUi,
+  ...zhAdminTaskUi,
+  ...zhAdminMarketplaceStatus,
+  ...zhAdminMarketplaceErrors,
+  ...zhAdminTaskObservability,
+  ...zhAdminStatus,
+  ...zhAdminWalletMigration,
+  ...zhAdminAppleSettings,
+  ...zhAdminMediaPrices,
+  ...zhAdminSettingsUi,
   ...zhShell,
   ...zhAdminPeriodKpis,
   ...zhAdminSettingsPage,
@@ -71,5 +96,4 @@ export const zh = {
   ...zhAdminTaskDetail,
   ...zhAdminOrders,
   ...zhAdminLayout,
-  ...zhAdminStatus,
 };

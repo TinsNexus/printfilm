@@ -8,11 +8,16 @@ from app.database import get_db
 from app.deps import get_current_admin
 from app.models import Order, User
 from app.schemas import AdminOrderListOut, AdminOrderOut, PageMeta
+from app.services.stripe_payments import payment_snapshot
 
 router = APIRouter()
 
 
-@router.get("/orders", response_model=AdminOrderListOut)
+@router.get("/orders", response_model=AdminOrderListOut,
+    summary="分页查询充值订单",
+    description="管理员按订单状态、所属用户或商户订单号精确筛选充值订单，返回订单及用户邮箱，按订单编号倒序排列。",
+    response_description="操作成功，返回结果详见响应结构",
+)
 async def list_orders(
     status: str | None = None,
     user_id: int | None = None,
@@ -24,8 +29,9 @@ async def list_orders(
 ) -> AdminOrderListOut:
     # Paginated recharge orders with owner email
     owner = aliased(User)
-    stmt = select(Order, owner.email).outerjoin(owner, owner.id == Order.user_id)
-    count_stmt = select(func.count()).select_from(Order)
+    production = func.coalesce(Order.payment_environment, "Production") == "Production"
+    stmt = select(Order, owner.email).outerjoin(owner, owner.id == Order.user_id).where(production)
+    count_stmt = select(func.count()).select_from(Order).where(production)
 
     if status and status.strip():
         stmt = stmt.where(Order.status == status.strip())
@@ -48,6 +54,7 @@ async def list_orders(
     items: list[AdminOrderOut] = []
     for order, email in rows:
         data = AdminOrderOut.model_validate(order)
+        data = data.model_copy(update=payment_snapshot(order))
         data.user_email = email
         items.append(data)
 

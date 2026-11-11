@@ -1,4 +1,4 @@
-import { tr } from '../i18n/translate'
+import { tv } from '../i18n/tv'
 /**
  * 短剧剪辑节奏公式（社区 Skill 六式，用于分镜时长建议 / 整集导出规划）
  * 对齐 docs/EPISODE_RULES.md §10 P3
@@ -23,38 +23,38 @@ export type DramaEditRhythmPreset = {
 export const DRAMA_EDIT_RHYTHM_PRESETS: DramaEditRhythmPreset[] = [
   {
     id: 'breath',
-    get label() { return tr('rhythm.breathing') },
-    get hint() { return tr('rhythm.easeExpandSettleGood') },
+    label: tv('呼吸式', 'Kiểu hít thở'),
+    hint: tv('缓入—展开—回落，适合建立与抒情', 'Vào chậm — mở rộng — hạ xuống, phù hợp dẫn dắt và trữ tình'),
     weights: [3, 5, 4, 3],
   },
   {
     id: 'heartbeat',
-    get label() { return tr('rhythm.heartbeat') },
-    get hint() { return tr('rhythm.shortAcceleratingGoodConflict') },
+    label: tv('心跳式', 'Kiểu nhịp tim'),
+    hint: tv('短促加速，适合冲突与对峙', 'Tăng tốc ngắn gọn, phù hợp xung đột và đối đầu'),
     weights: [2, 2, 3, 2, 4],
   },
   {
     id: 'wave',
-    get label() { return tr('rhythm.wave') },
-    get hint() { return tr('rhythm.buildsLayerLayerReleases') },
+    label: tv('海浪式', 'Kiểu sóng biển'),
+    hint: tv('层层推高再泄力，适合高潮戏', 'Đẩy cao từng lớp rồi xả lực, phù hợp cảnh cao trào'),
     weights: [3, 4, 5, 6, 3],
   },
   {
     id: 'elastic',
-    get label() { return tr('rhythm.elasticTime') },
-    get hint() { return tr('rhythm.stretchesKeyActionsCompresses') },
+    label: tv('弹性时间', 'Thời gian co giãn'),
+    hint: tv('关键动作拉长，其余压缩', 'Kéo dài hành động then chốt, nén phần còn lại'),
     weights: [2, 6, 2, 3],
   },
   {
     id: 'pulse',
-    get label() { return tr('rhythm.pulse') },
-    get hint() { return tr('rhythm.regularBeatsGoodBeat') },
+    label: tv('脉冲式', 'Kiểu xung nhịp'),
+    hint: tv('规律跳动，适合卡点与群像', 'Nhảy đều đặn, phù hợp bắt nhịp và cảnh quần chúng'),
     weights: [3, 3, 3, 3],
   },
   {
     id: 'silence_hammer',
-    get label() { return tr('rhythm.silentHammer') },
-    get hint() { return tr('rhythm.quietBuildUpFollowed') },
+    label: tv('静默锤击', 'Búa tĩnh lặng'),
+    hint: tv('蓄势静场后猛切，适合反转', 'Tích thế tĩnh cảnh rồi cắt mạnh, phù hợp cú lật'),
     weights: [5, 2, 6],
   },
 ]

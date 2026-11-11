@@ -9,7 +9,7 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.model_routing_config import infer_model_capability, normalize_model_name
-from app.services.tokenfree_gateway import TOKENFREE_BASE_URL
+from app.services.tokenfree_gateway import get_active_base_url
 
 logger = logging.getLogger(__name__)
 
@@ -49,9 +49,7 @@ async def _resolve_channel_credentials(
                 proto = (channel.protocol or "auto").strip().lower() or "auto"
 
     if proto == "ark" and not base:
-        base = TOKENFREE_BASE_URL.rstrip("/")
-    if proto == "kie" and not base:
-        base = TOKENFREE_BASE_URL.rstrip("/")
+        base = get_active_base_url().rstrip("/")
     return proto, base, key
 
 
@@ -137,13 +135,19 @@ async def list_upstream_models(
         api_key_override=api_key_override,
     )
 
-    if proto == "volc_tts":
-        raise RuntimeError("豆包 TTS 暂不支持从上游拉取模型目录，请手动填写 speaker / 音色 ID")
+    from app.services.piapi.config import is_piapi_active
 
-    if proto == "kie" or proto == "ark" or "volces.com" in base.lower() or "kie.ai" in base.lower():
-        from app.services.tokenfree_gateway import TOKENFREE_BASE_URL, resolve_tokenfree_api_key
+    if is_piapi_active():
+        # PiAPI 统一任务接口没有 /models，返回本项目已适配的内置目录
+        from app.services.piapi.catalog import list_piapi_catalog_models
 
-        base = TOKENFREE_BASE_URL
+        return list_piapi_catalog_models(capability)
+
+    # 已下线的方舟 / 豆包协议或 volces 地址不再直连，改拉当前网关（TokenFree / 9Router）目录
+    if proto in {"ark", "volc_tts"} or "volces.com" in base.lower() or "openspeech.bytedance.com" in base.lower():
+        from app.services.tokenfree_gateway import get_active_base_url, resolve_tokenfree_api_key
+
+        base = get_active_base_url()
         key = key or resolve_tokenfree_api_key()
         return await _list_openai_compatible_models(
             base_url=base,
@@ -152,9 +156,9 @@ async def list_upstream_models(
         )
 
     if not base:
-        from app.services.tokenfree_gateway import TOKENFREE_BASE_URL
+        from app.services.tokenfree_gateway import get_active_base_url
 
-        base = TOKENFREE_BASE_URL
+        base = get_active_base_url()
 
     return await _list_openai_compatible_models(
         base_url=base,

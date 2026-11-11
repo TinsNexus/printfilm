@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import "@/styles/admin-primitives.css";
+import { tr } from "../../i18n/translate.ts";
 
 export type AdminListStatItem = {
   label: string;
@@ -16,14 +18,14 @@ type AdminListStatsProps = {
 export function AdminListStats({ items, className }: AdminListStatsProps) {
   if (items.length === 0) return null;
   return (
-    <div className={cn("admin-list-stats", className)}>
+    <dl className={cn("admin-list-stats admin-ui-list-stats", className)} aria-label={tr("ui.listStats")}>
       {items.map((item) => (
         <div key={item.label} className="admin-list-stat-card">
-          <div className="admin-list-stat-label">{item.label}</div>
-          <div className="admin-list-stat-value">{item.value}</div>
+          <dt className="admin-list-stat-label">{item.label}</dt>
+          <dd className="admin-list-stat-value">{item.value}</dd>
           {item.hint ? <div className="admin-list-stat-hint">{item.hint}</div> : null}
         </div>
       ))}
-    </div>
+    </dl>
   );
 }

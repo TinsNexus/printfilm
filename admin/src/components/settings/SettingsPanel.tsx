@@ -1,9 +1,11 @@
 import type { ReactNode } from "react";
-import { useEffect, useRef } from "react";
-import { Loader2 } from "lucide-react";
+import { useCallback, useEffect, useRef } from "react";
+import { Loader2, Save } from "lucide-react";
+import { AdminField } from "@/components/admin/AdminField";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useSettingsSaveSlot } from "@/components/settings/SettingsSaveContext";
-import { tr } from "@/i18n/translate";
+import { tr } from "@/i18n";
 
 type PanelProps = {
   title: string;
@@ -34,36 +36,60 @@ type SettingsTabShellProps = {
   onSave?: () => void | Promise<void>;
   saving?: boolean;
   saveLabel?: string;
+  disabled?: boolean;
 };
 
-// Tab 内容区：把保存动作注册到页头，不再单独占一行工具条
-export function SettingsTabShell({ children, onSave, saving, saveLabel = tr("ui.save") }: SettingsTabShellProps) {
+// Both save entries submit the same form, so keyboard and button validation stay consistent.
+export function SettingsTabShell({ children, onSave, saving, saveLabel = tr("settingsUi.saveCurrent"), disabled }: SettingsTabShellProps) {
   const { registerSave } = useSettingsSaveSlot();
+  const formRef = useRef<HTMLFormElement>(null);
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
+  const hasSave = Boolean(onSave);
+  const submit = useCallback(() => {
+    if (saving || disabled || !onSaveRef.current) return;
+    const form = formRef.current;
+    const invalid = form?.querySelector<HTMLElement>("input:invalid, select:invalid, textarea:invalid, [aria-invalid='true']");
+    if (invalid) {
+      let parent = invalid.parentElement;
+      while (parent && parent !== form) {
+        if (parent instanceof HTMLDetailsElement) parent.open = true;
+        parent = parent.parentElement;
+      }
+      invalid.scrollIntoView({ block: "center", behavior: "smooth" });
+      invalid.focus({ preventScroll: true });
+    }
+    if (!form?.reportValidity() || invalid?.getAttribute("aria-invalid") === "true") return;
+    return onSaveRef.current();
+  }, [saving, disabled]);
 
   useEffect(() => {
-    if (!onSave) {
+    if (!hasSave) {
       registerSave(null);
       return () => registerSave(null);
     }
     registerSave({
-      onSave: () => onSaveRef.current?.(),
+      onSave: submit,
       saving,
+      disabled,
       label: saveLabel,
     });
     return () => registerSave(null);
-  }, [onSave ? true : false, saving, saveLabel, registerSave]);
+  }, [hasSave, saving, disabled, saveLabel, registerSave, submit]);
 
   return (
-    <div className="settings-tab-shell">
-      <div className="settings-tab-body">{children}</div>
-    </div>
+    <form ref={formRef} className="settings-tab-shell" noValidate onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+      <fieldset disabled={saving} className="settings-tab-body">{children}</fieldset>
+      {hasSave ? <div className="settings-save-bar">
+        <div><strong>{saving ? tr("settingsUi.savingSettings") : tr("settingsUi.saveSection")}</strong><p>{tr("settingsUi.saveSectionHint")}</p></div>
+        <Button type="submit" disabled={saving || disabled}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{saving ? tr("settingsUi.saving") : saveLabel}</Button>
+      </div> : null}
+    </form>
   );
 }
 
 // 加载占位
-export function SettingsLoading({ label = tr("ui.loading") }: { label?: string }) {
+export function SettingsLoading({ label = tr("settingsUi.loading") }: { label?: string }) {
   return (
     <div className="settings-loading">
       <Loader2 className="h-4 w-4 animate-spin" />
@@ -88,18 +114,20 @@ export function LabeledControl({
   hint,
   children,
   className,
+  error,
+  required,
+  optional,
 }: {
   label: string;
   hint?: string;
   children: ReactNode;
   className?: string;
+  error?: string;
+  required?: boolean;
+  optional?: boolean;
 }) {
   return (
-    <label className={cn("settings-field", className)}>
-      <span className="settings-field-label">{label}</span>
-      {children}
-      {hint ? <span className="settings-field-hint">{hint}</span> : null}
-    </label>
+    <AdminField label={label} hint={hint} error={error} required={required} optional={optional} className={cn("settings-field", className)}>{children}</AdminField>
   );
 }
 
@@ -137,7 +165,7 @@ export function SettingsStatusBar({
           <div key={item.id} className={cn("settings-readiness-item", item.ready && "is-ready")}>
             <span className={cn("settings-readiness-dot", item.ready ? "is-on" : "is-off")} />
             <span>{item.label}</span>
-            <em>{item.ready ? item.readyText ?? tr("ui.configured") : item.pendingText ?? tr("ui.ready")}</em>
+            <em>{item.ready ? item.readyText ?? tr("settingsUi.configured") : item.pendingText ?? tr("settingsUi.notReady")}</em>
           </div>
         ))}
       </div>

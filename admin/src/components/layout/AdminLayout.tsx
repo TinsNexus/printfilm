@@ -1,10 +1,16 @@
-import { useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useMarketplaceEnabled } from "@/features/marketplace/api";
 
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import {
 
-  Bell,
+  ArrowUpRight,
+  Aperture,
+  ChevronRight,
+  PanelLeftClose,
+  Search,
+  X,
 
   Clapperboard,
 
@@ -24,9 +30,10 @@ import {
 
   Maximize2,
 
-  Menu,
 
   Receipt,
+
+  Scale,
 
   Settings,
 
@@ -42,391 +49,257 @@ import { clearAuth, getCachedUser } from "@/lib/auth";
 
 import { cn } from "@/lib/utils";
 import { LOCALES, useI18n } from "@/i18n";
-import { tr } from "@/i18n/translate";
+import { AdminNavigationSearch } from "./AdminNavigationSearch";
 
-
-
+// 导航与标题只存 labelKey：模块级常量在导入时求值，存翻译后的文字会固化成首次加载时的语言
 type NavItem = {
-
   to: string;
-
-  label: string;
-
+  labelKey: string;
   icon: typeof LayoutDashboard;
-
   end?: boolean;
-
   matchPrefix?: boolean;
-
 };
-
-
 
 type NavGroup = {
-
-  label: string;
-
+  id: string;
+  labelKey: string;
   items: NavItem[];
-
 };
 
-
+/** 渲染用：labelKey 已翻译成当前语言 */
+type TranslatedNavGroup = { id: string; label: string; items: Array<Omit<NavItem, "labelKey"> & { label: string }> };
 
 const navGroups: NavGroup[] = [
-
+  { id: "overview", labelKey: "layout.overview", items: [{ to: "/", labelKey: "layout.dashboard", icon: LayoutDashboard, end: true }] },
   {
-
-    get label() { return tr("layout.overview") },
-
-    items: [{ to: "/", get label() { return tr("layout.dashboard") }, icon: LayoutDashboard, end: true }],
-
-  },
-
-  {
-
-    get label() { return tr("layout.business") },
-
+    id: "business",
+    labelKey: "layout.business",
     items: [
-
-      { to: "/users", get label() { return tr("layout.users") }, icon: Users },
-
-      { to: "/orders", get label() { return tr("layout.ordersLedger") }, icon: Receipt },
-      { to: "/finance", get label() { return tr("layout.finance") }, icon: Wallet },
-
-      { to: "/projects", get label() { return tr("layout.explainerProjects") }, icon: Clapperboard },
-
-      { to: "/works", get label() { return tr("layout.workReview") }, icon: FileVideo },
-
+      { to: "/users", labelKey: "layout.users", icon: Users },
+      { to: "/teams", labelKey: "layout.teams", icon: Users, matchPrefix: true },
+      { to: "/orders", labelKey: "layout.ordersLedger", icon: Receipt },
+      { to: "/adjustments", labelKey: "layout.adjustments", icon: Scale },
+      { to: "/finance", labelKey: "layout.finance", icon: Wallet },
+      { to: "/projects", labelKey: "layout.explainerProjects", icon: Clapperboard },
+      { to: "/works", labelKey: "layout.workReview", icon: FileVideo },
     ],
-
   },
-
   {
-
-    get label() { return tr("layout.drama") },
-
+    id: "drama",
+    labelKey: "layout.drama",
     items: [
-
-      { to: "/drama-projects", get label() { return tr("layout.dramaProjects") }, icon: Film, matchPrefix: true },
-
-      { to: "/drama-assets", get label() { return tr("layout.assetLibrary") }, icon: Image, matchPrefix: true },
-
-      { to: "/drama-episodes", get label() { return tr("layout.episodes") }, icon: ListVideo, matchPrefix: true },
-
-      { to: "/drama-fragments", get label() { return tr("layout.shots") }, icon: Layers, matchPrefix: true },
-
+      { to: "/drama-projects", labelKey: "layout.dramaProjects", icon: Film, matchPrefix: true },
+      { to: "/drama-assets", labelKey: "layout.assetLibrary", icon: Image, matchPrefix: true },
+      { to: "/drama-episodes", labelKey: "layout.episodes", icon: ListVideo, matchPrefix: true },
+      { to: "/drama-fragments", labelKey: "layout.shots", icon: Layers, matchPrefix: true },
     ],
-
   },
-
   {
-
-    get label() { return tr("layout.resources") },
-
+    id: "resources",
+    labelKey: "layout.resources",
     items: [
-
-      { to: "/templates", get label() { return tr("layout.templates") }, icon: Shapes },
-
-      { to: "/queues", get label() { return tr("layout.taskCenter") }, icon: Layers },
-
+      { to: "/templates", labelKey: "layout.templates", icon: Shapes },
+      { to: "/queues", labelKey: "layout.taskCenter", icon: Layers },
     ],
-
   },
-
-  {
-
-    get label() { return tr("layout.system") },
-
-    items: [{ to: "/settings", get label() { return tr("layout.systemSettings") }, icon: Settings }],
-
-  },
-
+  { id: "system", labelKey: "layout.system", items: [{ to: "/settings", labelKey: "layout.systemSettings", icon: Settings }] },
 ];
 
-
-
-const titles: Record<string, string> = {
-
-  get "/"() { return tr("layout.dashboard") },
-
-  get "/users"() { return tr("layout.users") },
-
-  get "/orders"() { return tr("layout.ordersLedger") },
-  get "/finance"() { return tr("layout.finance") },
-
-  get "/projects"() { return tr("layout.explainerProjects") },
-
-  get "/drama-projects"() { return tr("layout.dramaProjects") },
-
-  get "/drama-assets"() { return tr("layout.assetLibrary") },
-
-  get "/drama-episodes"() { return tr("layout.episodes") },
-
-  get "/drama-fragments"() { return tr("layout.shots") },
-
-  get "/works"() { return tr("layout.workReview") },
-
-  get "/templates"() { return tr("layout.templates") },
-
-  get "/settings"() { return tr("layout.systemSettings") },
-
-  get "/queues"() { return tr("layout.taskCenter") },
-
+const titleKeys: Record<string, string> = {
+  "/marketplace": "layout.marketplaceOps",
+  "/": "layout.dashboard",
+  "/users": "layout.users",
+  "/teams": "layout.teams",
+  "/orders": "layout.ordersLedger",
+  "/adjustments": "layout.adjustments",
+  "/finance": "layout.finance",
+  "/projects": "layout.explainerProjects",
+  "/drama-projects": "layout.dramaProjects",
+  "/drama-assets": "layout.assetLibrary",
+  "/drama-episodes": "layout.episodes",
+  "/drama-fragments": "layout.shots",
+  "/works": "layout.workReview",
+  "/templates": "layout.templates",
+  "/settings": "layout.systemSettings",
+  "/queues": "layout.taskCenter",
 };
 
-
-
-function resolveTitle(pathname: string): string {
-
-  if (pathname.startsWith("/drama-projects/")) return tr("layout.dramaProjectDetails");
-
-  if (pathname.startsWith("/drama-assets/")) return tr("layout.assetDetails");
-
-  if (pathname.startsWith("/drama-episodes/")) return tr("layout.episodeDetails");
-
-  if (pathname.startsWith("/drama-fragments/")) return tr("layout.shotDetails");
-
-  return titles[pathname] ?? tr("layout.adminConsole");
-
+/** 按路由取页面标题的 key（详情页按前缀匹配） */
+function resolveTitleKey(pathname: string): string {
+  if (pathname.startsWith("/teams/")) return "layout.teamDetails";
+  if (pathname.startsWith("/drama-projects/")) return "layout.dramaProjectDetails";
+  if (pathname.startsWith("/drama-assets/")) return "layout.assetDetails";
+  if (pathname.startsWith("/drama-episodes/")) return "layout.episodeDetails";
+  if (pathname.startsWith("/drama-fragments/")) return "layout.shotDetails";
+  return titleKeys[pathname] ?? "layout.adminConsole";
 }
 
-
-
-// Admin shell: dark sidebar + glass top bar
-
+/** 统一运营工作台：桌面折叠导航、移动抽屉与可搜索入口。 */
 export function AdminLayout() {
-  const { t: tx, locale, setLocale } = useI18n();
-
+  const { t, locale, setLocale } = useI18n();
+  const marketplaceEnabled = useMarketplaceEnabled();
+  const visibleNavGroups: TranslatedNavGroup[] = navGroups.map((group) => {
+    const items = group.id === "business" && marketplaceEnabled
+      ? [...group.items, { to: "/marketplace", labelKey: "layout.marketplaceOps", icon: FileVideo } satisfies NavItem]
+      : group.items;
+    return { id: group.id, label: t(group.labelKey), items: items.map(({ labelKey, ...item }) => ({ ...item, label: t(labelKey) })) };
+  });
   const navigate = useNavigate();
-
   const location = useLocation();
-
   const user = getCachedUser();
-
-  /*
-
-   * collapsed sidebar collapsed state
-
-   */
-
   const [collapsed, setCollapsed] = useState(false);
-
-
-
-  // Logout and return to login
-
-  function handleLogout() {
-
-    clearAuth();
-
-    navigate("/login");
-
-  }
-
-
-
-  const title = resolveTitle(location.pathname);
-
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia("(max-width: 800px)").matches);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const navigationToggleRef = useRef<HTMLButtonElement>(null);
+  const sidebarCloseRef = useRef<HTMLButtonElement>(null);
+  const mobileDrawerOpen = isMobile && mobileOpen;
+  const title = t(resolveTitleKey(location.pathname));
   const initial = (user?.nickname || user?.email || "A").slice(0, 1).toUpperCase();
 
+  useEffect(() => { setMobileOpen(false); }, [location.pathname]);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 800px)");
+    function onChange(event: MediaQueryListEvent) {
+      setIsMobile(event.matches);
+      if (!event.matches) setMobileOpen(false);
+    }
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
 
+  useLayoutEffect(() => {
+    if (!mobileDrawerOpen) return;
+    const sidebar = sidebarRef.current;
+    if (!sidebar) return;
+    const navigationToggle = navigationToggleRef.current;
+    const previouslyFocused = document.activeElement instanceof HTMLElement && document.activeElement !== document.body
+      ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    sidebarCloseRef.current?.focus({ preventScroll: true });
+
+    function focusableItems() {
+      return Array.from(sidebar!.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+        .filter((element) => element.tabIndex >= 0 && element.getClientRects().length > 0);
+    }
+    function trapFocus(event: KeyboardEvent) {
+      if (event.key !== "Tab") return;
+      const items = focusableItems();
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (!first || !last) return;
+      if (event.shiftKey && (document.activeElement === first || !sidebar!.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !sidebar!.contains(document.activeElement))) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    function keepFocusInside(event: FocusEvent) {
+      if (event.target instanceof Node && !sidebar!.contains(event.target)) {
+        sidebarCloseRef.current?.focus({ preventScroll: true });
+      }
+    }
+    document.addEventListener("keydown", trapFocus, true);
+    document.addEventListener("focusin", keepFocusInside);
+    return () => {
+      document.removeEventListener("keydown", trapFocus, true);
+      document.removeEventListener("focusin", keepFocusInside);
+      document.body.style.overflow = previousOverflow;
+      if (sidebar.contains(document.activeElement) || document.activeElement === document.body) {
+        const restoreTarget = previouslyFocused?.isConnected ? previouslyFocused : navigationToggle;
+        restoreTarget?.focus({ preventScroll: true });
+      }
+    };
+  }, [mobileDrawerOpen]);
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setMobileOpen(false);
+        setSearchOpen((value) => !value);
+      }
+      if (event.key === "Escape") setMobileOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  function handleLogout() { clearAuth(); navigate("/login"); }
+  function toggleNavigation() {
+    if (isMobile) setMobileOpen((value) => !value);
+    else setCollapsed((value) => !value);
+  }
 
   return (
-
-    <div className={cn("admin-app", collapsed && "is-collapsed")}>
-
-      <aside className="admin-sidebar">
-
+    <div className={cn("admin-app", collapsed && "is-collapsed", mobileDrawerOpen && "is-mobile-open")}>
+      <a className="admin-skip-link" href="#admin-main-content">{t("layout.skipToContent")}</a>
+      {mobileDrawerOpen && <button type="button" className="admin-sidebar-scrim" tabIndex={-1} aria-label={t("layout.closeNav")} onClick={() => setMobileOpen(false)} />}
+      <aside ref={sidebarRef} className="admin-sidebar" id="admin-sidebar" aria-label={t("layout.adminNav")}
+        role={mobileDrawerOpen ? "dialog" : undefined} aria-modal={mobileDrawerOpen ? true : undefined}
+        aria-hidden={isMobile && !mobileOpen ? true : undefined} inert={isMobile && !mobileOpen}>
         <div className="admin-brand">
-
-          <div className="admin-brand-mark">PF</div>
-
-          {!collapsed && (
-
-            <div>
-
-              <div className="admin-brand-name">PRINTFILM</div>
-
-              <div className="admin-brand-sub">{tx("layout.adminConsole")}</div>
-
-            </div>
-
-          )}
-
+          <div className="admin-brand-mark"><Aperture size={23} strokeWidth={1.7} /></div>
+          <div className="admin-brand-copy"><div className="admin-brand-name">PRINTFILM<span>®</span></div><div className="admin-brand-sub">{t("layout.consoleSubtitle")}</div></div>
+          <button ref={sidebarCloseRef} type="button" className="admin-icon-btn admin-sidebar-close" aria-label={t("layout.closeNav")} onClick={() => setMobileOpen(false)}><X size={18} /></button>
         </div>
-
-        <nav className="admin-nav">
-
-          {navGroups.map((group) => (
-
-            <div key={group.label} className="admin-nav-group">
-
-              {!collapsed ? <div className="admin-nav-group-label">{group.label}</div> : null}
-
+        <nav className="admin-nav" aria-label={t("layout.mainNav")}>
+          {visibleNavGroups.map((group) => (
+            <div key={group.id} className="admin-nav-group">
+              <div className="admin-nav-group-label">{group.label}</div>
               {group.items.map((item) => (
-
-                <NavLink
-
-                  key={item.to}
-
-                  to={item.to}
-
-                  end={item.end ?? !item.matchPrefix}
-
-                  className={({ isActive }) =>
-
-                    cn(
-
-                      "admin-nav-item",
-
-                      (isActive || (item.matchPrefix && location.pathname.startsWith(`${item.to}/`))) &&
-
-                        "is-active",
-
-                    )
-
-                  }
-
-                  title={item.label}
-
-                >
-
-                  <item.icon className="h-[18px] w-[18px] shrink-0" />
-
-                  {!collapsed && <span>{item.label}</span>}
-
+                <NavLink key={item.to} to={item.to} end={item.end ?? !item.matchPrefix}
+                  className={({ isActive }) => cn("admin-nav-item", (isActive || (item.matchPrefix && location.pathname.startsWith(`${item.to}/`))) && "is-active")}
+                  title={item.label} onClick={() => setMobileOpen(false)}>
+                  <item.icon className="h-[18px] w-[18px] shrink-0" strokeWidth={1.7} />
+                  <span className="admin-nav-label">{item.label}</span><ChevronRight className="admin-nav-arrow" size={14} />
                 </NavLink>
-
               ))}
-
             </div>
-
           ))}
-
         </nav>
-
+        <div className="admin-sidebar-footnote"><span />PRINTFILM OPERATIONS</div>
         <div className="admin-user-card">
-
           <div className="admin-avatar">{initial}</div>
-
-          {!collapsed && (
-
-            <div className="min-w-0 flex-1">
-
-              <div className="truncate text-[13px] font-medium text-[#e8f0eb]">{user?.email}</div>
-
-              <div className="text-xs text-[rgba(240,245,242,0.45)]">{tx("layout.superAdmin")}</div>
-
-            </div>
-
-          )}
-
-          <button type="button" className="admin-icon-btn !text-[rgba(240,245,242,0.55)] hover:!text-[#e8f0eb]" onClick={handleLogout} title={tx("layout.signOut")}>
-
-            <LogOut className="h-4 w-4" />
-
-          </button>
-
+          <div className="admin-user-copy"><strong>{user?.nickname || t("layout.adminFallbackName")}</strong><span title={user?.email}>{user?.email}</span></div>
+          <button type="button" className="admin-icon-btn admin-logout" onClick={handleLogout} title={t("layout.signOut")} aria-label={t("layout.signOut")}><LogOut size={16} /></button>
         </div>
-
       </aside>
-
-
-
-      <div className="admin-main">
-
+      <div className="admin-main" inert={mobileDrawerOpen}>
         <header className="admin-topbar">
-
-          <div className="flex items-center gap-3">
-
-            <button
-
-              type="button"
-
-              className="admin-icon-btn"
-
-              onClick={() => setCollapsed((v) => !v)}
-
-              aria-label={tx("layout.collapseSidebar")}
-
-            >
-
-              <Menu className="h-4 w-4" />
-
+          <div className="admin-topbar-leading">
+            <button ref={navigationToggleRef} type="button" className="admin-icon-btn" onClick={toggleNavigation}
+              aria-label={t(isMobile ? (mobileOpen ? "layout.closeNav" : "layout.expandNav") : (collapsed ? "layout.expandNav" : "layout.collapseNav"))}
+              aria-controls="admin-sidebar" aria-expanded={isMobile ? mobileOpen : !collapsed}>
+              <PanelLeftClose size={19} />
             </button>
-
-            <div>
-
-              <div className="admin-topbar-title">{title}</div>
-
-              <div className="admin-topbar-crumb">{tx("layout.printfilmOperations")}</div>
-
-            </div>
-
+            <div className="admin-topbar-breadcrumb"><span>{t("layout.dashboard")}</span><ChevronRight size={13} /><strong>{title}</strong></div>
           </div>
-
-          <div className="flex items-center gap-1">
-
-            <div className="mr-1 flex items-center gap-0.5 rounded-md border border-black/10 p-0.5" role="group" aria-label={tx("lang.label")}>
+          <div className="admin-topbar-actions">
+            <button type="button" className="admin-command-trigger" aria-label={t("layout.searchFeatures")} aria-keyshortcuts="Control+K Meta+K" onClick={() => setSearchOpen(true)}><Search size={15} /><span>{t("layout.searchShort")}</span><kbd>Ctrl K</kbd></button>
+            <a className="admin-site-link" href={import.meta.env.DEV ? "http://127.0.0.1:5173" : "/"} target="_blank" rel="noreferrer">{t("layout.userSite")}<ArrowUpRight size={14} /></a>
+            <button type="button" className="admin-icon-btn admin-fullscreen" title={t("layout.toggleFullscreen")} aria-label={t("layout.toggleFullscreen")} onClick={() => {
+              if (!document.fullscreenElement) void document.documentElement.requestFullscreen().catch(() => undefined);
+              else void document.exitFullscreen().catch(() => undefined);
+            }}><Maximize2 size={17} /></button>
+            <div className="admin-lang-switch" role="group" aria-label={t("lang.label")}>
               {LOCALES.map((code) => (
-                <button
-                  key={code}
-                  type="button"
-                  aria-pressed={locale === code}
-                  className={cn(
-                    "rounded px-2 py-0.5 text-xs font-medium transition-colors",
-                    locale === code ? "bg-[#1a2b22] text-white" : "text-slate-500 hover:text-slate-800",
-                  )}
-                  onClick={() => setLocale(code)}
-                >
-                  {tx(`lang.${code}`)}
+                <button key={code} type="button" aria-pressed={locale === code}
+                  className={cn("admin-lang-option", locale === code && "is-active")} onClick={() => setLocale(code)}>
+                  {t(`lang.${code}`)}
                 </button>
               ))}
             </div>
-            <button type="button" className="admin-icon-btn" title={tx("layout.notifications")}>
-
-              <Bell className="h-4 w-4" />
-
-            </button>
-
-            <button
-
-              type="button"
-
-              className="admin-icon-btn"
-
-              title={tx("layout.fullscreen")}
-
-              onClick={() => {
-
-                if (!document.fullscreenElement) void document.documentElement.requestFullscreen();
-
-                else void document.exitFullscreen();
-
-              }}
-
-            >
-
-              <Maximize2 className="h-4 w-4" />
-
-            </button>
-
+            <div className="admin-topbar-avatar" title={user?.email}>{initial}</div>
           </div>
-
         </header>
-
-        <main className="admin-content">
-
-          <Outlet />
-
-        </main>
-
+        <main className="admin-content" id="admin-main-content" tabIndex={-1}><Outlet /></main>
       </div>
-
+      <AdminNavigationSearch open={searchOpen} onOpenChange={setSearchOpen} groups={visibleNavGroups} />
     </div>
-
   );
-
 }
-
-

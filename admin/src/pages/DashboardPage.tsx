@@ -1,3 +1,4 @@
+import { points } from "@/lib/points";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -10,17 +11,15 @@ import {
   Settings,
   Shapes,
   Users,
-  Wallet,
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageSection } from "@/components/admin/PageSection";
 import { PageHeader } from "@/components/ui/page";
-import { api, type AdminOrder, type AdminStats, type AdminUpstreamUsage, type PageMeta } from "@/api/client";
+import { api, type AdminOrder, type AdminStats, type PageMeta } from "@/api/client";
 import { AdminEntityLink } from "@/components/admin/AdminEntityLink";
 import { fenToYuan } from "@/lib/utils";
 import { projectStatusLabel, taskDomainLabel } from "@/lib/statusLabels";
-import { Button } from "@/components/ui/button";
 import {
   buildStatsQuery,
   dashboardRangeLabel,
@@ -39,18 +38,18 @@ import { sumDailyUsage } from "@/pages/dashboard/dashboardMetrics";
 import { UsageDistributionChart } from "@/pages/dashboard/UsageDistributionChart";
 import { TopUsersRankingChart } from "@/pages/dashboard/TopUsersRankingChart";
 import { UsageTrendChart } from "@/pages/dashboard/UsageTrendChart";
-import { formatDateTime, formatNumber, useI18n } from "@/i18n";
-import { tr } from "@/i18n/translate";
+import { tr } from "../i18n/translate.ts";
 
 type OrderRes = { items: AdminOrder[]; meta: PageMeta };
 
 const CAPABILITY_LABELS: Record<string, string> = {
-  get llm() { return tr("dashboard.llmText") },
-  get image() { return tr("dashboard.image") },
-  get video() { return tr("dashboard.video") },
-  get tts() { return tr("dashboard.voice") },
-  get unknown() { return tr("dashboard.other") },
-  get other() { return tr("dashboard.other") },
+  // getter：读取时按当前语言取文案
+  get llm() { return tr("dashUi.cap.llm"); },
+  get image() { return tr("dashUi.cap.image"); },
+  get video() { return tr("dashUi.cap.video"); },
+  get tts() { return tr("dashUi.cap.tts"); },
+  get unknown() { return tr("dashUi.cap.other"); },
+  get other() { return tr("dashUi.cap.other"); },
 };
 
 function statusClass(status: string): string {
@@ -67,42 +66,17 @@ function capabilityLabel(key: string): string {
 }
 
 function domainChartLabel(key: string): string {
-  if (key === "kepu") return tr("dashboard.aiShortVideo");
+  if (key === "kepu") return tr("dashUi.domain.kepu");
   return taskDomainLabel(key);
 }
 
 /** 管理端仪表盘：板块切换 + 渐变 KPI + 可筛选用量图表 */
 export function DashboardPage() {
-  const { t: tx } = useI18n();
   const [section, setSection] = useState<DashboardSection>("overview");
   const [filters, setFilters] = useState<DashboardFilterState>(DEFAULT_DASHBOARD_FILTERS);
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [orders, setOrders] = useState<AdminOrder[]>([]);
-  const [upstreamUsage, setUpstreamUsage] = useState<AdminUpstreamUsage | null>(null);
-  const [upstreamSyncing, setUpstreamSyncing] = useState(false);
   const [loading, setLoading] = useState(true);
-
-  const loadUpstreamUsage = useCallback(async () => {
-    try {
-      const data = await api<AdminUpstreamUsage>("/api/admin/stats/upstream-usage?days=30");
-      setUpstreamUsage(data);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : tr("dashboard.couldLoadOfficialUsage"));
-    }
-  }, []);
-
-  const syncUpstreamUsage = useCallback(async () => {
-    setUpstreamSyncing(true);
-    try {
-      await api("/api/admin/stats/upstream-usage/sync?days=30", { method: "POST" });
-      toast.success(tr("dashboard.officialUsageRefreshed"));
-      await loadUpstreamUsage();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : tr("dashboard.refreshFailed"));
-    } finally {
-      setUpstreamSyncing(false);
-    }
-  }, [loadUpstreamUsage]);
 
   const loadData = useCallback(async (nextFilters: DashboardFilterState) => {
     setLoading(true);
@@ -114,7 +88,7 @@ export function DashboardPage() {
       setStats(s);
       setOrders(o.items);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : tr("dashboard.failedLoad"));
+      toast.error(err instanceof Error ? err.message : tr("dashUi.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -129,10 +103,6 @@ export function DashboardPage() {
     void loadData(statsFilters);
   }, [statsFilters, loadData]);
 
-  useEffect(() => {
-    void loadUpstreamUsage();
-  }, [loadUpstreamUsage]);
-
   const statusEntries = Object.entries(stats?.project_status_counts ?? {}).sort((a, b) => b[1] - a[1]);
   const daily = stats?.daily_usage ?? [];
   const byCapability = stats?.usage_by_capability ?? [];
@@ -141,42 +111,41 @@ export function DashboardPage() {
   const rangeLabel = dashboardRangeLabel(filters.days);
   const showUsageFilters = section === "overview" || section === "usage";
   const domainInsights = buildDomainInsights(byDomain, filters.metric, domainChartLabel);
-  const financeInsights = buildFinanceInsights(stats, upstreamUsage);
+  const financeInsights = buildFinanceInsights(stats);
   const projectInsights = buildProjectInsights(stats, sumDailyUsage(daily));
-  const metricHint =
-    filters.metric === "cost" ? tx("dashboard.upstreamCost") : filters.metric === "calls" ? tx("dashboard.calls") : tx("dashboard.chargeAmount");
+  const metricHint = tr(filters.metric === "calls" ? "dashUi.metricCalls" : "dashUi.metricCharge");
 
   return (
     <div className="admin-page admin-dashboard-page">
-      <PageHeader description={tx("dashboard.overviewUsersTopUps")} />
+      <PageHeader title={tr("dashUi.title")} description={tr("dashUi.desc")} />
 
       <div className="admin-dashboard-kpi-grid">
         <DashboardKpiCard
-          label={tx("dashboard.totalUsers")}
+          label={tr("dashUi.totalUsers")}
           value={kpiReady ? stats!.user_count : kpiPlaceholder}
-          hint={tx("dashboard.registeredUsers")}
+          hint={tr("dashUi.totalUsersHint")}
           icon={Users}
           tone="teal"
         />
         <DashboardKpiCard
-          label={tx("dashboard.totalPaid")}
+          label={tr("dashUi.totalPaid")}
           value={kpiReady ? `¥${fenToYuan(stats!.order_paid_total_fen)}` : kpiPlaceholder}
-          hint={tx("dashboard.lifetimeTopUps")}
+          hint={tr("dashUi.totalPaidHint")}
           icon={Banknote}
           tone="blue"
         />
         <DashboardKpiCard
-          label={tx("dashboard.aiChargesMonth")}
-          value={kpiReady ? `¥${fenToYuan(stats!.usage_charge_month_fen ?? 0)}` : kpiPlaceholder}
-          hint={kpiReady ? tx("dashboard.todayAmount", { amount: fenToYuan(stats!.usage_charge_today_fen ?? 0) }) : tx("dashboard.todaySCharges")}
+          label={tr("dashUi.aiChargeMonth")}
+          value={kpiReady ? `${points(stats!.usage_charge_month_fen ?? 0)}` : kpiPlaceholder}
+          hint={kpiReady ? tr("dashUi.todayAmount", { amount: points(stats!.usage_charge_today_fen ?? 0) }) : tr("dashUi.todayCharge")}
           icon={Zap}
           tone="purple"
         />
         <DashboardKpiCard
-          label={tx("dashboard.upstreamCostMonth")}
-          value={kpiReady ? `¥${fenToYuan(stats!.usage_cost_month_fen ?? 0)}` : kpiPlaceholder}
-          hint={kpiReady ? tx("dashboard.todayAmount", { amount: fenToYuan(stats!.usage_cost_today_fen ?? 0) }) : tx("dashboard.costSummary")}
-          icon={Wallet}
+          label={tr("dashUi.callsMonth")}
+          value={kpiReady ? (stats!.usage_calls_month ?? 0).toLocaleString() : kpiPlaceholder}
+          hint={kpiReady ? tr("dashUi.todayCalls", { n: (stats!.usage_calls_today ?? 0).toLocaleString() }) : tr("dashUi.metricCalls")}
+          icon={Activity}
           tone="sand"
         />
       </div>
@@ -190,8 +159,8 @@ export function DashboardPage() {
         <>
           <div className="admin-dashboard-charts">
             <PageSection
-              title={tx("dashboard.usageTrend", { rangeLabel })}
-              description={loading ? tx("dashboard.loading") : tx("dashboard.dailyTrendAggregatedCurrent")}
+              title={tr("dashUi.usageTrend", { range: rangeLabel })}
+              description={tr(loading ? "dashUi.loading" : "dashUi.usageTrendDesc")}
               bodyClassName="!pt-2"
               className="admin-dashboard-chart-main admin-dashboard-glass min-h-0"
             >
@@ -199,7 +168,7 @@ export function DashboardPage() {
             </PageSection>
 
             <PageSection
-              title={tx("dashboard.capabilityBreakdown")}
+              title={tr("dashUi.capDistribution")}
               description={`${rangeLabel} · ${metricHint}`}
               bodyClassName="!pt-2"
               className="admin-dashboard-chart-side admin-dashboard-glass min-h-0"
@@ -214,10 +183,10 @@ export function DashboardPage() {
           </div>
 
           <PageSection
-            title={tx("dashboard.top3Spenders", { rangeLabel })}
+            title={tr("dashUi.top3", { range: rangeLabel })}
             actions={
               <Link to="/orders?tab=usage" className="admin-link">
-                {tx("dashboard.more")}
+                {tr("dashUi.more")}
               </Link>
             }
             bodyClassName="!pt-2"
@@ -228,7 +197,7 @@ export function DashboardPage() {
 
           <div className="admin-dashboard-charts">
             <PageSection
-              title={tx("dashboard.domainBreakdown")}
+              title={tr("dashUi.domainDistribution")}
               description={`${rangeLabel} · ${metricHint}`}
               bodyClassName="!pt-2"
               className="admin-dashboard-chart-main admin-dashboard-glass min-h-0"
@@ -241,7 +210,7 @@ export function DashboardPage() {
               />
             </PageSection>
             <PageSection
-              title={tx("dashboard.domainInsights")}
+              title={tr("dashUi.domainInsights")}
               description={`${rangeLabel} · ${metricHint}`}
               bodyClassName="!pt-2"
               className="admin-dashboard-chart-side admin-dashboard-glass min-h-0"
@@ -256,8 +225,8 @@ export function DashboardPage() {
         <>
           <div className="admin-dashboard-charts">
             <PageSection
-              title={tx("dashboard.usageTrend", { rangeLabel })}
-              description={loading ? tx("dashboard.loading") : tx("dashboard.chargesCostsCallsAggregated")}
+              title={tr("dashUi.usageTrend", { range: rangeLabel })}
+              description={tr(loading ? "dashUi.loading" : "dashUi.usageDailyDesc")}
               bodyClassName="!pt-2"
               className="admin-dashboard-chart-main admin-dashboard-glass min-h-0"
             >
@@ -265,7 +234,7 @@ export function DashboardPage() {
             </PageSection>
 
             <PageSection
-              title={tx("dashboard.capabilityBreakdown")}
+              title={tr("dashUi.capDistribution")}
               description={`${rangeLabel} · ${metricHint}`}
               bodyClassName="!pt-2"
               className="admin-dashboard-chart-side admin-dashboard-glass min-h-0"
@@ -281,7 +250,7 @@ export function DashboardPage() {
 
           <div className="admin-dashboard-charts">
             <PageSection
-              title={tx("dashboard.domainBreakdown")}
+              title={tr("dashUi.domainDistribution")}
               description={`${rangeLabel} · ${metricHint}`}
               bodyClassName="!pt-2"
               className="admin-dashboard-chart-main admin-dashboard-glass min-h-0"
@@ -294,10 +263,10 @@ export function DashboardPage() {
               />
             </PageSection>
             <PageSection
-              title={tx("dashboard.spendingRanking", { rangeLabel })}
+              title={tr("dashUi.ranking", { range: rangeLabel })}
               actions={
                 <Link to="/orders?tab=usage" className="admin-link">
-                  {tx("dashboard.usageDetails")}
+                  {tr("dashUi.usageDetailsLink")}
                 </Link>
               }
               description={metricHint}
@@ -313,11 +282,11 @@ export function DashboardPage() {
       {section === "finance" ? (
         <div className="admin-dashboard-body admin-dashboard-body--finance">
           <PageSection
-            title={tx("dashboard.financeOverview")}
-            description={tx("dashboard.topUpsChargesCosts")}
+            title={tr("dashUi.financeTitle")}
+            description={tr("dashUi.financeDesc")}
             actions={
               <Link to="/finance" className="admin-link">
-                {tx("dashboard.financeList")}
+                {tr("dashUi.financeLink")}
               </Link>
             }
             bodyClassName="!pt-2"
@@ -327,87 +296,30 @@ export function DashboardPage() {
           </PageSection>
 
           <PageSection
-            title={tx("dashboard.tokenfreeOfficialUsageComparison")}
-            description={
-              upstreamUsage?.configured
-                ? tx("dashboard.upstreamNote", { sync: upstreamUsage.last_sync_at ? tx("dashboard.lastSync", { t: formatDateTime(upstreamUsage.last_sync_at) }) : "" })
-                : tx("dashboard.tokenfreeApiKeyConfigured")
-            }
-            actions={
-              upstreamUsage?.configured ? (
-                <Button type="button" size="sm" variant="outline" disabled={upstreamSyncing} onClick={() => void syncUpstreamUsage()}>
-                  {upstreamSyncing ? tx("dashboard.refreshing") : tx("dashboard.refreshOfficialData")}
-                </Button>
-              ) : null
-            }
-            bodyClassName="!pt-0"
-            className="admin-dashboard-glass min-h-0"
-          >
-            <div className="admin-table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>{tx("dashboard.date")}</th>
-                    <th>{tx("dashboard.localCost")}</th>
-                    <th>{tx("dashboard.localTokens")}</th>
-                    <th>{tx("dashboard.officialTokens")}</th>
-                    <th>{tx("dashboard.officialCost")}</th>
-                    <th>{tx("dashboard.difference")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(upstreamUsage?.series ?? []).length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="!text-center text-[var(--admin-muted)]">
-                        {tx("dashboard.comparisonData")}
-                      </td>
-                    </tr>
-                  ) : (
-                    [...(upstreamUsage?.series ?? [])].reverse().slice(0, 14).map((row) => (
-                      <tr key={row.date}>
-                        <td className="font-mono text-xs">{row.date}</td>
-                        <td>¥{fenToYuan(row.local_cost_fen)}</td>
-                        <td>{formatNumber(row.local_tokens)}</td>
-                        <td>{row.official_tokens > 0 ? formatNumber(row.official_tokens) : "—"}</td>
-                        <td>{row.official_cost_fen > 0 ? `¥${fenToYuan(row.official_cost_fen)}` : "—"}</td>
-                        <td>
-                          {row.official_cost_fen > 0
-                            ? `¥${fenToYuan(row.delta_fen)}${row.delta_pct != null ? ` (${row.delta_pct}%)` : ""}`
-                            : "—"}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </PageSection>
-
-          <PageSection
-            title={tx("dashboard.recentOrders")}
-            description={tx("dashboard.paidOrdersOnly")}
+            title={tr("dashUi.recentOrders")}
+            description={tr("dashUi.recentOrdersDesc")}
             actions={
               <Link to="/orders" className="admin-link">
-                {tx("dashboard.all")}
+                {tr("dashUi.allLink")}
               </Link>
             }
             bodyClassName="!pt-0"
-            className="admin-dashboard-glass min-h-0"
+            className="admin-dashboard-glass min-h-0 admin-dashboard-body--full"
           >
             <div className="admin-table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>{tx("dashboard.username")}</th>
-                    <th>{tx("dashboard.amount")}</th>
-                    <th>{tx("dashboard.paid")}</th>
+                    <th>{tr("dashUi.colUserName")}</th>
+                    <th>{tr("dashUi.colAmount")}</th>
+                    <th>{tr("dashUi.colPaidAt")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {orders.length === 0 ? (
                     <tr>
                       <td colSpan={3} className="!text-center text-[var(--admin-muted)]">
-                        {tx("dashboard.paidOrdersYet")}
+                        {tr("dashUi.noPaidOrders")}
                       </td>
                     </tr>
                   ) : (
@@ -418,7 +330,7 @@ export function DashboardPage() {
                         </td>
                         <td className="font-semibold text-[var(--admin-forest)]">¥{fenToYuan(o.amount_fen)}</td>
                         <td className="text-xs text-[var(--admin-muted)]">
-                          {o.paid_at ? formatDateTime(o.paid_at) : "—"}
+                          {o.paid_at ? new Date(o.paid_at).toLocaleString() : "—"}
                         </td>
                       </tr>
                     ))
@@ -433,8 +345,8 @@ export function DashboardPage() {
       {section === "projects" ? (
         <>
           <PageSection
-            title={tx("dashboard.operationsOverview")}
-            description={tx("dashboard.projectScaleCallsStatus")}
+            title={tr("dashUi.opsTitle")}
+            description={tr("dashUi.opsDesc")}
             bodyClassName="!pt-2"
             className="admin-dashboard-glass min-h-0"
           >
@@ -443,14 +355,14 @@ export function DashboardPage() {
 
           <div className="admin-dashboard-project-row">
             <PageSection
-              title={tx("dashboard.aiShortVideoProject")}
-              description={tx("dashboard.dramaCount", { n: stats?.drama_project_count ?? 0 })}
+              title={tr("dashUi.kepuStatus")}
+              description={tr("dashUi.dramaProjectsN", { n: stats?.drama_project_count ?? 0 })}
               bodyClassName="!pt-2"
               className="admin-dashboard-glass min-h-0"
             >
               <div className="flex flex-wrap gap-1.5">
                 {statusEntries.length === 0 ? (
-                  <span className="text-xs text-[var(--admin-muted)]">{tx("dashboard.data")}</span>
+                  <span className="text-xs text-[var(--admin-muted)]">{tr("dashUi.noData")}</span>
                 ) : (
                   statusEntries.map(([status, count]) => (
                     <span key={status} className={`admin-status-pill !px-2.5 !py-1 !text-[11px] ${statusClass(status)}`}>
@@ -461,22 +373,22 @@ export function DashboardPage() {
               </div>
             </PageSection>
 
-            <PageSection title={tx("dashboard.callStatistics")} bodyClassName="!pt-2" className="admin-dashboard-glass min-h-0">
+            <PageSection title={tr("dashUi.callStats")} bodyClassName="!pt-2" className="admin-dashboard-glass min-h-0">
               <div className="admin-dashboard-stat-grid">
                 <div>
-                  <div className="admin-dashboard-stat-grid-label">{tx("dashboard.callsToday")}</div>
+                  <div className="admin-dashboard-stat-grid-label">{tr("dashUi.callsToday")}</div>
                   <div className="admin-dashboard-stat-grid-value">
                     {kpiReady ? stats!.usage_calls_today ?? 0 : kpiPlaceholder}
                   </div>
                 </div>
                 <div>
-                  <div className="admin-dashboard-stat-grid-label">{tx("dashboard.callsMonth")}</div>
+                  <div className="admin-dashboard-stat-grid-label">{tr("dashUi.callsMonth")}</div>
                   <div className="admin-dashboard-stat-grid-value">
                     {kpiReady ? stats!.usage_calls_month ?? 0 : kpiPlaceholder}
                   </div>
                 </div>
                 <div>
-                  <div className="admin-dashboard-stat-grid-label">{tx("dashboard.totalCalls")}</div>
+                  <div className="admin-dashboard-stat-grid-label">{tr("dashUi.callsTotal")}</div>
                   <div className="admin-dashboard-stat-grid-value">
                     {kpiReady ? stats!.usage_calls_total ?? 0 : kpiPlaceholder}
                   </div>
@@ -485,7 +397,7 @@ export function DashboardPage() {
             </PageSection>
           </div>
 
-          <PageSection title={tx("dashboard.domainBreakdown2", { projectsRangeLabel })} bodyClassName="!pt-2" className="admin-dashboard-glass min-h-0">
+          <PageSection title={tr("dashUi.domainDistributionRange", { range: projectsRangeLabel })} bodyClassName="!pt-2" className="admin-dashboard-glass min-h-0">
             <UsageDistributionChart
               data={byDomain}
               metric="charge"
@@ -494,39 +406,39 @@ export function DashboardPage() {
             />
           </PageSection>
 
-          <PageSection title={tx("dashboard.shortcuts")} bodyClassName="!pt-2" className="admin-dashboard-glass">
+          <PageSection title={tr("dashUi.shortcuts")} bodyClassName="!pt-2" className="admin-dashboard-glass">
             <div className="admin-dashboard-tools">
               <Link to="/templates" className="admin-dashboard-tool-btn">
                 <Shapes className="h-5 w-5" />
-                <span>{tx("dashboard.templates")}</span>
+                <span>{tr("layout.templates")}</span>
               </Link>
               <Link to="/orders?tab=usage" className="admin-dashboard-tool-btn">
                 <Receipt className="h-5 w-5" />
-                <span>{tx("dashboard.ordersUsage")}</span>
+                <span>{tr("dashUi.orderUsage")}</span>
               </Link>
               <Link to="/users" className="admin-dashboard-tool-btn">
                 <Users className="h-5 w-5" />
-                <span>{tx("dashboard.users")}</span>
+                <span>{tr("layout.users")}</span>
               </Link>
               <Link to="/projects" className="admin-dashboard-tool-btn">
                 <Clapperboard className="h-5 w-5" />
-                <span>{tx("dashboard.aiShortVideo")}</span>
+                <span>{tr("dashUi.domain.kepu")}</span>
               </Link>
               <Link to="/drama-projects" className="admin-dashboard-tool-btn">
                 <Film className="h-5 w-5" />
-                <span>{tx("dashboard.dramaProjects")}</span>
+                <span>{tr("layout.dramaProjects")}</span>
               </Link>
               <Link to="/queues" className="admin-dashboard-tool-btn">
                 <Layers className="h-5 w-5" />
-                <span>{tx("dashboard.taskQueue")}</span>
+                <span>{tr("dashUi.taskQueue")}</span>
               </Link>
               <Link to="/settings" className="admin-dashboard-tool-btn">
                 <Settings className="h-5 w-5" />
-                <span>{tx("dashboard.systemConfiguration")}</span>
+                <span>{tr("dashUi.systemConfig")}</span>
               </Link>
               <Link to="/orders" className="admin-dashboard-tool-btn">
                 <Activity className="h-5 w-5" />
-                <span>{tx("dashboard.financeLedger")}</span>
+                <span>{tr("dashUi.financeLedger")}</span>
               </Link>
             </div>
           </PageSection>

@@ -13,6 +13,7 @@ from app.models import Project
 from app.models_tasks import TaskRun
 from app.services.billing.pricing import charge_fen_for_tokens
 from app.services.tokenfree_pricing import (
+    canonicalize_channel_model_id,
     charge_fen_official_image,
     charge_fen_official_llm,
     charge_fen_official_video,
@@ -36,11 +37,8 @@ __all__ = [
 
 def _kepu_video_resolution(project: Project | None, settings: Settings) -> str:
     """科普成片清晰度：设置项；HD 且配置为 480p 时升到 720p（与 pipeline 一致）。"""
-    raw = str(getattr(settings, "ark_video_resolution", "") or "480p")
-    mode = str(getattr(project, "resolution_mode", "") or "")
-    if mode == "hd" and raw.strip().lower() == "480p":
-        return "720p"
-    return raw
+    from app.services.seedance_resolutions import project_video_resolution
+    return project_video_resolution(project, settings)
 
 
 def _drama_video_resolution(payload: dict) -> str:
@@ -48,6 +46,24 @@ def _drama_video_resolution(payload: dict) -> str:
     prepared = payload.get("prepared") if isinstance(payload.get("prepared"), dict) else {}
     raw = str((prepared or {}).get("resolution") or payload.get("resolution") or "").strip()
     return raw or "720p"
+
+
+def _payload_video_model(payload: dict, settings: Settings) -> str:
+    """从任务 payload 取实际视频模型（含 prepared.seedance_body），避免按站点默认 2.0 低估 2.5。"""
+    prepared = payload.get("prepared") if isinstance(payload.get("prepared"), dict) else {}
+    body = prepared.get("seedance_body") if isinstance(prepared.get("seedance_body"), dict) else {}
+    for val in (
+        payload.get("model_id"),
+        payload.get("model"),
+        body.get("model"),
+        prepared.get("model_id"),
+        prepared.get("model"),
+    ):
+        text = str(val or "").strip()
+        if text:
+            return canonicalize_channel_model_id(text) or text
+    fallback = str(getattr(settings, "model_video", "") or "").strip()
+    return canonicalize_channel_model_id(fallback) or fallback or "seedance-2.5"
 
 
 _VIDEO_SIZE_LABELS = {"480p", "720p", "1080p"}
@@ -125,10 +141,14 @@ def _estimate_videos_fen(project: Project, settings: Settings) -> int:
     if not shots:
         return 1
     total = 0
+    mid = _payload_video_model({}, settings)
     for sh in shots:
         secs = max(float(sh.duration or 4), 2.0)
         total += charge_fen_official_video(
-            secs, settings, resolution=_kepu_video_resolution(project, settings)
+            secs,
+            settings,
+            model=mid,
+            resolution=_kepu_video_resolution(project, settings),
         )
     return _buffered_fen(total, settings)
 
@@ -157,9 +177,20 @@ def estimate_phase_fen(project: Project, phase: str, settings: Settings | None =
 async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings | None = None) -> int:
     """按 domain + task_type 估算单任务预扣（分）。"""
     s = settings or get_settings()
-    await ensure_official_rates(s)
     domain = (task.domain or "").strip()
     task_type = (task.task_type or "").strip()
+    snapshot = task.billing_snapshot or {}
+    if snapshot.get("mode") == "fixed_media":
+        total = sum(item["total_fen"] for item in snapshot["items"])
+        if domain == "kepu" and task_type == "project_pipeline":
+            project = (await db.execute(select(Project).where(Project.id == task.project_id).options(selectinload(Project.shots)))).scalar_one_or_none()
+            if project and any(x["capability"] == "image" for x in snapshot["items"]) and not project_audio_ready(project):
+                _, tts = charge_fen_for_tokens(s.billing_est_tts_tokens * max(len(project.shots), 1), "tts", settings=s)
+                total += _buffered_fen(tts, s)
+        return total
+    if domain == "drama" and task_type == "episode_compose":
+        return 0
+    await ensure_official_rates(s)
     payload = task.payload if isinstance(task.payload, dict) else {}
 
     if domain == "kepu" and task_type == "project_pipeline":
@@ -185,7 +216,10 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
             project_id = task.project_id or payload.get("project_id")
             project = await db.get(Project, int(project_id)) if project_id else None
             c = charge_fen_official_video(
-                max(dur, 2.0), s, resolution=_kepu_video_resolution(project, s)
+                max(dur, 2.0),
+                s,
+                model=_payload_video_model(payload, s),
+                resolution=_kepu_video_resolution(project, s),
             )
             return _buffered_fen(c, s)
         if task_type in {"shot_regen_audio", "project_regen_audio"}:
@@ -234,7 +268,10 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
             if dur <= 0:
                 dur = 8.0
             c = charge_fen_official_video(
-                max(dur, 2.0), s, resolution=_drama_video_resolution(payload)
+                max(dur, 2.0),
+                s,
+                model=_payload_video_model(payload, s),
+                resolution=_drama_video_resolution(payload),
             )
             c = _buffered_fen(c, s)
             if task_type == "fragment_video":
@@ -251,16 +288,22 @@ async def estimate_task_fen(db: AsyncSession, task: TaskRun, settings: Settings 
         c = charge_fen_official_llm(s.billing_est_llm_tokens, s)
         return _buffered_fen(c, s)
 
-    if domain in {"api", "studio"}:
-        if task_type in {"v1_image", "tool_image"}:
+    if domain == "studio":
+        if task_type == "tool_audio":
+            _, c = charge_fen_for_tokens(s.billing_est_tts_tokens, "tts", settings=s)
+            return _buffered_fen(c, s)
+        if task_type == "tool_image":
             return _catalog_image_fen(s, payload=payload)
-        if task_type in {"v1_video", "v1_seedance", "tool_video"}:
+        if task_type == "tool_video":
             dur = float(payload.get("duration") or 5)
             c = charge_fen_official_video(
                 max(dur, 2.0),
                 s,
+                model=_payload_video_model(payload, s),
                 resolution=str(payload.get("resolution") or "").strip() or "480p",
             )
+            if task_type == "tool_video" and payload.get("tool_id") == "t2v" and not payload.get("video_mode"):
+                c += _catalog_image_fen(s, payload=payload)
             return _buffered_fen(c, s)
 
     c = charge_fen_official_llm(s.billing_est_llm_tokens, s)

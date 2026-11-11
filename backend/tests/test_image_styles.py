@@ -70,13 +70,16 @@ def test_append_style_prompt_mentions_style_board():
     text = append_style_prompt("少女站在窗边", "ghibli-handdrawn-anime", has_style_board=True)
     assert STYLE_BOARD_PROMPT_HINT in text
     assert "禁止复制该图的人物" in text
+    from app.services.drama.generation_prompt import ensure_structure_in_prompt
+
     locked = build_generation_prompt(
-        "黑发少女",
+        ensure_structure_in_prompt("黑发少女", "character"),
         asset_type="character",
         style_id="ghibli-handdrawn-anime",
         has_style_board=True,
     )
     assert STYLE_BOARD_PROMPT_HINT in locked
+    assert "全身三视图" in locked
     plain = append_style_prompt("少女站在窗边", "ghibli-handdrawn-anime", has_style_board=False)
     assert STYLE_BOARD_PROMPT_HINT not in plain
 

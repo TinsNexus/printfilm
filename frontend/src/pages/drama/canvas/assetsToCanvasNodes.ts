@@ -29,13 +29,38 @@ export function getCanvasNodeId(assetId: number) {
   return `asset-${assetId}`
 }
 
+/** 从 save_canvas 写入的 params.canvas.data.promptHint 读取（不过滤短提示词） */
+function readSavedCanvasPromptHint(asset: DramaAsset): string {
+  const params = (asset.params || {}) as Record<string, unknown>
+  const canvas = params.canvas
+  if (!canvas || typeof canvas !== 'object') return ''
+  const data = (canvas as Record<string, unknown>).data
+  if (!data || typeof data !== 'object') return ''
+  return String((data as Record<string, unknown>).promptHint || '').trim()
+}
+
 /** 从资产构建节点 data */
 export function buildNodeDataFromAsset(asset: DramaAsset): CanvasAssetNodeData {
   const kind = dramaAssetTypeToKind(asset.type)
   const params = (asset.params || {}) as Record<string, unknown>
-  const promptHint = readEditableVisualPrompt(asset)
+  /* 弱占位过滤后为空时，回退布局里用户写过的原文 */
+  const promptHint = readEditableVisualPrompt(asset) || readSavedCanvasPromptHint(asset)
+  const canvasNodeData =
+    params.canvas && typeof params.canvas === 'object'
+      ? ((params.canvas as Record<string, unknown>).data as Record<string, unknown> | undefined)
+      : undefined
   const videoOptions =
-    kind === 'video' ? readVideoGenerationOptions(params.videoOptions || params) : undefined
+    kind === 'video'
+      ? readVideoGenerationOptions(
+          params.videoOptions || canvasNodeData?.videoOptions || params,
+        )
+      : undefined
+  const imageOptions =
+    kind === 'video'
+      ? undefined
+      : ((params.imageOptions as Record<string, unknown> | undefined) ||
+          (canvasNodeData?.imageOptions as Record<string, unknown> | undefined) ||
+          undefined)
   const label =
     (typeof asset.name === 'string' && asset.name.trim()) || CANVAS_NODE_DEFAULT_LABEL[kind]
   const voice = kind === 'character' ? readAssetVoiceBinding(asset) : null
@@ -48,6 +73,7 @@ export function buildNodeDataFromAsset(asset: DramaAsset): CanvasAssetNodeData {
     textContent: kind === 'text' ? String(params.textContent || '') : undefined,
     promptHint,
     videoOptions,
+    imageOptions,
     characterName: kind === 'character' ? label : undefined,
     voiceLabel: voice?.label || null,
     voiceUrl: voice?.url || null,
@@ -111,8 +137,10 @@ export function mergeAssetsWithCanvasLayout(
           ...savedNode.data,
           ...data,
           label: (savedNode.data.label as string) || data.label,
+          /* 资产弱提示词可能为空，优先保留布局里用户写过的 promptHint */
           promptHint: data.promptHint || savedNode.data.promptHint || '',
           videoOptions: data.videoOptions || savedNode.data.videoOptions,
+          imageOptions: data.imageOptions || savedNode.data.imageOptions,
           textContent:
             data.kind === 'text'
               ? savedNode.data.textContent ?? data.textContent
@@ -140,6 +168,9 @@ export function mergeAssetsWithCanvasLayout(
           data: {
             ...savedNode.data,
             ...data,
+            promptHint: data.promptHint || savedNode.data.promptHint || '',
+            videoOptions: data.videoOptions || savedNode.data.videoOptions,
+            imageOptions: data.imageOptions || savedNode.data.imageOptions,
             textContent:
               kind === 'text'
                 ? savedNode.data.textContent ?? data.textContent

@@ -1,10 +1,11 @@
 /** 漫剧画布 / 分集：视频生成选项（模型列表来自后台 TokenFree 目录） */
 import type { MediaModelOption, MediaModelsCatalog } from '../api'
+import { tv } from '../i18n/tv'
 
 export type VideoGenerationModelId = string
 
 export type VideoAspectRatio = '9:16' | '16:9' | '1:1'
-export type VideoResolution = '480p' | '720p' | '1080p'
+export type VideoResolution = '480p' | '720p' | '768p' | '1080p'
 
 export type VideoGenerationOptions = {
   image_style_id?: string
@@ -15,10 +16,11 @@ export type VideoGenerationOptions = {
 }
 
 export const VIDEO_ASPECT_RATIO_OPTIONS: VideoAspectRatio[] = ['9:16', '16:9', '1:1']
-export const VIDEO_RESOLUTION_OPTIONS: VideoResolution[] = ['480p', '720p', '1080p']
+export const VIDEO_RESOLUTION_OPTIONS: VideoResolution[] = ['480p', '720p', '768p', '1080p']
 /** 目录未到 / 未知模型时的保守档（与后端 SAFE 一致） */
 export const SAFE_VIDEO_RESOLUTION_OPTIONS: VideoResolution[] = ['480p', '720p']
-export const VIDEO_DURATION_PRESETS = [5, 8, 10, 15] as const
+/** 时长快捷档；按模型 duration_min/max 过滤（2.0≤15，2.5≤30） */
+export const VIDEO_DURATION_PRESETS = [5, 8, 10, 15, 20, 25, 30] as const
 export const VIDEO_DURATION_MIN = 4
 export const VIDEO_DURATION_MAX = 30
 
@@ -104,7 +106,7 @@ export function formatVideoOutputLabel(
 /** 解析模型展示名（无目录时回退 id） */
 export function getVideoModelLabel(modelId: string | undefined | null) {
   const id = (modelId || '').trim()
-  return id || '视频模型'
+  return id || tv('视频模型', 'Model video')
 }
 
 /** 任意非空字符串均可作为视频模型 id（后台 TokenFree 目录） */
@@ -119,7 +121,8 @@ export function resolutionsForModel(
   videoModels?: MediaModelOption[],
 ): VideoResolution[] {
   const row = findVideoModelRow(modelId, catalog, videoModels)
-  const raw = row?.allowed_resolutions
+  const raw = row?.available_resolutions ?? row?.allowed_resolutions
+  if (Array.isArray(raw) && raw.length === 0) return []
   if (Array.isArray(raw) && raw.length > 0) {
     const filtered = raw.filter((r): r is VideoResolution =>
       VIDEO_RESOLUTION_OPTIONS.includes(r as VideoResolution),

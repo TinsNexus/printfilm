@@ -18,7 +18,7 @@ import {
 } from '../../lib/dramaEpisodePromptEditor'
 import type { AssetScope } from './dramaEpisodeEditUtils'
 import { EpisodeEditMentionPopover } from './EpisodeEditMentionPopover'
-import { tr } from '../../i18n/translate'
+import { tv } from '../../i18n/tv'
 
 type Props = {
   content: string
@@ -36,7 +36,7 @@ export function EpisodeEditPromptEditor({
   assets,
   referencedIds,
   editing,
-  placeholder = tr('lib.enterVisualsDialogueNarration'),
+  placeholder = tv('输入画面描述、对白、旁白；键入 @ 引用资产或插入时长…', 'Nhập mô tả hình ảnh, thoại, lời dẫn; gõ @ để tham chiếu tài sản hoặc chèn thời lượng…'),
   onContentChange,
   onOpenAsset,
 }: Props) {
@@ -190,7 +190,7 @@ export function EpisodeEditPromptEditor({
         className={`drama-ep-prompt-editor${editing ? ' is-editing' : ''}`}
         role="textbox"
         aria-multiline="true"
-        aria-label={tr('lib.shotScript')}
+        aria-label={tv("分镜脚本", "Kịch bản phân cảnh")}
         aria-readonly={!editing}
         contentEditable={editing}
         suppressContentEditableWarning

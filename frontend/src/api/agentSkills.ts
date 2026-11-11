@@ -1,30 +1,12 @@
 /** Agent Skill API：列表 / 上传 / 启用 / 删除 */
 
-import { getDramaApiBase } from './drama'
-import { tr } from '../i18n/translate'
+import { createJsonRequester, uploadFile } from './client'
+import { tv } from '../i18n/tv'
 
-/** 组装请求头；FormData 时不要强行 JSON */
-function authHeaders(json = true): HeadersInit {
-  const token = localStorage.getItem('token')
-  const headers: Record<string, string> = {}
-  if (token) headers.Authorization = `Bearer ${token}`
-  if (json) headers['Content-Type'] = 'application/json'
-  return headers
-}
-
-/** 带登录态请求 Agent Skill API */
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${getDramaApiBase()}${path}`, {
-    ...init,
-    headers: { ...authHeaders(init?.body instanceof FormData ? false : true), ...(init?.headers || {}) },
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }))
-    const detail = err.detail
-    throw new Error(typeof detail === 'string' ? detail : tr('lib.requestFailed'))
-  }
-  return res.json()
-}
+/** Skill API 保留本模块的错误文案，避免依赖漫剧客户端。 */
+const request = createJsonRequester((_response, detail) => {
+  throw new Error(typeof detail === 'string' ? detail : tv('请求失败', 'Yêu cầu thất bại'))
+})
 
 export type AgentSkill = {
   id: number
@@ -54,20 +36,10 @@ export function uploadAgentSkillMarkdown(markdown: string) {
 }
 
 /** 上传 .md 文件 */
-export async function uploadAgentSkillFile(file: File) {
-  const token = localStorage.getItem('token')
-  const body = new FormData()
-  body.append('file', file)
-  const res = await fetch(`${getDramaApiBase()}/api/drama/skills/upload`, {
-    method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    body,
+export function uploadAgentSkillFile(file: File) {
+  return uploadFile<AgentSkill>('/api/drama/skills/upload', file, (_response, detail) => {
+    throw new Error(typeof detail === 'string' ? detail : tv('上传失败', 'Tải lên thất bại'))
   })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(typeof err.detail === 'string' ? err.detail : tr('lib.uploadFailed'))
-  }
-  return res.json() as Promise<AgentSkill>
 }
 
 /** 启用/停用或改正文 */
@@ -83,8 +55,9 @@ export function deleteAgentSkill(skillId: number) {
   return request<{ ok: boolean }>(`/api/drama/skills/${skillId}`, { method: 'DELETE' })
 }
 
-/** 按勾选 Skill 优化提示词（保留 @asset 引用） */
+/** 描述优化：按勾选 Skill 改写提示词（保留 @asset 与台词） */
 export function optimizePromptWithSkills(body: {
+  project_id?: number
   prompt: string
   skill_ids: number[]
   task?: 'video_prompt' | 'image_prompt' | 'shot_plan'
@@ -92,6 +65,7 @@ export function optimizePromptWithSkills(body: {
   return request<{ prompt: string }>('/api/drama/skills/optimize', {
     method: 'POST',
     body: JSON.stringify({
+      project_id: body.project_id,
       prompt: body.prompt,
       skill_ids: body.skill_ids,
       task: body.task || 'video_prompt',

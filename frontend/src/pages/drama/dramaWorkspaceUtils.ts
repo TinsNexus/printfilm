@@ -1,6 +1,6 @@
 /** Shared helpers for drama project workspace steps. */
 import type { DramaEpisodeBody, DramaProject, DramaScript } from '../../api/drama'
-import { tr } from '../../i18n/translate'
+import { tv } from '../../i18n/tv'
 
 /** 与后端 MIN_EPISODE_CONTENT_CHARS 对齐：过短正文视为未完成 */
 export const MIN_EPISODE_BODY_CHARS = 500
@@ -88,7 +88,7 @@ export function buildOutlineDirectory(
     const ep = byNumber.get(episodeNumber)
     return {
       episodeNumber,
-      title: ep?.title || tr('dramaOutline.episodeN', { n: episodeNumber }),
+      title: ep?.title || tv(`第 ${episodeNumber} 集`, `Tập ${episodeNumber}`),
       creative: ep?.creative,
       summary: ep?.summary,
       body: ep?.body,
@@ -124,6 +124,13 @@ export function getSummaryStatus(script: DramaScript | null | undefined): string
 // 读取分集剧本状态
 export function getEpisodeContentStatus(script: DramaScript | null | undefined): string {
   return String((script?.params || {}).episode_content_status || 'pending')
+}
+
+// 读取项目资产抽取状态（整剧摘要后 / 分集后）
+export function getAssetsSeedStatus(
+  project: DramaProject | null | undefined,
+): string {
+  return String((project?.params as Record<string, unknown> | undefined)?.assets_seed_status || '')
 }
 
 // 读取画面风格 ID

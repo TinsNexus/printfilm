@@ -1,10 +1,19 @@
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, BeforeValidator, EmailStr, Field, field_validator
 
 from app.schemas_common import PageMeta
 from app.schemas_tasks import TaskRunBriefOut
+
+
+def _normalize_project_template_id(value: Any) -> Any:
+    """历史项目可能没有模板；响应沿用字符串契约，不改写数据库。"""
+    return "" if value is None else value
+
+
+# 仅用于项目响应，创建和更新请求仍使用各自的模板校验。
+ProjectTemplateIdOut = Annotated[str, BeforeValidator(_normalize_project_template_id)]
 
 
 # ---- Auth ----
@@ -53,6 +62,11 @@ class ProfileUpdateRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(min_length=1, max_length=64)
     new_password: str = Field(min_length=6, max_length=64)
+
+
+class CloseAccountRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=64)
+    confirmation: str = Field(min_length=1, max_length=16)
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -131,6 +145,9 @@ class ShotUpdate(BaseModel):
 
 
 class ProjectCreate(BaseModel):
+    target_duration_sec: int = Field(default=60, ge=15, le=180)
+    image_resolution: str = Field(default="", max_length=16)
+    video_resolution: str = Field(default="", max_length=16)
     template_id: str
     title: str = "未命名作品"
     source_type: str = Field(default="theme", pattern="^(theme|script)$")
@@ -152,6 +169,9 @@ class ProjectCreate(BaseModel):
 
 
 class ProjectUpdate(BaseModel):
+    target_duration_sec: int | None = Field(default=None, ge=15, le=180)
+    image_resolution: str | None = Field(default=None, max_length=16)
+    video_resolution: str | None = Field(default=None, max_length=16)
     title: str | None = Field(default=None, max_length=200)
     source_type: str | None = Field(default=None, pattern="^(theme|script)$")
     source_text: str | None = Field(default=None, min_length=2, max_length=20000)
@@ -176,8 +196,12 @@ class ProjectUpdate(BaseModel):
 
 
 class ProjectOut(BaseModel):
+    creation_session_id: int | None = None
+    target_duration_sec: int = 60
+    image_resolution: str = ""
+    video_resolution: str = ""
     id: int
-    template_id: str
+    template_id: ProjectTemplateIdOut
     title: str
     source_type: str
     source_text: str
@@ -208,9 +232,10 @@ class ProjectOut(BaseModel):
 
 
 class ProjectListItem(BaseModel):
+    creation_session_id: int | None = None
     id: int
     title: str
-    template_id: str
+    template_id: ProjectTemplateIdOut
     status: str
     progress: int
     cover_url: str | None
@@ -295,14 +320,12 @@ class AdminUsageBucketOut(BaseModel):
     key: str
     calls: int = 0
     charge_fen: int = 0
-    cost_fen: int = 0
 
 
 class AdminDailyUsageOut(BaseModel):
     date: str
     calls: int = 0
     charge_fen: int = 0
-    cost_fen: int = 0
 
 
 class AdminTopUserOut(BaseModel):
@@ -310,60 +333,25 @@ class AdminTopUserOut(BaseModel):
     email: str | None = None
     calls: int = 0
     charge_fen: int = 0
-    cost_fen: int = 0
-
-
-class AdminUpstreamUsageDayOut(BaseModel):
-    """官方与本地上游成本对照（单日）。"""
-
-    date: str
-    local_cost_fen: int = 0
-    local_tokens: int = 0
-    official_tokens: int = 0
-    official_cost_fen: int = 0
-    delta_fen: int = 0
-    delta_pct: float | None = None
-
-
-class AdminUpstreamUsageOut(BaseModel):
-    configured: bool = False
-    days: int = 30
-    last_sync_at: str | None = None
-    series: list[AdminUpstreamUsageDayOut] = Field(default_factory=list)
-
-
-class AdminUpstreamUsageSyncOut(BaseModel):
-    configured: bool = False
-    synced: int = 0
-    skipped: int = 0
-    last_sync_at: str | None = None
 
 
 class AdminFinanceDailyRowOut(BaseModel):
-    """单日财务对照行。"""
+    """单日本地扣费与用量。"""
 
     date: str
     charge_fen: int = 0
-    cost_fen: int = 0
     tokens: int = 0
-    actual_cost_fen: int = 0
-    profit_fen: int = 0
-    profit_pct: float | None = None
+    calls: int = 0
 
 
 class AdminFinanceDailyTotalsOut(BaseModel):
     charge_fen: int = 0
-    cost_fen: int = 0
     tokens: int = 0
-    actual_cost_fen: int = 0
-    profit_fen: int = 0
-    profit_pct: float | None = None
+    calls: int = 0
 
 
 class AdminFinanceDailyOut(BaseModel):
-    configured: bool = False
     days: int = 30
-    last_sync_at: str | None = None
     totals: AdminFinanceDailyTotalsOut = Field(default_factory=AdminFinanceDailyTotalsOut)
     series: list[AdminFinanceDailyRowOut] = Field(default_factory=list)
 
@@ -372,7 +360,6 @@ class AdminProjectUsageOut(BaseModel):
     """项目级用量摘要。"""
 
     charge_fen: int = 0
-    cost_fen: int = 0
     tokens: int = 0
     calls: int = 0
     image_gens: int = 0
@@ -418,9 +405,6 @@ class AdminStatsOut(BaseModel):
     usage_charge_today_fen: int = 0
     usage_charge_month_fen: int = 0
     usage_charge_total_fen: int = 0
-    usage_cost_today_fen: int = 0
-    usage_cost_month_fen: int = 0
-    usage_cost_total_fen: int = 0
     usage_by_capability: list[AdminUsageBucketOut] = Field(default_factory=list)
     usage_by_domain: list[AdminUsageBucketOut] = Field(default_factory=list)
     daily_usage: list[AdminDailyUsageOut] = Field(default_factory=list)
@@ -443,6 +427,8 @@ class AdminQueueSummaryOut(BaseModel):
     name: str
     label: str
     pending: int
+    active: int = 0
+    max_concurrency: int = 0
     sample: list[AdminQueueTaskOut]
 
 
@@ -463,7 +449,8 @@ class AdminQueuesOut(BaseModel):
 
 class AdminUserOut(BaseModel):
     id: int
-    email: EmailStr
+    # 管理端展示历史账号及注销墓碑；匿名 .invalid 地址不作为登录输入校验。
+    email: str = Field(max_length=255)
     nickname: str
     quota_left: int
     balance_fen: int
@@ -489,7 +476,9 @@ class AdminUserListOut(BaseModel):
 class AdminUserPatch(BaseModel):
     plan: str | None = None
     role: str | None = None
-    # Absolute target balance in fen; when set, write ledger delta
+    # 相对调账（分）：正数增加、负数减少；与 balance_fen 互斥，优先本字段
+    balance_delta_fen: int | None = None
+    # 兼容旧客户端：绝对目标余额（分）
     balance_fen: int | None = None
     balance_note: str | None = None
 
@@ -502,6 +491,9 @@ class AdminOrderOut(BaseModel):
     sku_id: str
     amount_fen: int
     credit_fen: int
+    payment_currency: str | None = None
+    payment_amount_minor: int | None = None
+    payment_exchange_rate: str | None = None
     pay_type: str
     status: str
     trade_no: str | None
@@ -527,6 +519,8 @@ class AdminLedgerOut(BaseModel):
     ref_id: str
     note: str
     created_at: datetime
+    # 手动调账时 ref_type=admin，ref_id 为操作管理员 id
+    operator_email: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -540,7 +534,7 @@ class AdminProjectOut(BaseModel):
     id: int
     user_id: int
     user_email: str | None = None
-    template_id: str
+    template_id: ProjectTemplateIdOut
     title: str
     status: str
     progress: int

@@ -5,6 +5,7 @@ import { AgentSkillPicker } from '../../../../components/drama/AgentSkillPicker'
 import { skillTriggerLabel } from '../../../../lib/agentSkillSelection'
 import type { AgentSkill } from '../../../../api/agentSkills'
 import './dramaImageGenOptions.css'
+import { tv } from '../../../../i18n/tv'
 
 type DramaSkillOptionsBarProps = {
   skills: AgentSkill[]
@@ -67,7 +68,7 @@ export function DramaSkillOptionsBar({
         </button>
       </div>
       {open ? (
-        <div className="fc-gen-opt-panel" role="dialog" aria-label="选择 Skill">
+        <div className="fc-gen-opt-panel" role="dialog" aria-label={tv("选择 Skill", "Chọn Skill")}>
           <div className="fc-gen-opt-panel-title">Skill</div>
           <AgentSkillPicker
             compact

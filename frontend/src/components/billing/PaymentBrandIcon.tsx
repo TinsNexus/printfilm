@@ -1,5 +1,5 @@
-import { tr } from '../../i18n/translate'
-type PayBrand = 'alipay' | 'wxpay' | 'unionpay'
+import { tv } from '../../i18n/tv'
+type PayBrand = 'alipay' | 'wxpay'
 
 type Props = {
   brand: PayBrand
@@ -8,10 +8,9 @@ type Props = {
   className?: string
 }
 
-const BRAND_META: Record<PayBrand, { src: string; altKey: string }> = {
-  alipay: { src: '/payment/alipay.svg', altKey: 'pricing.alipay' },
-  wxpay: { src: '/payment/wechatpay.svg', altKey: 'pricing.wechat' },
-  unionpay: { src: '/payment/unionpay.svg', altKey: 'pricing.unionpay' },
+const BRAND_META: Record<PayBrand, { src: string; alt: string }> = {
+  alipay: { src: '/payment/alipay.svg', alt: tv('支付宝', 'Alipay') },
+  wxpay: { src: '/payment/wechatpay.svg', alt: tv('微信支付', 'WeChat Pay') },
 }
 
 /** 支付渠道品牌图标 */
@@ -20,7 +19,7 @@ export default function PaymentBrandIcon({ brand, size = 'sm', className = '' }:
   return (
     <img
       src={meta.src}
-      alt={tr(meta.altKey)}
+      alt={meta.alt}
       className={`pf-pay-brand-icon is-${size}${className ? ` ${className}` : ''}`}
       width={size === 'md' ? 28 : 22}
       height={size === 'md' ? 28 : 22}

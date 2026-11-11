@@ -1,7 +1,7 @@
-from datetime import date, datetime
+from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -51,6 +51,8 @@ class User(Base):
     phone: Mapped[str] = mapped_column(String(32), default="")
     # 用户消费里程碑告警：上次已提醒的累计扣费档位（分）
     billing_alert_last_milestone_fen: Mapped[int] = mapped_column(Integer, default=0)
+    # 注销墓碑：已匿名化的账号不能再通过任何凭证登录。
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     projects: Mapped[list["Project"]] = relationship(back_populates="owner")
@@ -112,9 +114,12 @@ class Project(Base):
     # full = 图→视频→配音→合成；image_text = 静图+叠字+配音+Ken Burns（跳过 AI 视频）
     # 由用户选择，不由模板锁定
     pipeline_mode: Mapped[str] = mapped_column(String(32), default="full")
+    # Agent 会话归属和目标时长；历史向导项目保持空会话标识。
+    creation_session_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    target_duration_sec: Mapped[int] = mapped_column(Integer, default=60)
     # 输出画幅，如 16:9 / 9:16；空则回退模板 default_ratio
     output_ratio: Mapped[str] = mapped_column(String(16), default="")
-    # TTS voice id (openspeech speaker or preset alias); empty → template default
+    # 配音预设 id；空则用模板默认
     voice_id: Mapped[str] = mapped_column(String(128), default="")
     # Canonical cast/look description for Seedream consistency across shots
     character_bible: Mapped[str] = mapped_column(Text, default="")
@@ -129,6 +134,8 @@ class Project(Base):
     # 科普图/视频模型；空则走后台 TokenFree 默认
     image_model: Mapped[str] = mapped_column(String(64), default="")
     video_model: Mapped[str] = mapped_column(String(64), default="")
+    image_resolution: Mapped[str] = mapped_column(String(16), default="")
+    video_resolution: Mapped[str] = mapped_column(String(16), default="")
     ref_image_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -210,6 +217,8 @@ class UsageEvent(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    billing_payer_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True, index=True)
     project_id: Mapped[int | None] = mapped_column(
         ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True
     )
@@ -230,22 +239,10 @@ class UsageEvent(Base):
     estimated: Mapped[bool] = mapped_column(Boolean, default=False)
     settled: Mapped[bool] = mapped_column(Boolean, default=False)
     raw_usage_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    billing_detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    delivery_key: Mapped[str | None] = mapped_column(String(192), nullable=True, unique=True)
+    cost_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-
-class UpstreamUsageDaily(Base):
-    """TokenFree / New API 官方日用量快照，用于与本地 usage_events 对照。"""
-
-    __tablename__ = "upstream_usage_daily"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    usage_date: Mapped[date] = mapped_column(Date, unique=True, index=True)
-    official_tokens: Mapped[int] = mapped_column(Integer, default=0)
-    official_cost_fen: Mapped[int] = mapped_column(Integer, default=0)
-    local_cost_fen: Mapped[int] = mapped_column(Integer, default=0)
-    local_tokens: Mapped[int] = mapped_column(Integer, default=0)
-    raw_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class WalletLedger(Base):
@@ -268,11 +265,18 @@ class Order(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     out_trade_no: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True, index=True)
     sku_id: Mapped[str] = mapped_column(String(64))
     amount_fen: Mapped[int] = mapped_column(Integer)
     credit_fen: Mapped[int] = mapped_column(Integer)
-    pay_type: Mapped[str] = mapped_column(String(16))  # alipay | wxpay
+    pay_type: Mapped[str] = mapped_column(String(16))  # alipay | wxpay | stripe
+    # 下单时固定外币报价；历史 NULL 订单仍按人民币 amount_fen 校验。
+    payment_environment: Mapped[str | None] = mapped_column(String(16), nullable=True, default="Production")
+    payment_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    payment_amount_minor: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    payment_exchange_rate: Mapped[str | None] = mapped_column(String(32), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="pending")  # pending|paid|closed
+    # 易支付交易号，或 Stripe Checkout Session ID（创建时绑定，回调时严格匹配）。
     trade_no: Mapped[str | None] = mapped_column(String(128), nullable=True)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -8,7 +8,7 @@ import {
   Text,
   UserRound,
 } from 'lucide-react'
-import { tr } from '../../../i18n/translate'
+import { tv } from '../../../i18n/tv'
 
 export type CanvasNodeKind = 'character' | 'scene' | 'video' | 'image' | 'text' | 'audio'
 
@@ -27,15 +27,18 @@ export type CanvasAssetNodeData = {
   generating?: boolean
   /** 视频节点 Seedance 生成参数 */
   videoOptions?: Record<string, unknown>
+  /** 角色/场景/图片节点生图参数（模型/比例/清晰度） */
+  imageOptions?: Record<string, unknown>
   [key: string]: unknown
 }
 
-/** 支持本地图片上传的节点类型 */
+/** 支持本地媒体上传的节点类型 */
 export const CANVAS_UPLOADABLE_KINDS = new Set<CanvasNodeKind>([
   'character',
   'scene',
   'image',
   'video',
+  'audio',
 ])
 
 /** 支持提示词 + AI 生成的节点类型 */
@@ -56,22 +59,22 @@ export function canvasKindToAssetType(kind: CanvasNodeKind): string {
 
 /** 空画布居中快速新建选项（顺序与设计稿一致） */
 export const CANVAS_NODE_OPTIONS: CanvasNodeOption[] = [
-  { id: 'character', get label() { return tr('canvasKind.character') }, icon: UserRound },
-  { id: 'scene', get label() { return tr('canvasKind.scene') }, icon: Landmark },
-  { id: 'video', get label() { return tr('canvasKind.video') }, icon: PlaySquare },
-  { id: 'image', get label() { return tr('canvasKind.image') }, icon: ImageIcon },
-  { id: 'text', get label() { return tr('canvasKind.text') }, icon: Text },
-  { id: 'audio', get label() { return tr('canvasKind.audio') }, icon: AudioLines },
+  { id: 'character', label: tv('角色', 'Nhân vật'), icon: UserRound },
+  { id: 'scene', label: tv('场景', 'Bối cảnh'), icon: Landmark },
+  { id: 'video', label: tv('视频', 'Video'), icon: PlaySquare },
+  { id: 'image', label: tv('图片', 'Hình ảnh'), icon: ImageIcon },
+  { id: 'text', label: tv('文本', 'Văn bản'), icon: Text },
+  { id: 'audio', label: tv('音频', 'Âm thanh'), icon: AudioLines },
 ]
 
 /** 左侧添加面板选项 */
 export const ADD_NODE_OPTIONS: CanvasNodeOption[] = [
-  { id: 'character', get label() { return tr('canvasKind.character') }, icon: UserRound },
-  { id: 'scene', get label() { return tr('canvasKind.scene') }, icon: Landmark },
-  { id: 'text', get label() { return tr('canvasKind.text') }, icon: Text },
-  { id: 'image', get label() { return tr('canvasKind.image') }, icon: ImageIcon },
-  { id: 'video', get label() { return tr('canvasKind.video') }, icon: PlaySquare },
-  { id: 'audio', get label() { return tr('canvasKind.audio') }, icon: AudioLines },
+  { id: 'character', label: tv('角色', 'Nhân vật'), icon: UserRound },
+  { id: 'scene', label: tv('场景', 'Bối cảnh'), icon: Landmark },
+  { id: 'text', label: tv('文本', 'Văn bản'), icon: Text },
+  { id: 'image', label: tv('图片', 'Hình ảnh'), icon: ImageIcon },
+  { id: 'video', label: tv('视频', 'Video'), icon: PlaySquare },
+  { id: 'audio', label: tv('音频', 'Âm thanh'), icon: AudioLines },
 ]
 
 export const CANVAS_NODE_OPTION_BY_KIND = Object.fromEntries(
@@ -80,12 +83,12 @@ export const CANVAS_NODE_OPTION_BY_KIND = Object.fromEntries(
 
 /** 各类型默认展示名 */
 export const CANVAS_NODE_DEFAULT_LABEL: Record<CanvasNodeKind, string> = {
-  get character() { return tr('canvasKind.newCharacter') },
-  get scene() { return tr('canvasKind.newScene') },
-  get video() { return tr('canvasKind.newVideo') },
-  get image() { return tr('canvasKind.newImage') },
-  get text() { return tr('canvasKind.text') },
-  get audio() { return tr('canvasKind.newAudio') },
+  character: tv('新角色', 'Nhân vật mới'),
+  scene: tv('新场景', 'Bối cảnh mới'),
+  video: tv('新视频', 'Video mới'),
+  image: tv('新图片', 'Hình ảnh mới'),
+  text: tv('文本', 'Văn bản'),
+  audio: tv('新音频', 'Âm thanh mới'),
 }
 
 /**
@@ -115,7 +118,7 @@ export const CANVAS_NODE_SIZE: Record<CanvasNodeKind, { width: number; height: n
   video: { width: 160, height: 240 },
   image: { width: 160, height: 240 },
   text: { width: 280, height: 140 },
-  audio: { width: 200, height: 100 },
+  audio: { width: 240, height: 120 },
 }
 
 /** 预览区默认尺寸（不含页脚；无媒体时用竖屏占位） */
@@ -138,7 +141,7 @@ export function canvasMediaFrameSize(
   aspect: number | null | undefined,
 ): { width: number; height: number } {
   if (kind === 'text') return { width: 280, height: 100 }
-  if (kind === 'audio') return { width: 200, height: 72 }
+  if (kind === 'audio') return { width: 240, height: 96 }
   const fallback = CANVAS_MEDIA_BODY_SIZE[kind]
   if (!aspect || !Number.isFinite(aspect) || aspect <= 0) return { ...fallback }
 

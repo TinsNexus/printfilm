@@ -1,5 +1,7 @@
+import { marketText as mt } from '../../features/marketplace/translate'
+import { useMarketplaceLocale } from '../../features/marketplace/useMarketplaceLocale'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../../api'
 import type { Project, Shot } from '../../api'
 import BillingErrorNotice from '../../components/billing/BillingErrorNotice'
@@ -7,26 +9,20 @@ import AppShell from '../../components/layout/AppShell'
 import ComingSoon from '../../components/ui/ComingSoon'
 import { STATUS_CN, shotsByNo } from '../../lib/status'
 import { downloadSingleVideo } from '../../lib/clientDownload'
-import { useI18n } from '../../i18n'
-import { tr } from '../../i18n/translate'
+import { withReturn } from '../../features/marketplace/ui'
+import { tv } from '../../i18n/tv'
 
-// 面板 id（展示名走 TAB_LABEL_KEY，避免用文案当状态值）
-const PANEL_TABS = ['copy', 'visual', 'voice', 'transition'] as const
-const TAB_LABEL_KEY: Record<(typeof PANEL_TABS)[number], string> = {
-  copy: 'editorPage.tabCopy',
-  visual: 'editorPage.tabVisual',
-  voice: 'editorPage.tabVoice',
-  transition: 'editorPage.tabTransition',
-}
+const PANEL_TABS = [tv('文案', 'Lời dẫn'), tv('画面', 'Hình ảnh'), tv('配音', 'Lồng tiếng'), tv('转场', 'Chuyển cảnh')] as const
 
 export default function EditorPage() {
-  const { t: tx } = useI18n()
+  useMarketplaceLocale()
   const { id } = useParams()
   const projectId = Number(id)
   const nav = useNavigate()
+  const location = useLocation()
   const [project, setProject] = useState<Project | null>(null)
   const [activeShotId, setActiveShotId] = useState<number | null>(null)
-  const [tab, setTab] = useState<(typeof PANEL_TABS)[number]>('copy')
+  const [tab, setTab] = useState<(typeof PANEL_TABS)[number]>(tv('文案', 'Lời dẫn'))
   const [narration, setNarration] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -44,6 +40,10 @@ export default function EditorPage() {
     api
       .getProject(projectId)
       .then((p) => {
+        if (p.creation_session_id) {
+          nav(`/studio/sessions/${p.creation_session_id}?project=${p.id}`, { replace: true })
+          return
+        }
         setProject(p)
         const first = p.shots[0]
         if (first) {
@@ -51,7 +51,7 @@ export default function EditorPage() {
           setNarration(first.narration || '')
         }
       })
-      .catch((err) => setError(err instanceof Error ? err.message : tr('editorPage.failedLoad')))
+      .catch((err) => setError(err instanceof Error ? err.message : tv('加载失败', 'Tải thất bại')))
   }, [nav, projectId])
 
   const orderedShots = useMemo(() => shotsByNo(project?.shots), [project?.shots])
@@ -79,7 +79,7 @@ export default function EditorPage() {
       await api.updateShot(project.id, shot.id, { narration })
       setProject(await api.getProject(project.id))
     } catch (err) {
-      setError(err instanceof Error ? err.message : tx('editorPage.saveFailed'))
+      setError(err instanceof Error ? err.message : tv('保存失败', 'Lưu thất bại'))
     } finally {
       setBusy(false)
     }
@@ -92,7 +92,7 @@ export default function EditorPage() {
       await api.regenImage(project.id, shot.id)
       setProject(await api.getProject(project.id))
     } catch (err) {
-      setError(err instanceof Error ? err.message : tx('editorPage.regenerateFailed'))
+      setError(err instanceof Error ? err.message : tv('重生成失败', 'Tạo lại thất bại'))
     } finally {
       setBusy(false)
     }
@@ -110,7 +110,7 @@ export default function EditorPage() {
       const s = next.shots.find((x) => x.id === created.id)
       if (s) selectShot(s)
     } catch (err) {
-      setError(err instanceof Error ? err.message : tx('editorPage.couldAddShot'))
+      setError(err instanceof Error ? err.message : tv('添加镜头失败', 'Thêm cảnh quay thất bại'))
     } finally {
       setBusy(false)
     }
@@ -130,7 +130,7 @@ export default function EditorPage() {
     try {
       setProject(await api.reorderShots(project.id, ids))
     } catch (err) {
-      setError(err instanceof Error ? err.message : tx('editorPage.couldReorder'))
+      setError(err instanceof Error ? err.message : tv('调序失败', 'Đổi thứ tự thất bại'))
     } finally {
       setBusy(false)
     }
@@ -144,7 +144,7 @@ export default function EditorPage() {
     try {
       setProject(await api.uploadShotImage(project.id, shot.id, file))
     } catch (err) {
-      setError(err instanceof Error ? err.message : tx('editorPage.couldUploadImage'))
+      setError(err instanceof Error ? err.message : tv('上传画面失败', 'Tải hình ảnh lên thất bại'))
     } finally {
       setBusy(false)
       if (shotFileRef.current) shotFileRef.current.value = ''
@@ -163,7 +163,7 @@ export default function EditorPage() {
         url: api.assetUrl(project.final_video_url, project.updated_at),
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : tx('editorPage.exportFailed'))
+      setError(err instanceof Error ? err.message : tv('导出失败', 'Xuất thất bại'))
     } finally {
       setBusy(false)
     }
@@ -176,7 +176,7 @@ export default function EditorPage() {
       await api.regenAudio(project.id, shot.id)
       setProject(await api.getProject(project.id))
     } catch (err) {
-      setError(err instanceof Error ? err.message : tx('editorPage.reVoiceFailed'))
+      setError(err instanceof Error ? err.message : tv('重配音失败', 'Lồng tiếng lại thất bại'))
     } finally {
       setBusy(false)
     }
@@ -186,7 +186,7 @@ export default function EditorPage() {
     return (
       <AppShell active="studio" flush>
         <p className="pf-muted" style={{ padding: '2rem' }}>
-          {tx('editorPage.loading')}
+          {tv("加载中…", "Đang tải…")}
         </p>
       </AppShell>
     )
@@ -221,7 +221,7 @@ export default function EditorPage() {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <button type="button" className="pf-link" onClick={() => nav(`/studio/${project.id}`)}>
-            {tx('editorPage.backProject')}
+            {tv("← 返回项目", "← Quay lại dự án")}
           </button>
           <strong>{project.title}</strong>
           <span className="pf-muted" style={{ fontSize: '0.8rem' }}>
@@ -230,13 +230,13 @@ export default function EditorPage() {
         </div>
         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
           <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" disabled>
-            {tx('editorPage.undo')} <ComingSoon />
+            {tv("撤销", "Hoàn tác")} <ComingSoon />
           </button>
           <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" disabled>
-            {tx('editorPage.redo')} <ComingSoon />
+            {tv("重做", "Làm lại")} <ComingSoon />
           </button>
           <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" disabled>
-            {tx('editorPage.saveDraft')} <ComingSoon />
+            {tv("保存草稿", "Lưu bản nháp")} <ComingSoon />
           </button>
           <button
             type="button"
@@ -253,7 +253,7 @@ export default function EditorPage() {
               }
             }}
           >
-            {tx('editorPage.previewPlayback')}
+            {tv("预览播放", "Phát xem trước")}
           </button>
           <button
             type="button"
@@ -261,7 +261,15 @@ export default function EditorPage() {
             disabled={busy || !project.final_video_url}
             onClick={() => void exportFilm()}
           >
-            {tx('editorPage.exportVideo')}
+            {tv("导出视频", "Xuất video")}
+          </button>
+          <button
+            type="button"
+            className="pf-btn pf-btn-ghost pf-btn-sm"
+            disabled={!project.final_video_url}
+            onClick={() => nav(withReturn(`/marketplace/from-printfilm?project=${project.id}`, `${location.pathname}${location.search}`))}
+          >
+            {mt("发布到数字资产市场")}
           </button>
         </div>
       </div>
@@ -273,9 +281,9 @@ export default function EditorPage() {
       <div className="pf-editor">
         <aside>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-            <strong>{tx('editorPage.scenes')}</strong>
+            <strong>{tv("场景列表", "Danh sách cảnh")}</strong>
             <button type="button" className="pf-link" disabled={busy} onClick={() => void addShot()}>
-              {tx('editorPage.addShot')}
+              {tv("+ 添加镜头", "+ Thêm cảnh quay")}
             </button>
           </div>
           {orderedShots.map((s) => (
@@ -292,7 +300,7 @@ export default function EditorPage() {
               )}
               <div>
                 <strong style={{ fontSize: '0.82rem' }}>
-                  {String(s.shot_no).padStart(2, '0')} {s.overlay_title || tx('editorPage.shot')}
+                  {String(s.shot_no).padStart(2, '0')} {s.overlay_title || tv('镜头', 'Cảnh quay')}
                 </strong>
                 <div className="pf-muted" style={{ fontSize: '0.72rem' }}>
                   {(s.narration || '').slice(0, 28)}
@@ -301,7 +309,7 @@ export default function EditorPage() {
             </button>
           ))}
           <p className="pf-muted" style={{ fontSize: '0.8rem', marginTop: '0.75rem' }}>
-            {tx('editorPage.totalDuration')}{' '}
+            {tv("总时长", "Tổng thời lượng")}{' '}
             {Math.floor(totalDuration / 60)
               .toString()
               .padStart(2, '0')}
@@ -317,7 +325,7 @@ export default function EditorPage() {
               disabled={busy || !shot || shotIndex <= 0}
               onClick={() => void moveShot(-1)}
             >
-              {tx('editorPage.moveUp')}
+              {tv("上移", "Lên")}
             </button>
             <button
               type="button"
@@ -325,7 +333,7 @@ export default function EditorPage() {
               disabled={busy || !shot || shotIndex < 0 || shotIndex >= orderedShots.length - 1}
               onClick={() => void moveShot(1)}
             >
-              {tx('editorPage.moveDown')}
+              {tv("下移", "Xuống")}
             </button>
           </div>
         </aside>
@@ -333,7 +341,7 @@ export default function EditorPage() {
         <section>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.65rem' }}>
             <strong>
-              {shot ? tx('editorPage.shot2', { shotShot_no: shot.shot_no }) : tx('editorPage.preview')} · {isPortrait ? '9:16' : '16:9'}
+              {shot ? tv(`镜头 ${shot.shot_no}`, `Cảnh quay ${shot.shot_no}`) : tv('预览', 'Xem trước')} · {isPortrait ? '9:16' : '16:9'}
             </strong>
             <div style={{ display: 'flex', gap: 8 }}>
               <input
@@ -349,10 +357,10 @@ export default function EditorPage() {
                 disabled={busy || !shot}
                 onClick={() => shotFileRef.current?.click()}
               >
-                {tx('editorPage.uploadImage')}
+                {tv("上传画面", "Tải hình ảnh lên")}
               </button>
               <button type="button" className="pf-btn pf-btn-ghost pf-btn-sm" disabled={busy} onClick={regenImage}>
-                {tx('editorPage.aiRedraw')}
+                {tv("AI 重绘", "AI vẽ lại")}
               </button>
             </div>
           </div>
@@ -369,7 +377,7 @@ export default function EditorPage() {
             ) : shotImage ? (
               <img key={`i-${shot?.id}-${shot?.version}`} src={shotImage} alt="" />
             ) : (
-              <span className="empty">{tx('editorPage.imageYet')}</span>
+              <span className="empty">{tv("暂无画面", "Chưa có hình")}</span>
             )}
           </div>
           {shot?.audio_url ? (
@@ -425,19 +433,19 @@ export default function EditorPage() {
               fontSize: '0.9rem',
             }}
           >
-            {tx('editorPage.useUploadImageReplace')}
+            {tv("可用「上传画面」替换本镜图，或「AI 重绘」按提示词重生。", "Có thể dùng “Tải hình ảnh lên” để thay ảnh của cảnh này, hoặc “AI vẽ lại” để tạo lại theo prompt.")}
           </div>
 
           <div style={{ marginTop: '1rem' }}>
             <div className="pf-panel-tabs">
-              {[tx('editorPage.assetLibrary'), tx('editorPage.favorites'), tx('editorPage.aiGenerated'), tx('editorPage.myUploads')].map((t) => (
+              {[tv('素材库', 'Thư viện tư liệu'), tv('收藏素材', 'Tư liệu đã lưu'), tv('AI 生成素材', 'Tư liệu AI tạo'), tv('我的上传', 'Tải lên của tôi')].map((t) => (
                 <button key={t} type="button" disabled>
                   {t}
                 </button>
               ))}
             </div>
             <p className="pf-muted" style={{ fontSize: '0.85rem' }}>
-              {tx('editorPage.assetLibraryComingSoon')}
+              {tv("素材库即将推出。当前可用上方「上传画面」或「AI 重绘」替换本镜图。", "Thư viện tư liệu sắp ra mắt. Hiện có thể dùng “Tải hình ảnh lên” hoặc “AI vẽ lại” phía trên để thay ảnh của cảnh này.")}
             </p>
           </div>
         </section>
@@ -451,15 +459,15 @@ export default function EditorPage() {
                 className={tab === t ? 'active' : ''}
                 onClick={() => setTab(t)}
               >
-                {tx(TAB_LABEL_KEY[t])}
+                {t}
               </button>
             ))}
           </div>
 
-          {tab === 'copy' ? (
+          {tab === '文案' ? (
             <>
               <label className="pf-muted" style={{ fontSize: '0.85rem', display: 'block' }}>
-                {tx('editorPage.copyText')}
+                {tv("文案内容", "Nội dung lời dẫn")}
                 <textarea
                   value={narration}
                   onChange={(e) => setNarration(e.target.value)}
@@ -479,14 +487,14 @@ export default function EditorPage() {
                 style={{ marginTop: 8 }}
                 disabled
               >
-                {tx('editorPage.aiOptimize')} <ComingSoon />
+                {tv("AI 帮我优化这一镜", "AI giúp tôi tối ưu cảnh này")} <ComingSoon />
               </button>
               <div style={{ marginTop: '0.85rem' }}>
                 <strong style={{ fontSize: '0.88rem' }}>
-                  {tx('editorPage.styleSettings')} <ComingSoon />
+                  {tv("样式设置", "Cài đặt kiểu dáng")} <ComingSoon />
                 </strong>
                 <p className="pf-muted" style={{ fontSize: '0.8rem' }}>
-                  {tx('editorPage.fontSizeColorAlignment')}
+                  {tv("字体 / 字号 / 颜色 / 对齐占位", "Phông chữ / cỡ chữ / màu / căn lề (chỗ giữ)")}
                 </p>
               </div>
               <button
@@ -496,15 +504,15 @@ export default function EditorPage() {
                 disabled={busy}
                 onClick={saveNarration}
               >
-                {tx('editorPage.saveCopy')}
+                {tv("保存文案", "Lưu lời dẫn")}
               </button>
             </>
           ) : null}
 
-          {tab === 'visual' ? (
+          {tab === '画面' ? (
             <>
               <p className="pf-muted" style={{ fontSize: '0.88rem' }}>
-                {tx('editorPage.useUploadImagePreview')}
+                {tv("可用预览区「上传画面」替换本镜图，或「AI 重绘」按提示词重生。", "Có thể dùng “Tải hình ảnh lên” ở vùng xem trước để thay ảnh của cảnh này, hoặc “AI vẽ lại” để tạo lại theo prompt.")}
               </p>
               <button
                 type="button"
@@ -512,15 +520,15 @@ export default function EditorPage() {
                 disabled={busy}
                 onClick={regenImage}
               >
-                {tx('editorPage.regenerateShot')}
+                {tv("重新生成当前镜头", "Tạo lại cảnh quay hiện tại")}
               </button>
             </>
           ) : null}
 
-          {tab === 'voice' ? (
+          {tab === '配音' ? (
             <>
               <p className="pf-muted" style={{ fontSize: '0.88rem' }}>
-                {tx('editorPage.replaceShotSVoice')}
+                {tv("替换当前镜头配音（沿用项目音色）。", "Thay lồng tiếng cảnh quay hiện tại (giữ giọng nói của dự án).")}
               </p>
               <button
                 type="button"
@@ -528,14 +536,14 @@ export default function EditorPage() {
                 disabled={busy}
                 onClick={regenAudio}
               >
-                {tx('editorPage.replaceVoice')}
+                {tv("替换配音", "Thay lồng tiếng")}
               </button>
             </>
           ) : null}
 
-          {tab === 'transition' ? (
+          {tab === '转场' ? (
             <div className="pf-hint">
-              {tx('editorPage.transitionEffectsFadeFlash')}
+              {tv("转场效果（淡入淡出、闪白、运镜衔接等）即将推出。", "Hiệu ứng chuyển cảnh (mờ dần, chớp trắng, nối chuyển động máy…) sắp ra mắt.")}
             </div>
           ) : null}
 
@@ -545,7 +553,7 @@ export default function EditorPage() {
             style={{ marginTop: '1rem' }}
             disabled
           >
-            {tx('editorPage.applyAll')} <ComingSoon />
+            {tv("应用到全部同类镜头", "Áp dụng cho mọi cảnh quay cùng loại")} <ComingSoon />
           </button>
         </aside>
       </div>

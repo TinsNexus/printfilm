@@ -13,6 +13,7 @@ import {
   filterCanvasMentionItems,
   type CanvasMentionItem,
 } from './CanvasMentionPopover'
+import { tv } from '../../../../i18n/tv'
 
 type CanvasPromptEditorProps = {
   value: string
@@ -230,7 +231,8 @@ export function CanvasPromptEditor({
         className={`fc-generate-input fc-generate-editor nodrag nopan nowheel${empty ? ' is-empty' : ''}`}
         role="textbox"
         aria-multiline="true"
-        aria-label="生成提示词"
+        aria-label={tv("生成提示词", "Prompt tạo")}
+        aria-disabled={disabled}
         contentEditable={!disabled}
         suppressContentEditableWarning
         data-placeholder={placeholder}

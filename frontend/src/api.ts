@@ -1,38 +1,15 @@
-import { throwApiError } from './lib/apiError'
-import { tr } from './i18n/translate'
+import { workspaceScope } from './features/teams/workspaceScope'
+import { createAccountRequests } from './api/account'
+import { API_BASE, createJsonRequester, requestResponse, uploadFile } from './api/client'
+import { apiErrorMessage } from './api/http'
+import { curatedCreationTemplates } from './lib/creationTemplates'
+import type { PaymentCurrency, StripePaymentQuote } from './lib/billingPayments'
+import { tv } from './i18n/tv'
 
-function defaultApiBase() {
-  if (typeof window !== 'undefined' && window.location?.hostname) {
-    const { protocol, hostname } = window.location
-    // Same host as Vite; API listens on 8000 for LAN + local
-    return `${protocol}//${hostname}:8000`
-  }
-  return 'http://127.0.0.1:8000'
-}
-
-// Empty string = same-origin (nginx proxies /api). Undefined = LAN default :8000.
-const _viteApiBase = import.meta.env.VITE_API_BASE
-const API_BASE =
-  _viteApiBase === undefined || _viteApiBase === null ? defaultApiBase() : String(_viteApiBase)
-
-function authHeaders(): HeadersInit {
-  const token = localStorage.getItem('token')
-  return token
-    ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
-    : { 'Content-Type': 'application/json' }
-}
-
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: { ...authHeaders(), ...(init?.headers || {}) },
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throwApiError(res.status, err.detail, res.statusText)
-  }
-  return res.json()
-}
+/** 科普、账号和计费 API 共用 JSON 传输层。 */
+const request = createJsonRequester()
+// 注销沿用统一的鉴权请求器，不在组件内另建 fetch 或处理令牌。
+const accountRequests = createAccountRequests(request)
 
 export type PipelineMode = 'full' | 'image_text'
 
@@ -63,7 +40,7 @@ export type Template = {
   }
 }
 
-/** Template voice_preset alias → openspeech speaker id */
+/** 模板音色别名 → 预设 speaker id */
 export const VOICE_PRESET_ALIASES: Record<string, string> = {
   narrator_calm: 'zh_female_cancan_uranus_bigtts',
   warm_storyteller: 'zh_female_tianmeixiaoyuan_uranus_bigtts',
@@ -95,6 +72,7 @@ export function defaultsFromTemplate(t: Template): {
 }
 
 export type Shot = {
+  video_skip_reason?: string | null
   id: number
   shot_no: number
   duration: number
@@ -135,6 +113,8 @@ export function resolveVoiceId(raw: string, voices: VoicePreset[]): string {
 
 export type Project = {
   id: number
+  target_duration_sec?: number
+  creation_session_id?: number | null
   template_id: string
   title: string
   source_type: string
@@ -156,6 +136,8 @@ export type Project = {
   extra_prompt?: string
   image_model?: string
   video_model?: string
+  image_resolution?: string
+  video_resolution?: string
   ref_image_url: string | null
   created_at: string
   updated_at: string
@@ -184,6 +166,15 @@ export type MediaModelOption = {
   description: string
   provider: string
   recommended?: boolean
+  strategy_id?: string
+  strategy_version?: number
+  billing_unit?: 'image' | 'second'
+  prices?: Record<string, string>
+  price_version?: number | null
+  available?: boolean
+  available_resolutions?: string[]
+  reference_limits?: { images: number; audios: number; videos: number }
+  defaults?: { resolution: string; aspect_ratio: string; duration?: number; count: number }
   /** 该模型允许的清晰度 */
   allowed_resolutions?: string[]
   /** 该模型允许的画幅比例 */
@@ -199,6 +190,9 @@ export type MediaModelOption = {
 }
 
 export type MediaModelsCatalog = {
+  generation_defaults?: { image_resolution: string; video_resolution: string }
+  price_version?: number | null
+  billing_mode?: 'fixed_media' | 'legacy'
   image_models: MediaModelOption[]
   video_models: MediaModelOption[]
   defaults: {
@@ -225,6 +219,7 @@ export type BillingSku = {
   amount_fen: number
   credit_fen: number
   recommended?: boolean
+  stripe_quote?: StripePaymentQuote | null
 }
 
 export type BillingOrder = {
@@ -238,6 +233,9 @@ export type BillingOrder = {
   trade_no?: string | null
   paid_at?: string | null
   created_at?: string | null
+  payment_currency?: PaymentCurrency | null
+  payment_amount_minor?: number | null
+  payment_exchange_rate?: string | null
 }
 
 export type UsageSummary = {
@@ -245,7 +243,6 @@ export type UsageSummary = {
   tokens: number
   charge_fen: number
   charge_yuan: number
-  cost_fen: number
   calls: number
   balance_fen: number
   balance_yuan: number
@@ -272,6 +269,9 @@ export type UsageChargeList = {
 }
 
 export type Wallet = {
+  debt_fen?: number
+  spendable_fen?: number
+  pending_commitment_fen?: number
   balance_fen: number
   frozen_fen: number
   balance_yuan: number
@@ -357,36 +357,25 @@ export const api = {
       body: JSON.stringify(body),
     })
   },
-  async uploadAvatar(file: File) {
-    const token = localStorage.getItem('token')
-    const form = new FormData()
-    form.append('file', file)
-    const res = await fetch(`${API_BASE}/api/auth/avatar`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: form,
+  closeAccount: accountRequests.closeAccount,
+  /** 上传用户头像并返回更新后的用户资料。 */
+  uploadAvatar(file: File) {
+    return uploadFile<User>('/api/auth/avatar', file, (response, detail) => {
+      throw new Error(apiErrorMessage(detail, response.statusText) || tv('头像上传失败', 'Tải ảnh đại diện thất bại'))
     })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }))
-      const detail = err.detail
-      const message =
-        typeof detail === 'string'
-          ? detail
-          : Array.isArray(detail)
-            ? detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join('; ')
-            : res.statusText
-      throw new Error(message || tr('lib.avatarUploadFailed'))
-    }
-    return res.json() as Promise<User>
   },
   templates() {
-    return request<Template[]>('/api/templates')
+    return request<Template[]>('/api/templates').then(curatedCreationTemplates)
+  },
+  getTemplate(id: string) {
+    return request<Template>(`/api/templates/${encodeURIComponent(id)}`)
   },
   createProject(body: {
     template_id: string
     title: string
     source_type: 'theme' | 'script'
     source_text: string
+    target_duration_sec?: number
     resolution_mode?: 'preview' | 'hd'
     pipeline_mode?: PipelineMode
     output_ratio?: string
@@ -394,6 +383,10 @@ export const api = {
     style_prompt?: string
     character_prompt?: string
     extra_prompt?: string
+    image_model?: string
+    video_model?: string
+    image_resolution?: string
+    video_resolution?: string
   }) {
     return request<Project>('/api/projects', { method: 'POST', body: JSON.stringify(body) })
   },
@@ -403,6 +396,7 @@ export const api = {
       title?: string
       source_type?: 'theme' | 'script'
       source_text?: string
+      target_duration_sec?: number
       template_id?: string
       pipeline_mode?: PipelineMode
       output_ratio?: string
@@ -413,6 +407,8 @@ export const api = {
       extra_prompt?: string
       image_model?: string
       video_model?: string
+      image_resolution?: string
+      video_resolution?: string
       bgm_lock?: string
       subtitle_preset?: string
       cover_url?: string | null
@@ -426,27 +422,11 @@ export const api = {
   mediaModels() {
     return request<MediaModelsCatalog>('/api/media-models')
   },
-  async uploadCover(id: number, file: File) {
-    const token = localStorage.getItem('token')
-    const form = new FormData()
-    form.append('file', file)
-    const res = await fetch(`${API_BASE}/api/projects/${id}/cover`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: form,
+  /** 上传科普项目封面并返回项目。 */
+  uploadCover(id: number, file: File) {
+    return uploadFile<Project>(`/api/projects/${id}/cover`, file, (response, detail) => {
+      throw new Error(apiErrorMessage(detail, response.statusText) || tv('封面上传失败', 'Tải ảnh bìa thất bại'))
     })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }))
-      const detail = err.detail
-      const message =
-        typeof detail === 'string'
-          ? detail
-          : Array.isArray(detail)
-            ? detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join('; ')
-            : res.statusText
-      throw new Error(message || tr('lib.coverUploadFailed'))
-    }
-    return res.json() as Promise<Project>
   },
   voices() {
     return request<VoicePreset[]>('/api/voices')
@@ -492,23 +472,14 @@ export const api = {
       stats: { total: number; generating: number; done: number; published: number }
     }>(`/api/projects${qs ? `?${qs}` : ''}`)
   },
+  /** 打包下载选中项目的视频，保留服务端文件名。 */
   async downloadZip(ids: number[]) {
-    const res = await fetch(`${API_BASE}/api/projects/download-zip`, {
+    const res = await requestResponse('/api/projects/download-zip', {
       method: 'POST',
-      headers: authHeaders(),
       body: JSON.stringify({ ids }),
+    }, (response, detail) => {
+      throw new Error(apiErrorMessage(detail, response.statusText) || tv('打包下载失败', 'Tải xuống gói thất bại'))
     })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }))
-      const detail = err.detail
-      const message =
-        typeof detail === 'string'
-          ? detail
-          : Array.isArray(detail)
-            ? detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join('; ')
-            : res.statusText
-      throw new Error(message || tr('lib.zipDownloadFailed'))
-    }
     const blob = await res.blob()
     const cd = res.headers.get('Content-Disposition') || ''
     const m = cd.match(/filename="?([^"]+)"?/)
@@ -543,21 +514,11 @@ export const api = {
       body: JSON.stringify({ shot_ids: shotIds }),
     })
   },
-  async uploadShotImage(projectId: number, shotId: number, file: File) {
-    const token = localStorage.getItem('token')
-    const form = new FormData()
-    form.append('file', file)
-    const res = await fetch(`${API_BASE}/api/projects/${projectId}/shots/${shotId}/image`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: form,
+  /** 上传分镜图片，保留当前项目响应结构。 */
+  uploadShotImage(projectId: number, shotId: number, file: File) {
+    return uploadFile<Project>(`/api/projects/${projectId}/shots/${shotId}/image`, file, (_response, detail) => {
+      throw new Error(typeof detail === 'string' ? detail : tv('画面上传失败', 'Tải ảnh khung hình thất bại'))
     })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }))
-      const detail = err.detail
-      throw new Error(typeof detail === 'string' ? detail : tr('lib.imageUploadFailed'))
-    }
-    return res.json() as Promise<Project>
   },
   regenImage(projectId: number, shotId: number) {
     return request<Project>(`/api/projects/${projectId}/shots/${shotId}/regen-image`, {
@@ -593,12 +554,12 @@ export const api = {
     return request<Work[]>('/api/works')
   },
   wallet() {
-    return request<Wallet>('/api/billing/wallet')
+    return request<Wallet>('/api/billing/wallet?view=production')
   },
-  billingSkus() {
-    return request<{ skus: BillingSku[]; pay_types: string[]; markup: number }>('/api/billing/skus')
+  billingSkus(language: 'zh' | 'en' = 'zh') {
+    return request<{ skus: BillingSku[]; pay_types: string[]; markup: number; stripe_unavailable_reason?: string | null }>(`/api/billing/skus?language=${language}`)
   },
-  createBillingOrder(sku_id: string, pay_type: 'alipay' | 'wxpay') {
+  createBillingOrder(sku_id: string, pay_type: 'alipay' | 'wxpay' | 'stripe', language: 'zh' | 'en' = 'zh') {
     return request<{
       out_trade_no: string
       sku_id: string
@@ -607,17 +568,20 @@ export const api = {
       amount_fen: number
       credit_fen: number
       pay_type: string
+      payment_currency?: PaymentCurrency
+      payment_amount_minor?: number
+      payment_exchange_rate?: string
       trade_no?: string
       qrcode?: string
       payurl?: string
       img?: string
       qr_payload?: string
-      /** qr=原生扫码；redirect=新开易支付收银台 */
+      /** qr=原生扫码；redirect=托管收银台 */
       pay_mode?: 'qr' | 'redirect' | string
       expire_seconds?: number
     }>('/api/billing/orders', {
       method: 'POST',
-      body: JSON.stringify({ sku_id, pay_type }),
+      body: JSON.stringify({ sku_id, pay_type, language }),
     })
   },
   getBillingOrder(outTradeNo: string) {
@@ -626,6 +590,9 @@ export const api = {
       status: string
       amount_fen: number
       credit_fen: number
+      payment_currency?: PaymentCurrency
+      payment_amount_minor?: number
+      payment_exchange_rate?: string
     }>(`/api/billing/orders/${encodeURIComponent(outTradeNo)}`)
   },
   /** 关闭待支付订单 */
@@ -668,6 +635,7 @@ export const api = {
       task_type: params.task_type,
       count: String(params.count ?? 1),
     })
+    if (workspaceScope.teamId !== null && params.domain === 'drama') q.set('team_id', String(workspaceScope.teamId))
     return request<BillingPreflight>(`/api/billing/preflight?${q.toString()}`)
   },
   eventsUrl(projectId: number) {

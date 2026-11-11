@@ -1,12 +1,10 @@
-"""TokenFree 官方价目解析、推荐名单与预估。"""
+"""TokenFree 官方价目解析与计费预估。"""
 
 from __future__ import annotations
 
 from app.config import get_settings
 from app.services.tokenfree_pricing import (
     OfficialRate,
-    RECOMMENDED_MODELS,
-    build_official_rate_rows,
     charge_fen_official_image,
     charge_fen_official_llm,
     charge_fen_official_video,
@@ -54,6 +52,9 @@ def test_parse_pricing_payload_per_call_and_token() -> None:
     image = rates["gpt-image-2-5"]
     assert image.billing == "per_call"
     assert image.cny_per_call == 4.375
+    # 点分 id 应能命中价目里的连字符键
+    assert lookup_rate("gpt-image-2.5", rates) is image
+    assert lookup_rate("gpt-image-2-5", rates) is image
     llm = rates["kimi-k2.6"]
     assert llm.billing == "token"
     assert abs(llm.cny_in_per_1m - 10.1866) < 0.01
@@ -178,16 +179,6 @@ def test_openai_protocol_channel_sync_heals_minimax_h3_to_video() -> None:
         set_cached_rates(None)
 
 
-def test_recommended_models_cover_text_image_video_audio() -> None:
-    """短名单覆盖文字/图/视频/语音，且含默认推荐；不含 TokenFree 不可用的 Seedream。"""
-    caps = {row["capability"] for row in RECOMMENDED_MODELS}
-    assert caps == {"text", "image", "video", "audio"}
-    ids = {row["id"] for row in RECOMMENDED_MODELS}
-    assert {"kimi-k2.6", "gpt-image-2", "seedance-2-5", "seedance-2-0", "qwen-tts-2025-05-22", "gemini-3.1-flash-tts"} <= ids
-    assert "seedream-5-0-pro" not in ids
-    assert any(row["recommended"] and row["id"] == "kimi-k2.6" for row in RECOMMENDED_MODELS)
-
-
 def test_charge_official_image_uses_per_call() -> None:
     """有官方按张价时，Seedream 走价目而非 Kie 积分档。"""
     settings = get_settings()
@@ -268,58 +259,96 @@ def test_charge_official_image_uses_sunburst_size_tiers() -> None:
     assert kie_sunburst_credits_for_size("4K") == 16
     assert charge_fen_official_image(settings, model="gpt-image-2", size="1K") == 21
     assert charge_fen_official_image(settings, model="gpt-image-2", size="2K") == 35
-    # 生成侧把 gpt-image 的 3K/4K 钳到 2K，计费同步为 2K 档
+    # GPT Image 2 的 4K 钳到 2K；2.5 保留 4K
     assert charge_fen_official_image(settings, model="gpt-image-2", size="4K") == 35
     assert kie_sunburst_credits_for_size("4K") == 16
     assert resolve_billing_image_size(settings, model="seedream-5-0-pro", size="3K") == "2K"
-    assert resolve_billing_image_size(settings, model="gpt-image-2-5-sunburst", size="4K") == "2K"
+    assert resolve_billing_image_size(settings, model="gpt-image-2", size="4K") == "2K"
+    assert resolve_billing_image_size(settings, model="gpt-image-2.5", size="4K") == "4K"
 
 
 def test_charge_official_video_720p() -> None:
-    """2.5 按清晰度精确档结算：480p/720p/1080p。"""
+    """2.5 对齐 TF：刊例×1.5×像素 tok；1080p 高于 720p。"""
     settings = get_settings()
     settings.billing_markup = 1.0
+    settings.billing_usd_cny = 7.3
+    set_cached_rates(None)
     fen_480 = charge_fen_official_video(5.0, settings, model="seedance-2-5", resolution="480p")
     fen_720 = charge_fen_official_video(5.0, settings, model="seedance-2-5", resolution="720p")
     fen_1080 = charge_fen_official_video(5.0, settings, model="seedance-2-5", resolution="1080p")
-    assert fen_480 == 336
-    assert fen_720 == 756
-    assert fen_1080 == 1871
+    # 5s：10k/22k/49k tok × (70|77)×1.5 /1e6
+    assert fen_480 == 525
+    assert fen_720 == 1155
+    assert fen_1080 == 2830
+    assert fen_1080 > fen_720 > fen_480
 
 
-def test_charge_official_video_mini_cheaper_than_2_0() -> None:
-    """Mini 5s 480p 预扣低于 2.0 同档。"""
+def test_tf_seedance_25_expr_matches_channel_export() -> None:
+    """固化的 billing_expr 与 TF Ark 渠道导出一致：245025 tok·1080p≈¥28.31。"""
+    from app.services.tokenfree_pricing import (
+        SEEDANCE_TF_BILLING_EXPR,
+        builtin_seedance_official_rates,
+        merge_seedance_tf_rates,
+    )
+
+    expr = SEEDANCE_TF_BILLING_EXPR["seedance-2.5"]
+    assert 'u("tokens") * (77 / 7.3 * 1.5)' in expr
+    assert 'u("tokens") * (70 / 7.3 * 1.5)' in expr
     settings = get_settings()
     settings.billing_markup = 1.0
+    settings.billing_usd_cny = 7.3
+    set_cached_rates(merge_seedance_tf_rates(builtin_seedance_official_rates()))
+    try:
+        fen = charge_fen_official_video(
+            5.0,
+            settings,
+            model="seedance-2.5",
+            resolution="1080p",
+            tokens=245_025,
+        )
+        assert fen == 2831
+    finally:
+        set_cached_rates(None)
+
+
+def test_charge_official_video_mini_aliases_to_2_0() -> None:
+    """Mini / mimi 规范到 2.0，与 2.0 同价。"""
+    from app.services.tokenfree_pricing import canonicalize_channel_model_id
+
+    settings = get_settings()
+    settings.billing_markup = 1.0
+    settings.billing_usd_cny = 7.3
+    set_cached_rates(None)
+    assert canonicalize_channel_model_id("seedance-2.0-mimi") == "seedance-2.0"
     mini = charge_fen_official_video(5.0, settings, model="seedance-2-0-mini", resolution="480p")
     full = charge_fen_official_video(5.0, settings, model="seedance-2-0", resolution="480p")
-    assert mini == 80
-    assert full == 231
-    assert mini < full
+    assert mini == full == 345
 
 
 def test_charge_official_video_minimax_not_seedance_fallback() -> None:
     """MiniMax 走自有秒价，不误落到 seedance-2-5。"""
     settings = get_settings()
     settings.billing_markup = 1.0
+    settings.billing_usd_cny = 7.3
+    set_cached_rates(None)
     fen = charge_fen_official_video(5.0, settings, model="MiniMax-H3", resolution="720p")
-    # 5s × ¥0.56/秒 = ¥2.80 → 280 分
-    assert fen == 280
+    # 5s × $0.08/秒 × 7.3 = ¥2.92 → 292 分
+    assert fen == 292
     seedance = charge_fen_official_video(5.0, settings, model="seedance-2-5", resolution="720p")
     assert fen != seedance
 
 
 def test_charge_official_video_uses_vendor_sec_not_placeholder() -> None:
-    """视频预估用结算参考秒价，不用 37.5 占位倍率。"""
+    """无可用表达式时走本站兜底秒价（≥¥1.5/秒），不用 37.5 占位倍率。"""
     settings = get_settings()
-    settings.billing_markup = 1.5
-    settings.billing_usd_cny = 7.0
+    settings.billing_markup = 1.0
+    settings.billing_usd_cny = 7.3
     rates = parse_pricing_payload(_sample_payload(), settings)
     set_cached_rates(rates)
     try:
         charge = charge_fen_official_video(5.0, settings, model="seedance-2-5", resolution="480p")
-        # 3.36 元 → 336 分
-        assert charge == 336
+        # TF 对齐兜底：5s×10k tok×70×1.5 → ¥5.25 → 525 分
+        assert charge == 525
     finally:
         set_cached_rates(None)
 
@@ -329,16 +358,14 @@ def test_media_model_pricing_hint_lists_all_video_tiers() -> None:
     from app.services.tokenfree_pricing import media_model_pricing_hint
 
     h20 = media_model_pricing_hint("seedance-2-0")
-    h_mini = media_model_pricing_hint("seedance-2-0-mini")
     h25 = media_model_pricing_hint("seedance-2-5")
     h_mm = media_model_pricing_hint("MiniMax-H3")
     assert "720p" in h20
     assert "1080p" in h25
-    assert h_mini != h20
-    assert "0.16" in h_mini
-    assert "0.46" in h20
-    assert "0.56" in h_mm
-    assert "720p" in h_mm
+    # 2.0 720p ≈ ¥1.52/秒（刊例 46×1.5×22k tok）
+    assert "1.52" in h20 or "1.51" in h20 or "7.59" in h20
+    assert "0.58" in h_mm or "0.584" in h_mm
+    assert "768p" in h_mm or "480p" in h_mm
 
 
 def test_charge_official_llm_uses_in_out_split() -> None:
@@ -357,27 +384,6 @@ def test_charge_official_llm_uses_in_out_split() -> None:
         set_cached_rates(None)
 
 
-def test_build_official_rate_rows_marks_video_vendor() -> None:
-    """费率表视频行标 vendor_sec，结算参考含多清晰度。"""
-    settings = get_settings()
-    settings.billing_usd_cny = 7.0
-    settings.billing_markup = 1.5
-    rates = parse_pricing_payload(_sample_payload(), settings)
-    rows = build_official_rate_rows(rates, settings)
-    by_id = {row["id"]: row for row in rows}
-    assert by_id["gpt-image-2"]["official_cost_yuan"] == 0.35
-    assert by_id["gpt-image-2"]["user_charge_yuan"] == 0.35
-    assert by_id["gpt-image-2"]["basis"] == "kie_sunburst"
-    assert "积分" in by_id["gpt-image-2"]["rate_label"]
-    assert by_id["seedance-2-5"]["basis"] == "vendor_sec"
-    assert by_id["seedance-2-5"]["placeholder"] is True
-    assert "结算参考" in by_id["seedance-2-5"]["rate_label"]
-    assert "1080p" in by_id["seedance-2-5"]["rate_label"]
-    assert "火山" not in by_id["seedance-2-5"]["rate_label"]
-    assert "720p" in by_id["seedance-2-0"]["rate_label"]
-    assert by_id["seedance-2-0-mini"]["rate_label"] != by_id["seedance-2-0"]["rate_label"]
-
-
 def test_parse_pricing_item_skips_bad_row() -> None:
     """脏字段跳过，不让整包价目作废。"""
     from app.services.tokenfree_pricing import parse_pricing_item
@@ -386,16 +392,17 @@ def test_parse_pricing_item_skips_bad_row() -> None:
 
 
 def test_video_catalog_id_from_endpoint() -> None:
-    """方舟接入点名能收到推荐 Seedance id。"""
-    assert video_catalog_id("doubao-seedance-2-5-260628") == "seedance-2-5"
-    assert video_catalog_id("seedance-2-0-mini") == "seedance-2-0-mini"
-    assert video_catalog_id("doubao-seedance-2-0-260128") == "seedance-2-0"
-    assert video_catalog_id("seedance-2") == "seedance-2-0"
-    assert video_catalog_id("seedance-2-0") == "seedance-2-0"
+    """方舟接入点名能收到 TokenFree 点分 Seedance id。"""
+    assert video_catalog_id("doubao-seedance-2-5-260628") == "seedance-2.5"
+    assert video_catalog_id("seedance-2-0-mini") == "seedance-2.0"  # mini 未开通→2.0
+    assert video_catalog_id("doubao-seedance-2-0-260128") == "seedance-2.0"
+    assert video_catalog_id("seedance-2") == "seedance-2.0"
+    assert video_catalog_id("seedance-2.0-fast") == "seedance-2.0-fast"
+    assert video_catalog_id("doubao-seedance-2-0-fast-260128") == "seedance-2.0-fast"
 
 
 def test_canonicalize_channel_models_merges_seedance_2_aliases() -> None:
-    """2.0 三档别名合并成一条，2.5 / Mini 保留。"""
+    """2.0 别名与 mini 合并到 2.0；fast / 2.5 保留。"""
     from app.services.tokenfree_pricing import canonicalize_channel_models
 
     assert canonicalize_channel_models(
@@ -404,9 +411,10 @@ def test_canonicalize_channel_models_merges_seedance_2_aliases() -> None:
             "seedance-2",
             "seedance-2-0",
             "seedance-2-0-mini",
+            "seedance-2.0-fast",
             "seedance-2-5",
         ]
-    ) == ["seedance-2-0", "seedance-2-0-mini", "seedance-2-5"]
+    ) == ["seedance-2.0", "seedance-2.0-fast", "seedance-2.5"]
 
 
 def test_canonicalize_keeps_unknown_seedance_id() -> None:

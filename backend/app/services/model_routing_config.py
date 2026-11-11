@@ -46,17 +46,20 @@ def infer_model_capability(model: str) -> LogicalModelCapability:
         or mid.startswith("zh_")
         or "speaker" in mid
         or mid.startswith("s_")
+        or "/aura" in mid  # deepgram/aura-*
+        or "polly" in mid
+        or "edge-tts" in mid
     ):
         return "audio"
     if (
         "seedance" in mid
         or "veo" in mid
+        or "sora" in mid
         or "video" in mid
         or "i2v" in mid
-        or mid.startswith("kie-veo")
-        or mid.startswith("kie-seedance")
         or "minimax-h" in mid
         or "hailuo" in mid
+        or "kling" in mid
     ):
         return "video"
     if (
@@ -65,9 +68,17 @@ def infer_model_capability(model: str) -> LogicalModelCapability:
         or "banana" in mid
         or "dream" in mid
         or mid.startswith("gpt-image")
+        or "dall-e" in mid
+        or "dalle" in mid
+        or "flux" in mid
+        or "imagen" in mid
+        or "midjourney" in mid
+        or "stable-diffusion" in mid
+        or "sdxl" in mid
+        or "recraft" in mid
+        or "ideogram" in mid
         or "grok-imagine" in mid
         or "image" in mid
-        or mid.startswith("kie-")
     ):
         return "image"
     return "text"
@@ -77,11 +88,6 @@ def infer_model_capability(model: str) -> LogicalModelCapability:
 def channel_connection_ready(channel: SystemModelChannel) -> bool:
     if not channel.enabled:
         return False
-    if channel.protocol == "volc_tts":
-        return bool(channel.has_api_key or channel.base_url)
-    if channel.protocol == "kie":
-        # Base URL 可缺省为官方默认
-        return bool(channel.has_api_key or (channel.api_key or "").strip())
     return bool(channel.base_url and channel.has_api_key)
 
 
@@ -103,10 +109,8 @@ def channel_supports_model(channel: SystemModelChannel, upstream_model: str) -> 
 def resolve_channel_model_capability(channel: SystemModelChannel, upstream_model: str) -> LogicalModelCapability:
     protocol = (channel.protocol or "auto").lower()
     # TokenFree / New API 也标 openai，不能整渠道路径判成 text；走价目+名字推断
-    if protocol in {"openai", "ark", "kie", "auto"}:
+    if protocol in {"openai", "auto"}:
         return infer_model_capability(upstream_model)
-    if protocol == "volc_tts":
-        return "audio"
     advanced = channel.advanced_config
     if advanced:
         if advanced.text_model and normalize_model_name(upstream_model) == normalize_model_name(advanced.text_model):
@@ -195,6 +199,7 @@ def synchronize_logical_models_with_channels(
                 id=logical_id,
                 name=(existing.name if existing and existing.name else catalog_model["upstream_model"]),
                 capability=synced_cap,
+                strategy_id=existing.strategy_id if existing else None,
                 enabled=existing.enabled if existing else True,
                 bindings=bindings,
             )
@@ -208,11 +213,14 @@ def normalize_default_models(
     logical_models: list[LogicalModel],
     channels: list[SystemModelChannel],
 ) -> DefaultModels:
+    from app.services.nine_router.config import is_9router_active
+
     raw = defaults or DefaultModels()
     normalized = DefaultModels()
+    open_models = is_9router_active()  # 9Router：默认模型可填任意上游模型 id
     for capability, attr in CAPABILITY_DEFAULT_KEYS.items():
         model_id = getattr(raw, attr, "") or ""
-        if model_id and is_logical_model_resolvable(logical_models, channels, capability, model_id):
+        if model_id and (open_models or is_logical_model_resolvable(logical_models, channels, capability, model_id)):
             setattr(normalized, attr, model_id)
             continue
         fallback = next(
@@ -295,6 +303,15 @@ def model_routing_validation_errors(
             errors.append(f"逻辑模型 {model.name or model.id} 至少需要一个渠道绑定")
         binding_keys: set[str] = set()
         for binding in model.bindings:
+            if model.capability in {"image", "video"}:
+                from app.services.media_models import get_strategy
+                try:
+                    strategy = get_strategy(model.strategy_id or model.id)
+                    if strategy.capability != model.capability or get_strategy(binding.upstream_model).model_id != strategy.model_id:
+                        errors.append(f"逻辑模型 {model.id} 的渠道绑定必须匹配同款模型策略")
+                except ValueError:
+                    if model.strategy_id:
+                        errors.append(f"逻辑模型 {model.id} 的策略或上游模型未注册")
             binding_key = f"{binding.channel_id}:{normalize_model_name(binding.upstream_model)}"
             if binding.channel_id not in channel_ids:
                 errors.append(f"逻辑模型 {model.id} 引用了不存在的渠道 {binding.channel_id}")

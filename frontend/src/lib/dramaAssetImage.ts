@@ -1,5 +1,15 @@
-/** 漫剧资产是否已有形象图（AI 生成或本地上传） */
+/** 漫剧资产是否已有形象图（AI 生成或本地上传；SVG 占位不算） */
 import type { DramaAsset } from '../api/drama'
+import { tv } from '../i18n/tv'
+
+const BITMAP_SUFFIXES = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp']
+
+// 是否为可提交 Seedance 的位图 URL（排除 svg 占位）
+function isBitmapImageUrl(url: string): boolean {
+  const path = url.trim().split('?', 1)[0].toLowerCase()
+  if (!path) return false
+  return BITMAP_SUFFIXES.some((suffix) => path.endsWith(suffix))
+}
 
 // 从 params 中读取可能存在的预览 URL（画布同步等）
 function readParamsMediaUrl(asset: DramaAsset): string {
@@ -21,10 +31,21 @@ function readParamsMediaUrl(asset: DramaAsset): string {
   return ''
 }
 
-// 资产是否已有有效形象图
+// 资产是否已有有效形象图（生成或上传的位图）
 export function dramaAssetHasImage(asset: DramaAsset): boolean {
-  if ((asset.cover || '').trim() || (asset.url || '').trim()) return true
-  return Boolean(readParamsMediaUrl(asset))
+  const cover = (asset.cover || '').trim()
+  const url = (asset.url || '').trim()
+  const candidate = cover || url || readParamsMediaUrl(asset)
+  if (!candidate) return false
+  // 无扩展名的 OSS/静态路径仍视为有效；仅明确 .svg 占位算缺图
+  if (candidate.toLowerCase().includes('.svg')) return false
+  if (BITMAP_SUFFIXES.some((s) => candidate.toLowerCase().split('?', 1)[0].endsWith(s))) return true
+  // data:image 或远端无后缀 URL 也算有图
+  if (candidate.startsWith('data:image/')) return true
+  if (candidate.startsWith('http://') || candidate.startsWith('https://') || candidate.startsWith('/')) {
+    return !candidate.toLowerCase().includes('.svg')
+  }
+  return isBitmapImageUrl(candidate)
 }
 
 // 是否仍需生图（无图且非纯音频类资产时可批量入队）
@@ -40,5 +61,5 @@ export function dramaAssetImageGenButtonLabel(
   queueLabel: string | null,
 ): string {
   if (queueLabel) return queueLabel
-  return dramaAssetHasImage(asset) ? '重新生成形象' : '生成形象'
+  return dramaAssetHasImage(asset) ? tv('重新生成形象', 'Tạo lại hình tượng') : tv('生成形象', 'Tạo hình tượng')
 }

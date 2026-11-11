@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.drama.generation_prompt import ensure_structure_in_prompt
+
 # DEFAULT_APPEARANCE_NAME 从剧本抽取角色时的默认形象名
 DEFAULT_APPEARANCE_NAME = "基础形象"
 
@@ -17,7 +19,8 @@ DEFAULT_IMAGE_GENERATION = {
 
 # 组装道具/素材等命名图片资产 params（对齐 manju buildNamedImageParams）
 def build_named_image_params(prompt: str, aspect_ratio: str, *, kind: str = "prop") -> dict[str, Any]:
-    text = (prompt or "").strip()
+    # 抽取落库时即写入三视图等结构要求，供提示词框展示；生图不再动态拼接
+    text = ensure_structure_in_prompt((prompt or "").strip(), kind)
     return {
         "visualPrompt": text,
         "visualImage": text,
@@ -75,8 +78,10 @@ def compose_character_visual_text(character: dict[str, Any]) -> str:
 
 # 组装角色资产 params（形象名 + 生图提示词，对齐 manju buildCharacterParams）
 def build_character_params(character: dict[str, Any]) -> dict[str, Any]:
-    prompt = manju_join_character_prompt(character)
-    visual = str(character.get("visualImage") or "").strip() or prompt
+    body = manju_join_character_prompt(character)
+    prompt = ensure_structure_in_prompt(body, "character")
+    visual = str(character.get("visualImage") or "").strip()
+    visual = ensure_structure_in_prompt(visual, "character") if visual else prompt
     return {
         "visualImage": visual,
         "visualPrompt": prompt,

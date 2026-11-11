@@ -13,13 +13,15 @@ import {
   Handle,
   NodeToolbar,
   Position,
+  useStore,
   useUpdateNodeInternals,
   type Node,
   type NodeProps,
 } from '@xyflow/react'
-import { AudioLines, Image as ImageIcon, Landmark, Loader2, Maximize2, Play, UserRound } from 'lucide-react'
+import { AudioLines, Loader2, Maximize2, Play } from 'lucide-react'
 import { resolveDramaMediaUrl } from '../../../api/drama'
-import { isAudioUrl, isPlayableVideoUrl } from '../../../lib/canvasNodeMedia'
+import { AssetCover, AssetVisual } from '../../../components/assets/AssetLibrary'
+import { isPlayableVideoUrl } from '../../../lib/canvasNodeMedia'
 import { useCanvasStore } from './CanvasStore'
 import {
   CANVAS_GENERATABLE_KINDS,
@@ -29,10 +31,11 @@ import {
   type CanvasAssetNodeData,
 } from './canvasTypes'
 import { CanvasNodeGeneratePanel } from './nodes/CanvasNodeGeneratePanel'
-import { CanvasNodePreviewModal } from './CanvasNodePreviewModal'
+import { AssetDetailDialog } from '../../../components/assets/AssetDetailDialog'
+import { dramaApi, type DramaAsset } from '../../../api/drama'
 import { CanvasNodeUploadBar } from './nodes/CanvasNodeUploadBar'
 import { DRAMA_VOICE_BINDING_ENABLED } from '../../../lib/dramaVoiceBinding'
-import { tr } from '../../../i18n/translate'
+import { tv } from '../../../i18n/tv'
 
 /** 画布视频缩略：仅展示封面，不拦截单击（单击要选中并显示提示词面板） */
 function CanvasAssetVideoPreview({
@@ -64,27 +67,26 @@ function CanvasAssetVideoPreview({
   )
 }
 
-/** 按类型返回占位图标 */
-function PlaceholderIcon({ kind }: { kind: CanvasAssetNodeData['kind'] }) {
-  const className = 'fc-placeholder-icon'
-  if (kind === 'character') return <UserRound className={className} size={40} strokeWidth={1.4} />
-  if (kind === 'scene') return <Landmark className={className} size={40} strokeWidth={1.4} />
-  if (kind === 'video') return <Play className={className} size={40} strokeWidth={1.4} />
-  if (kind === 'audio') return <AudioLines className={className} size={32} strokeWidth={1.4} />
-  if (kind === 'text') return null
-  return <ImageIcon className={className} size={40} strokeWidth={1.4} />
-}
-
 /** 渲染单个画布资产节点 */
 function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasAssetNodeData>>) {
-  const { updateNodeTextContent, renameNode } = useCanvasStore()
+  const { projectId, updateNodeTextContent, renameNode } = useCanvasStore()
   const updateNodeInternals = useUpdateNodeInternals()
   const option = CANVAS_NODE_OPTION_BY_KIND[data.kind]
   const Icon = option.icon
   const isText = data.kind === 'text'
   const mediaSrc = resolveDramaMediaUrl(data.mediaUrl)
-  const showUpload = selected && CANVAS_UPLOADABLE_KINDS.has(data.kind)
-  const showGenerate = selected && CANVAS_GENERATABLE_KINDS.has(data.kind)
+  /* 框选多张时只给唯一选中节点展开编辑条，其余只显示选中描边 */
+  const soloSelected = useStore((state) => {
+    let selectedId: string | null = null
+    for (const node of state.nodes) {
+      if (!node.selected) continue
+      if (selectedId) return false
+      selectedId = node.id
+    }
+    return selectedId === id
+  })
+  const showUpload = soloSelected && CANVAS_UPLOADABLE_KINDS.has(data.kind)
+  const showGenerate = soloSelected && CANVAS_GENERATABLE_KINDS.has(data.kind)
   const voiceLabel = typeof data.voiceLabel === 'string' ? data.voiceLabel : ''
   const voiceUrl = typeof data.voiceUrl === 'string' ? data.voiceUrl : ''
   const displayName =
@@ -96,8 +98,8 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
   const footerLabel =
     data.kind === 'character'
       ? DRAMA_VOICE_BINDING_ENABLED && voiceLabel
-        ? tr('canvasNode.baseLook', { voiceLabel })
-        : tr('canvasNode.baseLook2')
+        ? tv(`基础形象 · ${voiceLabel}`, `Hình tượng cơ bản · ${voiceLabel}`)
+        : tv('基础形象', 'Hình tượng cơ bản')
       : data.kind === 'scene'
         ? displayName
         : null
@@ -109,10 +111,16 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState(displayName)
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [previewAsset, setPreviewAsset] = useState<DramaAsset | null>(null)
   const [mediaAspect, setMediaAspect] = useState<number | null>(null)
-  const audioSrc = resolveDramaMediaUrl(voiceUrl || (data.kind === 'audio' ? mediaSrc : ''))
+  // 音频节点用 mediaUrl；角色音色只用 voiceUrl 做预览弹层，卡片内仍显示形象图
+  const voiceSrc = data.kind === 'character' ? resolveDramaMediaUrl(voiceUrl) : ''
+  const audioSrc =
+    data.kind === 'audio' ? mediaSrc || resolveDramaMediaUrl(voiceUrl) : voiceSrc
   const textContent = typeof data.textContent === 'string' ? data.textContent : ''
   const canPreview = Boolean(mediaSrc || audioSrc || textContent.trim())
+  // 仅「音频」节点内联播放器；角色有音色时仍显示形象图，试听走工具条
+  const showInlineAudio = data.kind === 'audio' && Boolean(audioSrc)
   const frameSize = canvasMediaFrameSize(data.kind, mediaSrc ? mediaAspect : null)
   const orientationClass =
     mediaSrc && mediaAspect
@@ -179,6 +187,14 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
     }
   }
 
+  useEffect(() => {
+    if (!previewOpen || !data.assetId) return
+    let active = true
+    setPreviewAsset(null)
+    void dramaApi.listAssets(projectId).then((rows) => { if (active) setPreviewAsset(rows.find((asset) => asset.id === data.assetId) || null) }).catch(() => undefined)
+    return () => { active = false }
+  }, [previewOpen, projectId, data.assetId])
+
   /** 双击卡片：放大预览（单击留给选中 / 提示词面板） */
   const handleCardDoubleClick = (event: MouseEvent) => {
     const target = event.target as HTMLElement
@@ -220,13 +236,13 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
             onBlur={commitRename}
             onKeyDown={handleRenameKeyDown}
             onMouseDown={(e) => e.stopPropagation()}
-            aria-label={tr('canvasNode.nodeName')}
+            aria-label={tv("节点名称", "Tên nút")}
           />
         ) : (
           <button
             type="button"
             className="fc-node-title nodrag nopan"
-            title={tr('canvasNode.doubleClickRename')}
+            title={tv("双击重命名", "Nhấp đúp để đổi tên")}
             onDoubleClick={startRename}
           >
             {displayName}
@@ -235,43 +251,52 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
       </div>
 
       <div
-        className={`fc-asset-card${canPreview ? ' is-previewable' : ''}`}
-        title={canPreview ? tr('canvasNode.doubleClickEnlarge') : undefined}
+        className={`pf-library-card fc-asset-card${canPreview ? ' is-previewable' : ''}`}
+        title={canPreview ? tv('双击放大预览', 'Nhấp đúp để phóng to xem trước') : undefined}
         onDoubleClick={handleCardDoubleClick}
       >
-        <div
+        <AssetCover
+          asset={{ name: displayName, type: data.kind }}
+          showLabels={!isText && data.kind !== 'audio'}
+          busy={data.generating}
           className={`fc-asset-body is-${data.kind}${orientationClass}`}
           style={
             data.kind === 'text' || data.kind === 'audio'
-              ? undefined
+              ? { aspectRatio: 'auto' }
               : { width: frameSize.width, height: frameSize.height }
           }
         >
           {isText ? (
-            selected ? (
+            soloSelected ? (
               <textarea
                 className="fc-text-editor nodrag nowheel"
                 value={data.textContent || ''}
                 onChange={handleTextChange}
-                placeholder={tr('canvasNode.enterText')}
+                placeholder={tv("输入文本…", "Nhập văn bản…")}
                 rows={4}
               />
             ) : (
-              <span>{data.textContent || data.label || tr('canvasNode.text')}</span>
+              <span>{data.textContent || data.label || tv('文本', 'Văn bản')}</span>
             )
           ) : data.generating ? (
             <div className="fc-generating">
               <Loader2 size={28} className="fc-spin" />
-              <span>{tr('canvasNode.generating')}</span>
+              <span>{tv("生成中…", "Đang tạo…")}</span>
             </div>
           ) : mediaSrc && data.kind === 'video' && isPlayableVideoUrl(mediaSrc) ? (
             <CanvasAssetVideoPreview src={mediaSrc} onAspect={handleVideoAspect} />
-          ) : mediaSrc && (data.kind === 'audio' || isAudioUrl(mediaSrc)) ? (
+          ) : showInlineAudio ? (
             <div className="fc-asset-audio-thumb">
-              <AudioLines size={28} strokeWidth={1.6} />
-              <span className="fc-asset-video-play" aria-hidden>
-                <Play size={18} strokeWidth={2.2} fill="currentColor" />
-              </span>
+              <AudioLines size={22} strokeWidth={1.6} />
+              <audio
+                className="fc-asset-audio-player nodrag nopan nowheel"
+                src={audioSrc}
+                controls
+                preload="metadata"
+                onClick={(event) => event.stopPropagation()}
+                onPointerDown={(event) => event.stopPropagation()}
+                onDoubleClick={(event) => event.stopPropagation()}
+              />
             </div>
           ) : mediaSrc ? (
             <img
@@ -283,22 +308,22 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
               onLoad={handleImageLoad}
             />
           ) : (
-            <PlaceholderIcon kind={data.kind} />
+            <AssetVisual asset={{ name: displayName, type: data.kind }} />
           )}
           {canPreview ? (
             <button
               type="button"
               className="fc-asset-expand nodrag nopan nowheel"
-              title={tr('canvasNode.enlargePreview')}
-              aria-label={tr('canvasNode.enlargePreview2', { displayName })}
+              title={tv("放大预览", "Phóng to xem trước")}
+              aria-label={tv(`放大预览 ${displayName}`, `Phóng to xem trước ${displayName}`)}
               onClick={handleExpandClick}
               onPointerDown={(event) => event.stopPropagation()}
             >
               <Maximize2 size={14} strokeWidth={2.2} />
             </button>
           ) : null}
-        </div>
-        {footerLabel ? <div className="fc-asset-footer">{footerLabel}</div> : null}
+        </AssetCover>
+        {footerLabel ? <div className="pf-library-card-foot">{footerLabel}</div> : null}
       </div>
 
       {showGenerate ? (
@@ -318,6 +343,7 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
             label={data.label || ''}
             hasMedia={Boolean(mediaSrc)}
             videoOptions={data.videoOptions}
+            imageOptions={data.imageOptions}
           />
         </NodeToolbar>
       ) : null}
@@ -325,14 +351,9 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
       <Handle className="fc-handle" type="target" position={Position.Left} />
       <Handle className="fc-handle" type="source" position={Position.Right} />
       {previewOpen && canPreview ? (
-        <CanvasNodePreviewModal
-          payload={{
-            kind: data.kind,
-            title: displayName,
-            mediaUrl: mediaSrc || null,
-            voiceUrl: audioSrc || null,
-            textContent,
-          }}
+        <AssetDetailDialog
+          asset={previewAsset || { id: data.assetId, type: data.kind, asset_type: data.kind, name: displayName, url: mediaSrc || (data.kind === 'audio' ? audioSrc : null), params: { textContent, media_metadata: { source: 'unknown' } }, project_id: projectId }}
+          audioUrl={data.kind === 'character' ? voiceSrc : undefined}
           onClose={() => setPreviewOpen(false)}
         />
       ) : null}

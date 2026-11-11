@@ -78,5 +78,6 @@ export const enAdminStatus = {
     audio: "Audio",
     text: "Text",
     uncategorized: "Uncategorized",
+    stripeCard: "Card · Stripe",
   },
 } as const;

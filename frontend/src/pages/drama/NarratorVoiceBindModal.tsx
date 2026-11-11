@@ -6,9 +6,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AudioLines } from 'lucide-react'
 import { dramaApi, resolveDramaMediaUrl, type DramaAsset, type DramaProject } from '../../api/drama'
 import Modal from '../../components/ui/Modal'
+import { AssetCard, AssetEmpty, AssetGrid } from '../../components/assets/AssetLibrary'
 import type { VoiceBinding } from './CharacterVoiceBindModal'
-import { tRich, useI18n } from '../../i18n'
-import { tr } from '../../i18n/translate'
+import { tv } from '../../i18n/tv'
 
 type Props = {
   project: DramaProject
@@ -25,7 +25,7 @@ function readNarrationVoiceBinding(project: DramaProject): VoiceBinding | null {
   const data = raw as Record<string, unknown>
   const sourceAssetId = typeof data.sourceAssetId === 'number' ? data.sourceAssetId : null
   const url = typeof data.url === 'string' ? data.url : ''
-  const label = typeof data.label === 'string' ? data.label : tr('narratorBind.narrationVoice')
+  const label = typeof data.label === 'string' ? data.label : tv('旁白音色', 'Giọng lời dẫn')
   if (!sourceAssetId || !url) return null
   return {
     sourceAssetId,
@@ -36,7 +36,6 @@ function readNarrationVoiceBinding(project: DramaProject): VoiceBinding | null {
 }
 
 export function NarratorVoiceBindModal({ project, open, onClose, onUpdated, onError }: Props) {
-  const { t: tx } = useI18n()
   const [voiceAssets, setVoiceAssets] = useState<DramaAsset[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
@@ -65,12 +64,12 @@ export function NarratorVoiceBindModal({ project, open, onClose, onUpdated, onEr
         const voices = list.filter((a) => (a.type || '').toLowerCase() === 'voice')
         setVoiceAssets(voices)
       })
-      .catch((err) => onError(err instanceof Error ? err.message : tr('narratorBind.couldLoadVoiceAssets')))
+      .catch((err) => onError(err instanceof Error ? err.message : tv('加载音色资产失败', 'Tải tài sản giọng nói thất bại')))
   }, [current?.sourceAssetId, onError, open, project.id])
 
   const handleConfirm = useCallback(async () => {
     if (!selectedVoice?.url || busy) {
-      onError(tr('narratorBind.chooseNarrationVoiceAlready'))
+      onError(tv('请选择已合成试听的旁白音色', 'Vui lòng chọn giọng lời dẫn đã tổng hợp nghe thử'))
       return
     }
     setBusy(true)
@@ -78,7 +77,7 @@ export function NarratorVoiceBindModal({ project, open, onClose, onUpdated, onEr
       const binding: VoiceBinding = {
         sourceAssetId: selectedVoice.id,
         url: selectedVoice.url,
-        label: selectedVoice.name || '旁白音色', // 写入项目 params 的兜底名，固定中文，不随界面语言变化
+        label: selectedVoice.name || tv('旁白音色', 'Giọng lời dẫn'),
         // Narrator 端当前不依赖 voicePrompt；但保留字段给后续扩展
         voicePrompt:
           selectedVoice.params && typeof selectedVoice.params === 'object' && typeof (selectedVoice.params as any).voicePrompt === 'string'
@@ -93,7 +92,7 @@ export function NarratorVoiceBindModal({ project, open, onClose, onUpdated, onEr
       onUpdated(updated)
       onClose()
     } catch (err) {
-      onError(err instanceof Error ? err.message : tr('narratorBind.bindingFailed'))
+      onError(err instanceof Error ? err.message : tv('绑定失败', 'Gắn thất bại'))
     } finally {
       setBusy(false)
     }
@@ -109,7 +108,7 @@ export function NarratorVoiceBindModal({ project, open, onClose, onUpdated, onEr
       onUpdated(updated)
       onClose()
     } catch (err) {
-      onError(err instanceof Error ? err.message : tr('narratorBind.unbindingFailed'))
+      onError(err instanceof Error ? err.message : tv('解绑失败', 'Gỡ gắn thất bại'))
     } finally {
       setBusy(false)
     }
@@ -121,17 +120,17 @@ export function NarratorVoiceBindModal({ project, open, onClose, onUpdated, onEr
     <Modal
       open={open}
       onClose={onClose}
-      title={tx('narratorBind.bindNarrationVoice')}
+      title={tv("绑定旁白音色", "Gắn giọng lời dẫn")}
       size="lg"
       dismissible={!busy}
       footer={
         <>
           <button type="button" className="pf-btn" onClick={onClose} disabled={busy}>
-            {tx('narratorBind.cancel')}
+            {tv("取消", "Hủy")}
           </button>
           {current ? (
             <button type="button" className="pf-btn" onClick={() => void handleUnbind()} disabled={busy}>
-              {tx('narratorBind.unbind')}
+              {tv("解除绑定", "Gỡ gắn")}
             </button>
           ) : null}
           <button
@@ -140,44 +139,28 @@ export function NarratorVoiceBindModal({ project, open, onClose, onUpdated, onEr
             onClick={() => void handleConfirm()}
             disabled={!selectedVoice?.url || busy}
           >
-            {busy ? tx('narratorBind.binding') : tx('narratorBind.confirmBinding')}
+            {busy ? tv('绑定中…', 'Đang gắn…') : tv('确认绑定', 'Xác nhận gắn')}
           </button>
         </>
       }
     >
       <p className="drama-muted">
-        {tRich(tx('narratorBind.note'), { ref: <strong>reference_audio</strong> })}
+        {tv("全局旁白音色将作为 Seedance 的", "Giọng lời dẫn toàn cục sẽ được tiêm vào Seedance dưới dạng")} <strong>reference_audio</strong> {tv("注入，用于所有镜头的旁白口播一致性。", ", dùng để nhất quán lời dẫn của mọi cảnh.")}
       </p>
 
-      <div className="drama-voice-mode-tabs" style={{ marginTop: 12 }}>
-        <button type="button" className="active">
-          {tx('narratorBind.chooseExisting')}
-        </button>
-      </div>
-
-      <div className="drama-voice-list" style={{ marginTop: 10 }}>
+      <AssetGrid picker>
         {voiceAssets.length === 0 ? (
-          <p className="drama-muted">{tx('narratorBind.voiceAssetsYetSynthesize')}</p>
+          <AssetEmpty>{tv("暂无音色资产，请先在「音色」分类合成旁白音色。", "Chưa có tài sản giọng nói, vui lòng tổng hợp giọng lời dẫn ở danh mục “Giọng nói” trước.")}</AssetEmpty>
         ) : (
           voiceAssets.map((voice) => {
             const hasAudio = Boolean(voice.url)
             const selected = selectedId === voice.id
             return (
-              <label key={voice.id} className="drama-voice-option" style={{ cursor: 'pointer' }}>
-                <input
-                  type="radio"
-                  name="drama-narrator-voice"
-                  checked={selected}
-                  onChange={() => setSelectedId(voice.id)}
-                />
-                <span>
-                  {voice.name || tx('narratorBind.voice', { voiceId: voice.id })} <small>{hasAudio ? tx('narratorBind.synthesized') : tx('narratorBind.synthesized2')}</small>
-                </span>
-              </label>
+              <AssetCard key={voice.id} asset={voice} selected={selected} subtitle={hasAudio ? tv('已合成', 'Đã tổng hợp') : tv('未合成', 'Chưa tổng hợp')} footer={tv("项目音色", "Giọng nói dự án")} onOpen={() => setSelectedId(voice.id)} />
             )
           })
         )}
-      </div>
+      </AssetGrid>
 
       {previewUrl ? (
         <div style={{ marginTop: 14, display: 'flex', gap: 12, alignItems: 'center' }}>

@@ -10,9 +10,9 @@ import {
   YAxis,
 } from "recharts";
 import type { AdminUsageBucket } from "@/api/client";
-import { fenToYuan } from "@/lib/utils";
+import { points } from "@/lib/points";
 import type { DashboardMetric } from "./DashboardFilters";
-import { tr } from "@/i18n/translate";
+import { tr } from "../../i18n/translate.ts";
 
 const CHART_COLORS = [
   "var(--admin-forest)",
@@ -33,14 +33,13 @@ type UsageDistributionChartProps = {
 };
 
 function readMetric(row: AdminUsageBucket, metric: DashboardMetric): number {
-  if (metric === "cost") return row.cost_fen ?? 0;
   if (metric === "calls") return row.calls;
   return row.charge_fen;
 }
 
 function formatMetric(value: number, metric: DashboardMetric): string {
   if (metric === "calls") return String(value);
-  return `¥${fenToYuan(value)}`;
+  return `${points(value)}`;
 }
 
 /** 能力 / 领域分布图 */
@@ -61,7 +60,7 @@ export function UsageDistributionChart({
     .filter((row) => row.value > 0);
 
   if (chartData.length === 0) {
-    return <div className="admin-chart-empty">{tr("ui.distributionData")}</div>;
+    return <div className="admin-chart-empty">{tr("dashUi.noDistribution")}</div>;
   }
 
   if (variant === "donut") {
@@ -133,7 +132,7 @@ export function UsageDistributionChart({
               borderRadius: "10px",
               fontSize: "12px",
             }}
-            formatter={(value) => [formatMetric(Number(value ?? 0), metric), tr("ui.value")]}
+            formatter={(value) => [formatMetric(Number(value ?? 0), metric), tr("dashUi.value")]}
           />
           <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={18}>
             {chartData.map((row, idx) => (

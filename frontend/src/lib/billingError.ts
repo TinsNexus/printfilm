@@ -1,17 +1,19 @@
+import { pointText, points } from './points'
 import { dialog } from './dialog'
-import { tr } from '../i18n/translate'
+import { workspaceScope } from '../features/teams/workspaceScope'
+import { tv } from '../i18n/tv'
 
 export const PRICING_PATH = '/pricing'
 
 /** 是否为余额不足 / 计费拦截类错误 */
 export function isBillingError(message: string) {
-  return /余额不足|请先充值|402|insufficient_balance/i.test(message)
+  return /余额不足|积分不足|insufficient points|请先充值|402|insufficient_balance/i.test(message)
 }
 
 /** 跳转定价页充值 */
 export function goToTopup() {
   if (typeof window !== 'undefined') {
-    window.location.assign(PRICING_PATH)
+    window.location.assign(workspaceScope.teamId === null ? PRICING_PATH : `/teams/${workspaceScope.teamId}?tab=billing`)
   }
 }
 
@@ -25,11 +27,15 @@ export async function handleBillingError(
 ): Promise<boolean> {
   const message = err instanceof Error ? err.message : String(err || '')
   if (!isBillingError(message)) return false
+  if (workspaceScope.teamId !== null) {
+    await dialog.alert({ title: tv('团队消费受限', 'Chi tiêu nhóm bị giới hạn'), message: tv(`${message}。请在团队钱包查看本人额度；团队余额与充值由所有者管理。`, `${message}. Vui lòng xem hạn mức của bạn trong ví nhóm; số dư và nạp tiền của nhóm do chủ sở hữu quản lý.`), confirmText: tv('知道了', 'Đã hiểu') })
+    return true
+  }
   const go = await dialog.confirm({
-    title: tr('lib.insufficientBalance'),
-    message: message || tr('lib.balanceTooLowStart'),
-    confirmText: tr('lib.topUp'),
-    cancelText: tr('lib.got'),
+    title: pointText('积分不足', 'Insufficient Points'),
+    message: pointText('当前积分不足以开始生成，请先充值。', 'You do not have enough Points. Please top up to continue.'),
+    confirmText: pointText('去充值', 'Top up'),
+    cancelText: pointText('知道了', 'OK'),
     tone: 'danger',
   })
   if (go) {
@@ -46,4 +52,12 @@ export function notifyBillingErrorIfNeeded(status: number, message: string) {
   if (status === 402 || isBillingError(message)) {
     void handleBillingError(new Error(message))
   }
+}
+
+/** Only recognized system templates are converted; unknown text is retained. */
+export function billingPointsMessage(message: string): string {
+  const match = message.match(/^余额不足：需要 ¥(\d+\.\d{2})，当前 ¥(\d+\.\d{2})，请先充值$/)
+  if (!match) return message
+  const units = (value: string) => Number(value.replace('.', ''))
+  return pointText(`积分不足：需要 ${points(units(match[1]))}，当前 ${points(units(match[2]))}，请先充值`, `Insufficient Points: required ${points(units(match[1]))}, available ${points(units(match[2]))}. Please top up.`)
 }

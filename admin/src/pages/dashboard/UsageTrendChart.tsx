@@ -8,9 +8,9 @@ import {
   YAxis,
 } from "recharts";
 import type { AdminDailyUsage } from "@/api/client";
-import { fenToYuan } from "@/lib/utils";
+import { points } from "@/lib/points";
 import type { DashboardMetric } from "./DashboardFilters";
-import { tr } from "@/i18n/translate";
+import { tr } from "../../i18n/translate.ts";
 
 type UsageTrendChartProps = {
   data: AdminDailyUsage[];
@@ -18,20 +18,18 @@ type UsageTrendChartProps = {
 };
 
 function metricLabel(metric: DashboardMetric): string {
-  if (metric === "cost") return tr("ui.upstreamCost");
-  if (metric === "calls") return tr("ui.calls");
-  return tr("ui.chargeAmount");
+  if (metric === "calls") return tr("dashUi.metricCalls");
+  return tr("dashUi.metricCharge");
 }
 
 function readMetric(row: AdminDailyUsage, metric: DashboardMetric): number {
-  if (metric === "cost") return row.cost_fen ?? 0;
   if (metric === "calls") return row.calls;
   return row.charge_fen;
 }
 
 function formatMetric(value: number, metric: DashboardMetric): string {
   if (metric === "calls") return String(value);
-  return `¥${fenToYuan(value)}`;
+  return `${points(value)}`;
 }
 
 function shortDate(iso: string): string {
@@ -48,7 +46,7 @@ export function UsageTrendChart({ data, metric }: UsageTrendChartProps) {
   }));
 
   if (chartData.length === 0) {
-    return <div className="admin-chart-empty">{tr("ui.trendData")}</div>;
+    return <div className="admin-chart-empty">{tr("dashUi.noTrend")}</div>;
   }
 
   return (
@@ -74,7 +72,7 @@ export function UsageTrendChart({ data, metric }: UsageTrendChartProps) {
             axisLine={false}
             tickLine={false}
             width={metric === "calls" ? 36 : 52}
-            tickFormatter={(v) => (metric === "calls" ? String(v) : `¥${fenToYuan(Number(v))}`)}
+            tickFormatter={(v) => (metric === "calls" ? String(v) : `${points(Number(v))}`)}
           />
           <Tooltip
             contentStyle={{

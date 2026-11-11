@@ -1,8 +1,9 @@
 /** 资产库「音色」Tab 单卡：描述编辑、试听与合成 */
-import { AudioLines, Trash2, Volume2 } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 import { resolveDramaMediaUrl, type DramaAsset } from '../../api/drama'
 import { CharacterVoicePreviewButton } from '../../components/drama/CharacterVoicePreviewButton'
-import { useI18n } from '../../i18n'
+import { AssetCard } from '../../components/assets/AssetLibrary'
+import { tv } from '../../i18n/tv'
 
 type Props = {
   asset: DramaAsset
@@ -10,7 +11,7 @@ type Props = {
   synthBusy: boolean
   onPromptChange: (value: string) => void
   onPromptBlur: () => void
-  onSynth: () => void
+  onSynth?: () => void
   onDelete: () => void
   onError: (message: string) => void
 }
@@ -26,77 +27,38 @@ export function DramaVoiceAssetCard({
   onDelete,
   onError,
 }: Props) {
-  const { t: tx } = useI18n()
   const audioSrc = resolveDramaMediaUrl(asset.url)
   const hasAudio = Boolean(audioSrc)
 
   return (
-    <article className="drama-voice-card">
-      <header className="drama-voice-card-head">
-        <div className="drama-voice-card-badge" aria-hidden>
-          <AudioLines size={18} strokeWidth={1.75} />
-        </div>
-        <div className="drama-voice-card-title">
-          <h3>{asset.name || tx('voiceCard.unnamedVoice')}</h3>
-          <span className={`drama-voice-card-status${hasAudio ? ' is-ready' : ' is-pending'}`}>
-            {hasAudio ? tx('voiceCard.synthesized') : tx('voiceCard.pendingSynthesis')}
-          </span>
-        </div>
-        <button
-          type="button"
-          className="drama-voice-card-delete"
-          aria-label={tx('voiceCard.deleteAria', { name: asset.name || tx('voiceCard.voiceFallback') })}
-          disabled={synthBusy}
-          onClick={onDelete}
-        >
-          <Trash2 size={15} strokeWidth={1.75} />
-        </button>
-      </header>
-
-      <div className="drama-voice-card-body">
-        <label className="drama-voice-card-field">
-          <span>{tx('voiceCard.voiceDescription')}</span>
+    <AssetCard
+      asset={asset}
+      subtitle={tv(`项目 #${asset.project_id}`, `Dự án #${asset.project_id}`)}
+      footer={tv("项目资产", "Tài sản dự án")}
+      updatedAt={asset.updated_at}
+      busy={synthBusy}
+      status={synthBusy ? tv('合成中', 'Đang tổng hợp') : hasAudio ? tv('已合成', 'Đã tổng hợp') : tv('待合成', 'Chờ tổng hợp')}
+      actions={<>
+        {hasAudio && <CharacterVoicePreviewButton url={asset.url || ''} label={asset.name || undefined} variant="button" size="sm" onError={onError} />}
+        {onSynth && <button type="button" className="pf-btn pf-btn-lime pf-btn-sm" disabled={synthBusy || !promptValue.trim()} onClick={onSynth}>
+          {synthBusy ? tv('合成中…', 'Đang tổng hợp…') : hasAudio ? tv('重新合成', 'Tổng hợp lại') : tv('按提示词合成', 'Tổng hợp theo prompt')}
+        </button>}
+        <button type="button" className="pf-btn pf-btn-sm drama-btn-danger-text" aria-label={tv(`删除 ${asset.name || '音色'}`, `Xóa ${asset.name || '音色'}`)} disabled={synthBusy} onClick={onDelete}><Trash2 size={14} />{tv("删除", "Xóa")}</button>
+      </>}
+    >
+        <label className="pf-library-voice-field">
+          <span>{tv("音色描述", "Mô tả giọng nói")}</span>
           <textarea
             rows={3}
             value={promptValue}
             disabled={synthBusy}
             onChange={(e) => onPromptChange(e.target.value)}
             onBlur={onPromptBlur}
-            placeholder={tx('voiceCard.describeVoiceAgeGender')}
+            placeholder={tv("描述音色：年龄、性别、语气、语速…", "Mô tả giọng nói: tuổi, giới tính, giọng điệu, tốc độ…")}
           />
         </label>
 
-        <div className={`drama-voice-card-player${hasAudio ? '' : ' is-empty'}`}>
-          {hasAudio ? (
-            <>
-              <CharacterVoicePreviewButton
-                url={asset.url || ''}
-                label={asset.name || undefined}
-                variant="button"
-                size="sm"
-                onError={onError}
-              />
-              <audio className="drama-voice-card-audio" controls preload="none" src={audioSrc} />
-            </>
-          ) : (
-            <>
-              <Volume2 size={16} strokeWidth={1.75} aria-hidden />
-              <span>{tx('voiceCard.fillDescriptionSynthesizePreview')}</span>
-            </>
-          )}
-        </div>
-      </div>
-
-      <footer className="drama-voice-card-foot">
-        <button
-          type="button"
-          className="pf-btn pf-btn-lime pf-btn-sm drama-voice-card-synth"
-          disabled={synthBusy || !promptValue.trim()}
-          onClick={onSynth}
-        >
-          {synthBusy ? tx('voiceCard.synthesizing') : hasAudio ? tx('voiceCard.reSynthesize') : tx('voiceCard.synthesizePrompt')}
-        </button>
-      </footer>
-    </article>
+        {hasAudio && <audio className="pf-library-audio" controls preload="none" src={audioSrc} />}
+    </AssetCard>
   )
 }

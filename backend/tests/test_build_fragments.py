@@ -375,6 +375,6 @@ def test_scene_description_marked_visual_not_voiceover():
         ]
     )
     assert script_has_narration_cue(script) is False
-    section = build_seedance_production_section(script)
+    section = build_seedance_production_section(script, burn_subtitles=True)
     assert "禁止为其生成配音" in section
     assert "画面描述段不出现字幕" in section

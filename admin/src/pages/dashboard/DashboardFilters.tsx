@@ -1,13 +1,12 @@
 import { AdminChipFilter } from "@/components/admin/AdminChipFilter";
 import { AdminFilterBar } from "@/components/admin/AdminFilterBar";
-import { useI18n } from "@/i18n";
-import { tr } from "@/i18n/translate";
+import { tr } from "../../i18n/translate.ts";
 
 /** 仪表盘筛选维度 */
 export type DashboardDays = "1" | "7" | "14" | "30";
-export type DashboardDomain = "all" | "drama" | "kepu" | "api" | "tools" | "studio";
+export type DashboardDomain = "all" | "drama" | "kepu" | "tools" | "studio";
 export type DashboardCapability = "all" | "llm" | "image" | "video" | "tts";
-export type DashboardMetric = "charge" | "cost" | "calls";
+export type DashboardMetric = "charge" | "calls";
 
 export type DashboardFilterState = {
   days: DashboardDays;
@@ -32,39 +31,37 @@ export const PROJECTS_DASHBOARD_FILTERS: DashboardFilterState = {
 };
 
 const DAY_OPTIONS = [
-  { value: "1", get label() { return tr("dashFilters.today") } },
-  { value: "7", get label() { return tr("dashFilters.last7Days") } },
-  { value: "14", get label() { return tr("dashFilters.last14Days") } },
-  { value: "30", get label() { return tr("dashFilters.last30Days") } },
+  { value: "1", get label() { return tr("dashUi.range.today"); } },
+  { value: "7", get label() { return tr("dashUi.range.lastN", { n: 7 }); } },
+  { value: "14", get label() { return tr("dashUi.range.lastN", { n: 14 }); } },
+  { value: "30", get label() { return tr("dashUi.range.lastN", { n: 30 }); } },
 ];
 
 /** 图表 / 区块标题用的时间范围文案 */
 export function dashboardRangeLabel(days: DashboardDays): string {
-  if (days === "1") return tr("dashFilters.today");
-  return tr("dashFilters.lastDays", { days });
+  if (days === "1") return tr("dashUi.range.today");
+  return tr("dashUi.range.lastN", { n: days });
 }
 
 const DOMAIN_OPTIONS = [
-  { value: "all", get label() { return tr("dashFilters.allDomains") } },
-  { value: "drama", get label() { return tr("dashFilters.drama") } },
-  { value: "kepu", get label() { return tr("dashFilters.aiShortVideo") } },
-  { value: "api", get label() { return tr("dashFilters.openApi") } },
-  { value: "tools", get label() { return tr("dashFilters.tools") } },
-  { value: "studio", get label() { return tr("dashFilters.studio") } },
+  { value: "all", get label() { return tr("dashUi.allDomains"); } },
+  { value: "drama", get label() { return tr("dashUi.domain.drama"); } },
+  { value: "kepu", get label() { return tr("dashUi.domain.kepu"); } },
+  { value: "tools", get label() { return tr("dashUi.domain.tools"); } },
+  { value: "studio", get label() { return tr("dashUi.domain.studio"); } },
 ];
 
 const CAPABILITY_OPTIONS = [
-  { value: "all", get label() { return tr("dashFilters.allCapabilities") } },
+  { value: "all", get label() { return tr("dashUi.allCaps"); } },
   { value: "llm", label: "LLM" },
-  { value: "image", get label() { return tr("dashFilters.image") } },
-  { value: "video", get label() { return tr("dashFilters.video") } },
-  { value: "tts", get label() { return tr("dashFilters.voice") } },
+  { value: "image", get label() { return tr("dashUi.cap.image"); } },
+  { value: "video", get label() { return tr("dashUi.cap.video"); } },
+  { value: "tts", get label() { return tr("dashUi.cap.tts"); } },
 ];
 
 const METRIC_OPTIONS = [
-  { value: "charge", get label() { return tr("dashFilters.charge") } },
-  { value: "cost", get label() { return tr("dashFilters.cost") } },
-  { value: "calls", get label() { return tr("dashFilters.calls") } },
+  { value: "charge", get label() { return tr("dashUi.metric.charge"); } },
+  { value: "calls", get label() { return tr("dashUi.metric.calls"); } },
 ];
 
 type DashboardFiltersProps = {
@@ -74,34 +71,33 @@ type DashboardFiltersProps = {
 
 /** 仪表盘用量筛选条（两行紧凑布局） */
 export function DashboardFilters({ value, onChange }: DashboardFiltersProps) {
-  const { t: tx } = useI18n();
   const patch = (partial: Partial<DashboardFilterState>) => onChange({ ...value, ...partial });
 
   return (
     <AdminFilterBar className="admin-dashboard-filters">
       <AdminChipFilter
-        label={tx("dashFilters.timeRange")}
+        label={tr("dashUi.filterRange")}
         value={value.days}
         options={DAY_OPTIONS}
         onChange={(days) => patch({ days: days as DashboardDays })}
         className="admin-chip-filter--segment"
       />
       <AdminChipFilter
-        label={tx("dashFilters.businessDomain")}
+        label={tr("dashUi.filterDomain")}
         value={value.domain}
         options={DOMAIN_OPTIONS}
         onChange={(domain) => patch({ domain: domain as DashboardDomain })}
         className="admin-chip-filter--segment"
       />
       <AdminChipFilter
-        label={tx("dashFilters.capabilityType")}
+        label={tr("dashUi.filterCap")}
         value={value.capability}
         options={CAPABILITY_OPTIONS}
         onChange={(capability) => patch({ capability: capability as DashboardCapability })}
         className="admin-chip-filter--segment"
       />
       <AdminChipFilter
-        label={tx("dashFilters.metric")}
+        label={tr("dashUi.filterMetric")}
         value={value.metric}
         options={METRIC_OPTIONS}
         onChange={(metric) => patch({ metric: metric as DashboardMetric })}

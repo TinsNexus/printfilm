@@ -8,16 +8,15 @@ import {
   readProjectAspectRatio,
   readProjectResolution,
 } from '../../lib/dramaProjectOutputSettings'
-import { tr } from '../../i18n/translate'
+import { tv } from '../../i18n/tv'
 
 export type AssetScope = 'episode' | 'series'
 export type AssetTab = 'character' | 'scene' | 'prop'
 
-// 标签走 labelKey（模块级常量在导入时求值，不能直接存翻译后的文案）
-export const ASSET_TABS: Array<{ key: AssetTab; labelKey: string }> = [
-  { key: 'character', labelKey: 'epUtils.tabCharacter' },
-  { key: 'scene', labelKey: 'epUtils.tabScene' },
-  { key: 'prop', labelKey: 'epUtils.tabProp' },
+export const ASSET_TABS: Array<{ key: AssetTab; label: string }> = [
+  { key: 'character', label: tv('角色', 'Nhân vật') },
+  { key: 'scene', label: tv('场景', 'Bối cảnh') },
+  { key: 'prop', label: tv('道具', 'Đạo cụ') },
 ]
 
 export const RATIO_OPTIONS = DRAMA_RATIO_OPTIONS
@@ -73,7 +72,7 @@ export function buildFragmentRefStripItems(
     const voice = asset && readVoice ? readVoice(asset) : null
     return {
       assetId,
-      name: asset?.name || tr('epUtils.asset', { assetId }),
+      name: asset?.name || tv(`资产 ${assetId}`, `Tài sản ${assetId}`),
       type: asset?.type || '',
       previewUrl: preview,
       isCharacter,
@@ -181,9 +180,9 @@ export function readFragmentVideoVersions(frag: DramaFragment | null | undefined
 
 // 分镜队列徽标文案
 export function fragmentQueueBadgeLabel(status: string): string {
-  if (status === 'queued' || status === 'pending' || status === 'leased') return tr('epUtils.queued')
-  if (status === 'running' || status === 'generating' || status === 'awaiting_poll') return tr('epUtils.generating')
-  if (status === 'failed') return tr('epUtils.failed')
+  if (status === 'queued' || status === 'pending' || status === 'leased') return tv('排队', 'Xếp hàng')
+  if (status === 'running' || status === 'generating' || status === 'awaiting_poll') return tv('生成中', 'Đang tạo')
+  if (status === 'failed') return tv('失败', 'Thất bại')
   return ''
 }
 
@@ -202,7 +201,7 @@ export function resolveFragmentDurationSec(
 export function formatFragLabel(index: number, durationSec: number | null | undefined) {
   const n = String(index + 1).padStart(2, '0')
   const sec = durationSec && durationSec > 0 ? durationSec : 8
-  return tr('epUtils.clipS', { n, sec })
+  return tv(`片段 ${n} · ${sec}s`, `Đoạn ${n} · ${sec}s`)
 }
 
 // 按本集/全集与分类筛选资产

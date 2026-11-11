@@ -5,7 +5,7 @@ import { SeedanceRulesModal } from '../../../../components/drama/SeedanceRulesMo
 import { useCanvasStore } from '../CanvasStore'
 import { CANVAS_GENERATABLE_KINDS, type CanvasNodeKind } from '../canvasTypes'
 import {
-  defaultOptionsForAssetKind,
+  readImageGenerationOptions,
   type ImageGenerationOptions,
 } from '../../../../lib/dramaGenerationOptions'
 import {
@@ -15,12 +15,13 @@ import {
 } from '../../../../lib/dramaVideoGenerationOptions'
 import { optimizePromptWithSkills } from '../../../../api/agentSkills'
 import { useAgentSkillSelection } from '../../../../hooks/useAgentSkillSelection'
+import { ensureStructureInPrompt } from '../../../../lib/dramaStructurePrompt'
 import { DramaImageGenOptionsBar } from './DramaImageGenOptionsBar'
 import { DramaSkillOptionsBar } from './DramaSkillOptionsBar'
 import { DramaVideoGenOptionsBar } from './DramaVideoGenOptionsBar'
 import { CanvasPromptEditor } from './CanvasPromptEditor'
-import { useI18n } from '../../../../i18n'
-import { tr } from '../../../../i18n/translate'
+import { useMediaModelsCatalog } from '../../../../hooks/useMediaModelsCatalog'
+import { tv } from '../../../../i18n/tv'
 
 type CanvasNodeGeneratePanelProps = {
   nodeId: string
@@ -33,35 +34,37 @@ type CanvasNodeGeneratePanelProps = {
   hasMedia?: boolean
   /** 视频节点已保存的 Seedance 参数 */
   videoOptions?: Record<string, unknown>
+  /** 生图节点已保存的模型/比例/清晰度 */
+  imageOptions?: Record<string, unknown>
 }
 
 /** 按节点类型返回面板文案 */
 function panelCopy(kind: CanvasNodeKind, hasMedia: boolean) {
   if (kind === 'video') {
     return {
-      title: hasMedia ? tr('canvasGen.editRegenerateVideo') : tr('canvasGen.aiGenerateVideo'),
-      placeholder: tr('canvasGen.describeVideoImageCamera'),
-      hint: tr('canvasGen.enterGenerateVideoReference'),
+      title: hasMedia ? tv('编辑并重生视频', 'Chỉnh sửa và tạo lại video') : tv('AI 生成视频', 'AI tạo video'),
+      placeholder: tv('描述视频画面、镜头运动与氛围；键入 @ 引用已连线节点…', 'Mô tả hình ảnh video, chuyển động máy và bầu không khí; gõ @ để tham chiếu nút đã nối dây…'),
+      hint: tv('Enter 生成视频 · @ 仅可引用已连线节点 · Shift+Enter 换行', 'Enter để tạo video · @ chỉ tham chiếu được nút đã nối dây · Shift+Enter để xuống dòng'),
     }
   }
   if (kind === 'character') {
     return {
-      title: hasMedia ? tr('canvasGen.editRegenerateCharacter') : tr('canvasGen.aiGenerateCharacter'),
-      placeholder: tr('canvasGen.describeCharacterSLooks'),
-      hint: tr('canvasGen.enterGenerateShiftEnter'),
+      title: hasMedia ? tv('编辑并重生角色', 'Chỉnh sửa và tạo lại nhân vật') : tv('AI 生角色', 'AI tạo nhân vật'),
+      placeholder: tv('描述角色外貌、服饰与气质…', 'Mô tả ngoại hình, trang phục và khí chất nhân vật…'),
+      hint: tv('Enter 生成 · Shift+Enter 换行', 'Enter để tạo · Shift+Enter để xuống dòng'),
     }
   }
   if (kind === 'scene') {
     return {
-      title: hasMedia ? tr('canvasGen.editRegenerateScene') : tr('canvasGen.aiGenerateScene'),
-      placeholder: tr('canvasGen.describeSceneSSetting'),
-      hint: tr('canvasGen.enterGenerateShiftEnter'),
+      title: hasMedia ? tv('编辑并重生场景', 'Chỉnh sửa và tạo lại bối cảnh') : tv('AI 生场景', 'AI tạo bối cảnh'),
+      placeholder: tv('描述场景环境、光线与氛围…', 'Mô tả môi trường, ánh sáng và bầu không khí của bối cảnh…'),
+      hint: tv('Enter 生成 · Shift+Enter 换行', 'Enter để tạo · Shift+Enter để xuống dòng'),
     }
   }
   return {
-    title: hasMedia ? tr('canvasGen.editRegenerateImage') : tr('canvasGen.aiGenerateImage'),
-    placeholder: tr('canvasGen.describeImageContentType'),
-    hint: tr('canvasGen.enterGenerateReferenceShift'),
+    title: hasMedia ? tv('编辑并重生图片', 'Chỉnh sửa và tạo lại hình ảnh') : tv('AI 生图', 'AI tạo ảnh'),
+    placeholder: tv('描述画面内容；键入 @ 引用已连线节点…', 'Mô tả nội dung hình ảnh; gõ @ để tham chiếu nút đã nối dây…'),
+    hint: tv('Enter 生成 · @ 仅可引用已连线节点 · Shift+Enter 换行', 'Enter để tạo · @ chỉ tham chiếu được nút đã nối dây · Shift+Enter để xuống dòng'),
   }
 }
 
@@ -85,16 +88,19 @@ export function CanvasNodeGeneratePanel({
   label = '',
   hasMedia = false,
   videoOptions: savedVideoOptions,
+  imageOptions: savedImageOptions,
 }: CanvasNodeGeneratePanelProps) {
-  const { t: tx } = useI18n()
   const {
+    projectId,
     generateNodeImage,
     generateNodeVideo,
     setErrorMessage,
     projectImageStyleId,
     updateNodePrompt,
     updateNodeVideoOptions,
+    updateNodeImageOptions,
     mentionableNodes,
+    edges,
   } = useCanvasStore()
   const [prompt, setPrompt] = useState(() => sanitizePrompt(defaultPrompt, kind, label))
   /*
@@ -107,11 +113,14 @@ export function CanvasNodeGeneratePanel({
   const [optimizing, setOptimizing] = useState(false)
   const { skills, selectedIds, toggleSkill, selectAll, selectNone, uploadSkill, uploading, uploadError } =
     useAgentSkillSelection()
-  // imageOptions 生图风格/模型/画幅
-  const [imageOptions, setImageOptions] = useState<ImageGenerationOptions>(() => ({
-    ...defaultOptionsForAssetKind(kind),
-    image_style_id: projectImageStyleId || undefined,
-  }))
+  // imageOptions 生图风格/模型/画幅（优先恢复节点上已保存选择）
+  const [imageOptions, setImageOptions] = useState<ImageGenerationOptions>(() => {
+    const saved = readImageGenerationOptions(savedImageOptions, kind)
+    return {
+      ...saved,
+      image_style_id: saved.image_style_id || projectImageStyleId || undefined,
+    }
+  })
   // videoOpts Seedance 时长/比例/清晰度
   const [videoOpts, setVideoOpts] = useState<VideoGenerationOptions>(() => {
     const saved = readVideoGenerationOptions(savedVideoOptions)
@@ -124,12 +133,21 @@ export function CanvasNodeGeneratePanel({
   const copy = panelCopy(kind, hasMedia)
   const allowMention = kind === 'video' || kind === 'image'
   const isVideo = kind === 'video'
+  const mediaCatalog = useMediaModelsCatalog()
+  const selectedModelId = isVideo ? videoOpts.model_id || mediaCatalog?.defaults.video_model : imageOptions.model_id || mediaCatalog?.defaults.image_model
+  const referenceLimits = (isVideo ? mediaCatalog?.video_models : mediaCatalog?.image_models)?.find(model => model.id === selectedModelId)?.reference_limits
 
-  /* 可引用：排除当前节点自身 */
-  const mentionItems = useMemo(
-    () => mentionableNodes.filter((n) => n.nodeId !== nodeId),
-    [mentionableNodes, nodeId],
-  )
+  /* 可引用：仅已连线邻居（双向），并排除自身 */
+  const mentionItems = useMemo(() => {
+    const neighborIds = new Set<string>()
+    for (const edge of edges) {
+      if (edge.source === nodeId) neighborIds.add(edge.target)
+      if (edge.target === nodeId) neighborIds.add(edge.source)
+    }
+    return mentionableNodes.filter(
+      (n) => n.nodeId !== nodeId && neighborIds.has(n.nodeId),
+    )
+  }, [edges, mentionableNodes, nodeId])
 
   const lastNodeIdRef = useRef(nodeId)
 
@@ -145,15 +163,15 @@ export function CanvasNodeGeneratePanel({
     setPrompt((prev) => next || prev)
   }, [defaultPrompt, nodeId, kind, label])
 
-  /* 节点类型或项目风格变化时同步默认选项 */
+  /* 仅切换节点时从节点恢复生图选项；编辑过程不覆盖本地选择 */
   useEffect(() => {
-    setImageOptions((prev) => ({
-      ...defaultOptionsForAssetKind(kind),
-      image_style_id: prev.image_style_id || projectImageStyleId || undefined,
-      model_id: prev.model_id,
-      resolution: prev.resolution,
-    }))
-  }, [kind, nodeId, projectImageStyleId])
+    const saved = readImageGenerationOptions(savedImageOptions, kind)
+    setImageOptions({
+      ...saved,
+      image_style_id: saved.image_style_id || projectImageStyleId || undefined,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在换节点时恢复
+  }, [nodeId, kind])
 
   useEffect(() => {
     const saved = readVideoGenerationOptions(savedVideoOptions)
@@ -163,7 +181,7 @@ export function CanvasNodeGeneratePanel({
       image_style_id: saved.image_style_id || projectImageStyleId || undefined,
     })
     // 仅切换节点时恢复已保存参数，避免编辑选项时被回写覆盖
-  }, [nodeId, projectImageStyleId])
+  }, [nodeId])
 
   const isBusy = busy || generating || optimizing
   const canSubmit = prompt.trim().length > 0 && !isBusy
@@ -179,17 +197,18 @@ export function CanvasNodeGeneratePanel({
     if (!canSubmit) return
     setBusy(true)
     try {
-      updateNodePrompt(nodeId, prompt)
+      // 提示词以框内为准（抽取/生成提示词时已含三视图等结构）；生图不再动态拼接
+      const finalPrompt = prompt.trim()
+      updateNodePrompt(nodeId, finalPrompt)
       if (isVideo) {
         updateNodeVideoOptions(nodeId, videoOpts)
-      }
-      if (isVideo) {
-        await generateNodeVideo(nodeId, prompt, videoOpts)
+        await generateNodeVideo(nodeId, finalPrompt, videoOpts)
       } else {
-        await generateNodeImage(nodeId, prompt, imageOptions)
+        updateNodeImageOptions(nodeId, imageOptions)
+        await generateNodeImage(nodeId, finalPrompt, imageOptions)
       }
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : tx('canvasGen.generationFailed'))
+      setErrorMessage(err instanceof Error ? err.message : tv('生成失败', 'Tạo thất bại'))
     } finally {
       setBusy(false)
     }
@@ -200,23 +219,27 @@ export function CanvasNodeGeneratePanel({
     void submit()
   }
 
-  // 按勾选 Skill 改写当前提示词，保留 @asset 引用
+  // 按勾选 Skill 改写当前提示词；若优化丢掉结构前缀则补回（写入框内，非生图时静默携带）
   const optimizePrompt = async () => {
     if (!canOptimize) return
     setOptimizing(true)
     try {
       const result = await optimizePromptWithSkills({
+        project_id: projectId,
         prompt,
         skill_ids: selectedIds,
         task: isVideo ? 'video_prompt' : 'image_prompt',
       })
-      const next = (result.prompt || '').trim()
+      let next = (result.prompt || '').trim()
+      if (next && !isVideo) {
+        next = ensureStructureInPrompt(next, kind)
+      }
       if (next) {
         setPrompt(next)
         updateNodePrompt(nodeId, next)
       }
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : tx('canvasGen.skillOptimizationFailed'))
+      setErrorMessage(err instanceof Error ? err.message : tv('描述优化失败', 'Tối ưu mô tả thất bại'))
     } finally {
       setOptimizing(false)
     }
@@ -236,21 +259,25 @@ export function CanvasNodeGeneratePanel({
       }}
     >
       <div className="fc-generate-head">
-        <Sparkles size={14} strokeWidth={1.8} />
+        <span className="fc-generate-head-icon" aria-hidden="true"><Sparkles size={15} strokeWidth={1.8} /></span>
         <span>{copy.title}</span>
-        {hasMedia ? <em className="fc-generate-tag">{tx('canvasGen.generateAgain')}</em> : null}
+        {hasMedia ? <em className="fc-generate-tag">{tv("可再次生成", "Có thể tạo lại")}</em> : null}
         {isVideo ? (
           <button
             type="button"
             className="fc-generate-help"
-            title={tx('canvasGen.seedanceValueRulesUsage')}
-            aria-label={tx('canvasGen.seedanceValueRulesUsage')}
+            title={tv("Seedance 传值与使用规则", "Cách truyền giá trị và quy tắc dùng Seedance")}
+            aria-label={tv("Seedance 传值与使用规则", "Cách truyền giá trị và quy tắc dùng Seedance")}
             disabled={isBusy}
             onClick={() => setRulesOpen(true)}
           >
             <CircleHelp size={14} strokeWidth={1.8} />
           </button>
         ) : null}
+      </div>
+      <div className="fc-generate-prompt-meta">
+        <span>{tv("提示词", "Prompt")}{allowMention ? <span className="fc-generate-mention-hint"> {tv("· @ 引用连线节点", "· @ Tham chiếu nút đã nối dây")}</span> : null}</span>
+        <span className="fc-generate-count">{Array.from(prompt).length.toLocaleString()} {tv("字", "chữ")}</span>
       </div>
       <CanvasPromptEditor
         value={prompt}
@@ -263,43 +290,65 @@ export function CanvasNodeGeneratePanel({
         }}
         onSubmit={() => void submit()}
       />
-      {isVideo ? (
-        <DramaVideoGenOptionsBar
-          value={videoOpts}
+      <div className="fc-generate-settings">
+        {isVideo ? (
+          <DramaVideoGenOptionsBar
+            value={videoOpts}
+            disabled={isBusy}
+            onChange={(next) => {
+              setVideoOpts(next)
+              updateNodeVideoOptions(nodeId, next)
+            }}
+          />
+        ) : (
+          <DramaImageGenOptionsBar
+            value={imageOptions}
+            disabled={isBusy}
+            onChange={(next) => {
+              setImageOptions(next)
+              updateNodeImageOptions(nodeId, next)
+            }}
+          />
+        )}
+        <DramaSkillOptionsBar
+          skills={skills}
+          selectedIds={selectedIds}
           disabled={isBusy}
-          onChange={(next) => {
-            setVideoOpts(next)
-            updateNodeVideoOptions(nodeId, next)
-          }}
+          onToggle={toggleSkill}
+          onSelectAll={selectAll}
+          onSelectNone={selectNone}
+          onUpload={(file) => void uploadSkill(file)}
+          uploading={uploading}
+          uploadError={uploadError}
         />
-      ) : (
-        <DramaImageGenOptionsBar value={imageOptions} onChange={setImageOptions} disabled={isBusy} />
-      )}
-      <DramaSkillOptionsBar
-        skills={skills}
-        selectedIds={selectedIds}
-        disabled={isBusy}
-        onToggle={toggleSkill}
-        onSelectAll={selectAll}
-        onSelectNone={selectNone}
-        onUpload={(file) => void uploadSkill(file)}
-        uploading={uploading}
-        uploadError={uploadError}
-      />
+        {referenceLimits ? (
+          <span className="fc-generate-reference-limits" title={tv("首尾帧和画风板计入参考图片数量；0 表示模型不支持此类参考。", "Khung đầu cuối và bảng phong cách tính vào số ảnh tham chiếu; 0 nghĩa là model không hỗ trợ loại tham chiếu này.")}>
+            {tv("参考上限：图片", "Giới hạn tham chiếu: ảnh")} {referenceLimits.images} {tv("· 视频", "· video")} {referenceLimits.videos} {tv("· 音频", "· âm thanh")} {referenceLimits.audios}
+          </span>
+        ) : null}
+      </div>
       <div className="fc-generate-actions">
-        <span className="fc-generate-hint">{copy.hint}</span>
+        <span className="fc-generate-hint" title={copy.hint}>
+          <span><kbd>Enter</kbd> {tv("生成", "Tạo")}</span>
+          <span><kbd>Shift + Enter</kbd> {tv("换行", "Xuống dòng")}</span>
+        </span>
         <div className="fc-generate-action-btns">
           <button
             type="button"
             className="fc-generate-optimize"
             disabled={!canOptimize}
-            title={selectedIds.length ? tx('canvasGen.rewritePromptSelectedSkill') : tx('canvasGen.selectSkillFirst')}
+            title={
+              selectedIds.length
+                ? tv('优化画面描述，并保留台词与 @ 引用', 'Tối ưu mô tả hình ảnh, giữ nguyên thoại và tham chiếu @')
+                : tv('请先选择 Skill', 'Vui lòng chọn Skill trước')
+            }
             onClick={() => void optimizePrompt()}
           >
             {optimizing ? <Loader2 size={14} className="fc-spin" /> : <Wand2 size={14} strokeWidth={1.8} />}
-            {tx('canvasGen.skillOptimize')}
+            {tv("描述优化", "Tối ưu mô tả")}
           </button>
-          <button type="submit" className="fc-generate-submit" disabled={!canSubmit} aria-label={tx('canvasGen.generate')}>
+          <button type="submit" className="fc-generate-submit" disabled={!canSubmit} aria-label={generating || busy ? tv('生成中', 'Đang tạo') : tv('生成', 'Tạo')}>
+            <span>{generating || busy ? tv('生成中', 'Đang tạo') : tv('生成', 'Tạo')}</span>
             {isBusy && !optimizing ? (
               <Loader2 size={16} className="fc-spin" />
             ) : (

@@ -18,15 +18,26 @@ export const LOCALE_DATE: Record<Locale, string> = {
   vi: 'vi-VN',
 }
 
-// 当前生效语言（供非 React 工具函数读取）
-let activeLocale: Locale = 'zh'
+// 当前生效语言（供非 React 工具函数读取）；模块加载时即按本地偏好/浏览器语言初始化，保证顶层常量里的 tv() 取到正确语言
+let activeLocale: Locale = initialLocale()
+
+function initialLocale(): Locale {
+  try {
+    const raw = typeof localStorage === 'undefined' ? null : localStorage.getItem(LOCALE_STORAGE_KEY)
+    if (raw === 'zh' || raw === 'en' || raw === 'vi') return raw
+    if (typeof navigator === 'undefined') return 'zh'
+    return localeFromBrowser(navigator.language || navigator.languages?.[0] || 'zh')
+  } catch {
+    return 'zh'
+  }
+}
 
 // 是否为已支持的语言代码
 export function isLocale(value: unknown): value is Locale {
   return value === 'zh' || value === 'en' || value === 'vi'
 }
 
-// 从 Accept-Language / navigator 映射到 zh / vi / en
+// 从 Accept-Language / navigator 映射到 zh、vi 或 en
 export function localeFromBrowser(lang?: string): Locale {
   const raw = (lang || '').trim().toLowerCase()
   if (raw.startsWith('zh')) return 'zh'

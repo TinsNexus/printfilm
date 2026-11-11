@@ -1,6 +1,8 @@
 import { cn } from "@/lib/utils";
 import type { KeyboardEventHandler } from "react";
-import { tr } from "@/i18n/translate";
+import { Search, X } from "lucide-react";
+import "@/styles/admin-controls.css";
+import { tr } from "../../i18n/translate.ts";
 
 type AdminSearchInputProps = {
   value: string;
@@ -19,22 +21,24 @@ export function AdminSearchInput({
   onKeyDown,
 }: AdminSearchInputProps) {
   return (
-    <div className={cn("admin-input-search-wrap admin-filter-search", className)}>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
-        <path
-          d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm10 2-4.35-4.35"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-        />
-      </svg>
+    <div className={cn("admin-input-search-wrap admin-filter-search admin-search-control", className)}>
+      <Search size={16} className="admin-search-control-icon" aria-hidden="true" />
       <input
+        type="search"
+        aria-label={placeholder}
         className="admin-input"
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        onKeyDown={onKeyDown}
+        onKeyDown={(event) => {
+          onKeyDown?.(event);
+          if (!event.defaultPrevented && event.key === "Escape" && value) {
+            onChange("");
+            event.stopPropagation();
+          }
+        }}
       />
+      {value ? <button type="button" className="admin-control-clear" aria-label={tr("ui.clearSearch")} onMouseDown={(event) => event.preventDefault()} onClick={() => onChange("")}><X size={13} /></button> : null}
     </div>
   );
 }

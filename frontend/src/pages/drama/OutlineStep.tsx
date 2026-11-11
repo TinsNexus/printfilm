@@ -1,4 +1,5 @@
 /** 剧情大纲步骤：自动摘要 + 分集剧本流水线 */
+import { isRequestAborted } from '../../api/http'
 import { useEffect, useRef, useState } from 'react'
 import {
   dramaApi,
@@ -8,6 +9,7 @@ import {
 import { getImageStyleLabel, type ImageStyleId } from '../../lib/dramaImageStyles'
 import {
   autoMissingEpisodeCount,
+  getAssetsSeedStatus,
   getEpisodeContentStatus,
   getImageStyleId,
   getSummaryStatus,
@@ -19,7 +21,8 @@ import Modal from '../../components/ui/Modal'
 import { DramaImageStyleModal } from './DramaImageStyleModal'
 import { DramaProjectSettingsModal } from './DramaProjectSettingsModal'
 import { OutlineEpisodePanel } from './OutlineEpisodePanel'
-import { useI18n } from '../../i18n'
+import { useTeamEditLock } from '../../features/teams/useTeamEditLock'
+import { tv } from '../../i18n/tv'
 
 type MetaModalKey = 'source' | 'summary' | 'project'
 
@@ -40,26 +43,45 @@ export function OutlineStep({
   onOutlineReadyChange,
   onError,
 }: OutlineStepProps) {
-  const { t: tx } = useI18n()
   const notifyOutlineReady = (ready: boolean) => onOutlineReadyChange?.(ready)
   const [script, setScript] = useState<DramaScript | null>(project.script || null)
   const [metaModal, setMetaModal] = useState<MetaModalKey | null>(null)
-  const [summaryGenerating, setSummaryGenerating] = useState(false)
-  const [episodeGenerating, setEpisodeGenerating] = useState(false)
+  // 进页即按服务端状态展示，避免摘要/分集生成中外部一片空白
+  const [summaryGenerating, setSummaryGenerating] = useState(
+    () => getSummaryStatus(project.script || null) === 'generating',
+  )
+  const [assetsSeeding, setAssetsSeeding] = useState(
+    () => getAssetsSeedStatus(project) === 'generating',
+  )
+  const [episodeGenerating, setEpisodeGenerating] = useState(
+    () => getEpisodeContentStatus(project.script || null) === 'generating',
+  )
   const [summaryError, setSummaryError] = useState('')
   const [episodeError, setEpisodeError] = useState('')
-  const [progress, setProgress] = useState({ done: 0, total: 0 })
+  const [progress, setProgress] = useState(() => {
+    const prog = (project.script?.params || {}).episode_content_progress as
+      | { done?: number; total?: number }
+      | undefined
+    return {
+      done: Number(prog?.done) || 0,
+      total: Number(prog?.total) || 0,
+    }
+  })
   const [summaryEditing, setSummaryEditing] = useState(false)
   const [summaryDraft, setSummaryDraft] = useState<Record<string, unknown> | null>(null)
   const [summarySaving, setSummarySaving] = useState(false)
   const [sourceEditing, setSourceEditing] = useState(false)
   const [sourceDraft, setSourceDraft] = useState('')
   const [sourceSaving, setSourceSaving] = useState(false)
+  const scriptLock = useTeamEditLock({ projectId, type: 'script', resourceId: 0 }, summaryEditing || sourceEditing, async (isCurrent) => { const fresh = await dramaApi.getScript(projectId); if (isCurrent()) { setScript(fresh); if (summaryEditing) setSummaryDraft(fresh.summary || {}); if (sourceEditing) setSourceDraft(fresh.source || '') } })
   const pipelineRef = useRef(0)
+  const projectRef = useRef(project)
+  projectRef.current = project
 
   const summary = (script?.summary || null) as Record<string, unknown> | null
   const summaryStatus = getSummaryStatus(script)
   const episodeStatus = getEpisodeContentStatus(script)
+  const assetsSeedStatus = getAssetsSeedStatus(project)
   const episodeCount =
     Number(
       summary?.episodeCount ||
@@ -107,7 +129,7 @@ export function OutlineStep({
       if (predicate(s)) return s
       await new Promise((r) => setTimeout(r, 2000))
     }
-    throw new Error(tx('dramaOutlineStep.timedOutWaitingGeneration'))
+    throw new Error(tv('等待生成超时，请刷新后重试', 'Chờ tạo quá thời gian, vui lòng làm mới rồi thử lại'))
   }
 
   // 入队并等待剧本摘要完成
@@ -124,7 +146,7 @@ export function OutlineStep({
       if (!finished) return null
       if (getSummaryStatus(finished) === 'failed') {
         const msg =
-          String((finished.params || {}).summary_error || '') || tx('dramaOutlineStep.scriptSummaryGenerationFailed')
+          String((finished.params || {}).summary_error || '') || tv('剧本摘要生成失败', 'Tạo tóm tắt kịch bản thất bại')
         setSummaryError(msg)
         onError(msg)
         throw new Error(msg)
@@ -133,7 +155,8 @@ export function OutlineStep({
       onProjectChange(p)
       return finished
     } catch (err) {
-      const msg = err instanceof Error ? err.message : tx('dramaOutlineStep.scriptSummaryGenerationFailed')
+      if (isRequestAborted(err)) throw err
+      const msg = err instanceof Error ? err.message : tv('剧本摘要生成失败', 'Tạo tóm tắt kịch bản thất bại')
       setSummaryError(msg)
       onError(msg)
       throw err
@@ -142,18 +165,63 @@ export function OutlineStep({
     }
   }
 
-  // 入队并轮询分集剧本直到完成
+  // 摘要完成后等待/触发资产抽取（后端摘要任务也会自动抽；此处兜底）
+  async function ensureAssetsSeeded(runToken?: number): Promise<boolean> {
+    try {
+      let p = await dramaApi.getProject(projectId)
+      onProjectChange(p)
+      let st = getAssetsSeedStatus(p)
+      /* 已完成/已失败直接返回，不置抽取态，避免进页闪一下“抽取资产中”。 */
+      if (st === 'done' || st === 'failed') {
+        setAssetsSeeding(false)
+        return true
+      }
+      if (st !== 'generating') {
+        try {
+          await dramaApi.seedAssets(projectId)
+        } catch {
+          /* 可能已在后台抽取，继续轮询 */
+        }
+      }
+      setAssetsSeeding(true)
+      const started = Date.now()
+      while (Date.now() - started < 10 * 60 * 1000) {
+        if (runToken !== undefined && runToken !== pipelineRef.current) return false
+        p = await dramaApi.getProject(projectId)
+        onProjectChange(p)
+        st = getAssetsSeedStatus(p)
+        if (st === 'done' || st === 'failed') {
+          setAssetsSeeding(false)
+          return st === 'done' || st === 'failed'
+        }
+        setAssetsSeeding(st === 'generating' || !st)
+        await new Promise((r) => setTimeout(r, 2000))
+      }
+      setAssetsSeeding(false)
+      return true
+    } catch {
+      setAssetsSeeding(false)
+      return true
+    }
+  }
+
+  // 入队并轮询分集剧本直到完成（摘要任务成功后会自动入队；此处仅兜底）
   async function runEpisodeScripts(runToken?: number, force = false) {
     setEpisodeGenerating(true)
     setEpisodeError('')
     try {
-      const res = await dramaApi.episodeScript({
-        project_id: projectId,
-        batch_size: 1,
-        force,
-      })
-      setScript(res.script)
-      setProgress({ done: res.total_generated, total: res.total_target })
+      const current = await dramaApi.getScript(projectId)
+      setScript(current)
+      const already = getEpisodeContentStatus(current)
+      if (already !== 'generating' || force) {
+        const res = await dramaApi.episodeScript({
+          project_id: projectId,
+          batch_size: 1,
+          force,
+        })
+        setScript(res.script)
+        setProgress({ done: res.total_generated, total: res.total_target })
+      }
       const finished = await pollScriptUntil((s) => {
         const st = getEpisodeContentStatus(s)
         return st === 'completed' || st === 'failed'
@@ -162,7 +230,7 @@ export function OutlineStep({
       if (getEpisodeContentStatus(finished) === 'failed') {
         const msg =
           String((finished.params || {}).episode_content_error || '') ||
-          tx('dramaOutlineStep.episodeScriptGenerationFailed')
+          tv('分集剧本生成失败', 'Tạo kịch bản tập thất bại')
         setEpisodeError(msg)
         onError(msg)
         notifyOutlineReady(false)
@@ -172,7 +240,8 @@ export function OutlineStep({
       const p = await dramaApi.getProject(projectId)
       onProjectChange(p)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : tx('dramaOutlineStep.episodeScriptGenerationFailed')
+      if (isRequestAborted(err)) return
+      const msg = err instanceof Error ? err.message : tv('分集剧本生成失败', 'Tạo kịch bản tập thất bại')
       setEpisodeError(msg)
       onError(msg)
       notifyOutlineReady(false)
@@ -185,10 +254,10 @@ export function OutlineStep({
   async function handleRegenerateEpisodes() {
     if (episodeGenerating) return
     const ok = await dialog.confirm({
-      title: tx('dramaOutlineStep.regenerateEpisodeScripts'),
+      title: tv('重新生成分集剧本', 'Tạo lại kịch bản các tập'),
       message:
-        tx('dramaOutlineStep.clearsCurrentEpisodeText'),
-      confirmText: tx('dramaOutlineStep.regenerate'),
+        tv('将清空当前分集正文并按最新剧本摘要重新生成全部集数，已有编辑将丢失。是否继续？', 'Sẽ xóa nội dung tập hiện tại và tạo lại toàn bộ các tập theo tóm tắt kịch bản mới nhất, các chỉnh sửa hiện có sẽ mất. Tiếp tục không?'),
+      confirmText: tv('重新生成', 'Tạo lại'),
       tone: 'danger',
     })
     if (!ok) return
@@ -196,42 +265,74 @@ export function OutlineStep({
     await runEpisodeScripts(undefined, true)
   }
 
-  // 挂载自动流水线：无摘要 → 摘要 → 分集（未满目标集数会续跑；已在 worker 中则只轮询）
+  // 挂载流水线：整剧摘要 → 抽资产 → 分集剧本（分镜由后端在分集完成后入队）
   useEffect(() => {
     const token = ++pipelineRef.current
     async function pipeline() {
       let current = script
-      const status = getSummaryStatus(current)
-      if (!current?.summary && status !== 'completed') {
-        try {
-          if (status === 'generating') {
-            setSummaryGenerating(true)
-            current = await pollScriptUntil((s) => {
-              const st = getSummaryStatus(s)
-              return st === 'completed' || st === 'failed'
-            }, token)
-            setSummaryGenerating(false)
-            if (!current || getSummaryStatus(current) === 'failed') {
-              const msg =
-                String((current?.params || {}).summary_error || '') || tx('dramaOutlineStep.scriptSummaryGenerationFailed')
-              setSummaryError(msg)
-              onError(msg)
-              return
-            }
-          } else {
-            current = await runSummary(token)
+      let status = getSummaryStatus(current)
+
+      // 1) 必须先完成整剧摘要；失败且尚未进入分集则停
+      if (status !== 'completed') {
+        const epStatusEarly = getEpisodeContentStatus(current)
+        const bodiesEarly = parseEpisodeBodies(current)
+        if (status === 'failed') {
+          const msg =
+            String((current?.params || {}).summary_error || '') || tv('剧本摘要生成失败', 'Tạo tóm tắt kịch bản thất bại')
+          setSummaryError(msg)
+          onError(msg)
+          // 分集已在生成/已有正文时继续跟进度，不因摘要失败吞掉整剧进度
+          if (
+            epStatusEarly !== 'generating' &&
+            epStatusEarly !== 'completed' &&
+            !hasSubstantialEpisode(bodiesEarly)
+          ) {
+            setEpisodeGenerating(false)
+            return
           }
-        } catch {
-          return
+        } else {
+          try {
+            if (status === 'generating') {
+              setSummaryGenerating(true)
+              current = await pollScriptUntil((s) => {
+                const st = getSummaryStatus(s)
+                return st === 'completed' || st === 'failed'
+              }, token)
+              setSummaryGenerating(false)
+            } else {
+              current = await runSummary(token)
+            }
+          } catch {
+            setSummaryGenerating(false)
+            return
+          }
+          if (!current || token !== pipelineRef.current) return
+          status = getSummaryStatus(current)
+          if (status === 'failed') {
+            const msg =
+              String((current.params || {}).summary_error || '') || tv('剧本摘要生成失败', 'Tạo tóm tắt kịch bản thất bại')
+            setSummaryError(msg)
+            onError(msg)
+            setEpisodeGenerating(false)
+            return
+          }
+          if (status !== 'completed') return
         }
-        if (!current || token !== pipelineRef.current) return
       }
+
+      // 2) 摘要完成后抽取资产（后端摘要任务也会自动抽，这里等待/兜底）
+      if (token !== pipelineRef.current) return
+      await ensureAssetsSeeded(token)
+      if (token !== pipelineRef.current) return
+
       const target =
         Number(
           (current?.summary as Record<string, unknown> | null)?.episodeCount ||
             (current?.params || {}).episode_count ||
-            project.params?.episode_count,
+            projectRef.current.params?.episode_count,
         ) || 0
+      current = await dramaApi.getScript(projectId)
+      setScript(current)
       const bodies = parseEpisodeBodies(current)
       const epStatus = getEpisodeContentStatus(current)
       const autoMissing = autoMissingEpisodeCount(bodies, target)
@@ -241,31 +342,31 @@ export function OutlineStep({
         notifyOutlineReady(true)
         return
       }
-      if (current?.summary || getSummaryStatus(current) === 'completed') {
-        if (epStatus === 'generating') {
-          setEpisodeGenerating(true)
-          const finished = await pollScriptUntil((s) => {
-            const st = getEpisodeContentStatus(s)
-            return st === 'completed' || st === 'failed'
-          }, token)
-          setEpisodeGenerating(false)
-          if (!finished) return
-          if (getEpisodeContentStatus(finished) === 'failed') {
-            const msg =
-              String((finished.params || {}).episode_content_error || '') ||
-              tx('dramaOutlineStep.episodeScriptGenerationFailed')
-            setEpisodeError(msg)
-            onError(msg)
-            notifyOutlineReady(false)
-            return
-          }
-          notifyOutlineReady(true)
-          const p = await dramaApi.getProject(projectId)
-          onProjectChange(p)
+
+      // 3) 分集剧本：已在生成则只轮询；否则兜底入队
+      if (epStatus === 'generating') {
+        setEpisodeGenerating(true)
+        const finished = await pollScriptUntil((s) => {
+          const st = getEpisodeContentStatus(s)
+          return st === 'completed' || st === 'failed'
+        }, token)
+        setEpisodeGenerating(false)
+        if (!finished) return
+        if (getEpisodeContentStatus(finished) === 'failed') {
+          const msg =
+            String((finished.params || {}).episode_content_error || '') ||
+            tv('分集剧本生成失败', 'Tạo kịch bản tập thất bại')
+          setEpisodeError(msg)
+          onError(msg)
+          notifyOutlineReady(false)
           return
         }
-        await runEpisodeScripts(token)
+        notifyOutlineReady(true)
+        const p = await dramaApi.getProject(projectId)
+        onProjectChange(p)
+        return
       }
+      await runEpisodeScripts(token)
     }
     void pipeline()
     return () => {
@@ -285,7 +386,8 @@ export function OutlineStep({
       const p = await dramaApi.getProject(projectId)
       onProjectChange(p)
     } catch (err) {
-      onError(err instanceof Error ? err.message : tx('dramaOutlineStep.couldUpdateStyle'))
+      if (isRequestAborted(err)) return
+      onError(err instanceof Error ? err.message : tv('风格更新失败', 'Cập nhật phong cách thất bại'))
     }
   }
 
@@ -308,7 +410,8 @@ export function OutlineStep({
       const p = await dramaApi.getProject(projectId)
       onProjectChange(p)
     } catch (err) {
-      onError(err instanceof Error ? err.message : tx('dramaOutlineStep.couldSaveSummary'))
+      if (isRequestAborted(err)) return
+      onError(err instanceof Error ? err.message : tv('摘要保存失败', 'Lưu tóm tắt thất bại'))
     } finally {
       setSummarySaving(false)
     }
@@ -325,7 +428,8 @@ export function OutlineStep({
       setScript(updated)
       setSourceEditing(false)
     } catch (err) {
-      onError(err instanceof Error ? err.message : tx('dramaOutlineStep.couldSaveIdea'))
+      if (isRequestAborted(err)) return
+      onError(err instanceof Error ? err.message : tv('创意保存失败', 'Lưu ý tưởng thất bại'))
     } finally {
       setSourceSaving(false)
     }
@@ -337,19 +441,23 @@ export function OutlineStep({
         <div className="drama-outline-toolbar-left">
           <DramaImageStyleModal
             variant="field"
-            fieldLabel={tx('dramaOutlineStep.projectStyle')}
-            title={tx('dramaOutlineStep.chooseProjectStyle')}
-            emptyLabel={tx('dramaOutlineStep.selected')}
+            fieldLabel={tv("项目风格", "Phong cách dự án")}
+            title={tv("选择项目风格", "Chọn phong cách dự án")}
+            emptyLabel={tv("未选择", "Chưa chọn")}
             value={(imageStyleId as ImageStyleId | '') || ''}
             onChange={(id) => void handleStyleChange(id)}
           />
           <span className="drama-outline-toolbar-meta">
-            {episodeCount ? tx('dramaOutlineStep.episodes', { episodeCount }) : tx('dramaOutlineStep.episodeCountTbd')}
-            {episodeGenerating || episodeStatus === 'generating'
-              ? progress.total > 0
-                ? tx('dramaOutlineStep.generating', { progressDone: progress.done, progressTotal: progress.total })
-                : tx('dramaOutlineStep.generatingEpisodes')
-              : ''}
+            {episodeCount ? tv(`共 ${episodeCount} 集`, `Tổng ${episodeCount} tập`) : tv('集数待定', 'Số tập chưa định')}
+            {summaryGenerating || summaryStatus === 'generating'
+              ? tv(' · 全剧摘要生成中…', ' · Đang tạo tóm tắt cả phim…')
+              : assetsSeeding || assetsSeedStatus === 'generating'
+                ? tv(' · 抽取资产中…', ' · Đang trích xuất tài sản…')
+                : episodeGenerating || episodeStatus === 'generating'
+                  ? progress.total > 0
+                    ? tv(` · 整剧进度 ${progress.done}/${progress.total}`, ` · Tiến độ cả phim ${progress.done}/${progress.total}`)
+                    : tv(' · 分集剧本生成中…', ' · Đang tạo kịch bản các tập…')
+                  : ''}
           </span>
         </div>
         <div className="drama-outline-toolbar-actions">
@@ -358,25 +466,25 @@ export function OutlineStep({
             className={`drama-outline-chip-btn${metaModal === 'source' ? ' is-on' : ''}`}
             onClick={openSourceModal}
           >
-            {tx('dramaOutlineStep.seriesIdea')}
+            {tv("整剧创意", "Ý tưởng cả phim")}
           </button>
           <button
             type="button"
             className={`drama-outline-chip-btn${metaModal === 'project' ? ' is-on' : ''}`}
             onClick={() => setMetaModal('project')}
           >
-            {tx('dramaOutlineStep.projectSettings')}
+            {tv("项目设置", "Cài đặt dự án")}
           </button>
           <button
             type="button"
             className={`drama-outline-chip-btn${metaModal === 'summary' ? ' is-on' : ''}`}
             onClick={openSummaryModal}
           >
-            {tx('dramaOutlineStep.globalSettings')}
+            {tv("全局设定", "Thiết lập toàn cục")}
           </button>
           {(episodeError || episodeStatus === 'failed') && (
             <button type="button" className="drama-outline-chip-btn" onClick={() => void handleRegenerateEpisodes()}>
-              {tx('dramaOutlineStep.reRunAllEpisodes')}
+              {tv("重跑全部分集", "Chạy lại tất cả các tập")}
             </button>
           )}
         </div>
@@ -385,22 +493,22 @@ export function OutlineStep({
       <Modal
         open={metaModal === 'source'}
         onClose={closeMetaModal}
-        title={tx('dramaOutlineStep.seriesIdea')}
+        title={tv("整剧创意", "Ý tưởng cả phim")}
         size="lg"
         className="drama-outline-meta-modal"
         footer={
           sourceEditing ? (
             <>
               <button type="button" className="drama-btn-ghost" onClick={() => setSourceEditing(false)}>
-                {tx('dramaOutlineStep.cancelEditing')}
+                {tv("取消编辑", "Hủy chỉnh sửa")}
               </button>
               <button
                 type="button"
                 className="drama-btn-primary"
-                disabled={sourceSaving}
+                disabled={sourceSaving || scriptLock.readOnly}
                 onClick={() => void saveSourceEdit()}
               >
-                {sourceSaving ? tx('dramaOutlineStep.saving') : tx('dramaOutlineStep.save')}
+                {sourceSaving ? tv('保存中…', 'Đang lưu…') : tv('保存', 'Lưu')}
               </button>
             </>
           ) : (
@@ -412,13 +520,14 @@ export function OutlineStep({
                 setSourceEditing(true)
               }}
             >
-              {tx('dramaOutlineStep.edit')}
+              {tv("编辑", "Chỉnh sửa")}
             </button>
           )
         }
       >
         <div className="drama-outline-meta-modal-body">
-          {sourceEditing ? (
+          {scriptLock.readOnly && <p className="pf-team-alert" role="status">{scriptLock.checking ? tv('正在取得编辑占用…', 'Đang lấy quyền chỉnh sửa…') : scriptLock.error}<button type="button" onClick={scriptLock.retry}>{tv("重新取得编辑权并刷新", "Lấy lại quyền chỉnh sửa và làm mới")}</button></p>}
+        {sourceEditing ? (
             <textarea
               className="drama-ep-section-textarea"
               rows={16}
@@ -426,7 +535,7 @@ export function OutlineStep({
               onChange={(e) => setSourceDraft(e.target.value)}
             />
           ) : (
-            <p className="drama-pre">{script?.source?.trim() || tx('dramaOutlineStep.seriesIdeaYet')}</p>
+            <p className="drama-pre">{script?.source?.trim() || tv('暂无整剧创意', 'Chưa có ý tưởng cả phim')}</p>
           )}
         </div>
       </Modal>
@@ -434,53 +543,54 @@ export function OutlineStep({
       <Modal
         open={metaModal === 'summary'}
         onClose={closeMetaModal}
-        title={tx('dramaOutlineStep.globalSettings')}
+        title={tv("全局设定", "Thiết lập toàn cục")}
         size="lg"
         className="drama-outline-meta-modal"
         footer={
           summaryEditing ? (
             <>
               <button type="button" className="drama-btn-ghost" onClick={() => setSummaryEditing(false)}>
-                {tx('dramaOutlineStep.cancelEditing')}
+                {tv("取消编辑", "Hủy chỉnh sửa")}
               </button>
               <button
                 type="button"
                 className="drama-btn-primary"
-                disabled={summarySaving}
+                disabled={summarySaving || scriptLock.readOnly}
                 onClick={() => void saveSummaryEdit()}
               >
-                {summarySaving ? tx('dramaOutlineStep.saving') : tx('dramaOutlineStep.save')}
+                {summarySaving ? tv('保存中…', 'Đang lưu…') : tv('保存', 'Lưu')}
               </button>
             </>
           ) : summary && summaryStatus === 'completed' ? (
             <button type="button" className="drama-btn-ghost" onClick={() => startSummaryEdit()}>
-              {tx('dramaOutlineStep.edit')}
+              {tv("编辑", "Chỉnh sửa")}
             </button>
           ) : summaryError || summaryStatus === 'failed' ? (
             <button type="button" className="drama-btn-primary" onClick={() => void runSummary()}>
-              {tx('dramaOutlineStep.regenerate')}
+              {tv("重新生成", "Tạo lại")}
             </button>
           ) : null
         }
       >
         <div className="drama-outline-meta-modal-body">
+          {scriptLock.readOnly && <p className="pf-team-alert" role="status">{scriptLock.checking ? tv('正在取得编辑占用…', 'Đang lấy quyền chỉnh sửa…') : scriptLock.error}<button type="button" onClick={scriptLock.retry}>{tv("重新取得编辑权并刷新", "Lấy lại quyền chỉnh sửa và làm mới")}</button></p>}
           {summaryGenerating || summaryStatus === 'generating' ? (
-            <p className="drama-loader">{tx('dramaOutlineStep.generatingSeriesSummary')}</p>
+            <p className="drama-loader">{tv("全剧摘要生成中…", "Đang tạo tóm tắt cả phim…")}</p>
           ) : null}
           {summaryError || summaryStatus === 'failed' ? (
-            <p className="drama-error">{summaryError || tx('dramaOutlineStep.summaryGenerationFailed')}</p>
+            <p className="drama-error">{summaryError || tv('摘要生成失败', 'Tạo tóm tắt thất bại')}</p>
           ) : null}
           {summaryEditing && summaryDraft ? (
             <div className="drama-outline-edit">
               <EditableSummaryField
-                label={tx('dramaOutlineStep.title')}
+                label={tv("剧名", "Tên phim")}
                 value={String(summaryDraft.seriesTitle || '')}
                 onChange={(v) =>
                   setSummaryDraft((prev) => (prev ? { ...prev, seriesTitle: v } : prev))
                 }
               />
               <EditableSummaryField
-                label={tx('dramaOutlineStep.customEpisodeCount')}
+                label={tv("自定义集数", "Số tập tùy chỉnh")}
                 value={String(summaryDraft.episodeCount ?? '')}
                 onChange={(v) =>
                   setSummaryDraft((prev) =>
@@ -489,12 +599,12 @@ export function OutlineStep({
                 }
               />
               <EditableSummaryField
-                label={tx('dramaOutlineStep.storyType')}
+                label={tv("故事类型", "Thể loại truyện")}
                 value={String(summaryDraft.storyType || '')}
                 onChange={(v) => setSummaryDraft((prev) => (prev ? { ...prev, storyType: v } : prev))}
               />
               <EditableSummaryField
-                label={tx('dramaOutlineStep.oneLineStory')}
+                label={tv("一句话故事", "Câu chuyện một dòng")}
                 value={String(summaryDraft.oneLineStory || '')}
                 onChange={(v) =>
                   setSummaryDraft((prev) => (prev ? { ...prev, oneLineStory: v } : prev))
@@ -502,7 +612,7 @@ export function OutlineStep({
                 multiline
               />
               <EditableSummaryField
-                label={tx('dramaOutlineStep.synopsis')}
+                label={tv("故事梗概", "Tóm tắt cốt truyện")}
                 value={String(summaryDraft.synopsis || '')}
                 onChange={(v) => setSummaryDraft((prev) => (prev ? { ...prev, synopsis: v } : prev))}
                 multiline
@@ -511,22 +621,22 @@ export function OutlineStep({
           ) : null}
           {!summaryEditing && summary && summaryStatus === 'completed' ? (
             <div className="drama-summary-structured">
-              <SummaryField label={tx('dramaOutlineStep.title')} value={String(summary.seriesTitle || '')} />
-              <SummaryField label={tx('dramaOutlineStep.storyType')} value={String(summary.storyType || '')} />
-              <SummaryField label={tx('dramaOutlineStep.oneLineStory')} value={String(summary.oneLineStory || '')} />
-              <SummaryField label={tx('dramaOutlineStep.synopsis')} value={String(summary.synopsis || '')} />
+              <SummaryField label={tv("剧名", "Tên phim")} value={String(summary.seriesTitle || '')} />
+              <SummaryField label={tv("故事类型", "Thể loại truyện")} value={String(summary.storyType || '')} />
+              <SummaryField label={tv("一句话故事", "Câu chuyện một dòng")} value={String(summary.oneLineStory || '')} />
+              <SummaryField label={tv("故事梗概", "Tóm tắt cốt truyện")} value={String(summary.synopsis || '')} />
               {characters.length > 0 ? (
                 <section>
-                  <h4>{tx('dramaOutlineStep.characters')}</h4>
+                  <h4>{tv("人物", "Nhân vật")}</h4>
                   <p className="drama-muted">
-                    {characters.map((ch) => String(ch.name || '')).filter(Boolean).join(tx('dramaOutlineStep.listSep'))}
+                    {characters.map((ch) => String(ch.name || '')).filter(Boolean).join('、')}
                   </p>
                 </section>
               ) : null}
             </div>
           ) : null}
           {!summaryEditing && !summary && summaryStatus !== 'generating' && !summaryError ? (
-            <p className="drama-muted">{tx('dramaOutlineStep.globalSettingsYetWait')}</p>
+            <p className="drama-muted">{tv("暂无全局设定，等待摘要生成或点击重新生成。", "Chưa có thiết lập toàn cục, chờ tạo tóm tắt hoặc bấm tạo lại.")}</p>
           ) : null}
         </div>
       </Modal>
@@ -542,12 +652,63 @@ export function OutlineStep({
         onError={onError}
       />
 
+      {/* 外部整剧进度：摘要 → 资产 → 分集，主界面可见 */}
+      {summaryGenerating ||
+      summaryStatus === 'generating' ||
+      assetsSeeding ||
+      assetsSeedStatus === 'generating' ||
+      episodeGenerating ||
+      episodeStatus === 'generating' ? (
+        <div className="drama-outline-pipeline" role="status" aria-live="polite">
+          <div className="drama-outline-pipeline-main">
+            <span className="drama-outline-pipeline-pulse" aria-hidden />
+            <div>
+              <strong>
+                {summaryGenerating || summaryStatus === 'generating'
+                  ? tv('全剧摘要生成中…', 'Đang tạo tóm tắt cả phim…')
+                  : assetsSeeding || assetsSeedStatus === 'generating'
+                    ? tv('抽取资产中…', 'Đang trích xuất tài sản…')
+                    : progress.total > 0
+                      ? tv(`分集剧本生成中 · 整剧进度 ${progress.done}/${progress.total}`, `Đang tạo kịch bản các tập · Tiến độ cả phim ${progress.done}/${progress.total}`)
+                      : tv('分集剧本生成中…', 'Đang tạo kịch bản các tập…')}
+              </strong>
+              <p>
+                {summaryGenerating || summaryStatus === 'generating'
+                  ? tv('顺序：整剧摘要 → 抽取资产 → 分集剧本 → 每集立刻 AI 分镜', 'Thứ tự: tóm tắt cả phim → trích xuất tài sản → kịch bản các tập → mỗi tập AI chia phân cảnh ngay')
+                  : assetsSeeding || assetsSeedStatus === 'generating'
+                    ? tv('正在从整剧摘要抽取角色/场景到资产库，完成后开始生成各集剧本', 'Đang trích xuất nhân vật/bối cảnh từ tóm tắt cả phim vào thư viện tài sản, xong sẽ bắt đầu tạo kịch bản từng tập')
+                    : tv('每集剧本完成后立即执行 AI 分镜；左侧可看「AI 分镜中…」状态', 'Sau khi kịch bản mỗi tập hoàn tất sẽ chạy AI chia phân cảnh ngay; bên trái có thể thấy trạng thái “AI đang chia phân cảnh…”')}
+              </p>
+            </div>
+          </div>
+          {!(summaryGenerating || summaryStatus === 'generating') &&
+          !(assetsSeeding || assetsSeedStatus === 'generating') &&
+          progress.total > 0 ? (
+            <div className="drama-outline-pipeline-bar" aria-hidden>
+              <div
+                className="drama-outline-pipeline-bar-fill"
+                style={{
+                  width: `${Math.min(100, Math.round((100 * progress.done) / progress.total))}%`,
+                }}
+              />
+            </div>
+          ) : (
+            <div className="drama-outline-pipeline-bar is-indeterminate" aria-hidden>
+              <div className="drama-outline-pipeline-bar-fill" />
+            </div>
+          )}
+        </div>
+      ) : null}
+
       <OutlineEpisodePanel
         projectId={projectId}
         script={script}
         episodeCount={episodeCount}
-        summaryReady={summaryStatus === 'completed' || Boolean(summary)}
+        summaryReady={summaryStatus === 'completed'}
+        summaryGenerating={summaryGenerating || summaryStatus === 'generating'}
+        assetsSeeding={assetsSeeding || assetsSeedStatus === 'generating'}
         episodeGenerating={episodeGenerating || episodeStatus === 'generating'}
+        episodeProgress={progress}
         imageStyleLabel={getImageStyleLabel(imageStyleId) || undefined}
         storyType={String(summary?.storyType || '') || undefined}
         onScriptChange={setScript}

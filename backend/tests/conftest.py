@@ -22,6 +22,13 @@ from app.database import Base
 from app.models import User
 from app.models_tasks import TaskRun
 
+
+@pytest.fixture(autouse=True)
+def isolate_direct_llm_launch(monkeypatch):
+    """普通测试不启动真实模型后台调用；执行生命周期用例显式替换此入口。"""
+    from unittest.mock import Mock
+    monkeypatch.setattr("app.services.tasks.direct.launch_direct_task", Mock())
+
 _DB_NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
 
 
@@ -63,6 +70,12 @@ def skip_tokenfree_pricing_network(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr("app.services.tokenfree_pricing.ensure_official_rates", _empty)
     monkeypatch.setattr("app.services.billing.estimates.ensure_official_rates", _empty)
+
+    async def _no_newapi_bills(_events):
+        """单测不拉 New API 消费日志。"""
+        return 0
+
+    monkeypatch.setattr("app.services.billing.newapi_bill.apply_newapi_bills", _no_newapi_bills)
     from app.services.tokenfree_pricing import set_cached_rates
 
     set_cached_rates(None)
@@ -82,10 +95,12 @@ async def db_session(billing_enabled: None) -> AsyncIterator[AsyncSession]:
     # 注册全部 ORM 表
     import app.models  # noqa: F401
     import app.models_agent  # noqa: F401
-    import app.models_api  # noqa: F401
     import app.models_drama  # noqa: F401
     import app.models_settings  # noqa: F401
     import app.models_tasks  # noqa: F401
+    import app.models_teams  # noqa: F401
+    import app.models_team_billing  # noqa: F401
+    import app.models_team_locks  # noqa: F401
 
     url = (get_settings().database_url or "").strip()
     if not url.startswith("postgresql"):
@@ -144,8 +159,8 @@ async def make_task(
     db: AsyncSession,
     user: User,
     *,
-    domain: str = "api",
-    task_type: str = "v1_image",
+    domain: str = "studio",
+    task_type: str = "tool_image",
     status: str = "pending",
     billing_status: str = "none",
     provider_task_id: str | None = None,

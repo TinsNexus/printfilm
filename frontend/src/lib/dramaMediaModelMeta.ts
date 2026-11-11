@@ -1,6 +1,6 @@
 /** 漫剧模型选择：图标族与展示文案辅助 */
 import type { MediaModelOption } from '../api'
-import { tr } from '../i18n/translate'
+import { tv } from '../i18n/tv'
 
 export type MediaModelIconKind =
   | 'seedance25'
@@ -10,6 +10,12 @@ export type MediaModelIconKind =
   | 'seedream'
   | 'gptImage'
   | 'generic'
+
+/** MiniMax-H3（忽略大小写与连字符）才开放分集批量提交 */
+export function isMinimaxH3Model(modelId: string | undefined | null): boolean {
+  const id = (modelId || '').toLowerCase().replace(/[_-]/g, '')
+  return id.includes('minimax') && id.includes('h3')
+}
 
 /** 按模型 id 推断图标族 */
 export function mediaModelIconKind(modelId: string | undefined | null): MediaModelIconKind {
@@ -31,19 +37,23 @@ export function mediaModelCapabilityBadge(model: MediaModelOption): string {
   if (id.includes('seedance')) return 'Seedance'
   if (id.includes('seedream')) return 'Seedream'
   if (id.includes('gpt-image')) return 'GPT Image'
-  return model.provider === 'tokenfree' ? 'TokenFree' : model.provider || tr('lib.model')
+  // PiAPI 上游的模型族
+  if (id.includes('kling')) return 'Kling'
+  if (id.includes('veo')) return 'Veo'
+  if (id.includes('flux')) return 'Flux'
+  return model.provider === 'tokenfree' ? 'TokenFree' : model.provider || tv('模型', 'Model')
 }
 
 /** 悬停 / title 完整介绍 */
 export function mediaModelHoverText(model: MediaModelOption): string {
   const clip =
     typeof model.duration_min === 'number' && typeof model.duration_max === 'number'
-      ? tr('lib.clipS', { modelDuration_min: model.duration_min, modelDuration_max: model.duration_max })
+      ? tv(`成片 ${model.duration_min}–${model.duration_max}s`, `Phim ${model.duration_min}–${model.duration_max}s`)
       : ''
   const parts = [
     model.label || model.id,
     model.description?.trim(),
-    model.eta_hint?.trim() ? tr('lib.etaHint', { eta: model.eta_hint.trim() }) : '',
+    model.eta_hint?.trim() ? tv(`耗时：${model.eta_hint.trim()}`, `Thời gian: ${model.eta_hint.trim()}`) : '',
     clip,
     model.pricing_hint?.trim() || '',
   ].filter(Boolean)
@@ -55,6 +65,6 @@ export function mediaModelClipDurationLabel(model: MediaModelOption): string {
   const lo = Number(model.duration_min)
   const hi = Number(model.duration_max)
   if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo <= 0 || hi <= 0) return ''
-  if (lo === hi) return tr('lib.clipS2', { lo })
-  return tr('lib.clipS3', { lo, hi })
+  if (lo === hi) return tv(`成片 ${lo}s`, `Phim ${lo}s`)
+  return tv(`成片 ${lo}–${hi}s`, `Phim ${lo}–${hi}s`)
 }

@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { formatAccountId } from "@/lib/admin-account";
-import { tr } from "@/i18n/translate";
+import { tr } from "../../i18n/translate.ts";
 
 type EntityKind = "user" | "project" | "drama" | "drama_asset" | "task" | "order";
 
@@ -34,7 +34,7 @@ function buildHref(kind: EntityKind, id: number): string {
 function defaultLabel(kind: EntityKind, id: number): string {
   switch (kind) {
     case "user":
-      return tr("ui.idLabel", { id: formatAccountId(id) });
+      return `ID：${formatAccountId(id)}`;
     case "project":
       return tr("ui.explainer", { id });
     case "drama":

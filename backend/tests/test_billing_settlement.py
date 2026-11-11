@@ -110,6 +110,64 @@ async def test_settle_task_noop_when_already_settled() -> None:
     assert db.execute.await_count == 1
 
 
+@pytest.mark.asyncio
+async def test_settle_task_direct_charges_when_not_frozen(monkeypatch) -> None:
+    """未预扣但已有用量：直接 settle 扣钱包，禁止只记账漏扣。"""
+    from app.models import UsageEvent
+
+    task = TaskRun(
+        id=88,
+        domain="drama",
+        task_type="fragment_video",
+        requested_by=7,
+        billing_status="none",
+        billing_estimate_fen=0,
+    )
+    user = User(id=7, balance_fen=10_000, frozen_fen=0)
+    event = UsageEvent(
+        id=1,
+        user_id=7,
+        billing_key="seedance2:video0",
+        charge_fen=1200,
+        cost_fen=1200,
+        settled=False,
+    )
+
+    lock_task = MagicMock()
+    lock_task.scalar_one_or_none = MagicMock(return_value=task)
+    usage_result = MagicMock()
+    usage_result.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=[event])))
+    lock_user = MagicMock()
+    lock_user.scalar_one_or_none = MagicMock(return_value=user)
+
+    db = MagicMock()
+    db.execute = AsyncMock(side_effect=[lock_task, usage_result, lock_user])
+    db.flush = AsyncMock()
+    db.add = MagicMock()
+
+    monkeypatch.setattr(
+        "app.services.billing.settlement.billing_active",
+        lambda user=None, settings=None: True,
+    )
+    monkeypatch.setattr(
+        "app.services.billing.newapi_bill.apply_newapi_bills",
+        AsyncMock(return_value=0),
+    )
+    monkeypatch.setattr(
+        "app.services.billing.alerts.process_billing_alerts_after_charge",
+        AsyncMock(),
+    )
+
+    out = await settle_task(db, 88)
+
+    assert out == {"charged": 1200, "refunded": 0}
+    assert task.billing_status == "settled"
+    assert task.billing_charged_fen == 1200
+    assert user.balance_fen == 8800
+    assert event.settled is True
+    assert db.add.called
+
+
 def test_fragment_video_already_applied_requires_done_generation() -> None:
     from app.models_drama import DramaEpisodeFragment
     from app.services.drama.jobs import _fragment_video_already_applied

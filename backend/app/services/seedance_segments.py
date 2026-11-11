@@ -147,6 +147,8 @@ def classify_voice_body(body: str) -> str:
     text = (body or "").strip()
     if not text:
         return "keep"
+    # 画布 @asset:123 含冒号，禁止当成「说话人：台词」
+    text = re.sub(r"@asset:\d+", lambda m: m.group(0).replace(":", "_", 1), text)
     if VISUAL_SHOT_LABEL_RE.match(text) or text.startswith("空镜") or text.startswith("△"):
         return "visual"
     stage = STAGE_ONLY_SPEAKER_RE.match(text)
@@ -447,8 +449,8 @@ def build_seedance_production_section(
     segment_script: str,
     *,
     ambient_only: bool = False,
-    burn_subtitles: bool = True,
-    character_intro: bool = True,
+    burn_subtitles: bool = False,
+    character_intro: bool = False,
     no_bgm: bool = False,
 ) -> str:
     """组装 Seedance 音频/字幕/BGM 强制约束（科普旁白 / 漫剧画面+对白混排）。

@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -52,6 +52,7 @@ class RoutingSnapshot:
     channels: list[SystemModelChannel]
     logical_models: list[LogicalModel]
     default_models: DefaultModels
+    media_reference_limits: dict[str, dict[str, int]] = field(default_factory=dict)
 
 
 _routing_snapshot = RoutingSnapshot(channels=[], logical_models=[], default_models=DefaultModels())
@@ -113,12 +114,14 @@ def _refresh_routing_snapshot(
     channels: list[SystemModelChannel],
     logical_models: list[LogicalModel],
     default_models: DefaultModels,
+    media_reference_limits: dict | None = None,
 ) -> None:
     global _routing_snapshot
     _routing_snapshot = RoutingSnapshot(
         channels=channels,
         logical_models=logical_models,
         default_models=default_models,
+        media_reference_limits=media_reference_limits or {},
     )
 
 
@@ -139,18 +142,21 @@ def _bootstrap_channels_from_env(settings: Settings | None = None) -> list[Syste
             src.model_audio,
         ]
     )
-    return [locked_tokenfree_channel(api_key=key, models=models, enabled=True)]
+    return [locked_tokenfree_channel(api_key=key, models=models, enabled=True, force_tokenfree=True)]
 
 
 def _seedance_logical_meta(upstream: str) -> tuple[str, str]:
-    """按接入点 ID 推断 Seedance 逻辑模型（2.0 vs 2.5 vs Mini）。"""
+    """按接入点 ID 推断 Seedance 逻辑模型（2.0 vs 2.5 vs Mini）；id 与 TokenFree 点分目录对齐。"""
     mid = (upstream or "").strip().lower()
     if "mini" in mid:
-        return "seedance-2-0-mini", "Seedance 2.0 Mini"
+        # TokenFree→Ark mini 未开通，逻辑名并入 2.0
+        return "seedance-2.0", "Seedance 2.0"
+    if "fast" in mid:
+        return "seedance-2.0-fast", "Seedance 2.0 Fast"
     if any(token in mid for token in ("2-5", "2.5", "260628")):
         return "seedance-2.5", "Seedance 2.5"
     if any(token in mid for token in ("2-0", "2.0", "260128", "seedance-2")):
-        return "seedance-2", "Seedance 2"
+        return "seedance-2.0", "Seedance 2.0"
     return "seedance-2.5", "Seedance 2.5"
 
 
@@ -220,8 +226,8 @@ def _merge_friendly_alias_models(
 
 # TokenFree 价目真实 id（兼容旧前端别名 → 同名逻辑模型，不做换绑）
 _TOKENFREE_IMAGE_IDS: dict[str, str] = {
-    "seedream-5.0": "seedream-5-0-pro",
-    "seedream-5": "seedream-5-0-pro",
+    "seedream-5.0": "seedream-5.0",
+    "seedream-5": "seedream-5.0",
     "5.0": "seedream-5-0-pro",
     "seedream-4.5": "seedream-4-5",
     "seedream-4": "seedream-4-5",
@@ -236,7 +242,6 @@ def _bootstrap_logical_from_channels(channels: list[SystemModelChannel]) -> tupl
     alias_models: list[LogicalModel] = []
 
     def _bindings_for_upstream(upstream: str) -> list:
-        from app.schemas_routing import LogicalModelBinding
         from app.services.tokenfree_pricing import canonicalize_channel_model_id
 
         wanted = {(upstream or "").strip(), canonicalize_channel_model_id(upstream)}
@@ -249,8 +254,12 @@ def _bootstrap_logical_from_channels(channels: list[SystemModelChannel]) -> tupl
                     result.append(binding.model_copy())
         return result
 
+    def _is_seedance(model_id: str) -> bool:
+        # 只有 Seedance 才造短名别名；Kling / Veo 等自定义视频模型按原 id 保留，否则会被别名吞掉
+        return "seedance" in (model_id or "").lower()
+
     # 图模不再造 seedream-5.0 友好别名；仅视频保留 Seedance 短名
-    if settings.model_video:
+    if _is_seedance(settings.model_video):
         logical_id, name = _seedance_logical_meta(settings.model_video)
         _append_seedance_alias(
             alias_models,
@@ -259,7 +268,7 @@ def _bootstrap_logical_from_channels(channels: list[SystemModelChannel]) -> tupl
             name=name,
             bindings_for_upstream=_bindings_for_upstream,
         )
-    if settings.model_video_2:
+    if _is_seedance(settings.model_video_2):
         logical_id_2, name_2 = _seedance_logical_meta(settings.model_video_2)
         _append_seedance_alias(
             alias_models,
@@ -269,10 +278,12 @@ def _bootstrap_logical_from_channels(channels: list[SystemModelChannel]) -> tupl
             bindings_for_upstream=_bindings_for_upstream,
         )
     default_video = ""
-    if settings.model_video:
+    if _is_seedance(settings.model_video):
         default_video, _ = _seedance_logical_meta(settings.model_video)
+    elif settings.model_video:
+        default_video = settings.model_video.strip()
     elif settings.model_video_2:
-        default_video = "seedance-2"
+        default_video = "seedance-2.0"
     synced = synchronize_logical_models_with_channels(logical_models, channels)
     merged = _merge_friendly_alias_models(synced, alias_models)
     # 默认图模 = 渠道/价目真实名（如 seedream-5-0-pro）
@@ -282,9 +293,26 @@ def _bootstrap_logical_from_channels(channels: list[SystemModelChannel]) -> tupl
         text_model=settings.model_llm,
         image_model=image_default,
         video_model=default_video,
-        audio_model=settings.model_audio or settings.volc_tts_speaker,
+        audio_model=settings.model_audio,
     )
     return merged, normalize_default_models(defaults, merged, channels)
+
+
+# 历史渠道协议已下线，读库时收成仍支持的值，避免校验失败
+_LIVE_CHANNEL_PROTOCOLS = {"openai", "auto"}
+_LIVE_API_FORMATS = {"openai"}
+
+
+def _coerce_channel_protocol(value: str | None) -> str:
+    """把已删除的渠道协议收成 auto。"""
+    raw = (value or "auto").strip().lower() or "auto"
+    return raw if raw in _LIVE_CHANNEL_PROTOCOLS else "auto"
+
+
+def _coerce_api_format(value: str | None) -> str:
+    """把已删除的调用格式收成 openai。"""
+    raw = (value or "openai").strip().lower() or "openai"
+    return raw if raw in _LIVE_API_FORMATS else "openai"
 
 
 # ORM 行转领域模型（admin 视图，密钥打码）
@@ -296,8 +324,8 @@ def _channel_row_to_admin(row: SystemModelChannelRow) -> SystemModelChannel:
         base_url=row.base_url or "",
         api_key="",
         has_api_key=bool(api_key),
-        api_format=row.api_format or "openai",
-        protocol=row.protocol or "auto",
+        api_format=_coerce_api_format(row.api_format),
+        protocol=_coerce_channel_protocol(row.protocol),
         models=list(row.models or []),
         enabled=bool(row.enabled),
         sort_order=int(row.sort_order or 0),
@@ -317,7 +345,7 @@ async def _get_or_create_app_row(db: AsyncSession) -> AppSettings:
     row = (await db.execute(select(AppSettings).where(AppSettings.id == "default"))).scalar_one_or_none()
     if row:
         return row
-    row = AppSettings(id="default", config_json={"flat": _settings_to_dict()})
+    row = AppSettings(id="default", config_json={"flat": _encrypt_flat_config(_settings_to_dict())})
     db.add(row)
     await db.flush()
     return row
@@ -360,11 +388,13 @@ async def _ensure_bootstrapped_channels(db: AsyncSession) -> list[SystemModelCha
         rows.append(row)
     logical_models, defaults = _bootstrap_logical_from_channels(channels)
     app_row = await _get_or_create_app_row(db)
-    app_row.config_json = {
-        "flat": _settings_to_dict(),
-        "logical_models": [model.model_dump() for model in logical_models],
-        "default_models": default_models_to_dict(defaults),
-    }
+    # A first direct settings PATCH may have already saved payment values.
+    # Preserve them when initializing model channels, and encrypt env secrets.
+    config = dict(app_row.config_json or {})
+    config["flat"] = _encrypt_flat_config(_effective_flat(_decrypt_flat_config(config)))
+    config.setdefault("logical_models", [model.model_dump() for model in logical_models])
+    config.setdefault("default_models", default_models_to_dict(defaults))
+    app_row.config_json = config
     await db.commit()
     return rows
 
@@ -377,7 +407,6 @@ async def _ensure_tokenfree_channel(db: AsyncSession, existing: list[SystemModel
         TOKENFREE_CHANNEL_NAME,
         pick_migratable_api_key,
     )
-    from app.services.tokenfree_pricing import canonicalize_channel_models
 
     runtime = [_channel_row_to_runtime(row) for row in existing]
     migrated_key = pick_migratable_api_key(runtime)
@@ -396,24 +425,12 @@ async def _ensure_tokenfree_channel(db: AsyncSession, existing: list[SystemModel
     if not current_key and migrated_key:
         token_row.api_key_ciphertext = _encrypt_secret(migrated_key)
         current_key = migrated_key
-    src = get_settings()
-    env_models = canonicalize_channel_models(
-        [
-            src.model_llm,
-            src.model_image,
-            src.model_image_45,
-            src.model_video,
-            src.model_video_2,
-            src.model_audio,
-        ]
-    )
-    if not token_row.models:
-        token_row.models = env_models
-    else:
-        # 已有 DB 清单只折叠别名，不再把 .env 模型并回去
-        merged = canonicalize_channel_models(token_row.models)
-        if merged != list(token_row.models or []):
-            token_row.models = merged
+    from app.services.media_model_presets import all_preset_channel_models
+
+    # 渠道 models 固定为站点预设并集（含 gpt-image-2 / gpt-image-2.5 / 仅 qwen-tts）
+    preset = all_preset_channel_models()
+    if list(token_row.models or []) != preset:
+        token_row.models = preset
     for row in existing:
         if row.id != TOKENFREE_CHANNEL_ID:
             row.enabled = False
@@ -422,7 +439,27 @@ async def _ensure_tokenfree_channel(db: AsyncSession, existing: list[SystemModel
 
 def _settings_to_dict(settings: Settings | None = None) -> dict[str, Any]:
     src = settings or get_settings()
-    return {field: getattr(src, field) for field in model_config_field_names()}
+    result = {field: getattr(src, field) for field in model_config_field_names()}
+    # Preserve legacy environment/file credentials when first adopting DB settings.
+    from app.marketplace.app_settings import get_app_settings
+    from app.marketplace.apple_configuration import material
+    cfg = get_app_settings()
+    for key in result:
+        if key.startswith("apple_") and key not in _overlay:
+            result[key] = getattr(cfg, key, result[key])
+    result["apple_app_id"] = result["apple_app_id"] or 0
+    if "apple_private_key" not in _overlay or "apple_root_certificates" not in _overlay:
+        try:
+            private, roots = material(cfg)
+            if "apple_private_key" not in _overlay:
+                result["apple_private_key"] = private
+            if "apple_root_certificates" not in _overlay and roots:
+                from cryptography import x509
+                from cryptography.hazmat.primitives import serialization
+                result["apple_root_certificates"] = "".join(x509.load_der_x509_certificate(root).public_bytes(serialization.Encoding.PEM).decode() for root in roots)
+        except (OSError, ValueError):
+            pass
+    return result
 
 
 def _decrypt_flat_config(raw: dict[str, Any] | None) -> dict[str, Any]:
@@ -485,7 +522,7 @@ async def _compose_runtime_state(db: AsyncSession) -> tuple[list[SystemModelChan
         [_channel_row_to_admin(row) for row in (await db.execute(select(SystemModelChannelRow))).scalars().all()]
     )
     # 仅合并视频 Seedance 短名；图模一律用 TokenFree 渠道真实 id，不做 seedream-5.0 换绑
-    alias_ids = {"seedance-2.5", "seedance-2"}
+    alias_ids = {"seedance-2.5", "seedance-2.0", "seedance-2", "seedance-2.0-mini", "seedance-2.0-fast"}
     logical_models = _merge_friendly_alias_models(
         logical_models,
         [model for model in boot_logical if model.id in alias_ids],
@@ -497,11 +534,25 @@ async def _compose_runtime_state(db: AsyncSession) -> tuple[list[SystemModelChan
     image_default = _TOKENFREE_IMAGE_IDS.get(image_default.lower(), image_default)
     if image_default:
         default_models = default_models.model_copy(update={"image_model": image_default})
+    from app.services.media_model_presets import clamp_default_to_preset
+    from app.services.nine_router.config import is_9router_active
+
+    # 启动/读缓存时钳回预设（配音 gemini→qwen；非法图模→Seedream Pro 等）；9Router 下放开任意上游模型 id
+    if not is_9router_active():
+        default_models = default_models.model_copy(
+            update={
+                "text_model": clamp_default_to_preset("text", default_models.text_model),
+                "image_model": clamp_default_to_preset("image", default_models.image_model),
+                "video_model": clamp_default_to_preset("video", default_models.video_model),
+                "audio_model": clamp_default_to_preset("audio", default_models.audio_model),
+            }
+        )
     default_models = normalize_default_models(default_models, logical_models, channels)
     flat = _effective_flat(_decrypt_flat_config(config))
-    from app.services.tokenfree_gateway import apply_tokenfree_flat_overlay
+    from app.services.tokenfree_gateway import apply_gateway_to_channels, apply_tokenfree_flat_overlay
 
     flat = apply_tokenfree_flat_overlay(flat, channels)
+    channels = apply_gateway_to_channels(channels, flat)
     if default_models.text_model:
         flat["model_llm"] = default_models.text_model
     if default_models.image_model:
@@ -513,6 +564,10 @@ async def _compose_runtime_state(db: AsyncSession) -> tuple[list[SystemModelChan
     # 4.5 档用价目名
     flat["model_image_45"] = (flat.get("model_image_45") or "seedream-4-5").strip()
     flat["model_image_45"] = _TOKENFREE_IMAGE_IDS.get(flat["model_image_45"].lower(), flat["model_image_45"])
+    # Initial channel bootstrap can expire the server-updated timestamp. Fetch
+    # it explicitly instead of causing async ORM IO while serializing output.
+    await db.flush()
+    await db.refresh(app_row, attribute_names=["updated_at"])
     return channels, logical_models, default_models, flat, app_row
 
 
@@ -537,9 +592,13 @@ async def load_model_settings_cache(db: AsyncSession) -> None:
         config["flat"] = _encrypt_flat_config(flat_cfg) if flat_cfg else config.get("flat")
         app_row.config_json = config
         await db.commit()
-    _refresh_routing_snapshot(channels, logical_models, default_models)
+    from app.services.media_models.reference_limits import reference_limit_settings
+    _refresh_routing_snapshot(channels, logical_models, default_models,
+                              reference_limit_settings(config.get("media_reference_limits")))
     _refresh_overlay({"flat": flat})
     reload_settings()
+    from app.marketplace.app_settings import get_app_settings
+    get_app_settings.cache_clear()
 
 
 def _build_readiness(
@@ -555,7 +614,7 @@ def _build_readiness(
         "video": "video_model",
         "audio": "audio_model",
     }.items():
-        cap = capability  # type: LogicalModelCapability
+        cap: LogicalModelCapability = capability
         model_id = getattr(defaults, attr) or ""
         resolved = resolve_logical_model_config(logical_models, channels, cap, model_id) if model_id else None
         items.append(
@@ -571,13 +630,21 @@ def _build_readiness(
 
 
 def _to_admin_flat_out(flat: dict[str, Any], *, source: str, updated_at, channels, logical_models, defaults) -> AdminModelSettingsOut:
+    from app.services.stripe_payments import is_ready
+
     payload = {field: flat.get(field) for field in model_config_field_names()}
     for field, flag in SECRET_FIELD_FLAGS.items():
         payload[field] = ""
         payload[flag] = bool(str(flat.get(field) or "").strip())
+    from app.services.nine_router.plan_keys import parse_plan_keys
+
+    payload["ninerouter_plan_names"] = sorted(parse_plan_keys(str(flat.get("ninerouter_plan_keys") or "")))
     payload["source"] = source
     payload["updated_at"] = updated_at
     payload["readiness"] = _build_readiness(channels, logical_models, defaults)
+    effective = get_settings().model_copy(update=flat)
+    payload["stripe_ready"] = is_ready(effective) and (effective.stripe_currency != "auto" or is_ready(effective, language="en"))
+    payload["stripe_webhook_url"] = f"{effective.public_base_url.rstrip('/')}/api/billing/stripe/webhook"
     return AdminModelSettingsOut.model_validate(payload)
 
 
@@ -589,7 +656,9 @@ async def get_admin_model_settings(db: AsyncSession) -> AdminModelSettingsOut:
 
 
 async def get_admin_routing_settings(db: AsyncSession) -> AdminRoutingSettingsOut:
+    from app.services.nine_router.config import get_upstream_gateway_type
     from app.services.tokenfree_gateway import TOKENFREE_CHANNEL_ID
+    from app.services.media_models.reference_limits import reference_limit_settings
 
     channels, logical_models, defaults, _, app_row = await _compose_runtime_state(db)
     admin_channels = [
@@ -600,8 +669,10 @@ async def get_admin_routing_settings(db: AsyncSession) -> AdminRoutingSettingsOu
         system_channels=admin_channels,
         logical_models=logical_models,
         default_models=defaults,
+        media_reference_limits=reference_limit_settings((app_row.config_json or {}).get("media_reference_limits")),
         validation_errors=errors,
         updated_at=app_row.updated_at,
+        gateway_type=get_upstream_gateway_type(),
     )
 
 
@@ -609,12 +680,33 @@ async def patch_admin_model_settings(
     db: AsyncSession,
     body: AdminModelSettingsPatch,
 ) -> tuple[AdminModelSettingsOut, list[str]]:
+    from app.services.stripe_payments import validate_settings_patch
+
+    patch = body.model_dump(exclude_unset=True)
+    validate_settings_patch(patch)
     app_row = await _get_or_create_app_row(db)
     config = dict(app_row.config_json or {})
     stored_flat = _decrypt_flat_config(config)
     current = _effective_flat(stored_flat if stored_flat else None)
-    patch = body.model_dump(exclude_unset=True)
+    previous_apple_environment = current["apple_environment"]
+    if patch.get("unified_wallet_enabled") is True and not current["unified_wallet_enabled"]:
+        from app.services.billing.wallet_cutover import validate_settings_activation
+        await validate_settings_activation(db, patch.get("wallet_environment") or current["wallet_environment"])
+    if patch.get("unified_wallet_enabled") is False and current["unified_wallet_enabled"]:
+        from app.models_wallet import WalletAccount
+        if await db.scalar(select(WalletAccount.id).limit(1)) is not None:
+            raise ValueError("已有统一钱包账户，不能切回旧记账；请使用资金迁移维护入口。")
+    if patch.get("wallet_environment") is not None and patch["wallet_environment"] != current["wallet_environment"]:
+        from app.services.billing.wallet_environment import validate_environment_change
+        await validate_environment_change(db)
     applied: list[str] = []
+
+    plan_patch = patch.pop("ninerouter_plan_keys", None)
+    if isinstance(plan_patch, dict):
+        from app.services.nine_router.plan_keys import merge_plan_keys
+
+        current["ninerouter_plan_keys"] = merge_plan_keys(current.get("ninerouter_plan_keys"), plan_patch)
+        applied.append("ninerouter_plan_keys")
 
     for field in SECRET_FIELDS:
         clear_flag = f"clear_{field}"
@@ -632,10 +724,58 @@ async def patch_admin_model_settings(
         current[field] = value
         applied.append(field)
 
+    from app.marketplace.sharing_config import validate_android_association
+    (current["marketplace_share_android_package_name"],
+     current["marketplace_share_android_sha256_fingerprints"]) = validate_android_association(
+        current.get("marketplace_share_android_package_name", ""),
+        current.get("marketplace_share_android_sha256_fingerprints", ""))
+    if current.get("marketplace_sharing_enabled"):
+        from app.marketplace.sharing_config import validate_share_origin
+        current["marketplace_share_base_url"] = validate_share_origin(current.get("marketplace_share_base_url", ""))
+    apple_changed = any(key.startswith(("apple_", "clear_apple_")) for key in applied)
+    if apple_changed:
+        from app.marketplace.apple_configuration import validate_material, configuration_status
+        from app.marketplace.app_settings import get_app_settings
+        validate_material(current["apple_private_key"], current["apple_root_certificates"])
+        candidate = get_app_settings().model_copy(update={key: value for key, value in current.items() if key.startswith("apple_")})
+        if current["apple_sandbox_enabled"]:
+            if current["wallet_environment"] != "Production" or current["apple_environment"] != "Production":
+                raise ValueError("同部署沙箱测试要求 Apple 和正式钱包均保持 Production。")
+            ids = [int(value) for value in current["apple_sandbox_user_ids"].split(",") if value]
+            if any(value > 2147483647 for value in ids):
+                raise ValueError("沙箱测试用户 ID 超出有效范围。")
+            if not ids:
+                raise ValueError("请先配置沙箱测试用户 ID 白名单。")
+            from app.models import User
+            existing = set((await db.scalars(select(User.id).where(User.id.in_(ids)))).all())
+            if set(ids) != existing:
+                raise ValueError("沙箱白名单包含不存在的用户 ID。")
+        if current["apple_iap_enabled"] or current["apple_sandbox_enabled"]:
+            status = configuration_status(candidate)
+            if not status["configured"]:
+                raise ValueError("Apple 新购配置不完整：" + "、".join(status["missing"]))
+    turning_app_on = (current.get("marketplace_app_enabled") is True and "marketplace_app_enabled" in applied) or (apple_changed and (current["apple_iap_enabled"] or current["apple_sandbox_enabled"]))
+    if turning_app_on:
+        from app.marketplace.app_bootstrap import ensure_schema
+        try:
+            missing = await ensure_schema()
+        except RuntimeError as exc:
+            raise ValueError(str(exc)) from exc
+        if missing:
+            raise ValueError("App 数据库结构未准备好：" + "，".join(missing))
     config["flat"] = _encrypt_flat_config(current)
     app_row.config_json = config
     await db.commit()
     await load_model_settings_cache(db)
+    if apple_changed:
+        if current["apple_environment"] != previous_apple_environment:
+            from app.marketplace.apple_runtime import stop_apple_runtime
+            await stop_apple_runtime()
+        from app.marketplace.app_bootstrap import start_app_services
+        await start_app_services()
+    if "marketplace_enabled" in applied:
+        from app.marketplace.bootstrap import apply_marketplace_switch
+        await apply_marketplace_switch()
     channels, logical_models, defaults, flat, app_row = await _compose_runtime_state(db)
     admin_channels = await _load_channels(db, runtime=False)
     return _to_admin_flat_out(flat, source="db", updated_at=app_row.updated_at, channels=admin_channels, logical_models=logical_models, defaults=defaults), applied
@@ -655,6 +795,16 @@ async def import_admin_model_settings_from_env(
     config = dict(app_row.config_json or {})
     current = _effective_flat(_decrypt_flat_config(config))
     env_flat = _flat_from_env_settings()
+    if env_flat["unified_wallet_enabled"] and not current["unified_wallet_enabled"]:
+        from app.services.billing.wallet_cutover import validate_settings_activation
+        await validate_settings_activation(db, env_flat["wallet_environment"])
+    if current["unified_wallet_enabled"] and not env_flat["unified_wallet_enabled"]:
+        from app.models_wallet import WalletAccount
+        if await db.scalar(select(WalletAccount.id).limit(1)) is not None:
+            raise ValueError("已有统一钱包账户，不能通过环境导入切回旧记账。")
+    if env_flat["wallet_environment"] != current["wallet_environment"]:
+        from app.services.billing.wallet_environment import validate_environment_change
+        await validate_environment_change(db)
     imported: list[str] = []
     skipped_secrets: list[str] = []
 
@@ -689,12 +839,37 @@ async def patch_admin_routing_settings(
     db: AsyncSession,
     body: AdminRoutingSettingsPatch,
 ) -> tuple[AdminRoutingSettingsOut, list[str]]:
+    from app.services.media_models.reference_limits import reference_limit_settings
+    limits = {key: value.model_dump() for key, value in body.media_reference_limits.items()} if body.media_reference_limits is not None else None
+    reference_limit_settings(limits)
     app_row = await _get_or_create_app_row(db)
     applied: list[str] = []
     existing_rows = {
         row.id: row
         for row in (await db.execute(select(SystemModelChannelRow))).scalars().all()
     }
+    from app.services.nine_router.config import is_9router_active
+    from app.services.media_model_presets import clamp_default_to_preset as _clamp_preset
+
+    # 9Router 模式解锁预设：默认模型可填任意上游模型 id，并并入渠道 models（PiAPI 走自己的预设）
+    open_models = is_9router_active()
+    custom_models: list[str] = []
+    if open_models and body.default_models is not None:
+        custom_models = [
+            str(v).strip()
+            for v in (
+                body.default_models.text_model,
+                body.default_models.image_model,
+                body.default_models.video_model,
+                body.default_models.audio_model,
+            )
+            if str(v or "").strip()
+        ]
+
+    def clamp_default_to_preset(capability: str, model_id: str | None) -> str:
+        if open_models and str(model_id or "").strip():
+            return str(model_id).strip()
+        return _clamp_preset(capability, model_id)  # type: ignore[arg-type]
 
     if body.system_channels is not None:
         from app.services.tokenfree_gateway import (
@@ -719,13 +894,16 @@ async def patch_admin_routing_settings(
                 api_key = str(incoming.api_key).strip()
         # 渠道 models 固定为站点预设并集，忽略前端自由勾选
         models = all_preset_channel_models()
-        locked = locked_tokenfree_channel(api_key=api_key, models=models, enabled=True)
+        if open_models:
+            prev_models = list(prev.models or []) if prev else []
+            models = list(dict.fromkeys([*models, *prev_models, *custom_models]))
+        locked = locked_tokenfree_channel(api_key=api_key, models=models, enabled=True, force_tokenfree=True)
         row = prev or SystemModelChannelRow(id=TOKENFREE_CHANNEL_ID)
-        row.name = TOKENFREE_CHANNEL_NAME
-        row.base_url = TOKENFREE_BASE_URL
+        row.name = locked.name
+        row.base_url = locked.base_url
         row.api_key_ciphertext = _encrypt_secret(locked.api_key) if locked.api_key else None
         row.api_format = "openai"
-        row.protocol = "auto"
+        row.protocol = locked.protocol
         row.models = locked.models
         row.enabled = True
         row.sort_order = 0
@@ -746,6 +924,8 @@ async def patch_admin_routing_settings(
         prev = existing_rows.get(TOKENFREE_CHANNEL_ID)
         if prev is not None:
             preset = all_preset_channel_models()
+            if open_models:
+                preset = list(dict.fromkeys([*preset, *(prev.models or []), *custom_models]))
             if list(prev.models or []) != preset:
                 prev.models = preset
                 db.add(prev)
@@ -770,7 +950,7 @@ async def patch_admin_routing_settings(
         pass
     synced = synchronize_logical_models_with_channels(logical_models, channels_after)
     bootstrapped, boot_defaults = _bootstrap_logical_from_channels(channels_after)
-    alias_ids = {"seedance-2.5", "seedance-2"}
+    alias_ids = {"seedance-2.5", "seedance-2.0", "seedance-2", "seedance-2.0-mini", "seedance-2.0-fast"}
     logical_models = _merge_friendly_alias_models(
         synced,
         [model for model in bootstrapped if model.id in alias_ids],
@@ -780,9 +960,7 @@ async def patch_admin_routing_settings(
     if body.default_models is not None:
         defaults = body.default_models
         applied.append("default_models")
-    from app.services.media_model_presets import clamp_default_to_preset
-
-    # 四类默认强制落在预设内（配音仅 gemini-3.1-flash-tts）
+    # 四类默认强制落在预设内（配音仅 qwen-tts-2025-05-22）；9Router 下放开
     defaults = defaults.model_copy(
         update={
             "text_model": clamp_default_to_preset("text", defaults.text_model),
@@ -797,16 +975,25 @@ async def patch_admin_routing_settings(
         defaults = defaults.model_copy(
             update={"image_model": clamp_default_to_preset("image", image_default)}
         )
+    if open_models:
+        # 自由填写的默认模型：能力由模型名推断，推断不符就明确报错，避免被静默丢弃
+        from app.services.model_routing_config import infer_model_capability
+
+        for cap, value in (
+            ("text", defaults.text_model),
+            ("image", defaults.image_model),
+            ("video", defaults.video_model),
+            ("audio", defaults.audio_model),
+        ):
+            mid = str(value or "").strip()
+            if mid and infer_model_capability(mid) != cap:
+                raise ValueError(
+                    f"模型 {mid} 无法识别为{ {'text': '文本', 'image': '图像', 'video': '视频', 'audio': '语音'}[cap] }模型，"
+                    "请使用名称含 image / video / tts 等关键词的模型 id"
+                )
     defaults = normalize_default_models(defaults, logical_models, channels_after)
-    # normalize 可能清空不可解析项；再次钳回预设
-    defaults = defaults.model_copy(
-        update={
-            "text_model": clamp_default_to_preset("text", defaults.text_model),
-            "image_model": clamp_default_to_preset("image", defaults.image_model),
-            "video_model": clamp_default_to_preset("video", defaults.video_model),
-            "audio_model": clamp_default_to_preset("audio", defaults.audio_model),
-        }
-    )
+    # An empty default means this capability has no enabled route. Keep it empty
+    # instead of reintroducing a disabled preset when every model is switched off.
 
     errors = model_routing_validation_errors(logical_models, channels_after, defaults)
     if errors:
@@ -814,6 +1001,9 @@ async def patch_admin_routing_settings(
 
     config["logical_models"] = [model.model_dump() for model in logical_models]
     config["default_models"] = default_models_to_dict(defaults)
+    if limits is not None:
+        config["media_reference_limits"] = reference_limit_settings({**(config.get("media_reference_limits") or {}), **limits})
+        applied.append("media_reference_limits")
     if "flat" not in config:
         config["flat"] = _encrypt_flat_config(_settings_to_dict())
     app_row.config_json = config

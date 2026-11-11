@@ -1,9 +1,10 @@
 /** 分镜故事板节点：上方视频，下方提示词；出境资产通过左侧节点连线关联 */
 import { memo, useCallback, type ChangeEvent } from 'react'
+import { useTeamReadOnly } from '../../../features/teams/readOnlyContext'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import { Clapperboard, Plus } from 'lucide-react'
 import type { EpisodeFragmentNodeData } from './buildEpisodeFlow'
-import { tr } from '../../../i18n/translate'
+import { tv } from '../../../i18n/tv'
 
 type Props = NodeProps<Node<EpisodeFragmentNodeData>> & {
   onPromptChange?: (fragmentId: number, content: string) => void
@@ -17,6 +18,7 @@ function EpisodeFragmentNodeComponent({
   onPromptChange,
   onRequestLinkAsset,
 }: Props) {
+  const readOnly = useTeamReadOnly()
   const hasVideo = Boolean(data.videoUrl)
   const media = data.coverUrl || data.videoUrl
 
@@ -36,14 +38,15 @@ function EpisodeFragmentNodeComponent({
           <button
             type="button"
             className="ep-frag-link-btn nodrag nopan"
-            title={tr('fragNode.linkScreenAssets')}
-            aria-label={tr('fragNode.linkScreenAssets')}
+            title={tv("关联出境资产", "Tài sản xuất hiện liên kết")}
+            aria-label={tv("关联出境资产", "Tài sản xuất hiện liên kết")}
+            disabled={readOnly}
             onClick={() => onRequestLinkAsset?.(data.fragmentId)}
           >
             <Plus size={14} strokeWidth={2} />
           </button>
         ) : (
-          <em className="ep-frag-link-count">{tr('fragNode.assetsCount', { n: data.linkedCount || 0 })}</em>
+          <em className="ep-frag-link-count">{data.linkedCount || 0} {tv("资产", "Tài sản")}</em>
         )}
       </div>
 
@@ -61,25 +64,26 @@ function EpisodeFragmentNodeComponent({
           <img src={media} alt="" draggable={false} />
         ) : (
           <div className="ep-frag-media-empty">
-            <span>{tr('fragNode.clipYet')}</span>
-            <small>{tr('fragNode.appearsHereOnceGenerated')}</small>
+            <span>{tv("暂无成片", "Chưa có phim")}</span>
+            <small>{tv("生成后显示在此", "Sau khi tạo sẽ hiển thị ở đây")}</small>
           </div>
         )}
       </div>
 
       <div className="ep-frag-prompt">
-        <label>{tr('fragNode.prompt')}</label>
+        <label>{tv("提示词", "Prompt")}</label>
         {selected ? (
           <textarea
             className="ep-frag-prompt-input nodrag nowheel"
             value={data.content}
+            readOnly={readOnly}
             onChange={handlePromptChange}
-            placeholder={tr('fragNode.shotScriptSeedancePrompt')}
+            placeholder={tv("分镜脚本 / Seedance 提示词…", "Kịch bản phân cảnh / prompt Seedance…")}
             rows={5}
           />
         ) : (
           <p className="ep-frag-prompt-text">
-            {(data.content || '').trim() || tr('fragNode.emptyPrompt')}
+            {(data.content || '').trim() || tv('（空提示词）', '(Prompt trống)')}
           </p>
         )}
       </div>

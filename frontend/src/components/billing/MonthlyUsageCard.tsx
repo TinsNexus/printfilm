@@ -1,7 +1,8 @@
+import { points, pointText } from '../../lib/points'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type UsageSummary } from '../../api'
-import { useI18n } from '../../i18n'
+import { tv } from '../../i18n/tv'
 
 /** 格式化 token 数量，过大时用 k/M 缩写 */
 function formatTokens(n: number) {
@@ -22,7 +23,6 @@ export default function MonthlyUsageCard({
   variant = 'panel',
   showTopup = true,
 }: MonthlyUsageCardProps) {
-  const { t: tx } = useI18n()
   const [usage, setUsage] = useState<UsageSummary | null>(null)
 
   useEffect(() => {
@@ -42,12 +42,12 @@ export default function MonthlyUsageCard({
   return (
     <div className={`pf-usage-card${variant === 'compact' ? ' is-compact' : ''}`}>
       <header className="pf-usage-card-head">
-        <h3>{tx('monthlyUsage.monthSUsage')}</h3>
-        <p>{tx('monthlyUsage.billedRealUpstreamToken')}</p>
+        <h3>{pointText('本月使用情况', 'Monthly usage')}</h3>
+        <p>{pointText('按上游 Token 实际用量计费', 'Charged by actual upstream Token usage')}</p>
       </header>
 
       <div className="pf-usage-row">
-        <span>{tx('monthlyUsage.tokenUsage')}</span>
+        <span>{tv("Token 用量", "Lượng Token")}</span>
         <span className="pf-usage-val">{formatTokens(usage?.tokens ?? 0)}</span>
       </div>
       <div className="pf-meter">
@@ -55,29 +55,29 @@ export default function MonthlyUsageCard({
       </div>
 
       <div className="pf-usage-row">
-        <span>{tx('monthlyUsage.monthSCost')}</span>
-        <span className="pf-usage-val">¥{(usage?.charge_yuan ?? 0).toFixed(2)}</span>
+        <span>{pointText('本月积分消耗', 'Monthly Points used')}</span>
+        <span className="pf-usage-val">{points(usage?.charge_fen)}</span>
       </div>
       <div className="pf-meter">
         <i style={{ width: `${chargePct}%` }} />
       </div>
 
       <div className="pf-usage-row">
-        <span>{tx('monthlyUsage.availableBalance')}</span>
-        <span className="pf-usage-val">¥{(usage?.balance_yuan ?? 0).toFixed(2)}</span>
+        <span>{pointText('可用积分', 'Available Points')}</span>
+        <span className="pf-usage-val">{points(usage?.balance_fen)}</span>
       </div>
       {(usage?.frozen_fen ?? 0) > 0 ? (
         <div className="pf-usage-row">
-          <span>{tx('monthlyUsage.hold')}</span>
-          <span className="pf-muted">¥{(usage?.frozen_yuan ?? 0).toFixed(2)}</span>
+          <span>{pointText('冻结中', 'On hold')}</span>
+          <span className="pf-muted">{points(usage?.frozen_fen)}</span>
         </div>
       ) : null}
 
       <div className="pf-usage-foot">
-        <span className="pf-muted">{tx('monthlyUsage.calls', { n: usage?.calls ?? 0 })}</span>
+        <span className="pf-muted">{pointText(`调用 ${usage?.calls ?? 0} 次`, `${usage?.calls ?? 0} calls`)}</span>
         {showTopup ? (
           <Link to="/pricing" className="pf-btn pf-btn-lime pf-btn-sm">
-            {tx('monthlyUsage.topUp')}
+            {pointText('去充值', 'Top up')}
           </Link>
         ) : null}
       </div>

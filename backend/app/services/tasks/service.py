@@ -3,18 +3,22 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import raiseload, selectinload
 
 from app.models import Project, Shot, User
 from app.models_drama import DramaAsset, DramaEpisode, DramaEpisodeFragment, DramaProject, DramaScript
 from app.models_tasks import TaskEvent, TaskRun, TaskStep, TaskTarget
 from app.schemas_tasks import TaskCreateRequest, TaskEventCreate, TaskStepCreate
 from app.services.tasks.handlers import get_task_handler
+from app.services.tasks.queues import task_queue
+from app.services.tasks.execution_policy import is_direct_llm_task, llm_task_condition
+from app.services.drama.voice_generation_policy import ensure_voice_generation_task_enabled
 
 logger = logging.getLogger("app.tasks.service")
 
@@ -27,6 +31,27 @@ ACTIVE_TASK_STATUSES = {
     "awaiting_review",
     "cancel_requested",
 }
+
+# Created by each HTTP handler and passed explicitly; never cached across requests.
+TaskAccessContext = dict[tuple[int, int], tuple[Any, Any]]
+
+
+async def _task_team_access(
+    db: AsyncSession, team_id: int, user_id: int, *,
+    context: TaskAccessContext | None = None, roles: set[str] | None = None,
+):
+    from fastapi import HTTPException
+    from app.services.teams.access import get_team, member_role
+
+    identity = (int(team_id), int(user_id))
+    access = context.get(identity) if context is not None else None
+    if access is None:
+        access = await get_team(db, team_id, user_id)
+        if context is not None:
+            context[identity] = access
+    if roles is not None and member_role(*access) not in roles:
+        raise HTTPException(status_code=403, detail="没有团队操作权限")
+    return access
 
 
 def task_detail_options() -> tuple:
@@ -99,7 +124,13 @@ async def create_task(
     *,
     commit: bool = True,
 ) -> TaskRun:
-    """创建任务并预写步骤。commit=False 时仅 flush，由调用方与业务状态同事务提交。"""
+    """创建任务；文字 LLM 提交后立即执行，媒体任务留给调度器。"""
+    ensure_voice_generation_task_enabled(body.domain, body.task_type)
+    if body.payload is not None:
+        body.payload = {key: value for key, value in body.payload.items() if not key.startswith("_team_")}
+    if body.drama_project_id is not None:
+        from app.services.tasks.team_scope import prepare_background_task
+        user = await prepare_background_task(db, int(body.drama_project_id), user)
     await _validate_task_scope(db, user, body)
     handler = get_task_handler(body.domain, body.task_type)
     if handler is None:
@@ -110,6 +141,7 @@ async def create_task(
         domain=body.domain,
         task_type=body.task_type,
         requested_by=user.id,
+        team_id=body.team_id,
         payload=body.payload,
         project_id=body.project_id,
         drama_project_id=body.drama_project_id,
@@ -118,6 +150,8 @@ async def create_task(
         asset_id=body.asset_id,
         shot_id=body.shot_id,
     )
+    from app.services.media_models.planning import prepare_task_media
+    await prepare_task_media(db, balance_probe)
     estimate_fen = await ensure_balance_for_task(db, user, balance_probe)
     planned_steps = handler.plan_steps(body)
     first_step = planned_steps[0] if planned_steps else None
@@ -126,6 +160,7 @@ async def create_task(
     task = TaskRun(
         domain=body.domain,
         task_type=body.task_type,
+        queue_type=task_queue(body.task_type, body.payload),
         status="pending",
         priority=body.priority,
         requested_by=user.id,
@@ -148,9 +183,28 @@ async def create_task(
         asset_id=body.asset_id,
         shot_id=body.shot_id,
         billing_estimate_fen=int(estimate_fen or 0),
+        team_id=body.team_id,
+        billing_enabled_snapshot=balance_probe.billing_enabled_snapshot,
+        billing_period=balance_probe.billing_period,
+        billing_payer_user_id=balance_probe.billing_payer_user_id,
+        billing_status=balance_probe.billing_status or "none",
+        billing_snapshot=balance_probe.billing_snapshot,
     )
     db.add(task)
     await db.flush()
+    schedule = body.scheduled_at
+    if schedule is not None and schedule.tzinfo is None:
+        schedule = schedule.replace(tzinfo=UTC)
+    direct = is_direct_llm_task(body.domain, body.task_type, body.payload)
+    if direct and not body.defer_activation and (schedule is None or schedule <= now):
+        task.status = "running"
+        task.started_at = now
+        task.next_action_at = None
+        task.lease_token = uuid.uuid4().hex
+        task.lease_until = now + timedelta(minutes=10)
+    if task.team_id is not None:
+        from app.services.teams.edit_locks import claim_task_locks
+        await claim_task_locks(db, task, user.id)
     for step in planned_steps:
         db.add(build_task_step(task.id, step))
     for item in body.targets:
@@ -171,10 +225,13 @@ async def create_task(
                 status=task.status,
                 phase=task.current_step_key,
                 message=f"创建任务 {task.task_type}",
-                payload={"domain": task.domain},
+                payload={"domain": task.domain, "execution_mode": "direct" if direct else "queued"},
             ),
         )
     )
+    if direct and task.status == "running":
+        from app.services.tasks.direct import defer_until_commit
+        defer_until_commit(db, task.id, task.lease_token)
     if not commit:
         return task
     await db.commit()
@@ -182,9 +239,9 @@ async def create_task(
 
 
 # 串行 batch 中上一镜完成后激活下一镜任务。
-async def activate_next_sequential_task(db: AsyncSession, batch_key: str | None, completed_index: int) -> None:
+async def activate_next_sequential_task(db: AsyncSession, batch_key: str | None, completed_index: int) -> bool:
     if not batch_key:
-        return
+        return False
     from app.config import get_settings
     from app.services.drama.access import count_user_inflight_fragment_video_tasks
 
@@ -194,18 +251,23 @@ async def activate_next_sequential_task(db: AsyncSession, batch_key: str | None,
         .where(
             TaskRun.batch_key == batch_key,
             TaskRun.status == "pending",
+            TaskRun.next_action_at.is_(None),
+            TaskRun.cancel_requested.is_(False),
         )
         .order_by(TaskRun.id.asc())
+        .with_for_update(skip_locked=True)
     )
     rows = list((await db.execute(stmt)).scalars().all())
     for task in rows:
+        if task.next_action_at is not None or task.cancel_requested:
+            continue
         payload = task.payload if isinstance(task.payload, dict) else {}
         if int(payload.get("batch_index", -1)) != next_index:
             continue
         limit = max(1, int(get_settings().drama_user_video_job_limit or 12))
         inflight = await count_user_inflight_fragment_video_tasks(db, int(task.requested_by))
         if inflight >= limit:
-            return
+            return False
         task.next_action_at = datetime.now(UTC)
         await append_task_event(
             db,
@@ -216,7 +278,8 @@ async def activate_next_sequential_task(db: AsyncSession, batch_key: str | None,
             message=f"前置分镜已完成，激活 batch 第 {next_index + 1} 镜",
         )
         await db.commit()
-        return
+        return True
+    return False
 
 
 # 串行 batch 中某一镜失败后，终止后续仍 pending 的兄弟任务。
@@ -263,7 +326,7 @@ async def fail_remaining_sequential_batch(
             phase=task.current_step_key,
             message=reason[:500],
         )
-        if str(task.billing_status or "") == "frozen":
+        if str(task.billing_status or "") in {"frozen", "reserved"}:
             from app.services.billing.settlement import settle_task
 
             try:
@@ -348,7 +411,7 @@ async def _mark_task_cancelled_stale(db: AsyncSession, task: TaskRun, reason: st
         message=reason[:500],
     )
     # 作废终态必须结算预扣，否则 frozen 余额悬挂（如 #3328）
-    if str(task.billing_status or "") == "frozen":
+    if str(task.billing_status or "") in {"frozen", "reserved"}:
         from app.services.billing.settlement import settle_task
 
         try:
@@ -622,18 +685,17 @@ async def reconcile_sequential_batches(db: AsyncSession) -> int:
             )
             continue
 
+        if uses_episode_rebalance:
+            # 分镜仅按真实镜序及前置尾帧重排，不能同时由 batch 分支重复点亮。
+            continue
+
         succeeded_indices = [
             int((t.payload or {}).get("batch_index", -1))
             for t in tasks
             if t.status == "succeeded" and isinstance(t.payload, dict)
         ]
         if succeeded_indices:
-            await activate_next_sequential_task(db, batch_key, max(succeeded_indices))
-            changed += 1
-            continue
-
-        if uses_episode_rebalance:
-            # 无论能否登记项目，都不要把连续点击当成独立首镜点亮
+            changed += int(await activate_next_sequential_task(db, batch_key, max(succeeded_indices)))
             continue
 
         first = by_index.get(0)
@@ -845,81 +907,110 @@ async def rebalance_project_fragment_video_queue(
 
 
 # 统计用户当前占用 Worker 槽位的任务数（NIO：awaiting_poll 注册项不占槽）。
-async def count_user_active_runtime_tasks(db: AsyncSession, user_id: int) -> int:
+async def count_user_active_runtime_tasks(db: AsyncSession, user_id: int, *, queue_type: str | None = None) -> int:
     stmt = select(func.count()).select_from(TaskRun).where(
         TaskRun.requested_by == int(user_id),
-        TaskRun.status.in_(("leased", "running")),
+        ~llm_task_condition(TaskRun),
+        TaskRun.status.in_(("leased", "running", "awaiting_poll") if queue_type == "video" else ("leased", "running")),
     )
+    if queue_type:
+        stmt = stmt.where(TaskRun.queue_type == queue_type)
     return int((await db.execute(stmt)).scalar_one() or 0)
 
 
 async def _validate_task_scope(db: AsyncSession, user: User, body: TaskCreateRequest) -> None:
+    """Resolve every reference to its persisted project; never trust client team IDs."""
     if body.project_id is not None:
         project = await db.get(Project, body.project_id)
         if not project or int(project.user_id) != int(user.id):
             raise ValueError("科普项目不存在或无权限")
     if body.shot_id is not None:
         shot = await db.get(Shot, body.shot_id)
-        if not shot:
-            raise ValueError("镜头不存在")
-        project = await db.get(Project, int(shot.project_id))
+        project = await db.get(Project, int(shot.project_id)) if shot else None
         if not project or int(project.user_id) != int(user.id):
             raise ValueError("镜头不存在或无权限")
         if body.project_id is not None and int(shot.project_id) != int(body.project_id):
             raise ValueError("镜头与项目不匹配")
-
-    drama_project_id: int | None = body.drama_project_id
-    if drama_project_id is not None:
-        drama_project = await db.get(DramaProject, drama_project_id)
-        if not drama_project or int(drama_project.user_id) != int(user.id):
-            raise ValueError("漫剧项目不存在或无权限")
-    if body.script_id is not None:
-        script = await db.get(DramaScript, body.script_id)
-        if not script:
-            raise ValueError("剧本不存在")
-        drama_project = await db.get(DramaProject, int(script.project_id))
-        if not drama_project or int(drama_project.user_id) != int(user.id):
-            raise ValueError("剧本不存在或无权限")
-        if drama_project_id is not None and int(script.project_id) != int(drama_project_id):
-            raise ValueError("剧本与漫剧项目不匹配")
-    if body.episode_id is not None:
-        episode = await db.get(DramaEpisode, body.episode_id)
-        if not episode:
-            raise ValueError("分集不存在")
-        drama_project = await db.get(DramaProject, int(episode.project_id))
-        if not drama_project or int(drama_project.user_id) != int(user.id):
-            raise ValueError("分集不存在或无权限")
-        if drama_project_id is not None and int(episode.project_id) != int(drama_project_id):
-            raise ValueError("分集与漫剧项目不匹配")
+    project_ids: set[int] = set()
+    if body.drama_project_id is not None:
+        project_ids.add(int(body.drama_project_id))
+    for model, ident, label in ((DramaScript, body.script_id, "剧本"), (DramaEpisode, body.episode_id, "分集"), (DramaAsset, body.asset_id, "资产")):
+        if ident is None:
+            continue
+        entity = await db.get(model, ident)
+        if entity is None:
+            raise ValueError(f"{label}不存在")
+        project_ids.add(int(entity.project_id))
     if body.fragment_id is not None:
         fragment = await db.get(DramaEpisodeFragment, body.fragment_id)
-        if not fragment:
+        episode = await db.get(DramaEpisode, int(fragment.episode_id)) if fragment else None
+        if episode is None:
             raise ValueError("分镜不存在")
-        episode = await db.get(DramaEpisode, int(fragment.episode_id))
-        drama_project = await db.get(DramaProject, int(episode.project_id)) if episode else None
-        if not episode or not drama_project or int(drama_project.user_id) != int(user.id):
-            raise ValueError("分镜不存在或无权限")
-        if body.episode_id is not None and int(fragment.episode_id) != int(body.episode_id):
+        if body.episode_id is not None and int(episode.id) != int(body.episode_id):
             raise ValueError("分镜与分集不匹配")
-    if body.asset_id is not None:
-        asset = await db.get(DramaAsset, body.asset_id)
-        if not asset:
-            raise ValueError("资产不存在")
-        drama_project = await db.get(DramaProject, int(asset.project_id))
-        if not drama_project or int(drama_project.user_id) != int(user.id):
-            raise ValueError("资产不存在或无权限")
-        if drama_project_id is not None and int(asset.project_id) != int(drama_project_id):
-            raise ValueError("资产与漫剧项目不匹配")
+        project_ids.add(int(episode.project_id))
+        body.episode_id = int(episode.id)
+    payload = body.payload if isinstance(body.payload, dict) else {}
+    for raw_id in payload.get("fragment_ids") or []:
+        fragment = await db.get(DramaEpisodeFragment, int(raw_id))
+        episode = await db.get(DramaEpisode, int(fragment.episode_id)) if fragment else None
+        if episode is None or (body.episode_id is not None and episode.id != body.episode_id):
+            raise ValueError("分镜与分集不匹配")
+        project_ids.add(int(episode.project_id))
+    for raw_id in payload.get("reference_asset_ids") or []:
+        asset = await db.get(DramaAsset, int(raw_id))
+        if asset is None:
+            raise ValueError("引用资产不存在")
+        project_ids.add(int(asset.project_id))
+    if len(project_ids) > 1:
+        raise ValueError("任务资源与漫剧项目不匹配")
+    actual_team_id = None
+    if project_ids:
+        pid = project_ids.pop()
+        project = await db.get(DramaProject, pid)
+        if project is None:
+            raise ValueError("漫剧项目不存在或无权限")
+        actual_team_id = project.team_id
+        if actual_team_id is not None:
+            from app.services.teams.access import get_team
+            await get_team(db, int(actual_team_id), int(user.id), lock=True)
+        elif int(project.user_id) != int(user.id):
+            raise ValueError("漫剧项目不存在或无权限")
+        # Hold project ownership through task insertion. A concurrent personal transfer
+        # must either observe this active task or finish before our scope is accepted.
+        # 只读取最新归属字段，避免刷新 ORM 对象使调用方已加载的剧本关系失效。
+        locked_project = (await db.execute(
+            select(DramaProject.id, DramaProject.user_id, DramaProject.team_id)
+            .where(DramaProject.id == pid)
+            .with_for_update()
+        )).one_or_none()
+        if locked_project is None or locked_project.team_id != actual_team_id:
+            raise ValueError("项目归属已变化，请刷新页面后重试")
+        if actual_team_id is None and int(locked_project.user_id) != int(user.id):
+            raise ValueError("漫剧项目不存在或无权限")
+        body.drama_project_id = pid
+    if body.team_id is not None and body.team_id != actual_team_id:
+        raise ValueError("任务与团队不匹配")
+    if actual_team_id is not None and body.domain != "drama":
+        raise ValueError("当前功能不支持团队空间")
+    body.team_id = actual_team_id
 
 
-async def get_task_for_user(db: AsyncSession, user: User, task_id: int) -> TaskRun:
+async def get_task_for_user(
+    db: AsyncSession, user: User, task_id: int, *,
+    access_context: TaskAccessContext | None = None,
+) -> TaskRun:
     stmt = (
         select(TaskRun)
         .options(*task_detail_options())
-        .where(TaskRun.id == task_id, TaskRun.requested_by == user.id)
+        .where(TaskRun.id == task_id)
     )
     task = (await db.execute(stmt)).scalar_one_or_none()
     if not task:
+        raise LookupError("任务不存在")
+    if task.team_id is not None:
+        await _task_team_access(db, int(task.team_id), int(user.id), context=access_context)
+    elif int(task.requested_by) != int(user.id):
         raise LookupError("任务不存在")
     return task
 
@@ -933,18 +1024,27 @@ async def list_tasks_for_user(
     domain: str | None = None,
     status: str | None = None,
     task_type: str | None = None,
+    queue_type: str | None = None,
     target_type: str | None = None,
     target_id: int | None = None,
     project_id: int | None = None,
     drama_project_id: int | None = None,
+    team_id: int | None = None,
+    access_context: TaskAccessContext | None = None,
 ) -> tuple[list[TaskRun], int]:
-    filters = [TaskRun.requested_by == user.id]
+    if team_id is not None:
+        await _task_team_access(db, team_id, int(user.id), context=access_context)
+        filters = [TaskRun.team_id == team_id]
+    else:
+        filters = [TaskRun.requested_by == user.id, TaskRun.team_id.is_(None)]
     if domain:
         filters.append(TaskRun.domain == domain)
     if status:
         filters.append(TaskRun.status == status)
     if task_type:
         filters.append(TaskRun.task_type == task_type)
+    if queue_type:
+        filters.append(TaskRun.queue_type == queue_type)
     if project_id:
         filters.append(TaskRun.project_id == project_id)
     if drama_project_id:
@@ -990,8 +1090,14 @@ async def count_active_tasks_for_user(
     return int((await db.execute(stmt)).scalar_one() or 0)
 
 
-async def cancel_task_for_user(db: AsyncSession, user: User, task_id: int) -> TaskRun:
-    task = await get_task_for_user(db, user, task_id)
+async def cancel_task_for_user(
+    db: AsyncSession, user: User, task_id: int, *,
+    access_context: TaskAccessContext | None = None,
+) -> TaskRun:
+    context = access_context if access_context is not None else {}
+    task = await get_task_for_user(db, user, task_id, access_context=context)
+    if task.team_id is not None and int(task.requested_by) != int(user.id):
+        await _task_team_access(db, int(task.team_id), int(user.id), context=context, roles={"owner", "admin"})
     if not task.cancelable:
         raise ValueError("任务不支持取消")
     if task.status in TERMINAL_TASK_STATUSES:
@@ -1011,7 +1117,29 @@ async def cancel_task_for_user(db: AsyncSession, user: User, task_id: int) -> Ta
         )
     )
     await db.commit()
-    return await get_task_for_user(db, user, task.id)
+    if is_direct_llm_task(task.domain, task.task_type, task.payload):
+        from app.services.tasks.scheduler import cancel_running_task
+        await cancel_running_task(task.id)
+    return await get_task_for_user(db, user, task.id, access_context=context)
+
+
+# 共用用户隔离、活动态筛选和详情加载，保证单项目与列表查询语义一致。
+def _active_owner_tasks_statement(user_id: int, *scope_filters, include_teams: bool = False) -> Select:
+    ownership = (TaskRun.requested_by == user_id) & TaskRun.team_id.is_(None)
+    if include_teams:
+        from app.models_teams import TeamMember
+        memberships = select(TeamMember.team_id).where(TeamMember.user_id == user_id, TeamMember.active.is_(True))
+        ownership = or_(ownership, TaskRun.team_id.in_(memberships))
+    return (
+        select(TaskRun)
+        .options(*task_detail_options())
+        .where(
+            ownership,
+            TaskRun.status.in_(tuple(ACTIVE_TASK_STATUSES)),
+            or_(*scope_filters),
+        )
+        .order_by(TaskRun.created_at.desc())
+    )
 
 
 async def list_active_tasks_for_owner(
@@ -1021,6 +1149,7 @@ async def list_active_tasks_for_owner(
     project_id: int | None = None,
     drama_project_id: int | None = None,
 ) -> list[TaskRun]:
+    """读取用户在指定项目范围内的活动任务，按创建时间倒序返回。"""
     scope_filters = []
     if project_id is not None:
         scope_filters.append(TaskRun.project_id == project_id)
@@ -1028,13 +1157,25 @@ async def list_active_tasks_for_owner(
         scope_filters.append(TaskRun.drama_project_id == drama_project_id)
     if not scope_filters:
         return []
-    filters = [
-        TaskRun.requested_by == user_id,
-        TaskRun.status.in_(tuple(ACTIVE_TASK_STATUSES)),
-        or_(*scope_filters),
-    ]
-    stmt = select(TaskRun).options(*task_detail_options()).where(*filters).order_by(TaskRun.created_at.desc())
+    stmt = _active_owner_tasks_statement(user_id, *scope_filters, include_teams=drama_project_id is not None)
     return list((await db.execute(stmt)).scalars().unique().all())
+
+
+async def list_active_tasks_for_projects(
+    db: AsyncSession,
+    user_id: int,
+    project_ids: list[int],
+) -> dict[int, list[TaskRun]]:
+    """一次读取一页科普项目的活动任务，分组后仍保持各项目的新任务优先。"""
+    # 去重后的映射也为暂无活动任务的项目保留空列表；空页不访问数据库。
+    grouped: dict[int, list[TaskRun]] = {int(project_id): [] for project_id in project_ids}
+    if not grouped:
+        return grouped
+    stmt = _active_owner_tasks_statement(user_id, TaskRun.project_id.in_(list(grouped)))
+    tasks = (await db.execute(stmt)).scalars().unique().all()
+    for task in tasks:
+        grouped[task.project_id].append(task)
+    return grouped
 
 
 async def cancel_tasks_for_scope(
@@ -1047,11 +1188,14 @@ async def cancel_tasks_for_scope(
     drama_project_id: int | None = None,
     episode_id: int | None = None,
 ) -> list[TaskRun]:
-    filters = [
-        TaskRun.requested_by == user_id,
-        TaskRun.status.in_(tuple(ACTIVE_TASK_STATUSES)),
-        TaskRun.cancel_requested.is_(False),
-    ]
+    ownership_filter = (TaskRun.requested_by == user_id) & TaskRun.team_id.is_(None)
+    if drama_project_id is not None:
+        project = await db.get(DramaProject, drama_project_id)
+        if project is not None and project.team_id is not None:
+            from app.services.teams.access import get_team
+            await get_team(db, int(project.team_id), user_id, roles={"owner", "admin"})
+            ownership_filter = TaskRun.team_id == project.team_id
+    filters = [ownership_filter, TaskRun.status.in_(tuple(ACTIVE_TASK_STATUSES)), TaskRun.cancel_requested.is_(False)]
     if project_id is not None:
         filters.append(TaskRun.project_id == project_id)
     if domain is not None:
@@ -1085,14 +1229,22 @@ async def cancel_tasks_for_scope(
 
 
 async def get_task_for_runtime(db: AsyncSession, task_id: int) -> TaskRun | None:
-    """Load one task with full details for runtime loops."""
-    stmt = select(TaskRun).options(*task_detail_options()).where(TaskRun.id == task_id)
+    """执行器仅加载步骤与目标，避免重复读取整段上游/激活事件历史。"""
+    stmt = (
+        select(TaskRun)
+        .options(selectinload(TaskRun.steps), selectinload(TaskRun.targets))
+        .where(TaskRun.id == task_id)
+    )
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
 async def get_task_admin(db: AsyncSession, task_id: int) -> TaskRun:
-    """Load one task for admin without ownership check."""
-    stmt = select(TaskRun).options(*task_detail_options()).where(TaskRun.id == task_id)
+    """管理员读取任务执行数据；完整历史由独立的有界事件查询提供。"""
+    stmt = (
+        select(TaskRun)
+        .options(selectinload(TaskRun.steps), selectinload(TaskRun.targets), raiseload(TaskRun.events))
+        .where(TaskRun.id == task_id)
+    )
     task = (await db.execute(stmt)).scalar_one_or_none()
     if not task:
         raise LookupError("任务不存在")
@@ -1144,7 +1296,7 @@ async def list_tasks_admin(
 
     total = int((await db.execute(count_stmt)).scalar_one() or 0)
     stmt = (
-        base_stmt.options(*task_detail_options())
+        base_stmt.options(selectinload(TaskRun.steps), selectinload(TaskRun.targets), raiseload(TaskRun.events))
         .order_by(TaskRun.created_at.desc(), TaskRun.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
@@ -1175,15 +1327,35 @@ async def cancel_task_admin(db: AsyncSession, task_id: int) -> TaskRun:
         )
     )
     await db.commit()
+    if is_direct_llm_task(task.domain, task.task_type, task.payload):
+        from app.services.tasks.scheduler import cancel_running_task
+        await cancel_running_task(task.id)
     return await get_task_admin(db, task.id)
 
 
 async def get_task_stats_admin(db: AsyncSession) -> dict[str, Any]:
     """Aggregate task platform stats for admin dashboard."""
+    now = datetime.now(UTC)
     status_rows = (
         await db.execute(select(TaskRun.status, func.count()).group_by(TaskRun.status))
     ).all()
     status_counts = {str(status): int(count) for status, count in status_rows}
+
+    ready_count, deferred_count, delayed_count, oldest_ready_at = (
+        await db.execute(
+            select(
+                func.count().filter(TaskRun.next_action_at <= now),
+                func.count().filter(TaskRun.next_action_at.is_(None)),
+                func.count().filter(TaskRun.next_action_at > now),
+                func.min(TaskRun.next_action_at).filter(TaskRun.next_action_at <= now),
+            ).where(TaskRun.status == "pending")
+        )
+    ).one()
+    oldest_ready_wait_sec = 0
+    if oldest_ready_at is not None:
+        if oldest_ready_at.tzinfo is None:
+            oldest_ready_at = oldest_ready_at.replace(tzinfo=UTC)
+        oldest_ready_wait_sec = max(0, int((now - oldest_ready_at).total_seconds()))
 
     domain_rows = (
         await db.execute(
@@ -1212,6 +1384,10 @@ async def get_task_stats_admin(db: AsyncSession) -> dict[str, Any]:
 
     return {
         "pending_count": status_counts.get("pending", 0),
+        "pending_ready_count": int(ready_count),
+        "pending_deferred_count": int(deferred_count),
+        "pending_delayed_count": int(delayed_count),
+        "oldest_ready_wait_sec": oldest_ready_wait_sec,
         "active_count": sum(status_counts.get(s, 0) for s in ACTIVE_TASK_STATUSES if s != "pending"),
         "leased_count": status_counts.get("leased", 0),
         "running_count": status_counts.get("running", 0),

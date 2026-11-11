@@ -1,7 +1,8 @@
 /** 按角色设定 AI 生成音色并绑定到 voiceAudio（无弹窗，供卡片一键生成） */
 import { dramaApi, type DramaAsset } from '../api/drama'
 import { buildBoundParams } from '../pages/drama/CharacterVoiceBindModal'
-import { tr } from '../i18n/translate'
+import { ensureCharacterVoiceGenerationEnabled } from '../api/publicCapabilities'
+import { tv } from '../i18n/tv'
 
 export type CharacterVoiceGenerateResult = {
   character: DramaAsset
@@ -13,18 +14,19 @@ export async function generateAndBindCharacterVoice(
   projectId: number,
   asset: DramaAsset,
 ): Promise<CharacterVoiceGenerateResult> {
+  await ensureCharacterVoiceGenerationEnabled()
   const promptResult = await dramaApi.suggestVoicePrompt({
     project_id: projectId,
     asset_id: asset.id,
   })
   const voicePrompt = (promptResult.voice_prompt || '').trim()
   if (!voicePrompt) {
-    throw new Error(tr('lib.voiceDescriptionEmpty'))
+    throw new Error(tv('音色描述为空', 'Mô tả giọng nói trống'))
   }
 
   const voiceResult = await dramaApi.generateVoice({
     project_id: projectId,
-    name: tr('dramaVoiceBind.defaultVoiceName', { name: asset.name || tr('dramaVoiceBind.roleFallback') }),
+    name: tv(`${asset.name || '角色'}音色`, `Giọng ${asset.name || '角色'}`),
     voice_prompt: voicePrompt,
     speaker: promptResult.speaker || undefined,
     sample_text: promptResult.sample_text || undefined,
@@ -32,7 +34,7 @@ export async function generateAndBindCharacterVoice(
   })
   const voice = voiceResult.asset
   if (!voice?.url) {
-    throw new Error(tr('lib.voiceSynthesisFailed'))
+    throw new Error(tv('音色合成失败', 'Tổng hợp giọng nói thất bại'))
   }
 
   const character = await dramaApi.updateAsset(asset.id, {

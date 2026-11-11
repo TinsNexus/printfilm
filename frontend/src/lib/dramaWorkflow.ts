@@ -1,10 +1,11 @@
 import type { DramaProject, DramaProjectListItem } from '../api/drama'
-import { tr } from '../i18n/translate'
+import { tv } from '../i18n/tv'
 
 export type DramaWorkflow = 'script' | 'canvas'
+export type DramaProjectFilter = 'all' | 'running' | 'done' | 'draft'
 
-const CANVAS_SOURCE_MARKER = '自由画布创作项目'
-const CANVAS_TITLE_MARKER = '自由画布'
+const CANVAS_SOURCE_MARKER = tv('自由画布创作项目', 'Dự án sáng tạo canvas tự do')
+const CANVAS_TITLE_MARKER = tv('自由画布', 'Canvas tự do')
 
 type WorkflowSource = {
   workflow?: string | null
@@ -49,10 +50,10 @@ export function dramaProjectEntryPath(
 /** 列表卡片 meta 文案 */
 export function formatDramaCardMeta(item: DramaProjectListItem): string {
   if (isCanvasWorkflow(item)) {
-    return tr('dramaWorkflow.metaCanvas', { n: item.asset_count || 0 })
+    return tv(`自由画布 · ${item.asset_count || 0} 节点资产`, `Canvas tự do · ${item.asset_count || 0} tài sản nút`)
   }
   if (item.has_script) {
-    return tr('dramaWorkflow.metaScript', { ep: item.episode_count || 0, n: item.asset_count || 0 })
+    return tv(`已写剧本 · ${item.episode_count || 0} 集 · ${item.asset_count || 0} 资产`, `Đã viết kịch bản · ${item.episode_count || 0} tập · ${item.asset_count || 0} tài sản`)
   }
-  return tr('dramaWorkflow.metaDraft', { n: item.asset_count || 0 })
+  return tv(`草稿 · 待写剧本 · ${item.asset_count || 0} 资产`, `Bản nháp · Chờ viết kịch bản · ${item.asset_count || 0} tài sản`)
 }

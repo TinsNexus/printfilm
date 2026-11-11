@@ -1,3 +1,4 @@
+import { MediaCostNotice } from '../../../../components/billing/MediaCostNotice'
 /** 漫剧生图：风格 / 模型 / 画幅选择条（内置风格，无手填） */
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { BarChart3, ChevronDown, RectangleVertical, Smile } from 'lucide-react'
@@ -22,10 +23,11 @@ import {
 import {
   catalogImageModels,
   catalogModelLabel,
+  resolveCatalogModelSelection,
   useMediaModelsCatalog,
 } from '../../../../hooks/useMediaModelsCatalog'
 import './dramaImageGenOptions.css'
-import { useI18n } from '../../../../i18n'
+import { tv } from '../../../../i18n/tv'
 
 type DramaImageGenOptionsBarProps = {
   value: ImageGenerationOptions
@@ -44,20 +46,21 @@ export function DramaImageGenOptionsBar({
   disabled = false,
   onStylePersist,
 }: DramaImageGenOptionsBarProps) {
-  const { t: tx } = useI18n()
   const rootRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState<OpenPanel>(null)
+  const [adjustment, setAdjustment] = useState('')
   const catalog = useMediaModelsCatalog()
   const imageModels = catalogImageModels(catalog)
 
   useEffect(() => {
-    // 目录到达后，把旧 Kie/方舟 id 换成后台默认图片模型，并钳制参数
-    if (!catalog || disabled) return
-    const ids = imageModels.map((m) => m.id)
-    if (!ids.length) return
-    let nextModel = value.model_id
-    if (!nextModel || !ids.includes(nextModel)) {
-      nextModel = catalog.defaults.image_model || ids[0]
+    // 仅在模型为空/不在目录时补默认；用户已选合法模型时绝不覆盖。
+    // 注意：不要依赖 disabled——发送后 busy 翻转会误触发，把选项打回 Seedream/3:4。
+    if (!catalog) return
+    const nextModel = resolveCatalogModelSelection(catalog, 'image', value.model_id)
+    if (nextModel === value.model_id) return
+    if (!nextModel) {
+      onChange({ ...value, model_id: '' })
+      return
     }
     const nextRatio = clampImageAspectRatioForModel(
       nextModel,
@@ -71,18 +74,12 @@ export function DramaImageGenOptionsBar({
       catalog,
       imageModels,
     )
-    if (
-      nextModel !== value.model_id ||
-      nextRatio !== value.aspect_ratio ||
-      nextRes !== value.resolution
-    ) {
-      onChange({ ...value, model_id: nextModel, aspect_ratio: nextRatio, resolution: nextRes })
-    }
-  }, [catalog, disabled])
+    onChange({ ...value, model_id: nextModel, aspect_ratio: nextRatio, resolution: nextRes })
+  }, [catalog, value.model_id])
 
   useEffect(() => {
-    // 换模型后钳制比例/清晰度
-    if (disabled || !value.model_id) return
+    // 换模型后钳制比例/清晰度（不因 disabled 翻转重跑）
+    if (!value.model_id || !catalog) return
     const nextRatio = clampImageAspectRatioForModel(
       value.model_id,
       value.aspect_ratio,
@@ -96,9 +93,10 @@ export function DramaImageGenOptionsBar({
       imageModels,
     )
     if (nextRatio !== value.aspect_ratio || nextRes !== value.resolution) {
+      setAdjustment(tv('所选模型不支持原参数，已调整画幅或分辨率，请核对报价后生成。', 'Model đã chọn không hỗ trợ tham số ban đầu, đã điều chỉnh tỷ lệ khung hoặc độ phân giải, vui lòng kiểm tra báo giá rồi tạo.'))
       onChange({ ...value, aspect_ratio: nextRatio, resolution: nextRes })
     }
-  }, [value.model_id, catalog, disabled])
+  }, [value.model_id, catalog])
 
   const aspectOptions = aspectRatiosForImageModel(value.model_id, catalog, imageModels)
   const resolutionOptions = resolutionsForImageModel(value.model_id, catalog, imageModels)
@@ -120,12 +118,14 @@ export function DramaImageGenOptionsBar({
     e.stopPropagation()
   }
 
-  const styleLabel = getImageStyleLabel(value.image_style_id) || tx('imageOpts.style')
-  const modelLabel = catalogModelLabel(value.model_id, imageModels, tx('imageOpts.imageModel'))
+  const styleLabel = getImageStyleLabel(value.image_style_id) || tv('风格', 'Phong cách')
+  const modelLabel = catalogModelLabel(value.model_id, imageModels, tv('图片模型', 'Model hình ảnh'))
   const outputLabel = formatOutputSettingsLabel(value.aspect_ratio, value.resolution)
 
   return (
     <div ref={rootRef} className="fc-gen-opts" onMouseDown={stop} onPointerDown={stop}>
+      {adjustment && <span className="media-cost-notice" role="status">{adjustment}</span>}
+      <MediaCostNotice modelId={value.model_id} resolution={value.resolution} />
       <div className="fc-gen-opts-triggers">
         <button
           type="button"
@@ -160,8 +160,8 @@ export function DramaImageGenOptionsBar({
       </div>
 
       {open === 'style' ? (
-        <div className="fc-gen-opt-panel fc-gen-style-panel" role="dialog" aria-label={tx('imageOpts.imageStyle')}>
-          <div className="fc-gen-opt-panel-title">{tx('imageOpts.imageStyle')}</div>
+        <div className="fc-gen-opt-panel fc-gen-style-panel" role="dialog" aria-label={tv("图片风格", "Phong cách hình ảnh")}>
+          <div className="fc-gen-opt-panel-title">{tv("图片风格", "Phong cách hình ảnh")}</div>
           <div className="fc-gen-style-grid">
             {IMAGE_STYLE_OPTIONS.map((opt) => {
               const selected = value.image_style_id === opt.id
@@ -186,8 +186,8 @@ export function DramaImageGenOptionsBar({
       ) : null}
 
       {open === 'model' ? (
-        <div className="fc-gen-opt-panel" role="dialog" aria-label={tx('imageOpts.imageGenerationModel')}>
-          <div className="fc-gen-opt-panel-title">{tx('imageOpts.model')}</div>
+        <div className="fc-gen-opt-panel" role="dialog" aria-label={tv("生图模型", "Model tạo ảnh")}>
+          <div className="fc-gen-opt-panel-title">{tv("模型", "Model")}</div>
           <DramaMediaModelPicker
             models={imageModels}
             selectedId={value.model_id}
@@ -207,8 +207,8 @@ export function DramaImageGenOptionsBar({
       ) : null}
 
       {open === 'output' ? (
-        <div className="fc-gen-opt-panel" role="dialog" aria-label={tx('imageOpts.outputSettings')}>
-          <div className="fc-gen-opt-panel-title">{tx('imageOpts.ratio')}</div>
+        <div className="fc-gen-opt-panel" role="dialog" aria-label={tv("输出设置", "Cài đặt đầu ra")}>
+          <div className="fc-gen-opt-panel-title">{tv("比例", "Tỷ lệ")}</div>
           <div className="fc-gen-chip-row">
             {GENERATION_ASPECT_RATIO_OPTIONS.filter((opt) => aspectOptions.includes(opt.id)).map((opt) => (
               <button
@@ -224,7 +224,7 @@ export function DramaImageGenOptionsBar({
             ))}
           </div>
           <div className="fc-gen-opt-panel-title" style={{ marginTop: 10 }}>
-            {tx('imageOpts.resolution')}
+            {tv("清晰度", "Độ nét")}
           </div>
           <div className="fc-gen-chip-row">
             {resolutionOptions.map((res) => (

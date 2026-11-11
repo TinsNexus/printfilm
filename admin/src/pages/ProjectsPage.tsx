@@ -21,9 +21,9 @@ import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/ui/page";
 import { useAdminDetailQuery } from "@/hooks/useAdminDetailQuery";
-import { projectStatusLabel, projectStatusOptions, taskStatusLabel, taskTypeLabel } from "@/lib/statusLabels";
-import { fenToYuan } from "@/lib/utils";
-import { formatDateTime, useI18n } from "@/i18n";
+import { projectStatusOptions, projectStatusLabel, taskStatusLabel, taskTypeLabel } from "@/lib/statusLabels";
+import { points } from "@/lib/points";
+import { tr } from "../i18n/translate.ts";
 
 type ListRes = { items: AdminProject[]; meta: PageMeta };
 
@@ -44,7 +44,6 @@ function mediaSrc(url: string | null | undefined): string {
 
 // 科普项目列表与详情（镜头 / 任务 / 费用 / 媒体预览）
 export function ProjectsPage() {
-  const { t: tx } = useI18n();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
   const [userId, setUserId] = useState<number | null>(null);
@@ -62,7 +61,7 @@ export function ProjectsPage() {
       if (userId) params.set("user_id", String(userId));
       setData(await api<ListRes>(`/api/admin/projects?${params}`));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : tx("projects.failedLoad"));
+      toast.error(err instanceof Error ? err.message : tr("projects.ui.loadFailed"));
     }
   }
 
@@ -77,7 +76,7 @@ export function ProjectsPage() {
     try {
       setDetail(await api<AdminProject>(`/api/admin/projects/${id}`));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : tx("projects.couldLoadDetails"));
+      toast.error(err instanceof Error ? err.message : tr("projects.ui.detailFailed"));
       projectDetail.close();
     } finally {
       setDetailLoading(false);
@@ -98,7 +97,7 @@ export function ProjectsPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader description={tx("projects.explainerPipelineProjectsStatus")} />
+      <PageHeader title={tr("projects.ui.title")} description={tr("projects.ui.desc")} />
       <AdminFilterBar>
         <Select value={status} onChange={(e) => setStatus(e.target.value)}>
           {projectStatusOptions().map((opt) => (
@@ -107,7 +106,7 @@ export function ProjectsPage() {
             </option>
           ))}
         </Select>
-        <Input placeholder={tx("projects.titleErrorMessage")} value={q} onChange={(e) => setQ(e.target.value)} />
+        <Input placeholder={tr("projects.ui.searchPlaceholder")} value={q} onChange={(e) => setQ(e.target.value)} />
         <AdminUserSearchSelect value={userId} onChange={(id) => setUserId(id)} />
         <Button
           size="sm"
@@ -118,7 +117,7 @@ export function ProjectsPage() {
             void load(1);
           }}
         >
-          {tx("projects.filter")}
+          {tr("projects.ui.filter")}
         </Button>
       </AdminFilterBar>
       <div className="rounded-lg border bg-background">
@@ -126,16 +125,16 @@ export function ProjectsPage() {
           <TableHeader>
             <TableRow>
               <TableHead>ID</TableHead>
-              <TableHead>{tx("projects.title")}</TableHead>
-              <TableHead>{tx("projects.user")}</TableHead>
-              <TableHead>{tx("projects.template")}</TableHead>
-              <TableHead>{tx("projects.pipeline")}</TableHead>
-              <TableHead>{tx("projects.status")}</TableHead>
-              <TableHead>{tx("projects.progress")}</TableHead>
-              <TableHead>{tx("projects.shots")}</TableHead>
-              <TableHead>{tx("projects.cost")}</TableHead>
-              <TableHead>{tx("projects.created")}</TableHead>
-              <TableHead>{tx("projects.updated")}</TableHead>
+              <TableHead>{tr("projects.ui.colTitle")}</TableHead>
+              <TableHead>{tr("projects.ui.colUser")}</TableHead>
+              <TableHead>{tr("projects.ui.colTemplate")}</TableHead>
+              <TableHead>{tr("projects.ui.pipeline")}</TableHead>
+              <TableHead>{tr("projects.ui.colStatus")}</TableHead>
+              <TableHead>{tr("projects.ui.colProgress")}</TableHead>
+              <TableHead>{tr("projects.ui.colShots")}</TableHead>
+              <TableHead>{tr("projects.ui.colCost")}</TableHead>
+              <TableHead>{tr("projects.ui.colCreated")}</TableHead>
+              <TableHead>{tr("projects.ui.colUpdated")}</TableHead>
               <TableHead></TableHead>
             </TableRow>
           </TableHeader>
@@ -154,16 +153,16 @@ export function ProjectsPage() {
                 </TableCell>
                 <TableCell>{p.progress}%</TableCell>
                 <TableCell>{p.shot_count}</TableCell>
-                <TableCell>¥{fenToYuan(p.charge_fen ?? 0)}</TableCell>
+                <TableCell>{points(p.charge_fen ?? 0)}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">
-                  {formatDateTime(p.created_at)}
+                  {new Date(p.created_at).toLocaleString()}
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">
-                  {formatDateTime(p.updated_at)}
+                  {new Date(p.updated_at).toLocaleString()}
                 </TableCell>
                 <TableCell>
                   <Button size="sm" variant="outline" onClick={() => void openDetail(p.id)}>
-                    {tx("projects.details")}
+                    {tr("projects.ui.details")}
                   </Button>
                 </TableCell>
               </TableRow>
@@ -189,20 +188,20 @@ export function ProjectsPage() {
           }
         }}
         size="full"
-        title={detail ? tx("projects.explainerProject", { detailId: detail.id, detailTitle: detail.title }) : tx("projects.explainerProjectDetails")}
-        subtitle={detail ? projectStatusLabel(detail.status) : detailLoading ? tx("projects.loading") : undefined}
+        title={detail ? tr("projects.ui.detailTitle", { id: detail.id, title: detail.title }) : tr("projects.ui.detailTitleEmpty")}
+        subtitle={detail ? projectStatusLabel(detail.status) : detailLoading ? tr("projects.ui.loading") : undefined}
         bodyClassName="space-y-3"
       >
         {detailLoading && !detail ? (
-          <div className="py-10 text-center text-sm text-[var(--admin-muted)]">{tx("projects.loading")}</div>
+          <div className="py-10 text-center text-sm text-[var(--admin-muted)]">{tr("projects.ui.loading")}</div>
         ) : null}
         {detail ? (
           <>
-            <AdminDetailSection title={tx("projects.basicInfo")}>
+            <AdminDetailSection title={tr("projects.ui.secBasic")}>
               <AdminDetailMeta
                 items={[
                   {
-                    label: tx("projects.user"),
+                    label: tr("projects.ui.colUser"),
                     value: (
                       <AdminEntityLink
                         kind="user"
@@ -212,29 +211,29 @@ export function ProjectsPage() {
                     ),
                   },
                   {
-                    label: tx("projects.statusProgress"),
-                    value: tx("projects.statusLine", { status: projectStatusLabel(detail.status), p: detail.progress, n: detail.shot_count }),
+                    label: tr("projects.ui.statusProgress"),
+                    value: tr("projects.ui.statusLine", { status: projectStatusLabel(detail.status), progress: detail.progress, shots: detail.shot_count }),
                   },
-                  { label: tx("projects.template"), value: detail.template_id },
-                  { label: tx("projects.pipeline"), value: detail.pipeline_mode },
-                  { label: tx("projects.source"), value: detail.source_type || "—" },
+                  { label: tr("projects.ui.colTemplate"), value: detail.template_id },
+                  { label: tr("projects.ui.pipeline"), value: detail.pipeline_mode },
+                  { label: tr("projects.ui.source"), value: detail.source_type || "—" },
                   {
-                    label: tx("projects.resolutionRatio"),
+                    label: tr("projects.ui.resolutionRatio"),
                     value: `${detail.resolution_mode || "—"} · ${detail.output_ratio || "—"}`,
                   },
-                  { label: tx("projects.voice"), value: detail.voice_id || "—", full: true },
+                  { label: tr("projects.ui.voice"), value: detail.voice_id || "—", full: true },
                 ]}
               />
               <AdminDetailNote empty={!detail.error_msg} className="mt-3">
-                {detail.error_msg || tx("projects.errorMessage")}
+                {detail.error_msg || tr("projects.ui.noError")}
               </AdminDetailNote>
             </AdminDetailSection>
 
             {(detail.cover_url || detail.final_video_url) ? (
-              <AdminDetailSection title={tx("projects.mediaPreview")}>
+              <AdminDetailSection title={tr("projects.ui.secMedia")}>
                 <div className="admin-detail-media">
                   {detail.cover_url ? (
-                    <img src={mediaSrc(detail.cover_url)} alt={tx("projects.cover")} />
+                    <img src={mediaSrc(detail.cover_url)} alt={tr("projects.ui.cover")} />
                   ) : null}
                   {detail.final_video_url ? (
                     <video src={mediaSrc(detail.final_video_url)} controls className="max-w-full" />
@@ -243,38 +242,38 @@ export function ProjectsPage() {
               </AdminDetailSection>
             ) : null}
 
-            <AdminDetailSection title={tx("projects.costSummary")}>
+            <AdminDetailSection title={tr("projects.ui.secCost")}>
               <AdminDetailStatGrid
                 items={[
-                  { label: tx("projects.charged"), value: `¥${fenToYuan(usage?.charge_fen ?? detail.charge_fen ?? 0)}` },
-                  { label: tx("projects.cost2"), value: `¥${fenToYuan(usage?.cost_fen ?? 0)}` },
+                  { label: tr("projects.ui.charge"), value: `${points(usage?.charge_fen ?? detail.charge_fen ?? 0)}` },
+                  { label: tr("projects.ui.calls"), value: usage?.calls ?? 0 },
                   { label: "Tokens", value: usage?.tokens ?? 0 },
                   {
-                    label: tx("projects.imageVideoLlmTts"),
+                    label: tr("projects.ui.mediaBreakdown"),
                     value: `${usage?.image_gens ?? 0}/${usage?.video_gens ?? 0}/${usage?.llm_calls ?? 0}/${usage?.tts_gens ?? 0}`,
                   },
                 ]}
               />
             </AdminDetailSection>
 
-            <AdminDetailSection title={tx("projects.shotsTitle", { n: (detail.shots ?? []).length })}>
+            <AdminDetailSection title={tr("projects.ui.shotsN", { n: (detail.shots ?? []).length })}>
               <AdminDetailTableWrap>
                 <table>
                   <thead>
                     <tr>
                       <th>#</th>
-                      <th>{tx("projects.status")}</th>
-                      <th>{tx("projects.duration")}</th>
-                      <th>{tx("projects.image")}</th>
-                      <th>{tx("projects.video")}</th>
-                      <th>{tx("projects.audio")}</th>
+                      <th>{tr("projects.ui.colStatus")}</th>
+                      <th>{tr("projects.ui.colDuration")}</th>
+                      <th>{tr("projects.ui.colImage")}</th>
+                      <th>{tr("projects.ui.colVideo")}</th>
+                      <th>{tr("projects.ui.colAudio")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {(detail.shots ?? []).length === 0 ? (
                       <tr>
                         <td colSpan={6} className="!text-center text-[var(--admin-muted)]">
-                          {tx("projects.shots2")}
+                          {tr("projects.ui.noShots")}
                         </td>
                       </tr>
                     ) : (
@@ -283,9 +282,9 @@ export function ProjectsPage() {
                           <td>{s.shot_no}</td>
                           <td>{s.status}</td>
                           <td>{s.duration}s</td>
-                          <td>{s.has_image ? tx("projects.yes") : "—"}</td>
-                          <td>{s.has_video ? tx("projects.yes") : "—"}</td>
-                          <td>{s.has_audio ? tx("projects.yes") : "—"}</td>
+                          <td>{s.has_image ? tr("projects.ui.yes") : "—"}</td>
+                          <td>{s.has_video ? tr("projects.ui.yes") : "—"}</td>
+                          <td>{s.has_audio ? tr("projects.ui.yes") : "—"}</td>
                         </tr>
                       ))
                     )}
@@ -294,22 +293,22 @@ export function ProjectsPage() {
               </AdminDetailTableWrap>
             </AdminDetailSection>
 
-            <AdminDetailSection title={tx("projects.tasksTitle", { n: (detail.recent_tasks ?? []).length })}>
+            <AdminDetailSection title={tr("projects.ui.recentTasksN", { n: (detail.recent_tasks ?? []).length })}>
               <AdminDetailTableWrap className="max-h-[200px]">
                 <table>
                   <thead>
                     <tr>
                       <th>ID</th>
-                      <th>{tx("projects.type")}</th>
-                      <th>{tx("projects.status")}</th>
-                      <th>{tx("projects.chargedEstimated")}</th>
+                      <th>{tr("projects.ui.colType")}</th>
+                      <th>{tr("projects.ui.colStatus")}</th>
+                      <th>{tr("projects.ui.chargedEstimate")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {(detail.recent_tasks ?? []).length === 0 ? (
                       <tr>
                         <td colSpan={4} className="!text-center text-[var(--admin-muted)]">
-                          {tx("projects.tasks")}
+                          {tr("projects.ui.noTasks")}
                         </td>
                       </tr>
                     ) : (
@@ -321,7 +320,7 @@ export function ProjectsPage() {
                           <td>{taskTypeLabel(t.task_type)}</td>
                           <td>{taskStatusLabel(t.status)}</td>
                           <td>
-                            ¥{fenToYuan(t.billing_charged_fen)} / ¥{fenToYuan(t.billing_estimate_fen)}
+                            {points(t.billing_charged_fen)} / {points(t.billing_estimate_fen)}
                           </td>
                         </tr>
                       ))
@@ -332,7 +331,7 @@ export function ProjectsPage() {
             </AdminDetailSection>
 
             {detail.source_text ? (
-              <AdminDetailSection title={tx("projects.sourceText")}>
+              <AdminDetailSection title={tr("projects.ui.secSource")}>
                 <AdminDetailNote>{detail.source_text}</AdminDetailNote>
               </AdminDetailSection>
             ) : null}

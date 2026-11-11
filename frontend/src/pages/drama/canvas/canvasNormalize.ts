@@ -61,6 +61,20 @@ export function normalizeCanvasNode(raw: unknown, index: number): Node<CanvasAss
               ? dataRaw.url
               : null,
         textContent: typeof dataRaw.textContent === 'string' ? dataRaw.textContent : undefined,
+        /* 提示词与生成参数必须保留，否则保存后重开会丢 */
+        promptHint: typeof dataRaw.promptHint === 'string' ? dataRaw.promptHint : undefined,
+        videoOptions:
+          dataRaw.videoOptions && typeof dataRaw.videoOptions === 'object'
+            ? (dataRaw.videoOptions as Record<string, unknown>)
+            : undefined,
+        imageOptions:
+          dataRaw.imageOptions && typeof dataRaw.imageOptions === 'object'
+            ? (dataRaw.imageOptions as Record<string, unknown>)
+            : undefined,
+        characterName:
+          typeof dataRaw.characterName === 'string' ? dataRaw.characterName : undefined,
+        voiceLabel: typeof dataRaw.voiceLabel === 'string' ? dataRaw.voiceLabel : undefined,
+        voiceUrl: typeof dataRaw.voiceUrl === 'string' ? dataRaw.voiceUrl : undefined,
       },
     }
   }

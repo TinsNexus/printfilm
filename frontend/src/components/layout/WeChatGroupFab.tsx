@@ -1,10 +1,13 @@
-/** 全站右下角：加微信号入群（展示微信号，可一键复制） */
+/** 全站右下角：加微信号入群（展示微信号，可一键复制；可拖动） */
 import { useEffect, useRef, useState } from 'react'
 import { Check, Copy, X } from 'lucide-react'
 import { useI18n } from '../../i18n'
+import { useFabDragPosition } from '../../hooks/useFabDragPosition'
+import { WECHAT_ID } from '../../lib/siteContact'
+import { tv } from '../../i18n/tv'
 
 /** 社区加群微信号（不加图片二维码） */
-const WECHAT_ID = 'gitpp88'
+const POS_STORAGE_KEY = 'pf-wx-group-fab-pos'
 
 /** 简易微信气泡图标 */
 function WeChatIcon({ size = 22 }: { size?: number }) {
@@ -25,6 +28,11 @@ export default function WeChatGroupFab() {
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
+  const { style: fabStyle, bindDrag, consumeDragSuppressClick } = useFabDragPosition(
+    POS_STORAGE_KEY,
+    { right: 20, bottom: 24 },
+    48,
+  )
 
   // 点击浮层外 / Esc 关闭
   useEffect(() => {
@@ -57,7 +65,7 @@ export default function WeChatGroupFab() {
   }
 
   return (
-    <div className="pf-wx-fab-root" ref={rootRef}>
+    <div className="pf-wx-fab-root is-draggable" ref={rootRef} style={fabStyle}>
       {open ? (
         <div className="pf-wx-fab-panel" role="dialog" aria-label={t('wechatGroup.title')}>
           <header className="pf-wx-fab-head">
@@ -92,11 +100,15 @@ export default function WeChatGroupFab() {
       ) : null}
       <button
         type="button"
-        className={`pf-wx-fab-btn${open ? ' is-open' : ''}`}
-        onClick={() => setOpen((v) => !v)}
+        className={`pf-wx-fab-btn is-draggable${open ? ' is-open' : ''}`}
+        onClick={() => {
+          if (consumeDragSuppressClick()) return
+          setOpen((v) => !v)
+        }}
         aria-expanded={open}
         aria-label={t('wechatGroup.open')}
-        title={t('wechatGroup.open')}
+        title={tv(`${t('wechatGroup.open')}（可拖动）`, `${t('wechatGroup.open')} (có thể kéo)`)}
+        {...bindDrag}
       >
         <WeChatIcon />
         <span className="pf-wx-fab-label">{t('wechatGroup.short')}</span>

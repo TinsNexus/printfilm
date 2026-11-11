@@ -2,6 +2,7 @@
 import { Check } from 'lucide-react'
 import { DramaImageStylePreviewImg } from './DramaImageStylePreviewImg'
 import { IMAGE_STYLE_OPTIONS, type ImageStyleId } from '../../lib/dramaImageStyles'
+import { tv } from '../../i18n/tv'
 
 type Props = {
   value: ImageStyleId | ''
@@ -16,7 +17,7 @@ export function DramaImageStyleCardGrid({
   value,
   onChange,
   allowNone = true,
-  noneLabel = '无风格',
+  noneLabel = tv('无风格', 'Không có phong cách'),
   className,
 }: Props) {
   return (

@@ -10,40 +10,39 @@ import {
   useSettingsSaveSlot,
 } from "@/components/settings/SettingsSaveContext";
 import { cn } from "@/lib/utils";
-import { useI18n } from "@/i18n";
-import { tr } from "@/i18n/translate";
+import { tr } from "@/i18n";
 
 type SettingsTab = "routing" | "runtime" | "oss" | "payment" | "site";
 
-const TABS: { id: SettingsTab; label: string }[] = [
-  { id: "routing", get label() { return tr("settingsPage.models") } },
-  { id: "runtime", get label() { return tr("settingsPage.runtime") } },
-  { id: "oss", get label() { return tr("settingsPage.storageOss") } },
-  { id: "payment", get label() { return tr("settingsPage.paymentBilling") } },
-  { id: "site", get label() { return tr("settingsPage.siteTools") } },
+// 只存 labelKey，渲染时翻译（模块级常量不能存已翻译文字）
+const TABS: { id: SettingsTab; labelKey: string }[] = [
+  { id: "routing", labelKey: "settingsUi.tabModels" },
+  { id: "runtime", labelKey: "settingsUi.tabRuntime" },
+  { id: "oss", labelKey: "settingsUi.tabOss" },
+  { id: "payment", labelKey: "settingsUi.tabPayment" },
+  { id: "site", labelKey: "settingsUi.tabSite" },
 ];
 
 // 页头：标题 + 统一保存按钮
 function SettingsPageHeader() {
-  const { t: tx } = useI18n();
   const { action } = useSettingsSaveSlot();
   return (
     <header className="settings-page-hero">
       <div className="min-w-0">
-        <h1 className="settings-page-title">{tx("settingsPage.systemSettings")}</h1>
+        <h1 className="settings-page-title">{tr("settingsUi.pageTitle")}</h1>
         <p className="settings-head-desc">
-          {tx("settingsPage.tokenfreeApiKeyRuntime")}
+          {tr("settingsUi.pageDesc")}
         </p>
       </div>
       {action ? (
         <button
           type="button"
           className="admin-btn admin-btn-primary settings-save-btn"
-          disabled={action.saving}
+          disabled={action.saving || action.disabled}
           onClick={() => void action.onSave()}
         >
           {action.saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-          {action.label ?? tx("settingsPage.save")}
+          {action.label ?? tr("settingsUi.save")}
         </button>
       ) : null}
     </header>
@@ -52,15 +51,14 @@ function SettingsPageHeader() {
 
 // 系统设置内容区
 function SettingsPageInner() {
-  const { t: tx } = useI18n();
   const [tab, setTab] = useState<SettingsTab>("routing");
 
   return (
     <div className="settings-page admin-page">
       <SettingsPageHeader />
 
-      <div className="settings-tabs" role="tablist" aria-label={tx("settingsPage.systemSettingsSections")}>
-        {TABS.map(({ id, label }) => (
+      <div className="settings-tabs" role="tablist" aria-label={tr("settingsUi.sections")}>
+        {TABS.map(({ id, labelKey }) => (
           <button
             key={id}
             type="button"
@@ -69,7 +67,7 @@ function SettingsPageInner() {
             className={cn("settings-tab", tab === id && "is-active")}
             onClick={() => setTab(id)}
           >
-            {label}
+            {tr(labelKey)}
           </button>
         ))}
       </div>
