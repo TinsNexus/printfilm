@@ -1,0 +1,91 @@
+# PRINTFILM 全栈（Coolify Docker Compose 部署）
+# - 不映射宿主机端口：web / admin-web 的域名在 Coolify 界面分别绑定到容器 80 端口
+# - 数据库密码与 SECRET_KEY 由 Coolify 魔法变量（SERVICE_PASSWORD_*）自动生成
+# - 其余配置在 Coolify「Environment Variables」中修改；模型 Key / 网关建议上线后在管理后台「系统设置 → 模型」配置
+# - web / admin-web 的 nginx 反代到 http://api:8000，服务名勿改
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: printfilm
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_POSTGRES}
+      POSTGRES_DB: printfilm
+    volumes:
+      - printfilm_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U printfilm -d printfilm"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - printfilm_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://printfilm:${SERVICE_PASSWORD_POSTGRES}@postgres:5432/printfilm
+      DATABASE_URL_SYNC: postgresql+psycopg2://printfilm:${SERVICE_PASSWORD_POSTGRES}@postgres:5432/printfilm
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SERVICE_PASSWORD_64_SECRETKEY}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://pf.tisorr.online}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://pf.tisorr.online,https://pf-admin.tisorr.online}
+      ADMIN_BOOTSTRAP_EMAILS: ${ADMIN_BOOTSTRAP_EMAILS:-}
+      ARK_MOCK: ${ARK_MOCK:-false}
+      UPSTREAM_GATEWAY_TYPE: ${UPSTREAM_GATEWAY_TYPE:-tokenfree}
+      PIAPI_API_KEY: ${PIAPI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ARK_API_KEY: ${ARK_API_KEY:-}
+      BILLING_ENABLED: ${BILLING_ENABLED:-false}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-50}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-20}
+    volumes:
+      - printfilm_media:/app/static/generated
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 60s
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+
+  admin-web:
+    build:
+      context: ./admin
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  printfilm_pgdata:
+  printfilm_redisdata:
+  printfilm_media:

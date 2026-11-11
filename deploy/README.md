@@ -146,3 +146,11 @@ cd frontend && npm run build
 cd ../backend && .venv/bin/python ../deploy/scripts/upload_oss_web.py
 # → https://{bucket}.oss-cn-beijing.aliyuncs.com/kepu/index.html
 ```
+
+## Coolify 部署（docker-compose.coolify.yml）
+
+- Coolify 新建资源选 **Docker Compose**，仓库 `TinsNexus/printfilm`，分支 `develop`，Compose 文件填 `/docker-compose.coolify.yml`
+- 域名：`web` 服务绑定用户端域名（容器 80 端口），`admin-web` 绑定管理端域名；`api` 不对外暴露，由两端 nginx 反代 `/api`、`/static`
+- 数据库密码与 `SECRET_KEY` 由 Coolify 自动生成（`SERVICE_PASSWORD_POSTGRES` / `SERVICE_PASSWORD_64_SECRETKEY`），首次部署后勿修改，否则旧数据无法连接 / 已加密的密钥无法解密
+- 可在 Coolify 环境变量中改：`PUBLIC_BASE_URL`、`CORS_ORIGINS`、`ADMIN_BOOTSTRAP_EMAILS`、`UPSTREAM_GATEWAY_TYPE`、`PIAPI_API_KEY` 等；模型 Key 与网关更推荐上线后在管理后台「系统设置 → 模型」配置（数据库配置优先于环境变量）
+- 已有数据的库升级前仍按 `docs/DEPLOY.md` 先备份并运行 `backend/scripts/prepare_media_schema.py`（及 `--check`）
