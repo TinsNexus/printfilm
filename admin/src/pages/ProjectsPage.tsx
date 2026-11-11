@@ -21,7 +21,7 @@ import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/ui/page";
 import { useAdminDetailQuery } from "@/hooks/useAdminDetailQuery";
-import { PROJECT_STATUS_OPTIONS, projectStatusLabel, taskStatusLabel, taskTypeLabel } from "@/lib/statusLabels";
+import { projectStatusOptions, projectStatusLabel, taskStatusLabel, taskTypeLabel } from "@/lib/statusLabels";
 import { points } from "@/lib/points";
 
 type ListRes = { items: AdminProject[]; meta: PageMeta };
@@ -99,7 +99,7 @@ export function ProjectsPage() {
       <PageHeader title="Dự án khoa học" description="Dự án pipeline khoa học: trạng thái, cảnh quay, tác vụ liên quan và chi phí" />
       <AdminFilterBar>
         <Select value={status} onChange={(e) => setStatus(e.target.value)}>
-          {PROJECT_STATUS_OPTIONS.map((opt) => (
+          {projectStatusOptions().map((opt) => (
             <option key={opt.value || "all"} value={opt.value}>
               {opt.label}
             </option>

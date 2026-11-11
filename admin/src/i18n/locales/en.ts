@@ -1,45 +1,46 @@
-import { enAdminWalletMigration } from "./en/adminWalletMigration";
-import { enAdminAppleSettings } from "./en/adminAppleSettings";
-import { enAdminMediaPrices } from "./en/adminMediaPrices";
-import { enAdminSettingsUi } from "./en/adminSettingsUi";
-import { enAdminPeriodKpis } from "./en/adminPeriodKpis";
-import { enAdminSettingsPage } from "./en/adminSettingsPage";
-import { enAdminLogin } from "./en/adminLogin";
-import { enAdminTemplateCard } from "./en/adminTemplateCard";
-import { enAdminDashTabs } from "./en/adminDashTabs";
-import { enAdminShared } from "./en/adminShared";
-import { enAdminInsightMaps } from "./en/adminInsightMaps";
-import { enAdminDramaEpisodes } from "./en/adminDramaEpisodes";
-import { enAdminDramaAssetDetail } from "./en/adminDramaAssetDetail";
-import { enAdminDramaFragments } from "./en/adminDramaFragments";
-import { enAdminDramaAssets } from "./en/adminDramaAssets";
-import { enAdminDramaProjects } from "./en/adminDramaProjects";
-import { enAdminSiteSettings } from "./en/adminSiteSettings";
-import { enAdminDramaFragmentDetail } from "./en/adminDramaFragmentDetail";
-import { enAdminOssSettings } from "./en/adminOssSettings";
-import { enAdminDramaEpisodeDetail } from "./en/adminDramaEpisodeDetail";
-import { enAdminDashboardInsights } from "./en/adminDashboardInsights";
-import { enAdminFinance } from "./en/adminFinance";
-import { enAdminRoutingSettings } from "./en/adminRoutingSettings";
-import { enAdminDashboardFilters } from "./en/adminDashboardFilters";
-import { enAdminTemplates } from "./en/adminTemplates";
-import { enAdminUserDrawer } from "./en/adminUserDrawer";
-import { enAdminRuntimeSettings } from "./en/adminRuntimeSettings";
-import { enAdminTemplateEditor } from "./en/adminTemplateEditor";
-import { enAdminWorks } from "./en/adminWorks";
-import { enAdminDramaDetail } from "./en/adminDramaDetail";
-import { enAdminUsers } from "./en/adminUsers";
-import { enAdminProjects } from "./en/adminProjects";
-import { enAdminQueues } from "./en/adminQueues";
-import { enAdminPaymentSettings } from "./en/adminPaymentSettings";
-import { enAdminDashboard } from "./en/adminDashboard";
-import { enAdminTaskDetail } from "./en/adminTaskDetail";
-import { enAdminOrders } from "./en/adminOrders";
-import { enAdminLayout } from "./en/adminLayout";
-import { enAdminStatus } from "./en/adminStatus";
-import { enShell } from "./en/shell";
+import { enAdminWalletMigration } from "./en/adminWalletMigration.ts";
+import { enAdminAppleSettings } from "./en/adminAppleSettings.ts";
+import { enAdminMediaPrices } from "./en/adminMediaPrices.ts";
+import { enAdminSettingsUi } from "./en/adminSettingsUi.ts";
+import { enAdminPeriodKpis } from "./en/adminPeriodKpis.ts";
+import { enAdminSettingsPage } from "./en/adminSettingsPage.ts";
+import { enAdminLogin } from "./en/adminLogin.ts";
+import { enAdminTemplateCard } from "./en/adminTemplateCard.ts";
+import { enAdminDashTabs } from "./en/adminDashTabs.ts";
+import { enAdminShared } from "./en/adminShared.ts";
+import { enAdminInsightMaps } from "./en/adminInsightMaps.ts";
+import { enAdminDramaEpisodes } from "./en/adminDramaEpisodes.ts";
+import { enAdminDramaAssetDetail } from "./en/adminDramaAssetDetail.ts";
+import { enAdminDramaFragments } from "./en/adminDramaFragments.ts";
+import { enAdminDramaAssets } from "./en/adminDramaAssets.ts";
+import { enAdminDramaProjects } from "./en/adminDramaProjects.ts";
+import { enAdminSiteSettings } from "./en/adminSiteSettings.ts";
+import { enAdminDramaFragmentDetail } from "./en/adminDramaFragmentDetail.ts";
+import { enAdminOssSettings } from "./en/adminOssSettings.ts";
+import { enAdminDramaEpisodeDetail } from "./en/adminDramaEpisodeDetail.ts";
+import { enAdminDashboardInsights } from "./en/adminDashboardInsights.ts";
+import { enAdminFinance } from "./en/adminFinance.ts";
+import { enAdminRoutingSettings } from "./en/adminRoutingSettings.ts";
+import { enAdminDashboardFilters } from "./en/adminDashboardFilters.ts";
+import { enAdminTemplates } from "./en/adminTemplates.ts";
+import { enAdminUserDrawer } from "./en/adminUserDrawer.ts";
+import { enAdminRuntimeSettings } from "./en/adminRuntimeSettings.ts";
+import { enAdminTemplateEditor } from "./en/adminTemplateEditor.ts";
+import { enAdminWorks } from "./en/adminWorks.ts";
+import { enAdminDramaDetail } from "./en/adminDramaDetail.ts";
+import { enAdminUsers } from "./en/adminUsers.ts";
+import { enAdminProjects } from "./en/adminProjects.ts";
+import { enAdminQueues } from "./en/adminQueues.ts";
+import { enAdminPaymentSettings } from "./en/adminPaymentSettings.ts";
+import { enAdminDashboard } from "./en/adminDashboard.ts";
+import { enAdminTaskDetail } from "./en/adminTaskDetail.ts";
+import { enAdminOrders } from "./en/adminOrders.ts";
+import { enAdminLayout } from "./en/adminLayout.ts";
+import { enAdminStatus } from "./en/adminStatus.ts";
+import { enShell } from "./en/shell.ts";
 
 export const en = {
+  ...enAdminStatus,
   ...enAdminWalletMigration,
   ...enAdminAppleSettings,
   ...enAdminMediaPrices,
@@ -79,5 +80,4 @@ export const en = {
   ...enAdminTaskDetail,
   ...enAdminOrders,
   ...enAdminLayout,
-  ...enAdminStatus,
 };

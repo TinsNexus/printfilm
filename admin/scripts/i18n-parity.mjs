@@ -10,7 +10,7 @@ const out = mkdtempSync(join(tmpdir(), 'i18n-parity-'))
 try {
   execFileSync(
     'npx',
-    ['tsc', '--outDir', out, '--module', 'commonjs', '--target', 'es2020', '--skipLibCheck', '--ignoreConfig',
+    ['tsc', '--outDir', out, '--module', 'commonjs', '--target', 'es2020', '--skipLibCheck', '--ignoreConfig', '--allowImportingTsExtensions', '--rewriteRelativeImportExtensions',
       '--rootDir', join(root, 'src'),
       'src/i18n/locales/zh.ts', 'src/i18n/locales/en.ts', 'src/i18n/locales/vi.ts'],
     { cwd: root, stdio: 'pipe' },

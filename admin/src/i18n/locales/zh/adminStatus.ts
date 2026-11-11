@@ -78,5 +78,6 @@ export const zhAdminStatus = {
     audio: "音频",
     text: "文本",
     uncategorized: "未分类",
+    stripeCard: "银行卡 · Stripe",
   },
 } as const;
