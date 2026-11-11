@@ -96,5 +96,6 @@ export const enAdminRoutingSettings = {
     capDefault: "Default {cap} model",
     refErrors: "{n} reference limits need fixing",
     refLimitAria: "{model} {media} limit",
+    enabledCount: "{n} / {total} enabled",
   },
 } as const;

@@ -71,5 +71,6 @@ export const zhAdminOssSettings = {
     queueName: "上传队列名称",
     queueNameHint: "仅用于异步上传；队列名称需与本地 Worker 配置一致。",
     queueNamePlaceholder: "例如 oss_upload",
+    configSource: "配置来源：{source}",
   },
 } as const;

@@ -1,3 +1,6 @@
+import { zhAdminWalletMigration } from "./zh/adminWalletMigration";
+import { zhAdminAppleSettings } from "./zh/adminAppleSettings";
+import { zhAdminMediaPrices } from "./zh/adminMediaPrices";
 import { zhAdminSettingsUi } from "./zh/adminSettingsUi";
 import { zhAdminPeriodKpis } from "./zh/adminPeriodKpis";
 import { zhAdminSettingsPage } from "./zh/adminSettingsPage";
@@ -37,6 +40,9 @@ import { zhAdminStatus } from "./zh/adminStatus";
 import { zhShell } from "./zh/shell";
 
 export const zh = {
+  ...zhAdminWalletMigration,
+  ...zhAdminAppleSettings,
+  ...zhAdminMediaPrices,
   ...zhAdminSettingsUi,
   ...zhShell,
   ...zhAdminPeriodKpis,

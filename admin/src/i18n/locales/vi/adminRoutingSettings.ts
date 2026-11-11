@@ -96,5 +96,6 @@ export const viAdminRoutingSettings = {
     capDefault: "Model {cap} mặc định",
     refErrors: "{n} mục giới hạn tham chiếu cần sửa",
     refLimitAria: "Giới hạn {media} của {model}",
+    enabledCount: "Đã bật {n} / {total}",
   },
 } as const;

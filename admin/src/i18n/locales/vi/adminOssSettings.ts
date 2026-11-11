@@ -71,5 +71,6 @@ export const viAdminOssSettings = {
     queueName: "Tên hàng đợi tải lên",
     queueNameHint: "Chỉ dùng cho tải lên bất đồng bộ; giữ tên hàng đợi khớp với cấu hình Worker cục bộ.",
     queueNamePlaceholder: "Ví dụ oss_upload",
+    configSource: "Nguồn cấu hình: {source}",
   },
 } as const;

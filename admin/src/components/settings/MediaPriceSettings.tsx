@@ -4,6 +4,7 @@ import { AdminField } from "@/components/admin/AdminField";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SettingsPanel } from "./SettingsPanel";
+import { tr } from "@/i18n";
 
 type PriceData = {
   active_version: number | null; enabled: boolean; prices: Record<string, Record<string, string>>;
@@ -11,8 +12,8 @@ type PriceData = {
 };
 function priceError(value: string) {
   if (!value.trim()) return "";
-  if (!/^\d+(?:\.\d{1,4})?$/.test(value.trim())) return "Vui lòng nhập số tiền, tối đa 4 chữ số thập phân";
-  return Number(value) < 0.0001 || Number(value) > 10000 ? "Đơn giá trong khoảng 0,0001–10000 tệ" : "";
+  if (!/^\d+(?:\.\d{1,4})?$/.test(value.trim())) return tr("mediaPrices.errFormat");
+  return Number(value) < 0.0001 || Number(value) > 10000 ? tr("mediaPrices.errRange") : "";
 }
 
 /** Price publishing is independent from the surrounding payment settings save. */
@@ -29,7 +30,7 @@ export function MediaPriceSettings() {
     try {
       const loaded = await api<PriceData>("/api/admin/settings/billing/media-prices");
       baseline.current = JSON.stringify(loaded.prices); setData(loaded); setError(""); return true;
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Tải giá thất bại"); return false; }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : tr("mediaPrices.loadFailed")); return false; }
   }
   useEffect(() => { void load(); }, []);
   async function reload() {
@@ -43,8 +44,8 @@ export function MediaPriceSettings() {
     try {
       await api("/api/admin/settings/billing/media-prices/activation", { method: "PATCH", body: JSON.stringify({ enabled: !data.enabled, expected_version: data.active_version }) });
       setData(current => current ? { ...current, enabled: !data.enabled } : current);
-      setNotice("Đã chuyển chế độ tính phí, chỉ ảnh hưởng tác vụ mới, tác vụ đang chạy giữ quy tắc cũ.");
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Chuyển thất bại"); }
+      setNotice(tr("mediaPrices.toggled"));
+    } catch (cause) { setError(cause instanceof Error ? cause.message : tr("mediaPrices.toggleFailed")); }
     finally { setOperation(""); }
   }
   async function publish() {
@@ -56,25 +57,25 @@ export function MediaPriceSettings() {
       ]));
       await api("/api/admin/settings/billing/media-prices", { method: "POST", body: JSON.stringify({ prices, expected_version: data.active_version }) });
       const refreshed = await load();
-      setNotice(refreshed ? "Đã phát hành giá, tác vụ mới có hiệu lực ngay, tác vụ đang chạy giữ giá cũ." : "Đã phát hành giá, đọc phiên bản mới nhất thất bại, vui lòng tải lại rồi tiếp tục chỉnh sửa.");
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Phát hành thất bại"); }
+      setNotice(refreshed ? tr("mediaPrices.published") : tr("mediaPrices.publishedReloadFailed"));
+    } catch (cause) { setError(cause instanceof Error ? cause.message : tr("mediaPrices.publishFailed")); }
     finally { setOperation(""); }
   }
-  return <SettingsPanel title="Giá hình ảnh và video" description="Hình ảnh tính theo ảnh, video tính theo số giây gửi. Phần này phát hành riêng, sửa cấu hình thanh toán sẽ không phát hành giá.">
-    <div className="admin-form-notice">{data?.active_version ? `Phiên bản giá hiện tại #${data.active_version} · ${data.enabled ? "Đã bật tính phí cố định" : "Đã tắt tính phí cố định"}` : "Chưa phát hành phiên bản giá"}{dirty ? " · Có thay đổi chưa phát hành" : ""}</div>
-    <p className="settings-price-note">Đơn giá tính bằng nhân dân tệ, tối đa 4 chữ số thập phân. Để trống nghĩa là mức này không thể tạo; tổng giá video = đơn giá × số giây gửi.</p>
+  return <SettingsPanel title={tr("mediaPrices.title")} description={tr("mediaPrices.desc")}>
+    <div className="admin-form-notice">{data?.active_version ? tr(data.enabled ? "mediaPrices.versionOn" : "mediaPrices.versionOff", { v: data.active_version }) : tr("mediaPrices.noVersion")}{dirty ? tr("mediaPrices.unpublished") : ""}</div>
+    <p className="settings-price-note">{tr("mediaPrices.note")}</p>
     {error ? <p role="alert" className="admin-field-error">{error}</p> : null}
     {notice ? <p role="status" className="settings-price-note">{notice}</p> : null}
-    {!data && !error ? <p className="settings-price-note" role="status">Đang tải giá…</p> : null}
+    {!data && !error ? <p className="settings-price-note" role="status">{tr("mediaPrices.loading")}</p> : null}
     {data && ["image", "video"].map(kind => <details key={kind} className="settings-advanced mt-4" open={kind === "image" ? true : undefined}>
-      <summary>{kind === "image" ? "Giá hình ảnh · tệ / ảnh" : "Giá video · tệ / giây"}</summary>
-      <div className="settings-price-table admin-table-wrap"><table><thead><tr><th>Model / phạm vi hỗ trợ</th><th>Độ phân giải và đơn giá</th></tr></thead><tbody>
+      <summary>{kind === "image" ? tr("mediaPrices.imageSection") : tr("mediaPrices.videoSection")}</summary>
+      <div className="settings-price-table admin-table-wrap"><table><thead><tr><th>{tr("mediaPrices.colModel")}</th><th>{tr("mediaPrices.colPrices")}</th></tr></thead><tbody>
         {data.strategies.filter(strategy => strategy.capability === kind).map(strategy => <tr key={strategy.id}>
-          <td><strong className="text-xs">{strategy.id}</strong><p className="settings-price-note">{strategy.duration_max ? `${strategy.duration_min}–${strategy.duration_max} giây` : "Tính theo số ảnh giao thành công"}</p></td>
+          <td><strong className="text-xs">{strategy.id}</strong><p className="settings-price-note">{strategy.duration_max ? tr("mediaPrices.durationRange", { min: strategy.duration_min ?? 0, max: strategy.duration_max }) : tr("mediaPrices.perDeliveredImage")}</p></td>
           <td><div className="settings-price-cell">{strategy.allowed_resolutions.map(resolution => {
             const value = data.prices[strategy.id]?.[resolution] ?? "";
-            return <AdminField key={resolution} label={resolution} error={priceError(value)} hint={value ? `tệ / ${kind === "image" ? "ảnh" : "giây"}` : "Chưa cấu hình, không thể tạo"}>
-              <Input type="text" inputMode="decimal" disabled={busy} aria-label={`${strategy.id} ${resolution} Đơn giá`} placeholder="Chưa cấu hình" value={value}
+            return <AdminField key={resolution} label={resolution} error={priceError(value)} hint={value ? tr(kind === "image" ? "mediaPrices.unitPerImage" : "mediaPrices.unitPerSecond") : tr("mediaPrices.notConfiguredBlocked")}>
+              <Input type="text" inputMode="decimal" disabled={busy} aria-label={tr("mediaPrices.priceAria", { model: strategy.id, resolution })} placeholder={tr("mediaPrices.notConfigured")} value={value}
                 onChange={event => { setNotice(""); setData({ ...data, prices: { ...data.prices, [strategy.id]: { ...data.prices[strategy.id], [resolution]: event.target.value } } }); }} />
             </AdminField>;
           })}</div></td>
@@ -82,9 +83,9 @@ export function MediaPriceSettings() {
       </tbody></table></div>
     </details>)}
     <div className="settings-price-actions">
-      <Button disabled={!data || busy || invalidPrices} onClick={() => void publish()}>{operation === "publish" ? "Đang phát hành…" : "Phát hành phiên bản giá"}</Button>
-      <Button variant="outline" disabled={busy} onClick={() => void reload()}>{operation === "load" ? "Đang tải…" : dirty ? "Hủy thay đổi và tải lại" : "Tải lại"}</Button>
-      {data?.active_version ? <Button variant="outline" disabled={busy} onClick={() => void toggle()}>{operation === "toggle" ? "Đang chuyển…" : data.enabled ? "Tắt tính phí cố định" : "Bật tính phí cố định"}</Button> : null}
+      <Button disabled={!data || busy || invalidPrices} onClick={() => void publish()}>{operation === "publish" ? tr("mediaPrices.publishing") : tr("mediaPrices.publish")}</Button>
+      <Button variant="outline" disabled={busy} onClick={() => void reload()}>{operation === "load" ? tr("mediaPrices.reloading") : dirty ? tr("mediaPrices.discardReload") : tr("mediaPrices.reload")}</Button>
+      {data?.active_version ? <Button variant="outline" disabled={busy} onClick={() => void toggle()}>{operation === "toggle" ? tr("mediaPrices.toggling") : data.enabled ? tr("mediaPrices.turnOff") : tr("mediaPrices.turnOn")}</Button> : null}
     </div>
   </SettingsPanel>;
 }

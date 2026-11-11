@@ -7,6 +7,7 @@ import {
 } from "@/components/settings/SettingsPanel";
 import { Switch } from "@/components/ui/switch";
 import { useAdminModelSettings } from "@/hooks/useAdminModelSettings";
+import { tr } from "@/i18n";
 
 /** 站点公网地址与媒体工具路径 */
 export function SiteSettingsPanel() {
@@ -29,7 +30,7 @@ export function SiteSettingsPanel() {
         marketplace_share_android_sha256_fingerprints: (form.marketplace_share_android_sha256_fingerprints || '').trim(),
         marketplace_max_duration_seconds: form.marketplace_max_duration_seconds,
       },
-      "Đã lưu cấu hình site",
+      tr("siteSettings.saved"),
     );
   }
 
@@ -42,44 +43,44 @@ export function SiteSettingsPanel() {
   const hasFfprobe = Boolean(form.ffprobe_path?.trim());
 
   return (
-    <SettingsTabShell onSave={handleSave} saving={saving} saveLabel="Lưu cài đặt site">
+    <SettingsTabShell onSave={handleSave} saving={saving} saveLabel={tr("siteSettings.saveLabel")}>
       <SettingsStatusBar
-        title="Trạng thái công cụ site"
+        title={tr("siteSettings.statusTitle")}
         items={[
           {
             id: "public",
-            label: "Địa chỉ công khai",
+            label: tr("siteSettings.publicUrl"),
             ready: hasPublic,
-            readyText: "Đã cấu hình",
-            pendingText: "Chưa nhập",
+            readyText: tr("siteSettings.configured"),
+            pendingText: tr("siteSettings.notFilled"),
           },
           {
             id: "ffmpeg",
             label: "ffmpeg",
             ready: hasFfmpeg,
-            readyText: form.ffmpeg_path || "Đã cấu hình",
-            pendingText: "Dùng PATH mặc định",
+            readyText: form.ffmpeg_path || tr("siteSettings.configured"),
+            pendingText: tr("siteSettings.defaultPath"),
           },
           {
             id: "ffprobe",
             label: "ffprobe",
             ready: hasFfprobe,
-            readyText: form.ffprobe_path || "Đã cấu hình",
-            pendingText: "Dùng PATH mặc định",
+            readyText: form.ffprobe_path || tr("siteSettings.configured"),
+            pendingText: tr("siteSettings.defaultPath"),
           },
           {
             id: "marketplace",
-            label: "Chợ tài sản số",
+            label: tr("siteSettings.marketplace"),
             ready: form.marketplace_enabled,
-            readyText: "Đã bật",
-            pendingText: "Chưa bật",
+            readyText: tr("siteSettings.on"),
+            pendingText: tr("siteSettings.off"),
           },
           {
             id: "marketplace-app",
-            label: "App 视频",
+            label: tr("siteSettings.appVideo"),
             ready: form.marketplace_app_enabled,
-            readyText: "已启用",
-            pendingText: "未启用",
+            readyText: tr("siteSettings.on"),
+            pendingText: tr("siteSettings.off"),
           },
         ]}
       />
@@ -87,13 +88,13 @@ export function SiteSettingsPanel() {
       <div className="settings-routing-grid">
         <SettingsPanel
           className="settings-panel--compact"
-          title="Địa chỉ truy cập site"
-          description="Dùng cho callback thanh toán, liên kết chia sẻ và điền lại địa chỉ phương tiện; nhập địa chỉ backend có thể truy cập từ internet."
+          title={tr("siteSettings.accessTitle")}
+          description={tr("siteSettings.accessDesc")}
         >
           <div className="settings-field-grid">
             <LabeledControl
-              label="Địa chỉ backend công khai"
-              hint="Ví dụ https://www.printfilm.com; để trống dùng cấu hình mặc định của máy chủ."
+              label={tr("siteSettings.publicBaseUrl")}
+              hint={tr("siteSettings.publicBaseUrlHint")}
               optional
               className="settings-field-span-full"
             >
@@ -114,11 +115,11 @@ export function SiteSettingsPanel() {
 
         <SettingsPanel
           className="settings-panel--compact"
-          title="Công cụ xử lý phương tiện"
-          description="Ghép video và tách khung hình dùng công cụ trên máy chủ. Nếu đã thêm vào PATH của máy chủ, có thể giữ tên mặc định."
+          title={tr("siteSettings.mediaToolsTitle")}
+          description={tr("siteSettings.mediaToolsDesc")}
         >
           <div className="settings-field-grid">
-            <LabeledControl label="Công cụ xử lý video (ffmpeg)" hint="Có thể nhập tên lệnh hoặc đường dẫn đầy đủ trên máy chủ." optional>
+            <LabeledControl label={tr("siteSettings.ffmpeg")} hint={tr("siteSettings.ffmpegHint")} optional>
               <input
                 className="settings-input"
                 placeholder="ffmpeg"
@@ -126,7 +127,7 @@ export function SiteSettingsPanel() {
                 onChange={(e) => patchField("ffmpeg_path", e.target.value)}
               />
             </LabeledControl>
-            <LabeledControl label="Công cụ thông tin phương tiện (ffprobe)" hint="Dùng cùng thư mục cài đặt với ffmpeg." optional>
+            <LabeledControl label={tr("siteSettings.ffprobe")} hint={tr("siteSettings.ffprobeHint")} optional>
               <input
                 className="settings-input"
                 placeholder="ffprobe"
@@ -139,13 +140,13 @@ export function SiteSettingsPanel() {
 
         <SettingsPanel
           className="settings-panel--compact"
-          title="3. Chợ tài sản số"
-          description="Khi môi trường thật không có tệp môi trường, mở lối vào tại đây"
+          title={tr("siteSettings.marketplaceSection")}
+          description={tr("siteSettings.marketplaceSectionDesc")}
         >
           <div className="settings-toggle-row">
             <div>
-              <strong>Bật chợ tài sản số</strong>
-              <span>Sau khi lưu, trang người dùng sẽ có “Chợ tài sản số”, mục “Nghiệp vụ” của trang quản trị sẽ có “Vận hành nền tảng tài sản số”. Tải lên vẫn dùng “Lưu trữ OSS”.</span>
+              <strong>{tr("siteSettings.enableMarketplace")}</strong>
+              <span>{tr("siteSettings.enableMarketplaceHint")}</span>
             </div>
             <Switch
               checked={form.marketplace_enabled}
@@ -154,8 +155,8 @@ export function SiteSettingsPanel() {
           </div>
           <div className="settings-toggle-row">
             <div>
-              <strong>启用 App 视频服务</strong>
-              <span>保存后开放 App 视频列表和播放。在这里开关即可，不需要改容器环境变量。需要同时启用数字资产市场。</span>
+              <strong>{tr("siteSettings.enableAppVideo")}</strong>
+              <span>{tr("siteSettings.enableAppVideoHint")}</span>
             </div>
             <Switch
               checked={form.marketplace_app_enabled}
@@ -163,8 +164,8 @@ export function SiteSettingsPanel() {
             />
           </div>
           <LabeledControl
-            label="完整视频最长时长"
-            hint="单位为秒。默认 1800，即 30 分钟。上传、合成和 App 完整播放共用。试看仍最多 15 秒，且不超过原片时长的 30%。"
+            label={tr("siteSettings.maxVideoDuration")}
+            hint={tr("siteSettings.maxVideoDurationHint")}
           >
             <input
               className="settings-input"
@@ -177,17 +178,17 @@ export function SiteSettingsPanel() {
             />
           </LabeledControl>
         </SettingsPanel>
-        <SettingsPanel className="settings-panel--compact" title="4. App 互动与作品分享" description="初始化数量、真实分享与 iOS / Android 链接关联均在这里配置，无需修改环境文件。">
-          <div className="settings-toggle-row"><div><strong>自动初始化互动数量</strong><span>为新上架且符合 App 展示条件的单视频和分集生成一次初始数量。历史作品请到数字资产平台运营的作品运营页批量补齐；关闭不会清除已保存数量。</span></div><Switch checked={form.marketplace_social_initialization_enabled ?? false} onCheckedChange={value => patchField("marketplace_social_initialization_enabled", value)} /></div>
-          <div className="settings-toggle-row"><div><strong>启用作品分享</strong><span>允许分享单视频和当前短剧分集的业务链接。需要有效的公网 HTTPS 域名，不能填写 localhost 或局域网地址。</span></div><Switch checked={form.marketplace_sharing_enabled ?? false} onCheckedChange={value => patchField("marketplace_sharing_enabled", value)} /></div>
+        <SettingsPanel className="settings-panel--compact" title={tr("siteSettings.appShareTitle")} description={tr("siteSettings.appShareDesc")}>
+          <div className="settings-toggle-row"><div><strong>{tr("siteSettings.autoSeedEngagement")}</strong><span>{tr("siteSettings.autoSeedEngagementHint")}</span></div><Switch checked={form.marketplace_social_initialization_enabled ?? false} onCheckedChange={value => patchField("marketplace_social_initialization_enabled", value)} /></div>
+          <div className="settings-toggle-row"><div><strong>{tr("siteSettings.enableSharing")}</strong><span>{tr("siteSettings.enableSharingHint")}</span></div><Switch checked={form.marketplace_sharing_enabled ?? false} onCheckedChange={value => patchField("marketplace_sharing_enabled", value)} /></div>
           <div className="settings-field-grid">
-            <LabeledControl label="分享公网基址" hint="例如 https://www.printfilm.com；域名应将 /s/、/.well-known/apple-app-site-association 和 /.well-known/assetlinks.json 转发至后端，其余作品页面交给 Web。" className="settings-field-span-full"><input className="settings-input" type="url" value={form.marketplace_share_base_url ?? ''} onChange={event => patchField("marketplace_share_base_url", event.target.value)} placeholder="https://www.printfilm.com" /></LabeledControl>
-            <LabeledControl label="Apple Team ID" hint="Apple 开发者账号中的 Team ID，用于 Universal Links 关联。"><input className="settings-input" value={form.marketplace_share_apple_team_id ?? ''} maxLength={10} onChange={event => patchField("marketplace_share_apple_team_id", event.target.value)} placeholder="ABCDEFGHIJ" /></LabeledControl>
-            <LabeledControl label="Android 包名" hint="与安卓应用 applicationId 一致；与证书指纹一起填写。不需要配置 Apple 即可使用安卓分享。"><input className="settings-input" value={form.marketplace_share_android_package_name ?? ''} maxLength={255} onChange={event => patchField("marketplace_share_android_package_name", event.target.value)} placeholder="com.example.app" /></LabeledControl>
-            <LabeledControl label="Android 签名证书 SHA-256 指纹" hint="每行一条32组冒号分隔的指纹。Google Play 使用应用签名证书，不是上传证书；支持轮换期间多个指纹。公网需放行 /.well-known/assetlinks.json。" className="settings-field-span-full"><textarea className="settings-input" rows={4} maxLength={10000} value={form.marketplace_share_android_sha256_fingerprints ?? ''} onChange={event => patchField("marketplace_share_android_sha256_fingerprints", event.target.value)} placeholder="AA:BB:…（完整 SHA-256 指纹）" /></LabeledControl>
-            <LabeledControl label="iOS Bundle ID" hint="仅 iOS 使用；复用“支付与通知 → Apple 服务器连接”中的 Bundle ID，安卓无需填写。"><input className="settings-input" readOnly value={form.apple_bundle_id || 'iOS 尚未配置'} /></LabeledControl>
+            <LabeledControl label={tr("siteSettings.shareBaseUrl")} hint={tr("siteSettings.shareBaseUrlHint")} className="settings-field-span-full"><input className="settings-input" type="url" value={form.marketplace_share_base_url ?? ''} onChange={event => patchField("marketplace_share_base_url", event.target.value)} placeholder="https://www.printfilm.com" /></LabeledControl>
+            <LabeledControl label="Apple Team ID" hint={tr("siteSettings.appleTeamIdHint")}><input className="settings-input" value={form.marketplace_share_apple_team_id ?? ''} maxLength={10} onChange={event => patchField("marketplace_share_apple_team_id", event.target.value)} placeholder="ABCDEFGHIJ" /></LabeledControl>
+            <LabeledControl label={tr("siteSettings.androidPackage")} hint={tr("siteSettings.androidPackageHint")}><input className="settings-input" value={form.marketplace_share_android_package_name ?? ''} maxLength={255} onChange={event => patchField("marketplace_share_android_package_name", event.target.value)} placeholder="com.example.app" /></LabeledControl>
+            <LabeledControl label={tr("siteSettings.androidFingerprints")} hint={tr("siteSettings.androidFingerprintsHint")} className="settings-field-span-full"><textarea className="settings-input" rows={4} maxLength={10000} value={form.marketplace_share_android_sha256_fingerprints ?? ''} onChange={event => patchField("marketplace_share_android_sha256_fingerprints", event.target.value)} placeholder={tr("siteSettings.androidFingerprintsPlaceholder")} /></LabeledControl>
+            <LabeledControl label="iOS Bundle ID" hint={tr("siteSettings.iosBundleHint")}><input className="settings-input" readOnly value={form.apple_bundle_id || tr("siteSettings.iosNotConfigured")} /></LabeledControl>
           </div>
-          <p className="settings-panel-footnote">iOS 需配置 Associated Domains，Android 需配置 App Links 并使用实际发布签名完成真机验证。保存域名不会自动修改 DNS、反向代理或客户端工程。</p>
+          <p className="settings-panel-footnote">{tr("siteSettings.appLinksNote")}</p>
         </SettingsPanel>
       </div>
     </SettingsTabShell>

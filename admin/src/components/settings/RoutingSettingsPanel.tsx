@@ -249,7 +249,7 @@ export function RoutingSettingsPanel() {
               <section key={cap} className="min-w-0 space-y-4 rounded-xl border border-[var(--admin-border)] p-4" aria-label={tr("routing.capUsageAria", { cap: capabilityLabel(cap) })}>
                 <div className="flex items-center justify-between gap-3">
                   <h4 className="text-sm font-semibold">{tr("routing.capModels", { cap: capabilityLabel(cap) })}</h4>
-                  <span className="text-xs text-[var(--admin-muted)]">Đã bật {options.length} / {PRESET_MODELS[cap].length}</span>
+                  <span className="text-xs text-[var(--admin-muted)]">{tr("routing.enabledCount", { n: options.length, total: PRESET_MODELS[cap].length })}</span>
                 </div>
                 <p className="text-xs text-[var(--admin-muted)]">{hints[cap]}</p>
                 <div className="space-y-2">

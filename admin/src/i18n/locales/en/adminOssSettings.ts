@@ -71,5 +71,6 @@ export const enAdminOssSettings = {
     queueName: "Upload queue name",
     queueNameHint: "Only used for async upload; keep the queue name in sync with the local worker settings.",
     queueNamePlaceholder: "e.g. oss_upload",
+    configSource: "Config source: {source}",
   },
 } as const;

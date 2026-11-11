@@ -259,7 +259,7 @@ export function PaymentSettingsPanel() {
       </SettingsPanel>
 
       <details className="settings-advanced" open={form.smtp_enabled || undefined}>
-        <summary>Gửi email SMTP · {form.smtp_enabled ? tr("paymentSettings.on") : tr("paymentSettings.smtpOffClickToConfigure")}</summary>
+        <summary>{tr("paymentSettings.smtpSummary")} · {form.smtp_enabled ? tr("paymentSettings.on") : tr("paymentSettings.smtpOffClickToConfigure")}</summary>
         <SettingsPanel title={tr("paymentSettings.email")} description={tr("paymentSettings.smtpDesc")}>
           <div className="settings-toggle-row">
             <div><strong>{tr("paymentSettings.smtpEnable")}</strong><span>{tr("paymentSettings.smtpEnableHint")}</span></div>

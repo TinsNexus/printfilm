@@ -1,3 +1,6 @@
+import { enAdminWalletMigration } from "./en/adminWalletMigration";
+import { enAdminAppleSettings } from "./en/adminAppleSettings";
+import { enAdminMediaPrices } from "./en/adminMediaPrices";
 import { enAdminSettingsUi } from "./en/adminSettingsUi";
 import { enAdminPeriodKpis } from "./en/adminPeriodKpis";
 import { enAdminSettingsPage } from "./en/adminSettingsPage";
@@ -37,6 +40,9 @@ import { enAdminStatus } from "./en/adminStatus";
 import { enShell } from "./en/shell";
 
 export const en = {
+  ...enAdminWalletMigration,
+  ...enAdminAppleSettings,
+  ...enAdminMediaPrices,
   ...enAdminSettingsUi,
   ...enShell,
   ...enAdminPeriodKpis,

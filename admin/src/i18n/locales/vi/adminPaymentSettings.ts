@@ -181,5 +181,6 @@ export const viAdminPaymentSettings = {
     defaultUsage: "{label} Mức dùng mặc định",
     defaultUsageHint: "{unit}; dùng khi upstream không trả về usage.",
     pointsHint: "Hiện {n} điểm; 100 điểm = 1 tệ hạn mức.",
+    smtpSummary: "Gửi email SMTP",
   },
 } as const;

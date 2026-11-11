@@ -181,5 +181,6 @@ export const zhAdminPaymentSettings = {
     defaultUsage: "{label} 缺省用量",
     defaultUsageHint: "{unit}；上游未返回 usage 时使用。",
     pointsHint: "当前 {n} 积分；100 积分 = 1 元额度。",
+    smtpSummary: "SMTP 邮件发送",
   },
 } as const;

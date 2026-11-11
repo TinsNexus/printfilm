@@ -181,5 +181,6 @@ export const enAdminPaymentSettings = {
     defaultUsage: "{label} default usage",
     defaultUsageHint: "{unit}; used when the upstream returns no usage.",
     pointsHint: "Currently {n} points; 100 points = CNY 1 of credit.",
+    smtpSummary: "SMTP email",
   },
 } as const;

@@ -1,3 +1,6 @@
+import { viAdminWalletMigration } from "./vi/adminWalletMigration";
+import { viAdminAppleSettings } from "./vi/adminAppleSettings";
+import { viAdminMediaPrices } from "./vi/adminMediaPrices";
 import { viAdminSettingsUi } from "./vi/adminSettingsUi";
 import { viAdminPeriodKpis } from "./vi/adminPeriodKpis";
 import { viAdminSettingsPage } from "./vi/adminSettingsPage";
@@ -37,6 +40,9 @@ import { viAdminStatus } from "./vi/adminStatus";
 import { viShell } from "./vi/shell";
 
 export const vi = {
+  ...viAdminWalletMigration,
+  ...viAdminAppleSettings,
+  ...viAdminMediaPrices,
   ...viAdminSettingsUi,
   ...viShell,
   ...viAdminPeriodKpis,
