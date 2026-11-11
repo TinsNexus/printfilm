@@ -1,0 +1,31 @@
+/** 中文：模型路由设置（RoutingSettingsPanel） */
+
+export const zhAdminRoutingSettings = {
+  routing: {
+    textModel: "文本模型",
+    imageModel: "图像模型",
+    videoModel: "视频模型",
+    voiceModel: "配音模型",
+    couldLoadModelSettings: "加载模型配置失败",
+    modelSettingsSaved: "模型配置已保存",
+    saveFailed: "保存失败",
+    loadingModelSettings: "加载模型配置…",
+    save: "保存",
+    configurationReady: "配置就绪",
+    configured: "已配置",
+    ready: "未就绪",
+    configurationChecks: "配置校验",
+    defaultModelsMappedPresets: "默认模型已映射到预设",
+    savingWritesPresetIds: "保存后将写入上述预设 id；若需保留历史模型请先改下拉再保存。",
+    upstreamLockedEnteringApi: "上游已锁定。填写 API Key 后，从下方四个预设下拉选择站点默认模型并保存。",
+    apiEndpoint: "接口地址",
+    console: "控制台：",
+    savedLeaveBlankKeep: "已保存，留空不修改",
+    configured2: "未配置",
+    savedLeaveBlankKeep2: "已保存，留空则不修改",
+    pasteTokenfreeApiKey: "粘贴 TokenFree API Key",
+    clear: "清除",
+    defaultModels: "默认模型",
+    userSideUseAll: "用户端可使用全部预设；此处仅设置站点默认。配音目前仅一项。",
+  },
+} as const;

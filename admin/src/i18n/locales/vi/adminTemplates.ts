@@ -1,0 +1,30 @@
+/** 越南语：模板管理页（TemplatesPage） */
+
+export const viAdminTemplates = {
+  templates: {
+    itemsCount: "{n} / {total} mục",
+    allStatuses: "Tất cả trạng thái",
+    listed: "Đã đăng",
+    unlisted: "Đã gỡ",
+    failedLoad: "Tải thất bại",
+    allCategories: "Tất cả danh mục",
+    couldLoadTemplateDetails: "Tải chi tiết mẫu thất bại",
+    enterTemplateId: "Vui lòng nhập ID mẫu",
+    saved: "Đã lưu",
+    saveFailed: "Lưu thất bại",
+    updateFailed: "Cập nhật thất bại",
+    deleted: "Đã xóa",
+    deleteFailed: "Xóa thất bại",
+    styleCharacterPromptsPage: "Phong cách / nhân vật / prompt lấy theo trang này; các dự án đã tạo chỉ theo sau khi khôi phục mẫu ở trang cảnh.",
+    newTemplate: "Mẫu mới",
+    searchNameIdDescription: "Tìm tên / ID / mô tả / danh mục",
+    category: "Danh mục",
+    filter: "Lọc",
+    loadingTemplates: "Đang tải mẫu…",
+    matchingTemplates: "Không có mẫu phù hợp",
+    createFirstTemplate: "Tạo mẫu đầu tiên",
+    deleteTemplate: "Xóa mẫu",
+    deleteTemplateTemplatesReferenced: "Xóa mẫu “{deleteTarget}”? Không thể xóa mẫu đang được dự án tham chiếu.",
+    delete: "Xóa",
+  },
+} as const;

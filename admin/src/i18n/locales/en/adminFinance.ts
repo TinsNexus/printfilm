@@ -1,0 +1,30 @@
+/** 英文：财务列表页（FinanceListPage） */
+
+export const enAdminFinance = {
+  finance: {
+    costNote: "Last {days} days · actual cost comes from the TokenFree New API{sync}",
+    lastSync: " · last synced {t}",
+    last7Days: "Last 7 days",
+    last14Days: "Last 14 days",
+    last30Days: "Last 30 days",
+    last90Days: "Last 90 days",
+    couldLoadFinanceList: "Could not load the finance list",
+    officialCostRefreshed: "Official cost refreshed",
+    refreshFailed: "Refresh failed",
+    dailyTotalsLocalCharges: "Daily totals of local charges, cost and official actual cost, with profit",
+    timeRange: "Time range",
+    financeList: "Finance list",
+    dataDoesMatchCurrent: "The data does not match the current time range — reload",
+    tokenfreeApiKeyConfigured: "TokenFree API Key is not configured, so the actual cost column is empty; enter it under “System settings → Models”, then refresh",
+    refreshing: "Refreshing…",
+    refreshOfficialCost: "Refresh official cost",
+    date: "Date",
+    localCharges: "Local charges",
+    localCost: "Local cost",
+    actualCost: "Actual cost",
+    profit: "Profit",
+    loading: "Loading…",
+    data: "No data",
+    total: "Total",
+  },
+} as const;

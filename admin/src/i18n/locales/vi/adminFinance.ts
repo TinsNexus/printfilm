@@ -1,0 +1,30 @@
+/** 越南语：财务列表页（FinanceListPage） */
+
+export const viAdminFinance = {
+  finance: {
+    costNote: "{days} ngày qua · chi phí thực tế lấy từ TokenFree New API{sync}",
+    lastSync: " · đồng bộ gần nhất {t}",
+    last7Days: "7 ngày qua",
+    last14Days: "14 ngày qua",
+    last30Days: "30 ngày qua",
+    last90Days: "90 ngày qua",
+    couldLoadFinanceList: "Tải danh sách tài chính thất bại",
+    officialCostRefreshed: "Đã làm mới chi phí chính thức",
+    refreshFailed: "Làm mới thất bại",
+    dailyTotalsLocalCharges: "Tổng hợp theo ngày phí nội bộ, chi phí và chi phí thực tế chính thức, tính lợi nhuận",
+    timeRange: "Khoảng thời gian",
+    financeList: "Danh sách tài chính",
+    dataDoesMatchCurrent: "Dữ liệu không khớp khoảng thời gian hiện tại — hãy tải lại",
+    tokenfreeApiKeyConfigured: "Chưa cấu hình TokenFree API Key nên cột chi phí thực tế trống; hãy nhập trong “Cài đặt hệ thống → Mô hình” rồi làm mới",
+    refreshing: "Đang làm mới…",
+    refreshOfficialCost: "Làm mới chi phí chính thức",
+    date: "Ngày",
+    localCharges: "Phí nội bộ",
+    localCost: "Chi phí nội bộ",
+    actualCost: "Chi phí thực tế",
+    profit: "Lợi nhuận",
+    loading: "Đang tải…",
+    data: "Chưa có dữ liệu",
+    total: "Tổng",
+  },
+} as const;

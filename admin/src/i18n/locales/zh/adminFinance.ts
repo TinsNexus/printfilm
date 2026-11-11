@@ -1,0 +1,30 @@
+/** 中文：财务列表页（FinanceListPage） */
+
+export const zhAdminFinance = {
+  finance: {
+    costNote: "近 {days} 日 · 实际成本来自 TokenFree New API{sync}",
+    lastSync: " · 最近同步 {t}",
+    last7Days: "近 7 日",
+    last14Days: "近 14 日",
+    last30Days: "近 30 日",
+    last90Days: "近 90 日",
+    couldLoadFinanceList: "财务列表加载失败",
+    officialCostRefreshed: "官方成本已刷新",
+    refreshFailed: "刷新失败",
+    dailyTotalsLocalCharges: "按日汇总本地扣费、成本与官方实际成本，计算利润",
+    timeRange: "时间范围",
+    financeList: "财务列表",
+    dataDoesMatchCurrent: "数据与当前时间范围不一致，请重新加载",
+    tokenfreeApiKeyConfigured: "未配置 TokenFree API Key，实际成本列为空；请在「系统设置 → 模型」填写后刷新",
+    refreshing: "刷新中…",
+    refreshOfficialCost: "刷新官方成本",
+    date: "日期",
+    localCharges: "本地扣费",
+    localCost: "本地成本",
+    actualCost: "实际成本",
+    profit: "利润",
+    loading: "加载中…",
+    data: "暂无数据",
+    total: "合计",
+  },
+} as const;

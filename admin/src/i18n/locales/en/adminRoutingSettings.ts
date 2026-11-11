@@ -1,0 +1,31 @@
+/** 英文：模型路由设置（RoutingSettingsPanel） */
+
+export const enAdminRoutingSettings = {
+  routing: {
+    textModel: "Text model",
+    imageModel: "Image model",
+    videoModel: "Video model",
+    voiceModel: "Voice model",
+    couldLoadModelSettings: "Could not load model settings",
+    modelSettingsSaved: "Model settings saved",
+    saveFailed: "Save failed",
+    loadingModelSettings: "Loading model settings…",
+    save: "Save",
+    configurationReady: "Configuration ready",
+    configured: "Configured",
+    ready: "Not ready",
+    configurationChecks: "Configuration checks",
+    defaultModelsMappedPresets: "Default models are mapped to presets",
+    savingWritesPresetIds: "Saving writes the preset IDs above; to keep a legacy model, change the dropdown first, then save.",
+    upstreamLockedEnteringApi: "The upstream is locked. After entering the API Key, pick the site default models from the four preset dropdowns below and save.",
+    apiEndpoint: "API endpoint",
+    console: "Console: ",
+    savedLeaveBlankKeep: "Saved; leave blank to keep",
+    configured2: "Not configured",
+    savedLeaveBlankKeep2: "Saved; leave blank to keep",
+    pasteTokenfreeApiKey: "Paste the TokenFree API Key",
+    clear: "Clear",
+    defaultModels: "Default models",
+    userSideUseAll: "The user side can use all presets; this only sets the site default. Voice currently has a single option.",
+  },
+} as const;

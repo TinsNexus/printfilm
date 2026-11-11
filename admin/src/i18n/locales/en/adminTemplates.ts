@@ -1,0 +1,30 @@
+/** 英文：模板管理页（TemplatesPage） */
+
+export const enAdminTemplates = {
+  templates: {
+    itemsCount: "{n} / {total} items",
+    allStatuses: "All statuses",
+    listed: "Listed",
+    unlisted: "Unlisted",
+    failedLoad: "Failed to load",
+    allCategories: "All categories",
+    couldLoadTemplateDetails: "Could not load template details",
+    enterTemplateId: "Enter a template ID",
+    saved: "Saved",
+    saveFailed: "Save failed",
+    updateFailed: "Update failed",
+    deleted: "Deleted",
+    deleteFailed: "Delete failed",
+    styleCharacterPromptsPage: "Style / character / prompts on this page are authoritative; existing projects only follow after the template is restored on the shot page.",
+    newTemplate: "New template",
+    searchNameIdDescription: "Search name / ID / description / category",
+    category: "Category",
+    filter: "Filter",
+    loadingTemplates: "Loading templates…",
+    matchingTemplates: "No matching templates",
+    createFirstTemplate: "Create the first template",
+    deleteTemplate: "Delete template",
+    deleteTemplateTemplatesReferenced: "Delete the template “{deleteTarget}”? Templates referenced by projects cannot be deleted.",
+    delete: "Delete",
+  },
+} as const;
