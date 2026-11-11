@@ -1,3 +1,4 @@
+import { viFeDramaEpisode } from "./vi/feDramaEpisode.ts";
 import { viFeStudio } from "./vi/feStudio.ts";
 import { viFeFeaturesMarketplace } from "./vi/feFeaturesMarketplace.ts";
 import { viFeDramaCanvas } from "./vi/feDramaCanvas.ts";
@@ -14,6 +15,7 @@ import { viPages } from './vi/pages.ts'
 import { viShell } from './vi/shell.ts'
 
 export const vi = {
+  ...viFeDramaEpisode,
   ...viFeStudio,
   ...viFeFeaturesMarketplace,
   ...viFeDramaCanvas,
