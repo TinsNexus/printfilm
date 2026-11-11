@@ -27,7 +27,7 @@ import {
   useMediaModelsCatalog,
 } from '../../../../hooks/useMediaModelsCatalog'
 import './dramaImageGenOptions.css'
-import { tv } from '../../../../i18n/tv'
+import { tr } from '../../../../i18n/translate.ts'
 
 type DramaImageGenOptionsBarProps = {
   value: ImageGenerationOptions
@@ -93,7 +93,7 @@ export function DramaImageGenOptionsBar({
       imageModels,
     )
     if (nextRatio !== value.aspect_ratio || nextRes !== value.resolution) {
-      setAdjustment(tv('所选模型不支持原参数，已调整画幅或分辨率，请核对报价后生成。', 'Model đã chọn không hỗ trợ tham số ban đầu, đã điều chỉnh tỷ lệ khung hoặc độ phân giải, vui lòng kiểm tra báo giá rồi tạo.'))
+      setAdjustment(tr('dramaImageGenOptionsBar.selectedModelDoesNotSupport'))
       onChange({ ...value, aspect_ratio: nextRatio, resolution: nextRes })
     }
   }, [value.model_id, catalog])
@@ -118,8 +118,8 @@ export function DramaImageGenOptionsBar({
     e.stopPropagation()
   }
 
-  const styleLabel = getImageStyleLabel(value.image_style_id) || tv('风格', 'Phong cách')
-  const modelLabel = catalogModelLabel(value.model_id, imageModels, tv('图片模型', 'Model hình ảnh'))
+  const styleLabel = getImageStyleLabel(value.image_style_id) || tr('dramaImageGenOptionsBar.style')
+  const modelLabel = catalogModelLabel(value.model_id, imageModels, tr('dramaImageGenOptionsBar.imageModel'))
   const outputLabel = formatOutputSettingsLabel(value.aspect_ratio, value.resolution)
 
   return (
@@ -160,8 +160,8 @@ export function DramaImageGenOptionsBar({
       </div>
 
       {open === 'style' ? (
-        <div className="fc-gen-opt-panel fc-gen-style-panel" role="dialog" aria-label={tv("图片风格", "Phong cách hình ảnh")}>
-          <div className="fc-gen-opt-panel-title">{tv("图片风格", "Phong cách hình ảnh")}</div>
+        <div className="fc-gen-opt-panel fc-gen-style-panel" role="dialog" aria-label={tr('dramaImageGenOptionsBar.imageStyle')}>
+          <div className="fc-gen-opt-panel-title">{tr('dramaImageGenOptionsBar.imageStyle')}</div>
           <div className="fc-gen-style-grid">
             {IMAGE_STYLE_OPTIONS.map((opt) => {
               const selected = value.image_style_id === opt.id
@@ -186,8 +186,8 @@ export function DramaImageGenOptionsBar({
       ) : null}
 
       {open === 'model' ? (
-        <div className="fc-gen-opt-panel" role="dialog" aria-label={tv("生图模型", "Model tạo ảnh")}>
-          <div className="fc-gen-opt-panel-title">{tv("模型", "Model")}</div>
+        <div className="fc-gen-opt-panel" role="dialog" aria-label={tr('dramaImageGenOptionsBar.imageModel2')}>
+          <div className="fc-gen-opt-panel-title">{tr('dramaImageGenOptionsBar.model')}</div>
           <DramaMediaModelPicker
             models={imageModels}
             selectedId={value.model_id}
@@ -207,8 +207,8 @@ export function DramaImageGenOptionsBar({
       ) : null}
 
       {open === 'output' ? (
-        <div className="fc-gen-opt-panel" role="dialog" aria-label={tv("输出设置", "Cài đặt đầu ra")}>
-          <div className="fc-gen-opt-panel-title">{tv("比例", "Tỷ lệ")}</div>
+        <div className="fc-gen-opt-panel" role="dialog" aria-label={tr('dramaImageGenOptionsBar.outputSettings')}>
+          <div className="fc-gen-opt-panel-title">{tr('dramaImageGenOptionsBar.aspectRatio')}</div>
           <div className="fc-gen-chip-row">
             {GENERATION_ASPECT_RATIO_OPTIONS.filter((opt) => aspectOptions.includes(opt.id)).map((opt) => (
               <button
@@ -224,7 +224,7 @@ export function DramaImageGenOptionsBar({
             ))}
           </div>
           <div className="fc-gen-opt-panel-title" style={{ marginTop: 10 }}>
-            {tv("清晰度", "Độ nét")}
+            {tr('dramaImageGenOptionsBar.quality')}
           </div>
           <div className="fc-gen-chip-row">
             {resolutionOptions.map((res) => (

@@ -8,7 +8,7 @@ import {
   Text,
   UserRound,
 } from 'lucide-react'
-import { tv } from '../../../i18n/tv'
+import { tr } from '../../../i18n/translate.ts'
 
 export type CanvasNodeKind = 'character' | 'scene' | 'video' | 'image' | 'text' | 'audio'
 
@@ -59,22 +59,22 @@ export function canvasKindToAssetType(kind: CanvasNodeKind): string {
 
 /** 空画布居中快速新建选项（顺序与设计稿一致） */
 export const CANVAS_NODE_OPTIONS: CanvasNodeOption[] = [
-  { id: 'character', label: tv('角色', 'Nhân vật'), icon: UserRound },
-  { id: 'scene', label: tv('场景', 'Bối cảnh'), icon: Landmark },
-  { id: 'video', label: tv('视频', 'Video'), icon: PlaySquare },
-  { id: 'image', label: tv('图片', 'Hình ảnh'), icon: ImageIcon },
-  { id: 'text', label: tv('文本', 'Văn bản'), icon: Text },
-  { id: 'audio', label: tv('音频', 'Âm thanh'), icon: AudioLines },
+  { id: 'character', label: tr('canvasTypes.character'), icon: UserRound },
+  { id: 'scene', label: tr('canvasTypes.scene'), icon: Landmark },
+  { id: 'video', label: tr('canvasTypes.video'), icon: PlaySquare },
+  { id: 'image', label: tr('canvasTypes.image'), icon: ImageIcon },
+  { id: 'text', label: tr('canvasTypes.text'), icon: Text },
+  { id: 'audio', label: tr('canvasTypes.audio'), icon: AudioLines },
 ]
 
 /** 左侧添加面板选项 */
 export const ADD_NODE_OPTIONS: CanvasNodeOption[] = [
-  { id: 'character', label: tv('角色', 'Nhân vật'), icon: UserRound },
-  { id: 'scene', label: tv('场景', 'Bối cảnh'), icon: Landmark },
-  { id: 'text', label: tv('文本', 'Văn bản'), icon: Text },
-  { id: 'image', label: tv('图片', 'Hình ảnh'), icon: ImageIcon },
-  { id: 'video', label: tv('视频', 'Video'), icon: PlaySquare },
-  { id: 'audio', label: tv('音频', 'Âm thanh'), icon: AudioLines },
+  { id: 'character', label: tr('canvasTypes.character'), icon: UserRound },
+  { id: 'scene', label: tr('canvasTypes.scene'), icon: Landmark },
+  { id: 'text', label: tr('canvasTypes.text'), icon: Text },
+  { id: 'image', label: tr('canvasTypes.image'), icon: ImageIcon },
+  { id: 'video', label: tr('canvasTypes.video'), icon: PlaySquare },
+  { id: 'audio', label: tr('canvasTypes.audio'), icon: AudioLines },
 ]
 
 export const CANVAS_NODE_OPTION_BY_KIND = Object.fromEntries(
@@ -83,12 +83,12 @@ export const CANVAS_NODE_OPTION_BY_KIND = Object.fromEntries(
 
 /** 各类型默认展示名 */
 export const CANVAS_NODE_DEFAULT_LABEL: Record<CanvasNodeKind, string> = {
-  character: tv('新角色', 'Nhân vật mới'),
-  scene: tv('新场景', 'Bối cảnh mới'),
-  video: tv('新视频', 'Video mới'),
-  image: tv('新图片', 'Hình ảnh mới'),
-  text: tv('文本', 'Văn bản'),
-  audio: tv('新音频', 'Âm thanh mới'),
+  character: tr('canvasTypes.newCharacter'),
+  scene: tr('canvasTypes.newScene'),
+  video: tr('canvasTypes.newVideo'),
+  image: tr('canvasTypes.newImage'),
+  text: tr('canvasTypes.text'),
+  audio: tr('canvasTypes.newAudio'),
 }
 
 /**

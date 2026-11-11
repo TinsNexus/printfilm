@@ -1,7 +1,7 @@
 /** 分镜顶部：已关联资产缩略图条 */
 import type { FragmentRefStripItem } from './dramaEpisodeEditUtils'
 import { DRAMA_VOICE_BINDING_ENABLED } from '../../lib/dramaVoiceBinding'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 
 type Props = {
   items: FragmentRefStripItem[]
@@ -13,13 +13,13 @@ export function EpisodeEditReferenceStrip({ items, onSelect }: Props) {
   if (items.length === 0) {
     return (
       <div className="drama-ep-ref-strip is-empty">
-        <span className="drama-ep-ref-strip-hint">{tv("暂无关联资产 · 点击左侧卡片或键入 @asset:id", "Chưa có tài sản liên kết · bấm thẻ bên trái hoặc gõ @asset:id")}</span>
+        <span className="drama-ep-ref-strip-hint">{tr('episodeEditReferenceStrip.noLinkedAssetsClickCard')}</span>
       </div>
     )
   }
 
   return (
-    <div className="drama-ep-ref-strip" aria-label={tv("本镜关联资产", "Tài sản liên kết của cảnh này")}>
+    <div className="drama-ep-ref-strip" aria-label={tr('episodeEditReferenceStrip.assetsShot')}>
       {items.map((item) => (
         <button
           key={item.assetId}
@@ -30,8 +30,8 @@ export function EpisodeEditReferenceStrip({ items, onSelect }: Props) {
           title={`${item.name}${item.type ? ` · ${item.type}` : ''}${
             DRAMA_VOICE_BINDING_ENABLED && item.isCharacter
               ? item.voiceLabel
-                ? tv(` · 音色：${item.voiceLabel}`, ` · Giọng nói: ${item.voiceLabel}`)
-                : tv(' · 未绑定音色', ' · Chưa gắn giọng nói')
+                ? tr('episodeEditReferenceStrip.voice', { voiceLabel: item.voiceLabel })
+                : tr('episodeEditReferenceStrip.noVoiceAssigned')
               : ''
           }`}
           onClick={() => onSelect?.(item.assetId)}
@@ -43,7 +43,7 @@ export function EpisodeEditReferenceStrip({ items, onSelect }: Props) {
           )}
           {DRAMA_VOICE_BINDING_ENABLED && item.isCharacter ? (
             <span className={`drama-ep-ref-voice-badge${item.voiceUrl ? ' bound' : ''}`}>
-              {item.voiceUrl ? tv('音', 'Có tiếng') : tv('无音', 'Không tiếng')}
+              {item.voiceUrl ? tr('episodeEditReferenceStrip.sound') : tr('episodeEditReferenceStrip.muted')}
             </span>
           ) : null}
           <em>{item.name}</em>

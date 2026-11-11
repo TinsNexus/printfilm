@@ -15,7 +15,7 @@ import {
   type EpisodeComposeProgress,
 } from '../../lib/composeEpisodeVideoClient'
 import { dialog } from '../../lib/dialog'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 
 type Props = {
   fragments: DramaFragment[]
@@ -36,11 +36,11 @@ type Props = {
 
 /** 把合成进度转成按钮文案 */
 function composeProgressLabel(progress: EpisodeComposeProgress | null, busy: boolean) {
-  if (!busy) return tv('全片合成下载', 'Ghép và tải toàn phim')
-  if (!progress) return tv('全片合成中…', 'Đang ghép toàn phim…')
-  if (progress.phase === 'download') return tv(`拉取分镜 ${progress.done}/${progress.total}`, `Đang lấy phân cảnh ${progress.done}/${progress.total}`)
-  if (progress.phase === 'server') return tv('服务端统一重编码拼接…', 'Máy chủ mã hóa lại thống nhất và ghép…')
-  return tv('正在拼接…', 'Đang ghép…')
+  if (!busy) return tr('episodeEditSidePane.composeDownloadFullVideo')
+  if (!progress) return tr('episodeEditSidePane.composingFullVideo')
+  if (progress.phase === 'download') return tr('episodeEditSidePane.fetchingShots', { done: progress.done, total: progress.total })
+  if (progress.phase === 'server') return tr('episodeEditSidePane.reEncodingJoiningServer')
+  return tr('episodeEditSidePane.joining')
 }
 
 // 渲染分集右侧预览与画布入口
@@ -51,7 +51,7 @@ export function EpisodeEditSidePane({
   aspectRatio,
   episodeId,
   projectId,
-  episodeName = tv('本集', 'Tập này'),
+  episodeName = tr('episodeEditSidePane.episode'),
   onOpenStoryboard,
   previewVideoUrl = null,
   previewPosterUrl = null,
@@ -79,9 +79,9 @@ export function EpisodeEditSidePane({
     if (composeBusy || composeClips.length === 0) return
     if (missingCount > 0) {
       const ok = await dialog.confirm({
-        title: tv('部分分镜尚未生成', 'Một số phân cảnh chưa được tạo'),
-        message: tv(`有 ${missingCount} 镜还没有视频，将只拼接已生成的 ${composeClips.length} 镜。是否继续？`, `Có ${missingCount} cảnh chưa có video, chỉ ghép ${composeClips.length} cảnh đã tạo. Tiếp tục không?`),
-        confirmText: tv('继续合成', 'Tiếp tục ghép'),
+        title: tr('episodeEditSidePane.someShotsNotGeneratedYet'),
+        message: tr('episodeEditSidePane.shotsHaveNoVideoYet', { missingCount, length: composeClips.length }),
+        confirmText: tr('episodeEditSidePane.continue'),
       })
       if (!ok) return
     }
@@ -94,7 +94,7 @@ export function EpisodeEditSidePane({
       })
       triggerBlobDownload(blob, episodeComposeFilename(episodeName))
     } catch (err) {
-      setComposeError(err instanceof Error ? err.message : tv('全片合成失败', 'Ghép toàn phim thất bại'))
+      setComposeError(err instanceof Error ? err.message : tr('episodeEditSidePane.failedComposeFullVideo'))
     } finally {
       setComposeBusy(false)
       setComposeProgress(null)
@@ -104,12 +104,12 @@ export function EpisodeEditSidePane({
   return (
     <aside className="drama-ep-preview">
       <div className="drama-ep-side-header">
-        <div className="drama-ep-side-tabs" role="tablist" aria-label={tv("右侧面板", "Bảng bên phải")}>
+        <div className="drama-ep-side-tabs" role="tablist" aria-label={tr('episodeEditSidePane.sidePanel')}>
           <button type="button" role="tab" aria-selected className="active">
-            {tv("预览", "Xem trước")}
+            {tr('episodeEditSidePane.preview')}
           </button>
           <button type="button" role="tab" onClick={onOpenStoryboard}>
-            {tv("画布", "Canvas")}
+            {tr('episodeEditSidePane.canvas')}
           </button>
         </div>
         <button
@@ -118,8 +118,8 @@ export function EpisodeEditSidePane({
           disabled={composeBusy || composeClips.length === 0}
           title={
             composeClips.length === 0
-              ? tv('请先生成分镜视频', 'Vui lòng tạo video phân cảnh trước')
-              : tv('在浏览器里把本集已生成镜头拼成一条成片并下载', 'Ghép các cảnh đã tạo của tập này thành một phim ngay trong trình duyệt và tải xuống')
+              ? tr('episodeEditSidePane.generateShotVideosFirst')
+              : tr('episodeEditSidePane.joinEpisodeSGeneratedShots')
           }
           onClick={() => void handleComposeDownload()}
         >
@@ -144,16 +144,16 @@ export function EpisodeEditSidePane({
 
       {previewVideoUrl ? (
         <div className="drama-ep-preview-banner">
-          <span>{tv("预览历史版本", "Xem trước phiên bản lịch sử")}{previewLabel ? ` · ${previewLabel}` : ''}</span>
+          <span>{tr('episodeEditSidePane.previewPreviousVersion')}{previewLabel ? ` · ${previewLabel}` : ''}</span>
           <div className="drama-ep-preview-banner-actions">
             {onActivatePreview ? (
               <button type="button" className="drama-ep-preview-banner-btn" onClick={onActivatePreview}>
-                {tv("设为当前", "Đặt làm hiện tại")}
+                {tr('episodeEditSidePane.makeCurrent')}
               </button>
             ) : null}
             {onClearPreview ? (
               <button type="button" className="drama-ep-preview-banner-btn is-ghost" onClick={onClearPreview}>
-                {tv("退出预览", "Thoát xem trước")}
+                {tr('episodeEditSidePane.exitPreview')}
               </button>
             ) : null}
           </div>
@@ -161,7 +161,7 @@ export function EpisodeEditSidePane({
       ) : null}
 
       {!hasSelection || fragments.length === 0 ? (
-        <p className="drama-ep-empty">{tv("请选择底部分镜", "Vui lòng chọn phân cảnh ở phía dưới")}</p>
+        <p className="drama-ep-empty">{tr('episodeEditSidePane.selectShotBelow')}</p>
       ) : (
         <div className="drama-ep-preview-inner">
           <DramaFragmentSegmentedVideoPlayer
@@ -174,7 +174,7 @@ export function EpisodeEditSidePane({
           />
           {!fragments.some((f) => f.video) && (
             <button type="button" className="drama-ep-open-canvas" onClick={onOpenStoryboard}>
-              {tv("打开分镜画布", "Mở canvas phân cảnh")}
+              {tr('episodeEditSidePane.openShotCanvas')}
             </button>
           )}
         </div>

@@ -1,3 +1,4 @@
+import { enFeStudio } from "./en/feStudio.ts";
 import { enFeFeaturesMarketplace } from "./en/feFeaturesMarketplace.ts";
 import { enFeDramaCanvas } from "./en/feDramaCanvas.ts";
 import { enFeDramaEpisodeCanvas } from "./en/feDramaEpisodeCanvas.ts";
@@ -13,6 +14,7 @@ import { enPages } from './en/pages.ts'
 import { enShell } from './en/shell.ts'
 
 export const en = {
+  ...enFeStudio,
   ...enFeFeaturesMarketplace,
   ...enFeDramaCanvas,
   ...enFeDramaEpisodeCanvas,

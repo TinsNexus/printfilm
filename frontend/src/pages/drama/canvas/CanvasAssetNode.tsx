@@ -35,7 +35,7 @@ import { AssetDetailDialog } from '../../../components/assets/AssetDetailDialog'
 import { dramaApi, type DramaAsset } from '../../../api/drama'
 import { CanvasNodeUploadBar } from './nodes/CanvasNodeUploadBar'
 import { DRAMA_VOICE_BINDING_ENABLED } from '../../../lib/dramaVoiceBinding'
-import { tv } from '../../../i18n/tv'
+import { tr } from '../../../i18n/translate.ts'
 
 /** 画布视频缩略：仅展示封面，不拦截单击（单击要选中并显示提示词面板） */
 function CanvasAssetVideoPreview({
@@ -98,8 +98,8 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
   const footerLabel =
     data.kind === 'character'
       ? DRAMA_VOICE_BINDING_ENABLED && voiceLabel
-        ? tv(`基础形象 · ${voiceLabel}`, `Hình tượng cơ bản · ${voiceLabel}`)
-        : tv('基础形象', 'Hình tượng cơ bản')
+        ? tr('canvasAssetNode.baseLook', { voiceLabel })
+        : tr('canvasAssetNode.baseLook2')
       : data.kind === 'scene'
         ? displayName
         : null
@@ -236,13 +236,13 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
             onBlur={commitRename}
             onKeyDown={handleRenameKeyDown}
             onMouseDown={(e) => e.stopPropagation()}
-            aria-label={tv("节点名称", "Tên nút")}
+            aria-label={tr('canvasAssetNode.nodeName')}
           />
         ) : (
           <button
             type="button"
             className="fc-node-title nodrag nopan"
-            title={tv("双击重命名", "Nhấp đúp để đổi tên")}
+            title={tr('canvasAssetNode.doubleClickRename')}
             onDoubleClick={startRename}
           >
             {displayName}
@@ -252,7 +252,7 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
 
       <div
         className={`pf-library-card fc-asset-card${canPreview ? ' is-previewable' : ''}`}
-        title={canPreview ? tv('双击放大预览', 'Nhấp đúp để phóng to xem trước') : undefined}
+        title={canPreview ? tr('canvasAssetNode.doubleClickEnlarge') : undefined}
         onDoubleClick={handleCardDoubleClick}
       >
         <AssetCover
@@ -272,16 +272,16 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
                 className="fc-text-editor nodrag nowheel"
                 value={data.textContent || ''}
                 onChange={handleTextChange}
-                placeholder={tv("输入文本…", "Nhập văn bản…")}
+                placeholder={tr('canvasAssetNode.enterText')}
                 rows={4}
               />
             ) : (
-              <span>{data.textContent || data.label || tv('文本', 'Văn bản')}</span>
+              <span>{data.textContent || data.label || tr('canvasAssetNode.text')}</span>
             )
           ) : data.generating ? (
             <div className="fc-generating">
               <Loader2 size={28} className="fc-spin" />
-              <span>{tv("生成中…", "Đang tạo…")}</span>
+              <span>{tr('canvasAssetNode.generating')}</span>
             </div>
           ) : mediaSrc && data.kind === 'video' && isPlayableVideoUrl(mediaSrc) ? (
             <CanvasAssetVideoPreview src={mediaSrc} onAspect={handleVideoAspect} />
@@ -314,8 +314,8 @@ function CanvasAssetNodeComponent({ id, data, selected }: NodeProps<Node<CanvasA
             <button
               type="button"
               className="fc-asset-expand nodrag nopan nowheel"
-              title={tv("放大预览", "Phóng to xem trước")}
-              aria-label={tv(`放大预览 ${displayName}`, `Phóng to xem trước ${displayName}`)}
+              title={tr('canvasAssetNode.enlarge')}
+              aria-label={tr('canvasAssetNode.enlarge2', { displayName })}
               onClick={handleExpandClick}
               onPointerDown={(event) => event.stopPropagation()}
             >

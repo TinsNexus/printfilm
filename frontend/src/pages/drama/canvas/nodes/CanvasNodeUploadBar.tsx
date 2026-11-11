@@ -14,7 +14,7 @@ import {
   canvasKindToLibraryTypes,
   GlobalAssetPickerModal,
 } from '../../GlobalAssetPickerModal'
-import { tv } from '../../../../i18n/tv'
+import { tr } from '../../../../i18n/translate.ts'
 
 type CanvasNodeUploadBarProps = {
   nodeId: string
@@ -70,7 +70,7 @@ export function CanvasNodeUploadBar({
   const isCharacter = kind === 'character'
   const isAudio = kind === 'audio'
   const hasVoice = Boolean(voiceUrl || voiceLabel)
-  const uploadLabel = isAudio ? tv('上传音频', 'Tải âm thanh lên') : tv('上传图片', 'Tải ảnh lên')
+  const uploadLabel = isAudio ? tr('canvasNodeUploadBar.uploadAudio') : tr('canvasNodeUploadBar.uploadImage')
   const accept = isAudio ? AUDIO_ACCEPT : IMAGE_ACCEPT
   const toolbarBusy = uploading || voiceLoading || bindBusy
 
@@ -82,11 +82,11 @@ export function CanvasNodeUploadBar({
       const assetId = await ensureNodeAsset(nodeId)
       const list = await dramaApi.listAssets(projectId)
       const asset = list.find((a) => a.id === assetId)
-      if (!asset) throw new Error(tv('角色资产不存在', 'Tài sản nhân vật không tồn tại'))
+      if (!asset) throw new Error(tr('canvasNodeUploadBar.characterAssetNotFound'))
       setBindAsset(asset)
       setBindOpen(true)
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : tv('无法打开音色绑定', 'Không mở được phần gắn giọng nói'))
+      setErrorMessage(err instanceof Error ? err.message : tr('canvasNodeUploadBar.couldNotOpenVoiceAssignment'))
     } finally {
       setBindBusy(false)
     }
@@ -102,27 +102,27 @@ export function CanvasNodeUploadBar({
       const okType =
         file.type.startsWith('audio/') || /\.(mp3|wav|m4a|aac|ogg|webm)$/i.test(name)
       if (!okType) {
-        setErrorMessage(tv('请选择音频文件（MP3 / WAV / M4A 等）', 'Vui lòng chọn tệp âm thanh (MP3 / WAV / M4A…)'))
+        setErrorMessage(tr('canvasNodeUploadBar.chooseAudioFileMp3Wav'))
         return
       }
       if (file.size > 30 * 1024 * 1024) {
-        setErrorMessage(tv('音频不能超过 30MB', 'Âm thanh không được vượt quá 30MB'))
+        setErrorMessage(tr('canvasNodeUploadBar.audioMust30MbSmaller'))
         return
       }
     } else {
       if (!file.type.startsWith('image/')) {
-        setErrorMessage(tv('请选择图片文件', 'Vui lòng chọn tệp ảnh'))
+        setErrorMessage(tr('canvasNodeUploadBar.chooseImageFile'))
         return
       }
       if (file.size > 20 * 1024 * 1024) {
-        setErrorMessage(tv('图片不能超过 20MB', 'Ảnh không được vượt quá 20MB'))
+        setErrorMessage(tr('canvasNodeUploadBar.imagesMust20MbSmaller'))
         return
       }
     }
 
     setUploading(true)
     void uploadNodeMedia(nodeId, file)
-      .catch((err) => setErrorMessage(err instanceof Error ? err.message : tv('上传失败', 'Tải lên thất bại')))
+      .catch((err) => setErrorMessage(err instanceof Error ? err.message : tr('canvasNodeUploadBar.uploadFailed')))
       .finally(() => setUploading(false))
   }
 
@@ -135,12 +135,12 @@ export function CanvasNodeUploadBar({
       const assetId = await ensureNodeAsset(nodeId)
       const list = await dramaApi.listAssets(projectId)
       const asset = list.find((a) => a.id === assetId)
-      if (!asset) throw new Error(tv('角色资产不存在', 'Tài sản nhân vật không tồn tại'))
+      if (!asset) throw new Error(tr('canvasNodeUploadBar.characterAssetNotFound'))
       const { character } = await generateAndBindCharacterVoice(projectId, asset)
       // syncNodeFromAsset 内部 markDirty，写入 voiceLabel/voiceUrl 并触发自动保存
       syncNodeFromAsset(nodeId, character)
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : tv('音色生成失败', 'Tạo giọng nói thất bại'))
+      setErrorMessage(err instanceof Error ? err.message : tr('canvasNodeUploadBar.voiceGenerationFailed'))
     } finally {
       setVoiceLoading(false)
     }
@@ -167,7 +167,7 @@ export function CanvasNodeUploadBar({
           onClick={() => fileInputRef.current?.click()}
         >
           {uploading ? <Loader2 size={14} className="fc-spin" /> : <Upload size={14} strokeWidth={1.8} />}
-          {uploading ? tv('上传中…', 'Đang tải lên…') : uploadLabel}
+          {uploading ? tr('canvasNodeUploadBar.uploading') : uploadLabel}
         </button>
         <button
           type="button"
@@ -176,7 +176,7 @@ export function CanvasNodeUploadBar({
           onClick={() => setPickerOpen(true)}
         >
           <FolderOpen size={14} strokeWidth={1.8} />
-          {tv("从资产库选择", "Chọn từ thư viện tài sản")}
+          {tr('canvasNodeUploadBar.chooseAssetLibrary')}
         </button>
         {DRAMA_VOICE_BINDING_ENABLED && isCharacter ? (
           hasVoice && voiceUrl ? (
@@ -193,10 +193,10 @@ export function CanvasNodeUploadBar({
                 className="fc-toolbar-chip"
                 disabled={toolbarBusy}
                 onClick={() => void openVoiceBindModal()}
-                title={tv("更换或解绑音色；也可改连其他音频节点", "Đổi hoặc gỡ giọng nói; cũng có thể nối sang nút âm thanh khác")}
+                title={tr('canvasNodeUploadBar.changeUnassignVoiceConnectDifferent')}
               >
                 {bindBusy ? <Loader2 size={14} className="fc-spin" /> : <AudioLines size={14} strokeWidth={1.8} />}
-                {bindBusy ? tv('打开中…', 'Đang mở…') : tv('更换', 'Đổi')}
+                {bindBusy ? tr('canvasNodeUploadBar.opening') : tr('canvasNodeUploadBar.change')}
               </button>
             </>
           ) : (
@@ -206,24 +206,24 @@ export function CanvasNodeUploadBar({
                 className="fc-toolbar-chip"
                 disabled={toolbarBusy}
                 onClick={() => void handleGenerateVoice()}
-                title={tv("按角色设定 AI 生成音色", "AI tạo giọng nói theo thiết lập nhân vật")}
+                title={tr('canvasNodeUploadBar.generateVoiceAiCharacterProfile')}
               >
                 {voiceLoading ? (
                   <Loader2 size={14} className="fc-spin" />
                 ) : (
                   <AudioLines size={14} strokeWidth={1.8} />
                 )}
-                {voiceLoading ? tv('生成中…', 'Đang tạo…') : tv('生成音色', 'Tạo giọng nói')}
+                {voiceLoading ? tr('canvasNodeUploadBar.generating') : tr('canvasNodeUploadBar.generateVoice')}
               </button>}
               <button
                 type="button"
                 className="fc-toolbar-chip"
                 disabled={toolbarBusy}
                 onClick={() => void openVoiceBindModal()}
-                title={tv("上传/选择音色，或把「音频」节点连到本角色", "Tải lên/chọn giọng nói, hoặc nối nút “Âm thanh” vào nhân vật này")}
+                title={tr('canvasNodeUploadBar.uploadChooseVoiceConnectAudio')}
               >
                 {bindBusy ? <Loader2 size={14} className="fc-spin" /> : null}
-                {bindBusy ? tv('打开中…', 'Đang mở…') : tv('绑定音色', 'Gắn giọng nói')}
+                {bindBusy ? tr('canvasNodeUploadBar.opening') : tr('canvasNodeUploadBar.assignVoice')}
               </button>
             </>
           )
@@ -236,8 +236,8 @@ export function CanvasNodeUploadBar({
         projectId={projectId}
         defaultTab="all"
         allowedTypes={canvasKindToLibraryTypes(kind)}
-        title={tv("从资产库选择", "Chọn từ thư viện tài sản")}
-        confirmLabel={tv("确认使用", "Xác nhận sử dụng")}
+        title={tr('canvasNodeUploadBar.chooseAssetLibrary')}
+        confirmLabel={tr('canvasNodeUploadBar.useSelected')}
         onPick={async (source) => {
           await applyLibraryMediaToNode(nodeId, source)
         }}

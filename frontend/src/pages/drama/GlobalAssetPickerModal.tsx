@@ -10,7 +10,7 @@ import { teamsApi } from '../../api/teams'
 import { projectTeam } from '../../features/teams/editLocks'
 import { TeamPagination } from '../../features/teams/TeamPagination'
 import './drama.css'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 
 export type GlobalAssetTabKey = 'character' | 'scene' | 'prop' | 'voice' | 'all'
 
@@ -31,10 +31,10 @@ type Props = {
 }
 
 const TABS: Array<{ key: GlobalAssetTabKey; label: string }> = [
-  { key: 'character', label: tv('角色', 'Nhân vật') },
-  { key: 'scene', label: tv('场景', 'Bối cảnh') },
-  { key: 'prop', label: tv('道具', 'Đạo cụ') },
-  ...(DRAMA_VOICE_BINDING_ENABLED ? [{ key: 'voice' as const, label: tv('音色', 'Giọng nói') }] : []),
+  { key: 'character', label: tr('globalAssetPickerModal.character') },
+  { key: 'scene', label: tr('globalAssetPickerModal.scene') },
+  { key: 'prop', label: tr('globalAssetPickerModal.prop') },
+  ...(DRAMA_VOICE_BINDING_ENABLED ? [{ key: 'voice' as const, label: tr('globalAssetPickerModal.voice') }] : []),
 ]
 
 // 资产是否匹配 Tab
@@ -60,8 +60,8 @@ export function GlobalAssetPickerModal({
   projectId,
   defaultTab = 'character',
   allowedTypes,
-  title = tv('从资产库选择', 'Chọn từ thư viện tài sản'),
-  confirmLabel = tv('确认使用', 'Xác nhận sử dụng'),
+  title = tr('globalAssetPickerModal.chooseAssetLibrary'),
+  confirmLabel = tr('globalAssetPickerModal.useSelected'),
   onPick,
 }: Props) {
   /*
@@ -108,7 +108,7 @@ export function GlobalAssetPickerModal({
         const kind = allowedTypesKey && !allowedTypesKey.includes(',') ? allowedTypesKey : tab === 'all' ? undefined : tab
         const result = await teamsApi.assets(String(teamId), { page, page_size: 12, q: query, type: kind }, controller.signal)
         if (active) { setAllAssets(result.items.map((asset) => ({ id: Number(asset.id), name: asset.name, type: asset.type, asset_type: asset.type === 'voice' ? 'audio' : 'image', url: asset.url, cover: asset.cover, project_id: Number(asset.projectId) }))); setTotal(result.meta.total) }
-      }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : tv('资产库加载失败', 'Tải thư viện tài sản thất bại')) }).finally(() => { if (active) setLoading(false) })
+      }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : tr('globalAssetPickerModal.failedLoadAssetLibrary')) }).finally(() => { if (active) setLoading(false) })
     }, 180)
     return () => { active = false; controller.abort(); window.clearTimeout(timer) }
   }, [open, projectId, query, tab, page, allowedTypesKey])
@@ -141,7 +141,7 @@ export function GlobalAssetPickerModal({
       await onPick(picked)
       onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : tv('应用失败', 'Áp dụng thất bại'))
+      setError(err instanceof Error ? err.message : tr('globalAssetPickerModal.applyFailed'))
     } finally {
       setBusy(false)
     }
@@ -160,7 +160,7 @@ export function GlobalAssetPickerModal({
       footer={
         <>
           <button type="button" className="pf-btn" onClick={onClose} disabled={busy}>
-            {tv("取消", "Hủy")}
+            {tr('globalAssetPickerModal.cancel')}
           </button>
           <button
             type="button"
@@ -168,33 +168,33 @@ export function GlobalAssetPickerModal({
             disabled={!selectedId || busy}
             onClick={() => void handleConfirm()}
           >
-            {busy ? tv('处理中…', 'Đang xử lý…') : confirmLabel}
+            {busy ? tr('globalAssetPickerModal.processing') : confirmLabel}
           </button>
         </>
       }
     >
-      <AssetBanner>{tv("展示当前空间内的可用资产，跨项目复用会复制到当前项目。", "Hiển thị tài sản dùng được trong không gian hiện tại, dùng lại giữa các dự án sẽ sao chép vào dự án hiện tại.")}</AssetBanner>
+      <AssetBanner>{tr('globalAssetPickerModal.showsAssetsAvailableWorkspaceReusing')}</AssetBanner>
       <div className="pf-library-toolbar">
         {showTabs && <AssetTypeFilter options={TABS.map((item) => ({ value: item.key, label: item.label }))} value={tab} onChange={(value) => { setTab(value); setPage(1); setSelectedId(null) }} />}
-        <AssetSearch value={query} onChange={(value) => { setQuery(value); setPage(1); setSelectedId(null) }} placeholder={tv("搜索名称或项目 ID", "Tìm tên hoặc ID dự án")} />
+        <AssetSearch value={query} onChange={(value) => { setQuery(value); setPage(1); setSelectedId(null) }} placeholder={tr('globalAssetPickerModal.searchNameProjectId')} />
       </div>
 
       {error ? <BillingErrorNotice message={error} className="drama-error" /> : null}
-      {loading ? <p className="drama-muted">{tv("加载资产库…", "Đang tải thư viện tài sản…")}</p> : null}
+      {loading ? <p className="drama-muted">{tr('globalAssetPickerModal.loadingAssetLibrary')}</p> : null}
 
       <AssetGrid picker>
         {filtered.map((asset) => <AssetCard
           key={asset.id}
           asset={asset}
           selected={selectedId === asset.id}
-          subtitle={asset.project_id === projectId ? tv('本项目', 'Dự án này') : tv(`项目 #${asset.project_id}`, `Dự án #${asset.project_id}`)}
-          footer={asset.type === 'voice' ? asset.url ? tv('已合成音色', 'Giọng đã tổng hợp') : tv('未合成音色', 'Giọng chưa tổng hợp') : tv('可复制到当前项目', 'Có thể sao chép vào dự án hiện tại')}
+          subtitle={asset.project_id === projectId ? tr('globalAssetPickerModal.project') : tr('globalAssetPickerModal.project2', { project_id: asset.project_id })}
+          footer={asset.type === 'voice' ? asset.url ? tr('globalAssetPickerModal.voiceSynthesized') : tr('globalAssetPickerModal.voiceNotSynthesized') : tr('globalAssetPickerModal.canCopiedProject')}
           onOpen={() => setSelectedId(asset.id)}
         />)}
       </AssetGrid>
       <TeamPagination page={page} total={total} onChange={setPage} />
       {!loading && filtered.length === 0 ? (
-        <AssetEmpty>{tv("当前分类下暂无可用媒体，请先在项目中生成资产。", "Danh mục hiện tại chưa có phương tiện dùng được, vui lòng tạo tài sản trong dự án trước.")}</AssetEmpty>
+        <AssetEmpty>{tr('globalAssetPickerModal.noMediaCategoryYetGenerate')}</AssetEmpty>
       ) : null}
     </Modal>
   )
@@ -206,7 +206,7 @@ export async function importGlobalAssetToProject(
   source: DramaAsset,
 ): Promise<DramaAsset> {
   if (!source.url && !source.cover) {
-    throw new Error(tv('所选资产没有可用图片', 'Tài sản đã chọn không có ảnh dùng được'))
+    throw new Error(tr('globalAssetPickerModal.selectedAssetHasNoUsable'))
   }
   return dramaApi.copyAsset(source, projectId)
 }
