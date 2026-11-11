@@ -1,3 +1,4 @@
+import { enAdminTaskObservability } from "./en/adminTaskObservability.ts";
 import { enAdminWalletMigration } from "./en/adminWalletMigration.ts";
 import { enAdminAppleSettings } from "./en/adminAppleSettings.ts";
 import { enAdminMediaPrices } from "./en/adminMediaPrices.ts";
@@ -40,6 +41,7 @@ import { enAdminStatus } from "./en/adminStatus.ts";
 import { enShell } from "./en/shell.ts";
 
 export const en = {
+  ...enAdminTaskObservability,
   ...enAdminStatus,
   ...enAdminWalletMigration,
   ...enAdminAppleSettings,

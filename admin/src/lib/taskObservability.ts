@@ -1,4 +1,5 @@
 import type { AdminTaskEvent, AdminTaskRow } from "../api/types/tasks";
+import { tr } from "../i18n/translate.ts";
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
 const SENSITIVE_KEY = /(?:authorization|cookie|apikey|accesstoken|refreshtoken|securitytoken|password|passwd|secret|signature|credential|privatekey)|^(?:(?:api|x)?token|sig|sign|auth|sessionkey)$/i;
@@ -64,11 +65,11 @@ export function shortEndpoint(endpoint: string): string {
 }
 
 export function formatTaskDuration(milliseconds: number | null | undefined): string {
-  if (milliseconds == null || !Number.isFinite(milliseconds)) return "Chưa ghi nhận";
+  if (milliseconds == null || !Number.isFinite(milliseconds)) return tr("taskObs.notRecorded");
   const seconds = Math.max(0, Math.floor(milliseconds / 1000));
-  if (seconds < 60) return `${seconds}giây`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}phút${seconds % 60}giây`;
-  return `${Math.floor(seconds / 3600)}giờ${Math.floor((seconds % 3600) / 60)}phút`;
+  if (seconds < 60) return tr("taskObs.durSeconds", { s: seconds });
+  if (seconds < 3600) return tr("taskObs.durMinutes", { m: Math.floor(seconds / 60), s: seconds % 60 });
+  return tr("taskObs.durHours", { h: Math.floor(seconds / 3600), m: Math.floor((seconds % 3600) / 60) });
 }
 
 function timestamp(value: string | null | undefined): number | null {
@@ -92,9 +93,9 @@ export function taskDurations(task: Pick<AdminTaskRow, "status" | "created_at" |
 
 export function taskBilling(task: Pick<AdminTaskRow, "billing_status" | "billing_estimate_fen" | "billing_charged_fen" | "billing_refunded_fen">) {
   const status = task.billing_status;
-  const labels: Record<string, string> = { none: "Chưa giữ trước · chưa quyết toán", frozen: "Đã đóng băng · chưa quyết toán", settled: "Đã quyết toán", skipped: "Đã bỏ qua giữ trước · chưa quyết toán" };
+  const labels: Record<string, string> = { none: tr("taskObs.billing.none"), frozen: tr("taskObs.billing.frozen"), settled: tr("taskObs.billing.settled"), skipped: tr("taskObs.billing.skipped") };
   return {
-    label: status ? labels[status] || status : "Chưa ghi nhận trạng thái tính phí",
+    label: status ? labels[status] || status : tr("taskObs.billing.unknown"),
     settled: status === "settled",
     estimateFen: task.billing_estimate_fen,
     frozenFen: status === "frozen" ? task.billing_estimate_fen : status ? 0 : undefined,
@@ -157,19 +158,23 @@ export function upstreamRecords(events: AdminTaskEvent[] | undefined): UpstreamR
   }).sort((a, b) => a.id - b.id);
 }
 
+// getter：读取时按当前语言取文案
 export const UPSTREAM_PHASE_LABELS: Record<UpstreamPhase, string> = {
-  started: "Bắt đầu yêu cầu", accepted: "Phản hồi upstream", failed: "Yêu cầu thất bại", poll: "Kết quả truy vấn",
-  simulated: "Mô phỏng cục bộ · đã ghi lại tham số",
+  get started() { return tr("taskObs.phase.started"); },
+  get accepted() { return tr("taskObs.phase.accepted"); },
+  get failed() { return tr("taskObs.phase.failed"); },
+  get poll() { return tr("taskObs.phase.poll"); },
+  get simulated() { return tr("taskObs.phase.simulated"); },
 };
 
 export function upstreamStateLabel(status: string): string {
   const labels: Record<string, string> = {
-    pending: "Upstream xếp hàng", queued: "Upstream xếp hàng", submitted: "Upstream xếp hàng", waiting: "Upstream xếp hàng",
-    running: "Upstream đang tạo", processing: "Upstream đang tạo", generating: "Upstream đang tạo", in_progress: "Upstream đang tạo",
-    succeeded: "Upstream hoàn tất", success: "Upstream hoàn tất", completed: "Upstream hoàn tất", done: "Upstream hoàn tất", finished: "Upstream hoàn tất",
-    failed: "Upstream thất bại", error: "Upstream thất bại", failure: "Upstream thất bại", cancelled: "Upstream đã hủy", canceled: "Upstream đã hủy",
+    pending: tr("taskObs.state.queued"), queued: tr("taskObs.state.queued"), submitted: tr("taskObs.state.queued"), waiting: tr("taskObs.state.queued"),
+    running: tr("taskObs.state.running"), processing: tr("taskObs.state.running"), generating: tr("taskObs.state.running"), in_progress: tr("taskObs.state.running"),
+    succeeded: tr("taskObs.state.done"), success: tr("taskObs.state.done"), completed: tr("taskObs.state.done"), done: tr("taskObs.state.done"), finished: tr("taskObs.state.done"),
+    failed: tr("taskObs.state.failed"), error: tr("taskObs.state.failed"), failure: tr("taskObs.state.failed"), cancelled: tr("taskObs.state.cancelled"), canceled: tr("taskObs.state.cancelled"),
   };
-  return labels[status.toLowerCase()] || `Trạng thái upstream: ${redactTaskText(status)}`;
+  return labels[status.toLowerCase()] || tr("taskObs.upstreamStatus", { status: redactTaskText(status) });
 }
 
 export function groupUpstreamRecords(records: UpstreamRecord[]) {
@@ -216,6 +221,6 @@ export function taskUpstream(task: Pick<AdminTaskRow, "events" | "upstream_event
     modelFromRequest: Boolean(modelRecord),
     provider: providerRecord?.provider || textField(providerStep?.provider_name),
     providerTaskId,
-    phase: latest?.upstreamStatus ? upstreamStateLabel(latest.upstreamStatus) : latest ? UPSTREAM_PHASE_LABELS[latest.phase] : providerTaskId ? "Đã có tác vụ upstream · chưa ghi nhận HTTP" : "Chưa có bản ghi yêu cầu upstream",
+    phase: latest?.upstreamStatus ? upstreamStateLabel(latest.upstreamStatus) : latest ? UPSTREAM_PHASE_LABELS[latest.phase] : providerTaskId ? tr("taskObs.hasTaskNoHttp") : tr("taskObs.noRequests"),
   };
 }
