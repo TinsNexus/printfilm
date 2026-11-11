@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository. 内容与 CLAUDE.md 保持一致，修改时请两边同步。
 
 ## 项目概览
 
@@ -8,7 +8,7 @@ PRINTFILM（仓库目录 `ai_movie`）：模板驱动的 AI 短视频（科普 k
 
 - **科普短视频**：主题/口播 → 模板拆镜 → 分镜图 →（可选）视频 → 旁白 → FFmpeg 合成；状态机 `SCRIPTING → IMAGING → VIDEOING/AUDIOING → COMPOSING → DONE`
 - **漫剧 drama**：项目 → 剧本摘要/分集 → 资产库（角色/场景/道具/音色）→ 分集分镜 → React Flow 画布
-- 另有工具中心（t2i/i2p/t2v 等）、开放 API（`/api/v1`）、管理后台、可选钱包计费（易支付）
+- 另有图片/视频/音频独立生成入口、短剧 Skills 站外链接、管理后台、可选钱包计费（易支付）
 
 三条独立进程 + 两个容器中间件：FastAPI(:8000)、用户端 Vite(:5173)、管理端 Vite(:5174)、Postgres(:15432)、Redis(:16379)。技术栈：Python 3.12 / FastAPI / SQLAlchemy(asyncpg) / React 19 / TS / Vite 8。需要本机安装 FFmpeg。
 
@@ -43,14 +43,14 @@ pytest tests/test_x.py::test_name       # 单测
 
 ### 统一任务平台（核心，易误判）
 
-代码里没有独立 worker 进程：Celery 仅是遗留依赖（`USE_CELERY` 代码已不读取，`workers/` 目录不存在）。实际运行时是 **随 FastAPI 启动的进程内三件套**（`app/services/tasks/`）：
+代码里没有独立 worker 进程，也不依赖 Celery（`USE_CELERY` 等旧配置已移除，`workers/` 目录不存在）。实际运行时是 **随 FastAPI 启动的进程内三件套**（`app/services/tasks/`）：
 
 - `scheduler.py`：定时租约到期任务（pending→leased→running），受全站槽位 `TASK_RUNTIME_MAX_CONCURRENCY` 与单用户槽位 `TASK_USER_MAX_CONCURRENCY` 限制；含孤儿任务回收
 - `executor.py`：执行 handler
 - `poller.py`：NIO 式 Selector，集中非阻塞轮询所有 `awaiting_poll` 的上游任务（信号量 `TASK_POLL_MAX_CONCURRENCY`），完成后触发计费结算
 - `runtime.py` + watchdog：心跳过期自动软重启调度/轮询循环
 
-`TaskRun` 状态与 steps/events/targets 见 `models_tasks.py`；**新任务类型必须在 `tasks/handlers.py` 的 `HANDLERS` 注册表登记 `(domain, task_type)`**（kepu/drama/api/studio/tools 五个 domain）。部分类型注册为 `_noop_ephemeral`——这些在创建请求内联执行，TaskRun 仅用于计费/留痕。管理端任务中心 `/queues` 直接读这些表。
+`TaskRun` 状态与 steps/events/targets 见 `models_tasks.py`；**新任务类型必须在 `tasks/handlers.py` 的 `HANDLERS` 注册表登记 `(domain, task_type)`**（kepu/drama/studio/tools 四个 domain）。部分类型注册为 `_noop_ephemeral`——这些在创建请求内联执行，TaskRun 仅用于计费/留痕。管理端任务中心 `/queues` 直接读这些表。
 
 ### 科普流水线与分阶段计费共用同一就绪判定
 
@@ -62,9 +62,9 @@ pytest tests/test_x.py::test_name       # 单测
 
 ### 模型路由：上游被锁定为 TokenFree
 
-开源版**只允许 TokenFree New API 一个上游**（OpenAI 兼容 `https://www.tokenfree.com/v1`，文本与图/视频共用），由 `services/tokenfree_gateway.py` 强制（渠道 Base URL/协议不可改）。Key 与模型在**管理后台「系统设置 → 模型」**配置，存 `system_model_channels` / `app_settings` 表；启动/保存后经 `model_settings.py` 生成 overlay，`config.get_settings()`（lru_cache）以 `model_copy(update=overlay)` 叠加到 env 配置之上——所以运行时配置以 DB overlay 优先，`.env` 仅首次导入。逻辑模型→渠道绑定（priority/weight/failover）解析在 `logical_model_router.py`。无 Key 联调设 `ARK_MOCK=true` 走本地 mock 素材。
+默认上游是 **TokenFree New API**（OpenAI 兼容 `https://www.tokenfree.com/v1`，文本与图/视频共用），由 `services/tokenfree_gateway.py` 强制（渠道 Base URL/协议不可改）；后台可一键切到 9Router（`services/nine_router/`）或 PiAPI（`services/piapi/`，图/视频走统一任务接口，模型见 `docs/MEDIA_MODEL_STRATEGIES.md`）。Key 与模型在**管理后台「系统设置 → 模型」**配置，存 `system_model_channels` / `app_settings` 表；启动/保存后经 `model_settings.py` 生成 overlay，`config.get_settings()`（lru_cache）以 `model_copy(update=overlay)` 叠加到 env 配置之上——所以运行时配置以 DB overlay 优先，`.env` 仅首次导入。逻辑模型→渠道绑定（priority/weight/failover）解析在 `logical_model_router.py`。无 Key 联调设 `ARK_MOCK=true` 走本地 mock 素材。
 
-文本 `llm_client.py`；图/视频走 `ark.py` + `tokenfree_image.py` / `tokenfree_video.py`；配音豆包 openspeech（`VOLC_TTS_*`，与方舟 Key 不同），未配则回退 edge-tts。
+文本 `llm_client.py`；图/视频走 `ark.py` + `tokenfree_image.py` / `tokenfree_video.py`；配音走 TokenFree TTS，失败再回退 edge-tts。
 
 ### 计费：每个 TaskRun 走「预扣 → 用量行 → 结算」
 
@@ -73,8 +73,9 @@ pytest tests/test_x.py::test_name       # 单测
 ### 数据层与"迁移"方式
 
 - 异步引擎 asyncpg（`AsyncSessionLocal`，业务全异步）；同步引擎 psycopg2 仅少量场景
-- ORM 按域拆文件：`models.py`（users/projects/shots/templates/计费/订单/tool_runs 等）、`models_drama.py`、`models_tasks.py`、`models_api.py`（API Key）、`models_agent.py`（导演 Skill）、`models_settings.py`
+- ORM 按域拆文件：`models.py`（users/projects/shots/templates/计费/订单/tool_runs 等）、`models_drama.py`、`models_tasks.py`、`models_agent.py`（导演 Skill）、`models_settings.py`
 - **没有 Alemantic 类迁移工具**：启动时 `init_db()` 做 `create_all`，新增列必须手写进 `main.py` 的 `_apply_schema_patches()`（只允许 additive 的 PG DDL；conftest 里的测试 schema 也要同步）。线上建议 uvicorn 单 worker 以规避建表竞态
+- **发布前先迁移并检查**：2026-10-24 因 `DATABASE_BOOTSTRAP_ENABLED=false` 且漏跑媒体迁移，分集查询缺少 `task_runs.billing_snapshot` 返回 500。后续发布必须先备份目标库，运行 `backend/scripts/prepare_media_schema.py`，再加 `--check` 只读验证；任一步非零就停止发布，成功后才重启 API/任务执行节点，并用已登录业务接口冒烟。未发布新价格也必须迁移，`/api/health` 成功不能代替结构或业务检查。详见 `docs/MEDIA_MODEL_STRATEGIES.md` 与本机 `docs/DEPLOY.md`。
 - 启动还会执行：模板 seed（只插缺失，不覆盖后台改动）、内置 Skill seed、`ADMIN_BOOTSTRAP_EMAILS` 提权（只提升已注册用户，不造号，需重启）
 
 ### 媒体与 OSS
@@ -83,8 +84,8 @@ pytest tests/test_x.py::test_name       # 单测
 
 ### 前端两个应用的差异
 
-- `frontend/`：**vite 未配 proxy**。API base 规则：未设 `VITE_API_BASE` → `当前主机:8000`（开发）；设为空字符串 → 同源（生产 nginx）。请求统一走 `src/api.ts` 与 `src/api/*`。样式体系是 `styles/printfilm.css` + `pf-*` 语义 class（**不要**在用户端引 Tailwind）。含中/英/越 i18n（见 `docs/I18N.md`；改文案后跑 `cd frontend && npm run i18n:check`）
-- `admin/`：Tailwind v4 + Radix/shadcn 风格组件，`@` → `src`，vite 代理 `/api`、`/static` 到 :8000；用 `cn()`；列表必须服务端分页（`page/page_size/meta.total`，复用 `PaginationBar`）；同样有中/英/越 i18n（`admin/src/i18n`，改文案后跑 `cd admin && npm run i18n:check`，见 `docs/I18N.md`）
+- `frontend/`：**vite 未配 proxy**。API base 规则：未设 `VITE_API_BASE` → `当前主机:8000`（开发）；设为空字符串 → 同源（生产 nginx）。请求统一走 `src/api.ts` 与 `src/api/*`。样式体系是 `styles/printfilm.css` + `pf-*` 语义 class（**不要**在用户端引 Tailwind）。含中/英 i18n
+- `admin/`：Tailwind v4 + Radix/shadcn 风格组件，`@` → `src`，vite 代理 `/api`、`/static` 到 :8000；用 `cn()`；列表必须服务端分页（`page/page_size/meta.total`，复用 `PaginationBar`）
 
 两端公共逻辑放 `lib/`（用户端已有大量 `drama*` 纯函数 helper，新功能先搜再写），页面只做编排。
 
