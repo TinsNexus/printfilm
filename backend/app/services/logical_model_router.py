@@ -286,12 +286,24 @@ def _auto_protocol(channel: SystemModelChannel, upstream_model: str) -> str:
 
 def _default_model_id(defaults: DefaultModels, capability: LogicalModelCapability) -> str:
     if capability == "text":
-        return defaults.text_model
-    if capability == "image":
-        return defaults.image_model
-    if capability == "video":
-        return defaults.video_model
-    return defaults.audio_model
+        model_id = defaults.text_model
+    elif capability == "image":
+        model_id = defaults.image_model
+    elif capability == "video":
+        model_id = defaults.video_model
+    else:
+        model_id = defaults.audio_model
+    return _gateway_default(capability, model_id)
+
+
+def _gateway_default(capability: LogicalModelCapability, model_id: str) -> str:
+    """缺省模型属于其他上游时（如切到 PiAPI 后仍是 kimi-k2.6），改用当前上游的第一项预设；当前上游无预设则保持原值。"""
+    from app.services.media_model_presets import gateway_supports_model, preset_ids
+
+    if not model_id or gateway_supports_model(model_id):
+        return model_id
+    supported = preset_ids(capability)
+    return supported[0] if supported else model_id
 
 
 def _capability_aliases(capability: LogicalModelCapability) -> dict[str, str]:

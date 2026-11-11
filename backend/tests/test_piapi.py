@@ -269,3 +269,18 @@ def test_switched_gateway_error_is_not_reported_as_disabled():
     with patch(ON, return_value=True):
         with pytest.raises(ValueError, match="当前上游网关不支持 seedream-5.0-pro"):
             resolve_upstream_model("image", "seedream-5.0-pro")
+
+
+def test_default_model_follows_switched_gateway():
+    """切到 PiAPI 后缺省文本模型仍是 kimi-k2.6：运行时改用 PiAPI 第一项预设，不报“已停用”。"""
+    from app.schemas_routing import DefaultModels
+    from app.services.logical_model_router import _default_model_id
+
+    defaults = DefaultModels(text_model="kimi-k2.6", image_model="seedream-5.0-pro", video_model="seedance-2.5", audio_model="qwen-tts-2025-05-22")
+    assert _default_model_id(defaults, "text") == "kimi-k2.6"
+    with patch(ON, return_value=True):
+        assert _default_model_id(defaults, "text") == "gpt-4o"
+        assert _default_model_id(defaults, "image") == "flux1-dev"
+        assert _default_model_id(defaults, "video") == "seedance-2.5"
+        # PiAPI 无配音预设：保持原值，由配音链路自行回退
+        assert _default_model_id(defaults, "audio") == "qwen-tts-2025-05-22"
