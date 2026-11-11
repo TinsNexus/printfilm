@@ -45,7 +45,8 @@ function readOpenPreference(): boolean {
 
 // 任务类型展示
 function jobTypeLabel(job: DramaGenJob): string {
-  if (job.kind === 'video') return job.subtype || tr('dramaGenQueuePanel.shotVideo')
+  // 视频任务 subtype 为稳定 id，显示时再翻译
+  if (job.kind === 'video') return job.subtype === 'canvas_video' ? tr('dramaGenQueue.canvasVideo') : tr('dramaGenQueuePanel.shotVideo')
   return IMAGE_SUBTYPE_LABEL[job.subtype] || job.subtype || tr('dramaGenQueuePanel.image')
 }
 
@@ -98,7 +99,7 @@ export function DramaGenQueuePanel() {
 
   // 有进行中的分镜视频时后台轮询，离开编辑页也不中断
   useEffect(() => {
-    if (active.some((job) => job.kind === 'video' && job.subtype === tr('dramaGenQueue.shotVideo2'))) {
+    if (active.some((job) => job.kind === 'video' && job.subtype === 'shot_video')) {
       ensureEpisodeVideoStatusPoll()
     }
   }, [active])

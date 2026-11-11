@@ -19,6 +19,7 @@ export type DramaGenJob = {
   taskId?: number
   title: string
   /** 子类型文案：角色 / 场景 / 分镜视频 等 */
+  /** 视频：'shot_video' | 'canvas_video'（稳定 id，勿存翻译文字）；图片：资产类型 */
   subtype: string
   status: DramaGenJobStatus
   message?: string
@@ -254,7 +255,7 @@ export function syncAssetVideoJobToUnified(input: {
     projectId: input.projectId,
     targetId: input.assetId,
     title: input.assetName || tr('dramaGenQueue.video', { assetId: input.assetId }),
-    subtype: tr('dramaGenQueue.canvasVideo'),
+    subtype: 'canvas_video',
     status: input.status,
     error: input.error,
     message:
@@ -372,7 +373,7 @@ export function syncEpisodeVideoJobs(input: {
             episodeId: input.episodeId,
             taskId: activeTask.id,
             title: resolveVideoJobTitle(existing, input.episodeName, fragLabel(item.fragment_id)),
-            subtype: tr('dramaGenQueue.shotVideo2'),
+            subtype: 'shot_video',
             status: activeTask.status === 'pending' || activeTask.status === 'leased' ? 'queued' : 'running',
             message:
               activeTask.current_step_key === 'assets'
@@ -437,7 +438,7 @@ export function syncEpisodeVideoJobs(input: {
         episodeId: input.episodeId,
         taskId: boundTaskId,
         title: resolveVideoJobTitle(existing, input.episodeName, fragLabel(item.fragment_id)),
-        subtype: tr('dramaGenQueue.shotVideo2'),
+        subtype: 'shot_video',
         status,
         message: status === 'queued' ? item.message || tr('dramaGenQueue.queued') : messageFromTask,
         error: errText,
@@ -516,7 +517,7 @@ async function pollActiveEpisodeVideoJobs(): Promise<void> {
   const active = jobs.filter(
     (job) =>
       job.kind === 'video' &&
-      job.subtype === tr('dramaGenQueue.shotVideo2') &&
+      job.subtype === 'shot_video' &&
       (job.status === 'queued' || job.status === 'running') &&
       typeof job.episodeId === 'number',
   )
@@ -541,7 +542,7 @@ async function pollActiveEpisodeVideoJobs(): Promise<void> {
         const tracked = jobs.filter(
           (job) =>
             job.kind === 'video' &&
-            job.subtype === tr('dramaGenQueue.shotVideo2') &&
+            job.subtype === 'shot_video' &&
             job.episodeId === episodeId,
         )
         const trackedIds = new Set(tracked.map((job) => job.targetId))

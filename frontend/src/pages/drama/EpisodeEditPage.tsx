@@ -1419,7 +1419,7 @@ function EpisodeEditInner() {
       episodeId: eid || undefined,
       taskId: fromQueue?.taskId,
       title: fromQueue?.title || title,
-      subtype: tr('episodeEditPage.shotVideo'),
+      subtype: 'shot_video',
       status: 'failed',
       error: fromQueue?.error || gen.error || tr('episodeEditPage.generationFailed'),
       createdAt: fromQueue?.createdAt || Date.now(),
