@@ -10,6 +10,7 @@ import {
 import { AdminEntityLink } from "@/components/admin/AdminEntityLink";
 import { Button } from "@/components/ui/button";
 import { formatDramaGenerationStatus } from "@/lib/dramaLabels";
+import { tr } from "../../i18n/translate.ts";
 
 /** 漫剧分镜详情 */
 export function DramaFragmentDetailPage() {
@@ -28,14 +29,14 @@ export function DramaFragmentDetailPage() {
     void api<AdminDramaFragment>(`/api/admin/drama-fragments/${id}`)
       .then(setDetail)
       .catch((err) => {
-        toast.error(err instanceof Error ? err.message : "Tải thất bại");
+        toast.error(err instanceof Error ? err.message : tr("dramaUi.loadFailed"));
         navigate("/drama-fragments", { replace: true });
       })
       .finally(() => setLoading(false));
   }, [id, navigate]);
 
   if (loading && !detail) {
-    return <div className="admin-detail-page-loading">Đang tải…</div>;
+    return <div className="admin-detail-page-loading">{tr("dramaUi.loading")}</div>;
   }
   if (!detail) return null;
 
@@ -45,25 +46,25 @@ export function DramaFragmentDetailPage() {
         <Button variant="ghost" size="sm" className="admin-detail-back" asChild>
           <Link to="/drama-fragments">
             <ArrowLeft className="h-4 w-4" />
-            Quay lại danh sách phân cảnh
+            {tr("dramaUi.backToShots")}
           </Link>
         </Button>
         <div className="admin-detail-page-heading">
-          <h2 className="admin-detail-page-title">Phân cảnh #{detail.id}</h2>
+          <h2 className="admin-detail-page-title">{tr("dramaUi.shotTitle", { id: detail.id })}</h2>
           <p className="admin-detail-page-sub">
-            Tập {detail.episode_name ?? detail.episode_id} ·{" "}
+            {tr("dramaUi.episodeOf", { name: detail.episode_name ?? detail.episode_id })} ·{" "}
             <AdminEntityLink kind="drama" id={detail.project_id} label={detail.project_title ?? undefined} />
           </p>
         </div>
         <div className="admin-detail-page-actions">
           <Button size="sm" variant="outline" asChild>
-            <Link to={`/drama-episodes/${detail.episode_id}`}>Mở tập</Link>
+            <Link to={`/drama-episodes/${detail.episode_id}`}>{tr("dramaUi.openEpisode")}</Link>
           </Button>
         </div>
       </div>
 
       {(detail.cover || detail.video) ? (
-        <AdminDetailSection title="Xem trước phương tiện">
+        <AdminDetailSection title={tr("dramaUi.secMedia")}>
           <div className="admin-detail-media">
             {detail.video ? (
               <video src={detail.video} controls className="max-w-full" />
@@ -74,36 +75,36 @@ export function DramaFragmentDetailPage() {
         </AdminDetailSection>
       ) : null}
 
-      <AdminDetailSection title="Thông tin cơ bản">
+      <AdminDetailSection title={tr("dramaUi.secBasic")}>
         <AdminDetailMeta
           items={[
-            { label: "Số thứ tự", value: detail.sort_order },
+            { label: tr("dramaUi.order"), value: detail.sort_order },
             {
-              label: "Tập",
+              label: tr("dramaUi.episode"),
               value: (
                 <Link to={`/drama-episodes/${detail.episode_id}`} className="admin-link">
-                  {detail.episode_name ?? `Tập#${detail.episode_id}`}
+                  {detail.episode_name ?? tr("dramaUi.episodeN", { id: detail.episode_id })}
                 </Link>
               ),
             },
             {
-              label: "Dự án",
+              label: tr("dramaUi.project"),
               value: <AdminEntityLink kind="drama" id={detail.project_id} label={detail.project_title ?? undefined} />,
             },
-            { label: "Thời lượng", value: detail.duration_sec != null ? `${detail.duration_sec}s` : "—" },
-            { label: "Trạng thái tạo", value: formatDramaGenerationStatus(detail.generation_status) },
-            { label: "Số tham chiếu tài sản", value: detail.asset_ref_count },
-            { label: "Văn bản kịch bản", value: detail.content || "—", full: true },
+            { label: tr("dramaUi.duration"), value: detail.duration_sec != null ? `${detail.duration_sec}s` : "—" },
+            { label: tr("dramaUi.genStatus"), value: formatDramaGenerationStatus(detail.generation_status) },
+            { label: tr("dramaUi.assetRefCount"), value: detail.asset_ref_count },
+            { label: tr("dramaUi.scriptText"), value: detail.content || "—", full: true },
           ]}
         />
       </AdminDetailSection>
 
       {(detail.asset_ids ?? []).length > 0 ? (
-        <AdminDetailSection title="Tài sản liên quan">
+        <AdminDetailSection title={tr("dramaUi.relatedAssets")}>
           <div className="flex flex-wrap gap-2">
             {(detail.asset_ids ?? []).map((assetId) => (
               <Button key={assetId} size="sm" variant="outline" asChild>
-                <Link to={`/drama-assets/${assetId}`}>Tài sản #{assetId}</Link>
+                <Link to={`/drama-assets/${assetId}`}>{tr("dramaUi.assetN", { id: assetId })}</Link>
               </Button>
             ))}
           </div>
@@ -111,7 +112,7 @@ export function DramaFragmentDetailPage() {
       ) : null}
 
       {detail.params ? (
-        <AdminDetailSection title="Tham số JSON">
+        <AdminDetailSection title={tr("dramaUi.jsonParams")}>
           <pre className="admin-json-preview">{JSON.stringify(detail.params, null, 2)}</pre>
         </AdminDetailSection>
       ) : null}

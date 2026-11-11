@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { dramaAssetTypeLabel, formatDramaGenerationStatus } from "@/lib/dramaLabels";
 import { taskStatusLabel, taskTypeLabel } from "@/lib/statusLabels";
 import { points } from "@/lib/points";
+import { tr } from "../../i18n/translate.ts";
 
 const TABS = ["overview", "episodes", "assets", "tasks"] as const;
 type TabKey = (typeof TABS)[number];
@@ -45,7 +46,7 @@ export function DramaProjectDetailPage() {
     void api<AdminDramaProject>(`/api/admin/drama-projects/${id}`)
       .then(setDetail)
       .catch((err) => {
-        toast.error(err instanceof Error ? err.message : "Tải thất bại");
+        toast.error(err instanceof Error ? err.message : tr("dramaUi.loadFailed"));
         navigate("/drama-projects", { replace: true });
       })
       .finally(() => setLoading(false));
@@ -61,7 +62,7 @@ export function DramaProjectDetailPage() {
   const usage = detail?.usage;
 
   if (loading && !detail) {
-    return <div className="admin-detail-page-loading">Đang tải…</div>;
+    return <div className="admin-detail-page-loading">{tr("dramaUi.loading")}</div>;
   }
   if (!detail) return null;
 
@@ -71,42 +72,42 @@ export function DramaProjectDetailPage() {
         <Button variant="ghost" size="sm" className="admin-detail-back" asChild>
           <Link to="/drama-projects">
             <ArrowLeft className="h-4 w-4" />
-            Quay lại danh sách
+            {tr("dramaUi.backToList")}
           </Link>
         </Button>
         <div className="admin-detail-page-heading">
           <h2 className="admin-detail-page-title">
-            Phim truyện #{detail.id} · {detail.title}
+            {tr("dramaUi.projectTitle", { id: detail.id, title: detail.title })}
           </h2>
           <p className="admin-detail-page-sub">
             <AdminEntityLink kind="user" id={detail.user_id} label={detail.user_email ?? undefined} />
-            {detail.summary_status ? ` · Tóm tắt ${detail.summary_status}` : ""}
+            {detail.summary_status ? tr("dramaUi.summarySuffix", { status: detail.summary_status }) : ""}
           </p>
         </div>
         <div className="admin-detail-page-actions">
           <Button size="sm" variant="outline" asChild>
-            <Link to={`/drama-assets?project_id=${detail.id}`}>Xem thư viện tài sản</Link>
+            <Link to={`/drama-assets?project_id=${detail.id}`}>{tr("dramaUi.viewAssets")}</Link>
           </Button>
           <Button size="sm" variant="outline" asChild>
-            <Link to={`/drama-episodes?project_id=${detail.id}`}>Xem tập</Link>
+            <Link to={`/drama-episodes?project_id=${detail.id}`}>{tr("dramaUi.viewEpisodes")}</Link>
           </Button>
         </div>
       </div>
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)} className="admin-detail-tabs">
         <TabsList className="admin-detail-tabs-list">
-          <TabsTrigger value="overview">Tổng quan</TabsTrigger>
-          <TabsTrigger value="episodes">Tập ({detail.episode_count ?? 0}）</TabsTrigger>
-          <TabsTrigger value="assets">Tài sản ({detail.asset_count ?? 0}）</TabsTrigger>
-          <TabsTrigger value="tasks">Tác vụ ({(detail.recent_tasks ?? []).length}）</TabsTrigger>
+          <TabsTrigger value="overview">{tr("dramaUi.tabOverview")}</TabsTrigger>
+          <TabsTrigger value="episodes">{tr("dramaUi.tabEpisodes", { n: detail.episode_count ?? 0 })}</TabsTrigger>
+          <TabsTrigger value="assets">{tr("dramaUi.tabAssets", { n: detail.asset_count ?? 0 })}</TabsTrigger>
+          <TabsTrigger value="tasks">{tr("dramaUi.tabTasks", { n: (detail.recent_tasks ?? []).length })}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="admin-detail-tab-panel">
-          <AdminDetailSection title="Thông tin cơ bản">
+          <AdminDetailSection title={tr("dramaUi.secBasic")}>
             <AdminDetailMeta
               items={[
                 {
-                  label: "Người dùng",
+                  label: tr("dramaUi.user"),
                   value: (
                     <AdminEntityLink
                       kind="user"
@@ -115,15 +116,15 @@ export function DramaProjectDetailPage() {
                     />
                   ),
                 },
-                { label: "Mô tả", value: detail.description || "Không có mô tả", full: true },
-                { label: "Trạng thái tóm tắt", value: detail.summary_status || "—" },
-                { label: "Trạng thái tập", value: detail.episode_content_status || "—" },
-                { label: "Trích xuất tài sản", value: detail.assets_seed_status || "—" },
-                { label: "Số tập", value: detail.episode_count ?? 0 },
-                { label: "Số tài sản", value: detail.asset_count ?? 0 },
-                { label: "Số phân cảnh", value: detail.fragment_count ?? 0 },
+                { label: tr("dramaUi.description"), value: detail.description || tr("dramaUi.noDescription"), full: true },
+                { label: tr("dramaUi.summaryStatus"), value: detail.summary_status || "—" },
+                { label: tr("dramaUi.episodeStatus"), value: detail.episode_content_status || "—" },
+                { label: tr("dramaUi.assetExtraction"), value: detail.assets_seed_status || "—" },
+                { label: tr("dramaUi.episodeCount"), value: detail.episode_count ?? 0 },
+                { label: tr("dramaUi.assetCount"), value: detail.asset_count ?? 0 },
+                { label: tr("dramaUi.shotCount"), value: detail.fragment_count ?? 0 },
                 {
-                  label: "Thời gian cập nhật",
+                  label: tr("dramaUi.updatedAt"),
                   value: detail.updated_at ? new Date(detail.updated_at).toLocaleString() : "—",
                   full: true,
                 },
@@ -131,13 +132,13 @@ export function DramaProjectDetailPage() {
             />
           </AdminDetailSection>
 
-          <AdminDetailSection title="Tổng hợp chi phí">
+          <AdminDetailSection title={tr("dramaUi.secCost")}>
             <AdminDetailStatGrid
               items={[
-                { label: "扣费", value: `${points(usage?.charge_fen ?? detail.charge_fen ?? 0)}` },
-                { label: "调用", value: usage?.calls ?? 0 },
+                { label: tr("dramaUi.charge"), value: `${points(usage?.charge_fen ?? detail.charge_fen ?? 0)}` },
+                { label: tr("dramaUi.calls"), value: usage?.calls ?? 0 },
                 {
-                  label: "Ảnh/Video/LLM/TTS",
+                  label: tr("dramaUi.mediaBreakdown"),
                   value: `${usage?.image_gens ?? 0}/${usage?.video_gens ?? 0}/${usage?.llm_calls ?? 0}/${usage?.tts_gens ?? 0}`,
                 },
               ]}
@@ -146,15 +147,15 @@ export function DramaProjectDetailPage() {
         </TabsContent>
 
         <TabsContent value="episodes" className="admin-detail-tab-panel">
-          <AdminDetailSection title={`Danh sách tập (${(detail.episodes ?? []).length}）`}>
+          <AdminDetailSection title={tr("dramaUi.episodeListN", { n: (detail.episodes ?? []).length })}>
             <AdminDetailTableWrap>
               <table>
                 <thead>
                   <tr>
                     <th>ID</th>
-                    <th>Tên</th>
-                    <th>Số phân cảnh</th>
-                    <th>Kế hoạch phân cảnh</th>
+                    <th>{tr("dramaUi.name")}</th>
+                    <th>{tr("dramaUi.shotCount")}</th>
+                    <th>{tr("dramaUi.shotPlan")}</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -162,7 +163,7 @@ export function DramaProjectDetailPage() {
                   {(detail.episodes ?? []).length === 0 ? (
                     <tr>
                       <td colSpan={5} className="!text-center text-[var(--admin-muted)]">
-                        Chưa có tập
+                        {tr("dramaUi.noEpisodes")}
                       </td>
                     </tr>
                   ) : (
@@ -174,7 +175,7 @@ export function DramaProjectDetailPage() {
                         <td>{ep.fragment_plan_status || "—"}</td>
                         <td>
                           <Button size="sm" variant="outline" asChild>
-                            <Link to={`/drama-episodes/${ep.id}`}>Xem</Link>
+                            <Link to={`/drama-episodes/${ep.id}`}>{tr("dramaUi.view")}</Link>
                           </Button>
                         </td>
                       </tr>
@@ -187,16 +188,16 @@ export function DramaProjectDetailPage() {
         </TabsContent>
 
         <TabsContent value="assets" className="admin-detail-tab-panel">
-          <AdminDetailSection title={`Tài sản dự án (${(detail.assets ?? []).length}）`}>
+          <AdminDetailSection title={tr("dramaUi.projectAssetsN", { n: (detail.assets ?? []).length })}>
             <AdminDetailTableWrap>
               <table>
                 <thead>
                   <tr>
                     <th>ID</th>
-                    <th>Loại</th>
-                    <th>Tên</th>
-                    <th>Ảnh bìa</th>
-                    <th>Tạo</th>
+                    <th>{tr("dramaUi.type")}</th>
+                    <th>{tr("dramaUi.name")}</th>
+                    <th>{tr("dramaUi.cover")}</th>
+                    <th>{tr("dramaUi.generation")}</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -204,7 +205,7 @@ export function DramaProjectDetailPage() {
                   {(detail.assets ?? []).length === 0 ? (
                     <tr>
                       <td colSpan={6} className="!text-center text-[var(--admin-muted)]">
-                        Chưa có tài sản
+                        {tr("dramaUi.noAssets")}
                       </td>
                     </tr>
                   ) : (
@@ -213,11 +214,11 @@ export function DramaProjectDetailPage() {
                         <td>{a.id}</td>
                         <td>{dramaAssetTypeLabel(a.type)}</td>
                         <td className="max-w-[160px] truncate">{a.name || "—"}</td>
-                        <td>{a.has_cover ? "Có ảnh chuẩn" : "—"}</td>
+                        <td>{a.has_cover ? tr("dramaUi.hasCover") : "—"}</td>
                         <td>{formatDramaGenerationStatus(a.generation_status)}</td>
                         <td>
                           <Button size="sm" variant="outline" asChild>
-                            <Link to={`/drama-assets/${a.id}`}>Xem</Link>
+                            <Link to={`/drama-assets/${a.id}`}>{tr("dramaUi.view")}</Link>
                           </Button>
                         </td>
                       </tr>
@@ -230,22 +231,22 @@ export function DramaProjectDetailPage() {
         </TabsContent>
 
         <TabsContent value="tasks" className="admin-detail-tab-panel">
-          <AdminDetailSection title={`Tác vụ liên quan (gần nhất ${(detail.recent_tasks ?? []).length}）`}>
+          <AdminDetailSection title={tr("dramaUi.recentTasksN", { n: (detail.recent_tasks ?? []).length })}>
             <AdminDetailTableWrap>
               <table>
                 <thead>
                   <tr>
                     <th>ID</th>
-                    <th>Loại</th>
-                    <th>Trạng thái</th>
-                    <th>Đã trừ / ước tính</th>
+                    <th>{tr("dramaUi.type")}</th>
+                    <th>{tr("dramaUi.status")}</th>
+                    <th>{tr("dramaUi.chargedEstimate")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(detail.recent_tasks ?? []).length === 0 ? (
                     <tr>
                       <td colSpan={4} className="!text-center text-[var(--admin-muted)]">
-                        Chưa có tác vụ
+                        {tr("dramaUi.noTasks")}
                       </td>
                     </tr>
                   ) : (

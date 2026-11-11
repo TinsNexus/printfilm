@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page";
 import { points } from "@/lib/points";
+import { tr } from "../i18n/translate.ts";
 
 type ListRes = { items: AdminDramaProject[]; meta: PageMeta };
 
@@ -32,7 +33,7 @@ export function DramaProjectsPage() {
       if (assetsSeedStatus.trim()) params.set("assets_seed_status", assetsSeedStatus.trim());
       setData(await api<ListRes>(`/api/admin/drama-projects?${params}`));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Tải thất bại");
+      toast.error(err instanceof Error ? err.message : tr("dramaUi.loadFailed"));
     }
   }
 
@@ -43,13 +44,13 @@ export function DramaProjectsPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader title="Dự án phim truyện" description="Dự án phim truyện: số tập, tài sản, trạng thái sản xuất và chi phí; bấm chi tiết để vào trang cấp hai" />
+      <PageHeader title={tr("dramaUi.projectsTitle")} description={tr("dramaUi.projectsDesc")} />
       <AdminFilterBar>
-        <Input placeholder="Tiêu đề / mô tả" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Input placeholder={tr("dramaUi.titleDesc")} value={q} onChange={(e) => setQ(e.target.value)} />
         <AdminUserSearchSelect value={userId} onChange={(id) => setUserId(id)} />
-        <Input placeholder="Trạng thái tóm tắt" value={summaryStatus} onChange={(e) => setSummaryStatus(e.target.value)} />
+        <Input placeholder={tr("dramaUi.summaryStatus")} value={summaryStatus} onChange={(e) => setSummaryStatus(e.target.value)} />
         <Input
-          placeholder="Trạng thái trích xuất tài sản"
+          placeholder={tr("dramaUi.assetSeedStatus")}
           value={assetsSeedStatus}
           onChange={(e) => setAssetsSeedStatus(e.target.value)}
         />
@@ -62,7 +63,7 @@ export function DramaProjectsPage() {
             void load(1);
           }}
         >
-          Lọc
+          {tr("dramaUi.filter")}
         </Button>
       </AdminFilterBar>
       <div className="admin-table-wrap">
@@ -70,14 +71,14 @@ export function DramaProjectsPage() {
           <thead>
             <tr>
               <th>ID</th>
-              <th>Tiêu đề</th>
-              <th>Người dùng</th>
-              <th>Số tập</th>
-              <th>Tài sản</th>
-              <th>Chi phí</th>
-              <th>Tóm tắt</th>
-              <th>Trích xuất tài sản</th>
-              <th>Thời gian cập nhật</th>
+              <th>{tr("dramaUi.colTitle")}</th>
+              <th>{tr("dramaUi.user")}</th>
+              <th>{tr("dramaUi.episodeCount")}</th>
+              <th>{tr("dramaUi.assets")}</th>
+              <th>{tr("dramaUi.cost")}</th>
+              <th>{tr("dramaUi.summary")}</th>
+              <th>{tr("dramaUi.assetExtraction")}</th>
+              <th>{tr("dramaUi.updatedAt")}</th>
               <th></th>
             </tr>
           </thead>
@@ -103,7 +104,7 @@ export function DramaProjectsPage() {
                 </td>
                 <td>
                   <Button size="sm" variant="outline" asChild>
-                    <Link to={`/drama-projects/${row.id}`}>Chi tiết</Link>
+                    <Link to={`/drama-projects/${row.id}`}>{tr("dramaUi.details")}</Link>
                   </Button>
                 </td>
               </tr>
@@ -111,7 +112,7 @@ export function DramaProjectsPage() {
             {(data?.items.length ?? 0) === 0 ? (
               <tr>
                 <td colSpan={10} className="!text-center text-[var(--admin-muted)]">
-                  Chưa có dự án
+                  {tr("dramaUi.noProjects")}
                 </td>
               </tr>
             ) : null}

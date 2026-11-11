@@ -11,6 +11,7 @@ import {
 import { AdminEntityLink } from "@/components/admin/AdminEntityLink";
 import { Button } from "@/components/ui/button";
 import { formatDramaGenerationStatus } from "@/lib/dramaLabels";
+import { tr } from "../../i18n/translate.ts";
 
 /** 漫剧分集详情：含分镜列表 */
 export function DramaEpisodeDetailPage() {
@@ -29,14 +30,14 @@ export function DramaEpisodeDetailPage() {
     void api<AdminDramaEpisode>(`/api/admin/drama-episodes/${id}`)
       .then(setDetail)
       .catch((err) => {
-        toast.error(err instanceof Error ? err.message : "Tải thất bại");
+        toast.error(err instanceof Error ? err.message : tr("dramaUi.loadFailed"));
         navigate("/drama-episodes", { replace: true });
       })
       .finally(() => setLoading(false));
   }, [id, navigate]);
 
   if (loading && !detail) {
-    return <div className="admin-detail-page-loading">Đang tải…</div>;
+    return <div className="admin-detail-page-loading">{tr("dramaUi.loading")}</div>;
   }
   if (!detail) return null;
 
@@ -46,12 +47,12 @@ export function DramaEpisodeDetailPage() {
         <Button variant="ghost" size="sm" className="admin-detail-back" asChild>
           <Link to="/drama-episodes">
             <ArrowLeft className="h-4 w-4" />
-            Quay lại danh sách tập
+            {tr("dramaUi.backToEpisodes")}
           </Link>
         </Button>
         <div className="admin-detail-page-heading">
           <h2 className="admin-detail-page-title">
-            Tập #{detail.id} · {detail.name}
+            {tr("dramaUi.episodeTitle", { id: detail.id, name: detail.name })}
           </h2>
           <p className="admin-detail-page-sub">
             <AdminEntityLink kind="drama" id={detail.project_id} label={detail.project_title ?? undefined} />
@@ -59,19 +60,19 @@ export function DramaEpisodeDetailPage() {
         </div>
         <div className="admin-detail-page-actions">
           <Button size="sm" variant="outline" asChild>
-            <Link to={`/drama-projects/${detail.project_id}?tab=episodes`}>Mở dự án</Link>
+            <Link to={`/drama-projects/${detail.project_id}?tab=episodes`}>{tr("dramaUi.openProject")}</Link>
           </Button>
           <Button size="sm" variant="outline" asChild>
-            <Link to={`/drama-fragments?episode_id=${detail.id}`}>Tất cả phân cảnh</Link>
+            <Link to={`/drama-fragments?episode_id=${detail.id}`}>{tr("dramaUi.allShots")}</Link>
           </Button>
         </div>
       </div>
 
-      <AdminDetailSection title="Thông tin cơ bản">
+      <AdminDetailSection title={tr("dramaUi.secBasic")}>
         <AdminDetailMeta
           items={[
             {
-              label: "Người dùng",
+              label: tr("dramaUi.user"),
               value: detail.user_id ? (
                 <AdminEntityLink kind="user" id={detail.user_id} label={detail.user_email ?? undefined} />
               ) : (
@@ -79,30 +80,30 @@ export function DramaEpisodeDetailPage() {
               ),
             },
             {
-              label: "Dự án sở hữu",
+              label: tr("dramaUi.ownerProject"),
               value: <AdminEntityLink kind="drama" id={detail.project_id} label={detail.project_title ?? undefined} />,
             },
-            { label: "Số phân cảnh", value: detail.fragment_count },
-            { label: "Kế hoạch phân cảnh", value: detail.fragment_plan_status || "—" },
+            { label: tr("dramaUi.shotCount"), value: detail.fragment_count },
+            { label: tr("dramaUi.shotPlan"), value: detail.fragment_plan_status || "—" },
             {
-              label: "Thời gian cập nhật",
+              label: tr("dramaUi.updatedAt"),
               value: detail.updated_at ? new Date(detail.updated_at).toLocaleString() : "—",
             },
           ]}
         />
       </AdminDetailSection>
 
-      <AdminDetailSection title={`Danh sách phân cảnh (${(detail.fragments ?? []).length}）`}>
+      <AdminDetailSection title={tr("dramaUi.shotListN", { n: (detail.fragments ?? []).length })}>
         <AdminDetailTableWrap>
           <table>
             <thead>
               <tr>
-                <th>Số thứ tự</th>
+                <th>{tr("dramaUi.order")}</th>
                 <th>ID</th>
-                <th>Nội dung</th>
-                <th>Thời lượng</th>
-                <th>Tạo</th>
-                <th>Tham chiếu tài sản</th>
+                <th>{tr("dramaUi.content")}</th>
+                <th>{tr("dramaUi.duration")}</th>
+                <th>{tr("dramaUi.generation")}</th>
+                <th>{tr("dramaUi.assetRefs")}</th>
                 <th></th>
               </tr>
             </thead>
@@ -110,7 +111,7 @@ export function DramaEpisodeDetailPage() {
               {(detail.fragments ?? []).length === 0 ? (
                 <tr>
                   <td colSpan={7} className="!text-center text-[var(--admin-muted)]">
-                    Chưa có phân cảnh
+                    {tr("dramaUi.noShots")}
                   </td>
                 </tr>
               ) : (
@@ -126,7 +127,7 @@ export function DramaEpisodeDetailPage() {
                     <td>{f.asset_ref_count}</td>
                     <td>
                       <Button size="sm" variant="outline" asChild>
-                        <Link to={`/drama-fragments/${f.id}`}>Xem</Link>
+                        <Link to={`/drama-fragments/${f.id}`}>{tr("dramaUi.view")}</Link>
                       </Button>
                     </td>
                   </tr>

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
+import { tr } from "../../i18n/translate.ts";
 
 type ListRes = { items: AdminDramaEpisode[]; meta: PageMeta };
 
@@ -32,7 +33,7 @@ export function DramaEpisodesPage() {
       if (projectId.trim()) params.set("project_id", projectId.trim());
       setData(await api<ListRes>(`/api/admin/drama-episodes?${params}`));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Tải thất bại");
+      toast.error(err instanceof Error ? err.message : tr("dramaUi.loadFailed"));
     }
   }
 
@@ -43,11 +44,11 @@ export function DramaEpisodesPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader title="Quản lý tập" description="Tập phim truyện toàn site: lọc theo dự án và người dùng, có thể vào chi tiết phân cảnh" />
+      <PageHeader title={tr("dramaUi.episodesTitle")} description={tr("dramaUi.episodesDesc")} />
       <AdminFilterBar>
-        <Input placeholder="Tên tập / tiêu đề dự án" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Input placeholder={tr("dramaUi.episodeSearch")} value={q} onChange={(e) => setQ(e.target.value)} />
         <AdminUserSearchSelect value={userId} onChange={setUserId} />
-        <Input placeholder="ID dự án" value={projectId} onChange={(e) => setProjectId(e.target.value)} />
+        <Input placeholder={tr("dramaUi.projectId")} value={projectId} onChange={(e) => setProjectId(e.target.value)} />
         <Button
           size="sm"
           variant="secondary"
@@ -57,7 +58,7 @@ export function DramaEpisodesPage() {
             void load(1);
           }}
         >
-          Lọc
+          {tr("dramaUi.filter")}
         </Button>
       </AdminFilterBar>
 
@@ -66,12 +67,12 @@ export function DramaEpisodesPage() {
           <thead>
             <tr>
               <th>ID</th>
-              <th>Tên</th>
-              <th>Dự án</th>
-              <th>Người dùng</th>
-              <th>Số phân cảnh</th>
-              <th>Kế hoạch phân cảnh</th>
-              <th>Thời gian cập nhật</th>
+              <th>{tr("dramaUi.name")}</th>
+              <th>{tr("dramaUi.project")}</th>
+              <th>{tr("dramaUi.user")}</th>
+              <th>{tr("dramaUi.shotCount")}</th>
+              <th>{tr("dramaUi.shotPlan")}</th>
+              <th>{tr("dramaUi.updatedAt")}</th>
               <th></th>
             </tr>
           </thead>
@@ -97,7 +98,7 @@ export function DramaEpisodesPage() {
                 </td>
                 <td>
                   <Button size="sm" variant="outline" asChild>
-                    <Link to={`/drama-episodes/${row.id}`}>Xem</Link>
+                    <Link to={`/drama-episodes/${row.id}`}>{tr("dramaUi.view")}</Link>
                   </Button>
                 </td>
               </tr>
@@ -105,7 +106,7 @@ export function DramaEpisodesPage() {
             {(data?.items.length ?? 0) === 0 ? (
               <tr>
                 <td colSpan={8} className="!text-center text-[var(--admin-muted)]">
-                  Chưa có tập
+                  {tr("dramaUi.noEpisodes")}
                 </td>
               </tr>
             ) : null}

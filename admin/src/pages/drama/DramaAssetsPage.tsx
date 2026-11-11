@@ -16,6 +16,7 @@ import {
   formatDramaGenerationStatus,
 } from "@/lib/dramaLabels";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
+import { tr } from "../../i18n/translate.ts";
 
 type ListRes = { items: AdminDramaAsset[]; meta: PageMeta };
 
@@ -44,7 +45,7 @@ export function DramaAssetsPage() {
       if (generationStatus.trim()) params.set("generation_status", generationStatus.trim());
       setData(await api<ListRes>(`/api/admin/drama-assets?${params}`));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Tải thất bại");
+      toast.error(err instanceof Error ? err.message : tr("dramaUi.loadFailed"));
     }
   }
 
@@ -55,13 +56,13 @@ export function DramaAssetsPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader title="Thư viện tài sản" description="Tài sản phim truyện toàn site: nhân vật, bối cảnh, đạo cụ, v.v., có thể lọc theo dự án và người dùng" />
+      <PageHeader title={tr("dramaUi.assetsTitle")} description={tr("dramaUi.assetsDesc")} />
       <AdminFilterBar>
-        <Input placeholder="Tên / derive_id" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Input placeholder={tr("dramaUi.nameDeriveId")} value={q} onChange={(e) => setQ(e.target.value)} />
         <AdminUserSearchSelect value={userId} onChange={setUserId} />
-        <Input placeholder="ID dự án" value={projectId} onChange={(e) => setProjectId(e.target.value)} />
+        <Input placeholder={tr("dramaUi.projectId")} value={projectId} onChange={(e) => setProjectId(e.target.value)} />
         <Select className="admin-native-select" value={type} onChange={(e) => setType(e.target.value)}>
-          <option value="">Tất cả loại</option>
+          <option value="">{tr("dramaUi.allTypes")}</option>
           {ASSET_TYPES.map((t) => (
             <option key={t} value={t}>
               {dramaAssetTypeLabel(t)}
@@ -73,7 +74,7 @@ export function DramaAssetsPage() {
           value={generationStatus}
           onChange={(e) => setGenerationStatus(e.target.value)}
         >
-          <option value="">Tất cả trạng thái tạo</option>
+          <option value="">{tr("dramaUi.allGenStatus")}</option>
           {DRAMA_GENERATION_STATUSES.map((s) => (
             <option key={s} value={s}>
               {formatDramaGenerationStatus(s)}
@@ -89,7 +90,7 @@ export function DramaAssetsPage() {
             void load(1);
           }}
         >
-          Lọc
+          {tr("dramaUi.filter")}
         </Button>
       </AdminFilterBar>
 
@@ -98,13 +99,13 @@ export function DramaAssetsPage() {
           <thead>
             <tr>
               <th>ID</th>
-              <th>Xem trước</th>
-              <th>Tên</th>
-              <th>Loại</th>
-              <th>Dự án</th>
-              <th>Người dùng</th>
-              <th>Tạo</th>
-              <th>Thời gian cập nhật</th>
+              <th>{tr("dramaUi.preview")}</th>
+              <th>{tr("dramaUi.name")}</th>
+              <th>{tr("dramaUi.type")}</th>
+              <th>{tr("dramaUi.project")}</th>
+              <th>{tr("dramaUi.user")}</th>
+              <th>{tr("dramaUi.generation")}</th>
+              <th>{tr("dramaUi.updatedAt")}</th>
               <th></th>
             </tr>
           </thead>
@@ -143,7 +144,7 @@ export function DramaAssetsPage() {
                 </td>
                 <td>
                   <Button size="sm" variant="outline" asChild>
-                    <Link to={`/drama-assets/${row.id}`}>Xem</Link>
+                    <Link to={`/drama-assets/${row.id}`}>{tr("dramaUi.view")}</Link>
                   </Button>
                 </td>
               </tr>
@@ -151,7 +152,7 @@ export function DramaAssetsPage() {
             {(data?.items.length ?? 0) === 0 ? (
               <tr>
                 <td colSpan={9} className="!text-center text-[var(--admin-muted)]">
-                  Chưa có tài sản
+                  {tr("dramaUi.noAssets")}
                 </td>
               </tr>
             ) : null}

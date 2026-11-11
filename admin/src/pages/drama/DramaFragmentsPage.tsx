@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page";
 import { DRAMA_GENERATION_STATUSES, formatDramaGenerationStatus } from "@/lib/dramaLabels";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
+import { tr } from "../../i18n/translate.ts";
 
 type ListRes = { items: AdminDramaFragment[]; meta: PageMeta };
 
@@ -39,7 +40,7 @@ export function DramaFragmentsPage() {
       if (generationStatus.trim()) params.set("generation_status", generationStatus.trim());
       setData(await api<ListRes>(`/api/admin/drama-fragments?${params}`));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Tải thất bại");
+      toast.error(err instanceof Error ? err.message : tr("dramaUi.loadFailed"));
     }
   }
 
@@ -50,18 +51,18 @@ export function DramaFragmentsPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader title="Quản lý phân cảnh" description="Phân cảnh phim truyện toàn site: lọc theo dự án, tập, xem trạng thái tạo và tham chiếu tài sản" />
+      <PageHeader title={tr("dramaUi.shotsTitle")} description={tr("dramaUi.shotsDesc")} />
       <AdminFilterBar>
-        <Input placeholder="Nội dung / tên tập / dự án" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Input placeholder={tr("dramaUi.shotSearch")} value={q} onChange={(e) => setQ(e.target.value)} />
         <AdminUserSearchSelect value={userId} onChange={setUserId} />
-        <Input placeholder="ID dự án" value={projectId} onChange={(e) => setProjectId(e.target.value)} />
-        <Input placeholder="ID tập" value={episodeId} onChange={(e) => setEpisodeId(e.target.value)} />
+        <Input placeholder={tr("dramaUi.projectId")} value={projectId} onChange={(e) => setProjectId(e.target.value)} />
+        <Input placeholder={tr("dramaUi.episodeId")} value={episodeId} onChange={(e) => setEpisodeId(e.target.value)} />
         <Select
           className="admin-native-select"
           value={generationStatus}
           onChange={(e) => setGenerationStatus(e.target.value)}
         >
-          <option value="">Tất cả trạng thái tạo</option>
+          <option value="">{tr("dramaUi.allGenStatus")}</option>
           {DRAMA_GENERATION_STATUSES.map((s) => (
             <option key={s} value={s}>
               {formatDramaGenerationStatus(s)}
@@ -77,7 +78,7 @@ export function DramaFragmentsPage() {
             void load(1);
           }}
         >
-          Lọc
+          {tr("dramaUi.filter")}
         </Button>
       </AdminFilterBar>
 
@@ -86,13 +87,13 @@ export function DramaFragmentsPage() {
           <thead>
             <tr>
               <th>ID</th>
-              <th>Số thứ tự</th>
-              <th>Nội dung</th>
-              <th>Tập</th>
-              <th>Dự án</th>
-              <th>Thời lượng</th>
-              <th>Tạo</th>
-              <th>Tài sản</th>
+              <th>{tr("dramaUi.order")}</th>
+              <th>{tr("dramaUi.content")}</th>
+              <th>{tr("dramaUi.episode")}</th>
+              <th>{tr("dramaUi.project")}</th>
+              <th>{tr("dramaUi.duration")}</th>
+              <th>{tr("dramaUi.generation")}</th>
+              <th>{tr("dramaUi.assets")}</th>
               <th></th>
             </tr>
           </thead>
@@ -113,7 +114,7 @@ export function DramaFragmentsPage() {
                 <td>{row.asset_ref_count}</td>
                 <td>
                   <Button size="sm" variant="outline" asChild>
-                    <Link to={`/drama-fragments/${row.id}`}>Xem</Link>
+                    <Link to={`/drama-fragments/${row.id}`}>{tr("dramaUi.view")}</Link>
                   </Button>
                 </td>
               </tr>
@@ -121,7 +122,7 @@ export function DramaFragmentsPage() {
             {(data?.items.length ?? 0) === 0 ? (
               <tr>
                 <td colSpan={9} className="!text-center text-[var(--admin-muted)]">
-                  Chưa có phân cảnh
+                  {tr("dramaUi.noShots")}
                 </td>
               </tr>
             ) : null}

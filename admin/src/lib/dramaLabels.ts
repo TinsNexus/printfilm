@@ -1,3 +1,4 @@
+import { tr } from "../i18n/translate.ts";
 /** 漫剧资产生成状态（与 params.generation.status 一致） */
 export const DRAMA_GENERATION_STATUSES = [
   "queued",
@@ -11,13 +12,13 @@ export const DRAMA_GENERATION_STATUSES = [
 /** 漫剧生成状态中文标签（idle 仅用于分镜等无 params.generation 时的展示回退） */
 export function dramaGenerationStatusLabel(status: string): string {
   const map: Record<string, string> = {
-    queued: "Đang xếp hàng",
-    running: "Đang tạo",
-    generating: "Đang tạo",
-    done: "Đã hoàn tất",
-    failed: "Thất bại",
-    cancelled: "Đã hủy",
-    idle: "Chưa bắt đầu",
+    queued: tr("dramaUi.gen.queued"),
+    running: tr("dramaUi.gen.running"),
+    generating: tr("dramaUi.gen.running"),
+    done: tr("dramaUi.gen.done"),
+    failed: tr("dramaUi.gen.failed"),
+    cancelled: tr("dramaUi.gen.cancelled"),
+    idle: tr("dramaUi.gen.idle"),
   };
   return map[status] ?? status;
 }
@@ -31,15 +32,15 @@ export function formatDramaGenerationStatus(status: string | null | undefined): 
 /** 漫剧资产类型中文标签 */
 export function dramaAssetTypeLabel(type: string): string {
   const map: Record<string, string> = {
-    character: "Vai trò",
-    scene: "Bối cảnh",
-    prop: "Đạo cụ",
-    material: "Tư liệu",
-    narration: "Lời dẫn",
-    video: "Video",
-    audio: "Âm thanh",
-    text: "Văn bản",
-    none: "Chưa phân loại",
+    character: tr("dramaUi.asset.character"),
+    scene: tr("dramaUi.asset.scene"),
+    prop: tr("dramaUi.asset.prop"),
+    material: tr("dramaUi.asset.material"),
+    narration: tr("dramaUi.asset.narration"),
+    get video() { return tr("dramaUi.asset.video"); },
+    audio: tr("dramaUi.asset.audio"),
+    text: tr("dramaUi.asset.text"),
+    none: tr("dramaUi.asset.none"),
   };
   return map[type] ?? type;
 }
