@@ -3,6 +3,7 @@ import { LabeledControl, SettingsLoading, SettingsPanel, SettingsStatusBar, Sett
 import { SecretField } from "@/components/settings/SecretField";
 import { Switch } from "@/components/ui/switch";
 import { useAdminModelSettings } from "@/hooks/useAdminModelSettings";
+import { tr } from "@/i18n";
 
 export function OssSettingsPanel() {
   const { form, loading, saving, patchField, save } = useAdminModelSettings();
@@ -26,7 +27,7 @@ export function OssSettingsPanel() {
       oss_access_key_secret: clearOssSecret ? undefined : ossKeySecretInput.trim() || undefined,
       clear_oss_access_key_id: clearOssId,
       clear_oss_access_key_secret: clearOssSecret,
-    }, "Đã lưu cấu hình lưu trữ");
+    }, tr("oss.saved"));
     if (!saved) return;
     setOssKeyIdInput("");
     setOssKeySecretInput("");
@@ -38,18 +39,18 @@ export function OssSettingsPanel() {
 
   const endpoint = form.oss_endpoint.trim().replace(/^https?:\/\//i, "").replace(/\/$/, "");
   const endpointError = form.oss_endpoint.trim() && !/^[a-z\d.-]+(?::\d+)?$/i.test(endpoint)
-    ? "Nhập tên miền dịch vụ OSS, không bao gồm tên Bucket hoặc đường dẫn tệp." : undefined;
+    ? tr("oss.errEndpoint") : undefined;
   const bucketError = form.oss_bucket.trim() && !/^[a-z\d-]+$/.test(form.oss_bucket.trim())
-    ? "Chỉ dùng chữ thường, số và dấu gạch ngang; nhập tên, không nhập địa chỉ web." : undefined;
+    ? tr("oss.errBucket") : undefined;
   const publicBase = form.oss_public_base.trim();
   let publicBaseError: string | undefined;
   if (publicBase) {
     try {
       const url = new URL(publicBase);
       if (!["https:", "http:"].includes(url.protocol) || url.search || url.hash) {
-        publicBaseError = "Dùng địa chỉ công khai http:// hoặc https://, không kèm tham số truy vấn hoặc neo.";
+        publicBaseError = tr("oss.errPublicUrl");
       }
-    } catch { publicBaseError = "Nhập địa chỉ truy cập đầy đủ, ví dụ https://cdn.example.com."; }
+    } catch { publicBaseError = tr("oss.errPublicUrlFull"); }
   }
   const hasId = !clearOssId && (form.has_oss_access_key_id || Boolean(ossKeyIdInput.trim()));
   const hasSecret = !clearOssSecret && (form.has_oss_access_key_secret || Boolean(ossKeySecretInput.trim()));
@@ -59,17 +60,17 @@ export function OssSettingsPanel() {
   const accessPreview = publicBase || generatedBase;
   const folder = form.oss_folder.trim().replace(/^\/+|\/+$/g, "") || "kepu";
 
-  return <SettingsTabShell onSave={handleSave} saving={saving} saveLabel="Lưu cài đặt lưu trữ">
-    <SettingsStatusBar title="Trạng thái cấu hình lưu trữ" items={[
-      { id: "oss", label: "Alibaba Cloud OSS", ready: ossReady, readyText: "Cấu hình đầy đủ", pendingText: form.oss_enabled ? "Vui lòng bổ sung kết nối và thông tin xác thực" : "Chưa bật" },
-      { id: "public", label: "Truy cập công khai", ready: Boolean(accessPreview && !publicBaseError), readyText: publicBase ? "Địa chỉ tùy chỉnh" : "Địa chỉ mặc định của Bucket", pendingText: "Chờ cấu hình" },
-      { id: "async", label: "Cách tải lên", ready: form.oss_enabled && form.oss_upload_async, readyText: "Tải lên bất đồng bộ", pendingText: form.oss_enabled ? "Tải lên đồng bộ" : "Cần bật OSS" },
-    ]} extra={<span className="settings-status-extra">Nguồn cấu hình:{form.source === "db" ? "Trang quản trị" : "Biến môi trường"}</span>} />
+  return <SettingsTabShell onSave={handleSave} saving={saving} saveLabel={tr("oss.saveLabel")}>
+    <SettingsStatusBar title={tr("oss.statusTitle")} items={[
+      { id: "oss", label: "Alibaba Cloud OSS", ready: ossReady, readyText: tr("oss.fullyConfigured"), pendingText: form.oss_enabled ? tr("oss.needConnection") : tr("oss.notEnabled") },
+      { id: "public", label: tr("oss.publicAccess"), ready: Boolean(accessPreview && !publicBaseError), readyText: publicBase ? tr("oss.customUrl") : tr("oss.bucketDefaultUrl"), pendingText: tr("oss.pendingConfig") },
+      { id: "async", label: tr("oss.uploadMode"), ready: form.oss_enabled && form.oss_upload_async, readyText: tr("oss.asyncUpload"), pendingText: form.oss_enabled ? tr("oss.syncUpload") : tr("oss.needsOss") },
+    ]} extra={<span className="settings-status-extra">Nguồn cấu hình:{form.source === "db" ? tr("oss.sourceAdmin") : tr("oss.sourceEnv")}</span>} />
 
-    <SettingsPanel title="Kết nối lưu trữ" description="Nghiệp vụ tạo và chợ tài sản số dùng chung Bucket và thông tin xác thực ở đây. Endpoint quyết định nơi tải lên, Bucket là tên không gian lưu trữ.">
+    <SettingsPanel title={tr("oss.connectionTitle")} description={tr("oss.connectionDesc")}>
       <div className="settings-toggle-row">
-        <div><strong>Bật Alibaba Cloud OSS</strong><span>Khi tắt, nghiệp vụ tạo dùng thư mục cục bộ; tải lên và phát tệp của chợ tài sản số không khả dụng.</span></div>
-        <Switch aria-label="Bật Alibaba Cloud OSS" checked={form.oss_enabled} onCheckedChange={(value) => patchField("oss_enabled", value)} />
+        <div><strong>{tr("oss.enableOss")}</strong><span>{tr("oss.enableOssHint")}</span></div>
+        <Switch aria-label={tr("oss.enableOss")} checked={form.oss_enabled} onCheckedChange={(value) => patchField("oss_enabled", value)} />
       </div>
       <p className="mt-3 text-sm text-muted-foreground">
         Chợ tài sản số luôn dùng thư mục marketplace/, không bị ảnh hưởng bởi cài đặt thư mục nghiệp vụ tạo bên dưới.
@@ -78,54 +79,54 @@ export function OssSettingsPanel() {
         “Cấu hình đầy đủ” chỉ cho biết các mục đã được điền, quyền thực tế vẫn cần xác minh trên đám mây.
       </p>
       <div className="settings-field-grid mt-5">
-        <LabeledControl label="Tên miền dịch vụ Endpoint" required={form.oss_enabled} error={endpointError} hint="Ví dụ oss-cn-beijing.aliyuncs.com; đừng nhập địa chỉ truy cập Bucket.">
+        <LabeledControl label={tr("oss.endpoint")} required={form.oss_enabled} error={endpointError} hint={tr("oss.endpointHint")}>
           <input className="settings-input" placeholder="oss-cn-beijing.aliyuncs.com" value={form.oss_endpoint} onChange={(event) => patchField("oss_endpoint", event.target.value)} autoCapitalize="none" spellCheck={false} />
         </LabeledControl>
-        <LabeledControl label="Không gian lưu trữ Bucket" required={form.oss_enabled} error={bucketError} hint="Trùng với tên trong bảng điều khiển OSS, ví dụ printfilm-media.">
+        <LabeledControl label={tr("oss.bucket")} required={form.oss_enabled} error={bucketError} hint={tr("oss.bucketHint")}>
           <input className="settings-input" placeholder="printfilm-media" value={form.oss_bucket} onChange={(event) => patchField("oss_bucket", event.target.value)} autoCapitalize="none" spellCheck={false} maxLength={63} />
         </LabeledControl>
-        <LabeledControl label="Khu vực Region" optional hint="Ví dụ cn-beijing, phải cùng khu vực với Endpoint.">
+        <LabeledControl label={tr("oss.region")} optional hint={tr("oss.regionHint")}>
           <input className="settings-input" placeholder="cn-beijing" value={form.oss_region} onChange={(event) => patchField("oss_region", event.target.value)} autoCapitalize="none" spellCheck={false} />
         </LabeledControl>
-        <LabeledControl label="Tiền tố thư mục tệp" optional hint="Chỉ dùng cho nghiệp vụ tạo, không chứa tên miền; ví dụ kepu. Để trống dùng thư mục mặc định kepu.">
+        <LabeledControl label={tr("oss.prefix")} optional hint={tr("oss.prefixHint")}>
           <input className="settings-input" placeholder="kepu" value={form.oss_folder} onChange={(event) => patchField("oss_folder", event.target.value)} spellCheck={false} />
         </LabeledControl>
       </div>
     </SettingsPanel>
 
-    <SettingsPanel title="Thông tin truy cập" description="Chỉ nhận thông tin xác thực mới, không hiển thị khóa hiện có. Khi bật OSS cần đủ AccessKey ID và Secret.">
+    <SettingsPanel title={tr("oss.credentialsTitle")} description={tr("oss.credentialsDesc")}>
       <div className="settings-field-grid">
-        <SecretField label="AccessKey ID" placeholder="Nhập AccessKey ID" value={ossKeyIdInput} configured={form.has_oss_access_key_id} required={form.oss_enabled}
+        <SecretField label="AccessKey ID" placeholder={tr("oss.enterKeyId")} value={ossKeyIdInput} configured={form.has_oss_access_key_id} required={form.oss_enabled}
           clearPending={clearOssId} onUndoClear={() => setClearOssId(false)}
-          error={form.oss_enabled && clearOssId ? "Vui lòng tắt OSS trước khi xóa thông tin xác thực, hoặc hủy thao tác xóa." : undefined}
+          error={form.oss_enabled && clearOssId ? tr("oss.clearBlocked") : undefined}
           onChange={(value) => { setOssKeyIdInput(value); setClearOssId(false); }} onClear={() => setClearOssId(true)} />
-        <SecretField label="AccessKey Secret" placeholder="Nhập AccessKey Secret" value={ossKeySecretInput} configured={form.has_oss_access_key_secret} required={form.oss_enabled}
+        <SecretField label="AccessKey Secret" placeholder={tr("oss.enterKeySecret")} value={ossKeySecretInput} configured={form.has_oss_access_key_secret} required={form.oss_enabled}
           clearPending={clearOssSecret} onUndoClear={() => setClearOssSecret(false)}
-          error={form.oss_enabled && clearOssSecret ? "Vui lòng tắt OSS trước khi xóa thông tin xác thực, hoặc hủy thao tác xóa." : undefined}
+          error={form.oss_enabled && clearOssSecret ? tr("oss.clearBlocked") : undefined}
           onChange={(value) => { setOssKeySecretInput(value); setClearOssSecret(false); }} onClear={() => setClearOssSecret(true)} />
       </div>
     </SettingsPanel>
 
-    <SettingsPanel title="Truy cập công khai và CDN" description="Nghiệp vụ tạo xem trước và tải phương tiện qua địa chỉ này; nó được cấu hình tách biệt với Endpoint dùng để tải lên. Chợ tài sản số dùng truy cập có chữ ký, không dùng địa chỉ này.">
-      <LabeledControl label="Địa chỉ truy cập tùy chỉnh" optional error={publicBaseError} hint="Khi gắn CDN hoặc tên miền tùy chỉnh, nhập địa chỉ https:// đầy đủ; để trống dùng địa chỉ công khai của Bucket.">
+    <SettingsPanel title={tr("oss.publicTitle")} description={tr("oss.publicDesc")}>
+      <LabeledControl label={tr("oss.customAccessUrl")} optional error={publicBaseError} hint={tr("oss.customAccessUrlHint")}>
         <input className="settings-input" type="url" placeholder="https://cdn.example.com" value={form.oss_public_base} onChange={(event) => patchField("oss_public_base", event.target.value)} autoCapitalize="none" spellCheck={false} />
       </LabeledControl>
       <div className="admin-form-preview mt-4" aria-live="polite">
-        <strong>Xem trước đường dẫn truy cập phương tiện</strong>
-        <div className="mt-1 break-all font-mono">{accessPreview && !publicBaseError ? `${accessPreview.replace(/\/$/, "")}/${folder}/generated/…` : "Nhập Endpoint và Bucket để hiển thị đường dẫn truy cập mặc định."}</div>
+        <strong>{tr("oss.previewTitle")}</strong>
+        <div className="mt-1 break-all font-mono">{accessPreview && !publicBaseError ? `${accessPreview.replace(/\/$/, "")}/${folder}/generated/…` : tr("oss.previewEmpty")}</div>
       </div>
     </SettingsPanel>
 
     <details className="settings-advanced">
-      <summary>Tùy chọn tải lên nâng cao · Cách tải lên và hàng đợi</summary>
+      <summary>{tr("oss.advancedTitle")}</summary>
       <div>
         <div className="settings-toggle-row">
-          <div><strong>Tải lên bất đồng bộ</strong><span>{form.oss_enabled ? "Trả về URL cục bộ trước, rồi hàng đợi nền tải lên; khi tắt thì tải lên đồng bộ." : "Hãy bật OSS trước để điều chỉnh cách tải lên."}</span></div>
-          <Switch aria-label="Bật tải lên bất đồng bộ" checked={form.oss_upload_async} disabled={!form.oss_enabled} onCheckedChange={(value) => patchField("oss_upload_async", value)} />
+          <div><strong>{tr("oss.asyncUpload")}</strong><span>{form.oss_enabled ? tr("oss.asyncHint") : tr("oss.asyncNeedsOss")}</span></div>
+          <Switch aria-label={tr("oss.enableAsync")} checked={form.oss_upload_async} disabled={!form.oss_enabled} onCheckedChange={(value) => patchField("oss_upload_async", value)} />
         </div>
         <div className="settings-field-grid mt-5">
-          <LabeledControl label="Tên hàng đợi tải lên" required={form.oss_enabled && form.oss_upload_async} hint="Chỉ dùng cho tải lên bất đồng bộ; giữ tên hàng đợi khớp với cấu hình Worker cục bộ.">
-            <input className="settings-input" placeholder="Ví dụ oss_upload" value={form.oss_upload_queue} disabled={!form.oss_enabled || !form.oss_upload_async} onChange={(event) => patchField("oss_upload_queue", event.target.value)} spellCheck={false} />
+          <LabeledControl label={tr("oss.queueName")} required={form.oss_enabled && form.oss_upload_async} hint={tr("oss.queueNameHint")}>
+            <input className="settings-input" placeholder={tr("oss.queueNamePlaceholder")} value={form.oss_upload_queue} disabled={!form.oss_enabled || !form.oss_upload_async} onChange={(event) => patchField("oss_upload_queue", event.target.value)} spellCheck={false} />
           </LabeledControl>
         </div>
       </div>

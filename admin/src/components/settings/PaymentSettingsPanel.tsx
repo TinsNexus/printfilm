@@ -11,20 +11,22 @@ import { MediaPriceSettings } from "./MediaPriceSettings";
 import { AppleProductSettings } from "./AppleProductSettings";
 import { AppleConnectionSettings } from "./AppleConnectionSettings";
 import { WalletMigrationSettings } from "./WalletMigrationSettings";
+import { tr } from "@/i18n";
 
+// 只存文案 key（模块级常量不能存已翻译文字），渲染时 tr()
 const RATE_FIELDS = [
-  { key: "billing_llm_per_m", label: "LLM văn bản", unit: "tệ / triệu Token" },
-  { key: "billing_tts_per_m", label: "Giọng nói TTS", unit: "tệ / triệu Token" },
-  { key: "billing_seedream_per_m", label: "Tạo ảnh Seedream (quy tắc tương thích)", unit: "tệ / triệu Token" },
-  { key: "billing_seedance_video0", label: "Seedance video0 (quy tắc tương thích)", unit: "tệ / triệu Token" },
-  { key: "billing_seedance_video1", label: "Seedance video1 (quy tắc tương thích)", unit: "tệ / triệu Token" },
-  { key: "billing_kie_fen_per_credit", label: "Quy đổi điểm KIE", unit: "xu / Credit" },
+  { key: "billing_llm_per_m", labelKey: "paymentSettings.rate.llm", unitKey: "paymentSettings.unit.yuanPerMTokens" },
+  { key: "billing_tts_per_m", labelKey: "paymentSettings.rate.tts", unitKey: "paymentSettings.unit.yuanPerMTokens" },
+  { key: "billing_seedream_per_m", labelKey: "paymentSettings.rate.seedreamLegacy", unitKey: "paymentSettings.unit.yuanPerMTokens" },
+  { key: "billing_seedance_video0", labelKey: "paymentSettings.rate.seedanceVideo0Legacy", unitKey: "paymentSettings.unit.yuanPerMTokens" },
+  { key: "billing_seedance_video1", labelKey: "paymentSettings.rate.seedanceVideo1Legacy", unitKey: "paymentSettings.unit.yuanPerMTokens" },
+  { key: "billing_kie_fen_per_credit", labelKey: "paymentSettings.rate.kieCredit", unitKey: "paymentSettings.unit.fenPerCredit" },
 ] as const;
 const ESTIMATE_FIELDS = [
-  { key: "billing_est_llm_tokens", label: "LLM văn bản", unit: "Token / lần" },
-  { key: "billing_est_seedream_tokens", label: "Tạo ảnh Seedream", unit: "Token / lần" },
-  { key: "billing_est_tts_tokens", label: "Giọng nói TTS", unit: "Token / lần" },
-  { key: "billing_est_seedance_tokens_per_sec", label: "Video Seedance", unit: "Token / giây" },
+  { key: "billing_est_llm_tokens", labelKey: "paymentSettings.rate.llm", unitKey: "paymentSettings.unit.tokensPerCall" },
+  { key: "billing_est_seedream_tokens", labelKey: "paymentSettings.rate.seedream", unitKey: "paymentSettings.unit.tokensPerCall" },
+  { key: "billing_est_tts_tokens", labelKey: "paymentSettings.rate.tts", unitKey: "paymentSettings.unit.tokensPerCall" },
+  { key: "billing_est_seedance_tokens_per_sec", labelKey: "paymentSettings.rate.seedanceVideo", unitKey: "paymentSettings.unit.tokensPerSecond" },
 ] as const;
 type NumericKey = typeof RATE_FIELDS[number]["key"] | typeof ESTIMATE_FIELDS[number]["key"]
   | "billing_estimate_buffer" | "billing_signup_grant_fen" | "billing_user_alert_interval_fen"
@@ -62,9 +64,9 @@ export function PaymentSettingsPanel() {
   async function copyStripeWebhook() {
     try {
       await navigator.clipboard.writeText(form?.stripe_webhook_url || "/api/billing/stripe/webhook");
-      toast.success("Đã sao chép địa chỉ Webhook Stripe");
+      toast.success(tr("paymentSettings.webhookCopied"));
     } catch {
-      toast.error("Sao chép thất bại, vui lòng sao chép địa chỉ Webhook thủ công");
+      toast.error(tr("paymentSettings.webhookCopyFailed"));
     }
   }
 
@@ -104,7 +106,7 @@ export function PaymentSettingsPanel() {
       clear_smtp_password: clearSmtpPassword,
       smtp_from: form.smtp_from.trim(),
       smtp_use_tls: form.smtp_use_tls,
-    }, "Đã lưu cài đặt thanh toán, tính phí và thông báo");
+    }, tr("paymentSettings.saved"));
     if (!saved) return;
     setEpayKeyInput("");
     setClearEpayKey(false);
@@ -129,161 +131,161 @@ export function PaymentSettingsPanel() {
   const smtpReady = form.smtp_enabled && Boolean(form.smtp_host.trim() && form.smtp_from.trim() && (!smtpNeedsPassword || hasSmtpPassword));
   const moneyHint = (key: NumericKey) => {
     const raw = numericDrafts[key] ?? form[key];
-    return raw === "" ? "请输入整数积分。" : `当前 ${Number(raw).toLocaleString()} 积分；100 积分 = 1 元额度。`;
+    return raw === "" ? tr("paymentSettings.pointsIntegerRequired") : tr("paymentSettings.pointsHint", { n: Number(raw).toLocaleString() });
   };
 
   return <div className="space-y-5">
-    <SettingsTabShell onSave={handleSave} saving={saving} disabled={Boolean(usdRateError)} saveLabel="Lưu cài đặt thanh toán và thông báo">
-      <SettingsStatusBar title="Trạng thái thanh toán và thông báo" items={[
-        { id: "epay", label: "Epay", ready: epayReady, readyText: "Cấu hình đầy đủ", pendingText: "Chưa hoàn tất kết nối" },
-        { id: "stripe", label: "Stripe", ready: stripeReady, readyText: "Cấu hình đầy đủ", pendingText: form.stripe_enabled ? "Vui lòng bổ sung Stripe" : "Chưa bật" },
-        { id: "billing", label: "Tính phí theo số dư", ready: form.billing_enabled, readyText: "Đã bật", pendingText: "Đã tắt" },
-        { id: "smtp", label: "Gửi email", ready: smtpReady, readyText: "Cấu hình đầy đủ", pendingText: form.smtp_enabled ? "Vui lòng bổ sung SMTP" : "Chưa bật" },
+    <SettingsTabShell onSave={handleSave} saving={saving} disabled={Boolean(usdRateError)} saveLabel={tr("paymentSettings.saveLabel")}>
+      <SettingsStatusBar title={tr("paymentSettings.statusTitle")} items={[
+        { id: "epay", label: "Epay", ready: epayReady, readyText: tr("paymentSettings.fullyConfigured"), pendingText: tr("paymentSettings.notConnected") },
+        { id: "stripe", label: "Stripe", ready: stripeReady, readyText: tr("paymentSettings.fullyConfigured"), pendingText: form.stripe_enabled ? tr("paymentSettings.stripeIncomplete") : tr("paymentSettings.notEnabled") },
+        { id: "billing", label: tr("paymentSettings.balanceBilling"), ready: form.billing_enabled, readyText: tr("paymentSettings.on"), pendingText: tr("paymentSettings.off") },
+        { id: "smtp", label: tr("paymentSettings.email"), ready: smtpReady, readyText: tr("paymentSettings.fullyConfigured"), pendingText: form.smtp_enabled ? tr("paymentSettings.smtpIncomplete") : tr("paymentSettings.notEnabled") },
       ]} />
 
-      <SettingsPanel title="Kết nối thanh toán" description="Cấu hình thu tiền Epay. Khóa merchant đã có sẽ không hiển thị lại, nhập khóa mới rồi lưu để thay thế.">
+      <SettingsPanel title={tr("paymentSettings.epayTitle")} description={tr("paymentSettings.epayDesc")}>
         <div className="settings-field-grid">
-          <LabeledControl label="Địa chỉ cổng thanh toán" required={epayInUse} hint="Nhập địa chỉ cổng đầy đủ do nhà cung cấp cấp, ví dụ https://pay.example.com.">
+          <LabeledControl label={tr("paymentSettings.gatewayUrl")} required={epayInUse} hint={tr("paymentSettings.gatewayUrlHint")}>
             <input className="settings-input" type="url" placeholder="https://pay.example.com" value={form.epay_api_url} onChange={(event) => patchField("epay_api_url", event.target.value)} autoCapitalize="none" spellCheck={false} />
           </LabeledControl>
-          <LabeledControl label="Mã merchant PID" required={epayInUse} hint="Mã merchant trong bảng điều khiển Epay.">
-            <input className="settings-input" placeholder="Ví dụ 10001" value={form.epay_pid} onChange={(event) => patchField("epay_pid", event.target.value)} autoCapitalize="none" spellCheck={false} />
+          <LabeledControl label={tr("paymentSettings.merchantPid")} required={epayInUse} hint={tr("paymentSettings.merchantPidHint")}>
+            <input className="settings-input" placeholder={tr("paymentSettings.merchantPidPlaceholder")} value={form.epay_pid} onChange={(event) => patchField("epay_pid", event.target.value)} autoCapitalize="none" spellCheck={false} />
           </LabeledControl>
-          <SecretField label="Khóa merchant" value={epayKeyInput} configured={form.has_epay_key} required={epayInUse}
+          <SecretField label={tr("paymentSettings.merchantKey")} value={epayKeyInput} configured={form.has_epay_key} required={epayInUse}
             clearPending={clearEpayKey} onUndoClear={() => setClearEpayKey(false)}
             onChange={(value) => { setEpayKeyInput(value); setClearEpayKey(false); }} onClear={() => setClearEpayKey(true)} />
         </div>
         <details className="settings-advanced mt-5">
-          <summary>Kết nối nâng cao · Callback và trang hoàn tất thanh toán</summary>
+          <summary>{tr("paymentSettings.epayAdvanced")}</summary>
           <div className="settings-field-grid">
-            <LabeledControl label="Địa chỉ thông báo bất đồng bộ" optional hint="Ví dụ môi trường thật: https://www.example.com/epay/notify, đường dẫn không chứa /api/.">
+            <LabeledControl label={tr("paymentSettings.notifyUrl")} optional hint={tr("paymentSettings.notifyUrlHint")}>
               <input className="settings-input" type="url" placeholder="https://www.example.com/epay/notify" value={form.epay_notify_url} onChange={(event) => patchField("epay_notify_url", event.target.value)} autoCapitalize="none" spellCheck={false} />
             </LabeledControl>
-            <LabeledControl label="Địa chỉ chuyển hướng sau thanh toán" optional hint="Trang người dùng được đưa về sau khi thanh toán xong, nhập địa chỉ http:// hoặc https:// đầy đủ.">
+            <LabeledControl label={tr("paymentSettings.returnUrl")} optional hint={tr("paymentSettings.returnUrlHint")}>
               <input className="settings-input" type="url" placeholder="https://www.example.com/settings" value={form.epay_return_url} onChange={(event) => patchField("epay_return_url", event.target.value)} autoCapitalize="none" spellCheck={false} />
             </LabeledControl>
           </div>
         </details>
       </SettingsPanel>
 
-      <SettingsPanel title="Kết nối thanh toán Stripe" description="Chọn tiền tệ thu theo ngôn ngữ website: tiếng Trung dùng nhân dân tệ CNY, tiếng Anh dùng đô la Mỹ USD. Báo giá USD quy đổi theo tỷ giá trong trang quản trị, số dư ghi có trên site vẫn tính bằng nhân dân tệ.">
+      <SettingsPanel title={tr("paymentSettings.stripeTitle")} description={tr("paymentSettings.stripeDesc")}>
         <div className="settings-toggle-row">
-          <div><strong>Bật thanh toán Stripe</strong><span>Sau khi bật và lưu cấu hình đầy đủ, người dùng có thể chọn thanh toán bằng thẻ ngân hàng ở trang nạp tiền.</span></div>
-          <Switch aria-label="Bật thanh toán Stripe" checked={Boolean(form.stripe_enabled)} onCheckedChange={(value) => patchField("stripe_enabled", value)} />
+          <div><strong>{tr("paymentSettings.stripeEnable")}</strong><span>{tr("paymentSettings.stripeEnableHint")}</span></div>
+          <Switch aria-label={tr("paymentSettings.stripeEnable")} checked={Boolean(form.stripe_enabled)} onCheckedChange={(value) => patchField("stripe_enabled", value)} />
         </div>
 
         <div className="settings-field-grid mt-5">
-          <LabeledControl label="Tiền tệ thu của Stripe" hint="Tự động chọn theo ngôn ngữ website hiện tại của người dùng; Alipay và WeChat Pay vẫn dùng nhân dân tệ.">
-            <input className="settings-input" readOnly value="Tiếng Trung CNY / tiếng Anh USD (theo ngôn ngữ website)" />
+          <LabeledControl label={tr("paymentSettings.stripeCurrency")} hint={tr("paymentSettings.stripeCurrencyHint")}>
+            <input className="settings-input" readOnly value={tr("paymentSettings.stripeCurrencyAuto")} />
           </LabeledControl>
-          <LabeledControl label="Tỷ giá USD sang CNY" optional error={usdRateError}
-            hint="1 USD = giá trị nhập CNY; đặt thủ công, tối đa sáu chữ số thập phân. Để trống thì CNY tiếng Trung dùng được, USD tiếng Anh tạm thời không dùng được.">
-            <input className="settings-input" type="text" inputMode="decimal" placeholder="Nhập số nhân dân tệ tương ứng 1 đô la Mỹ" value={form.stripe_usd_cny_rate || ""}
+          <LabeledControl label={tr("paymentSettings.usdRate")} optional error={usdRateError}
+            hint={tr("paymentSettings.usdRateHint")}>
+            <input className="settings-input" type="text" inputMode="decimal" placeholder={tr("paymentSettings.usdRatePlaceholder")} value={form.stripe_usd_cny_rate || ""}
               onChange={(event) => patchField("stripe_usd_cny_rate", event.target.value)} autoComplete="off" spellCheck={false} />
           </LabeledControl>
-          <SecretField label="Khóa API Stripe" value={stripeKeyInput} configured={Boolean(form.has_stripe_secret_key)} required={form.stripe_enabled}
-            placeholder="sk_test_… hoặc sk_live_…" hint="Nhập Secret key trong bảng điều khiển Stripe; trang thanh toán được lưu trữ không cần Publishable key."
+          <SecretField label={tr("paymentSettings.stripeSecret")} value={stripeKeyInput} configured={Boolean(form.has_stripe_secret_key)} required={form.stripe_enabled}
+            placeholder={tr("paymentSettings.stripeSecretPlaceholder")} hint={tr("paymentSettings.stripeSecretHint")}
             clearPending={clearStripeKey} onUndoClear={() => setClearStripeKey(false)}
             onChange={(value) => { setStripeKeyInput(value); setClearStripeKey(false); }} onClear={() => setClearStripeKey(true)} />
-          <SecretField label="Khóa ký Webhook Stripe" value={stripeWebhookInput} configured={Boolean(form.has_stripe_webhook_secret)} required={form.stripe_enabled}
-            placeholder="whsec_…" hint="Nhập Signing secret của endpoint Webhook này, dùng để xác minh thông báo thanh toán."
+          <SecretField label={tr("paymentSettings.stripeWebhookSecret")} value={stripeWebhookInput} configured={Boolean(form.has_stripe_webhook_secret)} required={form.stripe_enabled}
+            placeholder="whsec_…" hint={tr("paymentSettings.stripeWebhookSecretHint")}
             clearPending={clearStripeWebhook} onUndoClear={() => setClearStripeWebhook(false)}
             onChange={(value) => { setStripeWebhookInput(value); setClearStripeWebhook(false); }} onClear={() => setClearStripeWebhook(true)} />
-          <LabeledControl label="Trang quay về sau thanh toán Stripe" optional hint="Nhập nguồn của trang người dùng, không kèm đường dẫn trang; để trống dùng địa chỉ backend công khai của “Công cụ site”. Khi tách frontend/backend nên nhập địa chỉ trang người dùng, ví dụ cục bộ http://127.0.0.1:5183.">
+          <LabeledControl label={tr("paymentSettings.stripeReturnSite")} optional hint={tr("paymentSettings.stripeReturnSiteHint")}>
             <input className="settings-input" type="url" placeholder="https://app.example.com" value={form.stripe_frontend_url || ""} onChange={(event) => patchField("stripe_frontend_url", event.target.value)} autoCapitalize="none" spellCheck={false} />
           </LabeledControl>
-          <LabeledControl label="Địa chỉ thông báo Webhook Stripe" hint="Thêm endpoint này trong bảng điều khiển Stripe. Tên miền công khai lấy từ địa chỉ backend công khai của “Công cụ site”.">
+          <LabeledControl label={tr("paymentSettings.stripeWebhookUrl")} hint={tr("paymentSettings.stripeWebhookUrlHint")}>
             <div className="flex items-center gap-2">
               <input className="settings-input min-w-0" readOnly value={form.stripe_webhook_url || "/api/billing/stripe/webhook"} />
-              <Button type="button" variant="outline" aria-label="Sao chép địa chỉ thông báo Webhook Stripe" onClick={() => void copyStripeWebhook()}><Copy size={14} />Sao chép</Button>
+              <Button type="button" variant="outline" aria-label={tr("paymentSettings.copyWebhookUrl")} onClick={() => void copyStripeWebhook()}><Copy size={14} />{tr("paymentSettings.copy")}</Button>
             </div>
           </LabeledControl>
         </div>
-        <p className="settings-panel-footnote">Số tiền USD thanh toán = giá gói nhân dân tệ ÷ tỷ giá USD, làm tròn đến cent. Lưu tỷ giá mới chỉ ảnh hưởng đơn mới, đơn đã tạo thanh toán theo số tiền và tỷ giá lúc đặt; số dư nạp và số dư tặng vẫn tính bằng nhân dân tệ.</p>
-        <p className="settings-panel-footnote">Webhook dùng sự kiện Snapshot: checkout.session.completed, checkout.session.async_payment_succeeded, checkout.session.async_payment_failed và checkout.session.expired. Chỉ cộng số dư sau khi xác nhận thanh toán đã ghi có; khi tắt Stripe, cấu hình hiện có vẫn được giữ.</p>
+        <p className="settings-panel-footnote">{tr("paymentSettings.usdRateNote")}</p>
+        <p className="settings-panel-footnote">{tr("paymentSettings.webhookEventsNote")}</p>
       </SettingsPanel>
 
-      <SettingsPanel title="Số dư và tính phí" description="Kiểm soát trừ phí khi tạo và quà tặng người dùng mới. Giá hình ảnh và video được phát hành riêng bên dưới, không lưu cùng biểu mẫu này.">
+      <SettingsPanel title={tr("paymentSettings.billingTitle")} description={tr("paymentSettings.billingDesc")}>
         <div className="settings-toggle-row">
-          <div><strong>启用余额计费</strong><span>开启后按规则扣除用户余额；关闭后生成不扣余额。</span></div>
-          <Switch aria-label="启用余额计费" checked={form.billing_enabled} onCheckedChange={(value) => patchField("billing_enabled", value)} />
-          <label>启用统一钱包（须先核对历史资金来源）<Switch aria-label="启用统一钱包" checked={form.unified_wallet_enabled} onCheckedChange={(value) => patchField("unified_wallet_enabled", value)} /></label>
+          <div><strong>{tr("paymentSettings.enableBalanceBilling")}</strong><span>{tr("paymentSettings.enableBalanceBillingHint")}</span></div>
+          <Switch aria-label={tr("paymentSettings.enableBalanceBilling")} checked={form.billing_enabled} onCheckedChange={(value) => patchField("billing_enabled", value)} />
+          <label>{tr("paymentSettings.enableWalletVerifyFirst")}<Switch aria-label={tr("paymentSettings.enableWallet")} checked={form.unified_wallet_enabled} onCheckedChange={(value) => patchField("unified_wallet_enabled", value)} /></label>
         </div>
-        <p className="settings-panel-footnote">首次启用请使用下方“统一钱包迁移与核对”；此开关不执行迁移。已有统一钱包账户时不能切回旧记账。</p>
-        <LabeledControl label="统一钱包环境" hint="独立于 Apple 交易环境。正式站使用 Production；Sandbox 仅用于独立测试库。已有钱包账户或余额后禁止直接切换，不会转换历史资金。">
-          <select className="settings-input" value={form.wallet_environment} onChange={event => patchField("wallet_environment", event.target.value as "Production" | "Sandbox")}><option value="Production">Production（正式资金）</option><option value="Sandbox">Sandbox（独立测试资金）</option></select>
+        <p className="settings-panel-footnote">{tr("paymentSettings.enableWalletHint")}</p>
+        <LabeledControl label={tr("paymentSettings.walletEnv")} hint={tr("paymentSettings.walletEnvHint")}>
+          <select className="settings-input" value={form.wallet_environment} onChange={event => patchField("wallet_environment", event.target.value as "Production" | "Sandbox")}><option value="Production">{tr("paymentSettings.walletEnvProduction")}</option><option value="Sandbox">{tr("paymentSettings.walletEnvSandbox")}</option></select>
         </LabeledControl>
         <div className="settings-field-grid mt-5">
-          <LabeledControl label="注册赠送积分" required hint={moneyHint("billing_signup_grant_fen")}>
+          <LabeledControl label={tr("paymentSettings.signupBonusPoints")} required hint={moneyHint("billing_signup_grant_fen")}>
             <input className="settings-input" type="number" min={0} step={1} placeholder="0" {...numericControl("billing_signup_grant_fen")} />
           </LabeledControl>
         </div>
         <details className="settings-advanced mt-5">
-          <summary>Tính phí nâng cao · Đơn giá Token, đệm đóng băng và ước tính mặc định</summary>
+          <summary>{tr("paymentSettings.billingAdvanced")}</summary>
           <div>
-            <p className="settings-runtime-note">Sau khi giá hình/video được phát hành và bật giá trên site thì ưu tiên dùng giá đã phát hành; đơn giá tương thích bên dưới chỉ dùng cho các lệnh gọi vẫn theo quy tắc tính phí cũ. LLM, TTS tiếp tục theo quy tắc Token.</p>
+            <p className="settings-runtime-note">{tr("paymentSettings.billingAdvancedNote")}</p>
             <fieldset className="m-0 min-w-0 border-0 p-0" disabled={!form.billing_enabled}>
-              <div className="settings-subsection-title">Đơn giá Token và quy đổi điểm</div>
+              <div className="settings-subsection-title">{tr("paymentSettings.tokenRatesTitle")}</div>
               <div className="settings-field-grid">
-                {RATE_FIELDS.map((field) => <LabeledControl key={field.key} label={field.label} required={form.billing_enabled} hint={field.unit}>
+                {RATE_FIELDS.map((field) => <LabeledControl key={field.key} label={tr(field.labelKey)} required={form.billing_enabled} hint={tr(field.unitKey)}>
                   <input className="settings-input" type="number" min={0} step="any" {...numericControl(field.key)} />
                 </LabeledControl>)}
               </div>
-              <div className="settings-subsection-title">Ước tính tác vụ</div>
+              <div className="settings-subsection-title">{tr("paymentSettings.estimatesTitle")}</div>
               <div className="settings-field-grid">
-                <LabeledControl label="Hệ số đệm đóng băng (lần)" required={form.billing_enabled} hint="Tối thiểu 1; ví dụ 1,2 nghĩa là giữ lại thêm 20% trên chi phí ước tính.">
+                <LabeledControl label={tr("paymentSettings.holdBuffer")} required={form.billing_enabled} hint={tr("paymentSettings.holdBufferHint")}>
                   <input className="settings-input" type="number" min={1} step="0.01" {...numericControl("billing_estimate_buffer")} />
                 </LabeledControl>
-                {ESTIMATE_FIELDS.map((field) => <LabeledControl key={field.key} label={`${field.label} Mức dùng mặc định`} required={form.billing_enabled} hint={`${field.unit}; dùng khi upstream không trả về usage.`}>
+                {ESTIMATE_FIELDS.map((field) => <LabeledControl key={field.key} label={tr("paymentSettings.defaultUsage", { label: tr(field.labelKey) })} required={form.billing_enabled} hint={tr("paymentSettings.defaultUsageHint", { unit: tr(field.unitKey) })}>
                   <input className="settings-input" type="number" min={1} step={1} {...numericControl(field.key)} />
                 </LabeledControl>)}
               </div>
             </fieldset>
-            {!form.billing_enabled && <p className="settings-panel-footnote">Tính phí theo số dư đang tắt; sau khi bật có thể chỉnh các quy tắc trên, giá trị hiện có được giữ nguyên.</p>}
+            {!form.billing_enabled && <p className="settings-panel-footnote">{tr("paymentSettings.billingOffNote")}</p>}
           </div>
         </details>
       </SettingsPanel>
 
-      <SettingsPanel title="Nhắc nhở chi tiêu" description="Khi tổng chi tiêu của người dùng đạt khoảng số tiền đã đặt, hiển thị nhắc nhở trong sản phẩm.">
+      <SettingsPanel title={tr("paymentSettings.spendAlertTitle")} description={tr("paymentSettings.spendAlertDesc")}>
         <div className="settings-toggle-row">
-          <div><strong>Cửa sổ nhắc chi tiêu cho người dùng</strong><span>Nhắc khi tổng phí bị trừ đạt từng mốc khoảng cách, mỗi lần quyết toán chỉ bật lên tối đa một lần.</span></div>
-          <Switch aria-label="Cửa sổ nhắc chi tiêu cho người dùng" checked={form.billing_user_alert_enabled} disabled={!form.billing_enabled} onCheckedChange={(value) => patchField("billing_user_alert_enabled", value)} />
+          <div><strong>{tr("paymentSettings.spendAlertPopup")}</strong><span>{tr("paymentSettings.spendAlertPopupHint")}</span></div>
+          <Switch aria-label={tr("paymentSettings.spendAlertPopup")} checked={form.billing_user_alert_enabled} disabled={!form.billing_enabled} onCheckedChange={(value) => patchField("billing_user_alert_enabled", value)} />
         </div>
         <div className="settings-field-grid mt-5">
-          <LabeledControl label="消费提醒间隔（积分）" required={form.billing_enabled && form.billing_user_alert_enabled} hint={form.billing_enabled ? moneyHint("billing_user_alert_interval_fen") : "需先启用余额计费；原提醒设置保留。"}>
+          <LabeledControl label={tr("paymentSettings.spendAlertIntervalPoints")} required={form.billing_enabled && form.billing_user_alert_enabled} hint={form.billing_enabled ? moneyHint("billing_user_alert_interval_fen") : tr("paymentSettings.spendAlertNeedsBilling")}>
             <input className="settings-input" type="number" min={1} step={1} disabled={!form.billing_enabled || !form.billing_user_alert_enabled} {...numericControl("billing_user_alert_interval_fen")} />
           </LabeledControl>
         </div>
       </SettingsPanel>
 
       <details className="settings-advanced" open={form.smtp_enabled || undefined}>
-        <summary>Gửi email SMTP · {form.smtp_enabled ? "Đã bật" : "Chưa bật, bấm để cấu hình"}</summary>
-        <SettingsPanel title="Gửi email" description="Dùng cho email đặt lại mật khẩu, mời nhóm, v.v. Dùng dịch vụ SMTP và mã ủy quyền của nhà cung cấp email; khi tắt, cấu hình hiện có vẫn được giữ.">
+        <summary>Gửi email SMTP · {form.smtp_enabled ? tr("paymentSettings.on") : tr("paymentSettings.smtpOffClickToConfigure")}</summary>
+        <SettingsPanel title={tr("paymentSettings.email")} description={tr("paymentSettings.smtpDesc")}>
           <div className="settings-toggle-row">
-            <div><strong>Bật gửi email SMTP</strong><span>Sau khi bật và lưu cấu hình, có thể gửi email đặt lại mật khẩu, mời nhóm, v.v.</span></div>
-            <Switch aria-label="Bật gửi email SMTP" checked={form.smtp_enabled} onCheckedChange={(value) => patchField("smtp_enabled", value)} />
+            <div><strong>{tr("paymentSettings.smtpEnable")}</strong><span>{tr("paymentSettings.smtpEnableHint")}</span></div>
+            <Switch aria-label={tr("paymentSettings.smtpEnable")} checked={form.smtp_enabled} onCheckedChange={(value) => patchField("smtp_enabled", value)} />
           </div>
           <div className="settings-field-grid mt-5">
-            <LabeledControl label="Máy chủ SMTP" required={form.smtp_enabled} hint="Chỉ nhập tên máy chủ, không có https://, ví dụ smtp.example.com.">
+            <LabeledControl label={tr("paymentSettings.smtpHost")} required={form.smtp_enabled} hint={tr("paymentSettings.smtpHostHint")}>
               <input className="settings-input" disabled={!form.smtp_enabled} placeholder="smtp.example.com" value={form.smtp_host} onChange={(event) => patchField("smtp_host", event.target.value)} autoCapitalize="none" spellCheck={false} pattern="[^/:\s]+" />
             </LabeledControl>
-            <LabeledControl label="Cổng SMTP" required={form.smtp_enabled} hint="1–65535; 587 thường dùng cho STARTTLS, 465 dùng SSL ngầm định.">
+            <LabeledControl label={tr("paymentSettings.smtpPort")} required={form.smtp_enabled} hint={tr("paymentSettings.smtpPortHint")}>
               <input className="settings-input" type="number" disabled={!form.smtp_enabled} min={1} max={65535} step={1} placeholder="587" {...numericControl("smtp_port")} />
             </LabeledControl>
-            <LabeledControl label="Địa chỉ người gửi" required={form.smtp_enabled} hint="Địa chỉ email người nhận nhìn thấy, ví dụ notice@example.com.">
+            <LabeledControl label={tr("paymentSettings.smtpFrom")} required={form.smtp_enabled} hint={tr("paymentSettings.smtpFromHint")}>
               <input className="settings-input" type="email" disabled={!form.smtp_enabled} placeholder="notice@example.com" value={form.smtp_from} onChange={(event) => patchField("smtp_from", event.target.value)} autoCapitalize="none" spellCheck={false} />
             </LabeledControl>
-            <LabeledControl label="Tên đăng nhập SMTP" optional hint="Nhập khi nhà cung cấp yêu cầu xác thực, thường giống email gửi; relay không cần xác thực có thể để trống.">
+            <LabeledControl label={tr("paymentSettings.smtpUser")} optional hint={tr("paymentSettings.smtpUserHint")}>
               <input className="settings-input" disabled={!form.smtp_enabled} placeholder="notice@example.com" value={form.smtp_user} onChange={(event) => patchField("smtp_user", event.target.value)} autoCapitalize="none" spellCheck={false} />
             </LabeledControl>
-            <SecretField label="Mật khẩu SMTP / mã ủy quyền" value={smtpPasswordInput} configured={form.has_smtp_password} required={smtpNeedsPassword}
+            <SecretField label={tr("paymentSettings.smtpPassword")} value={smtpPasswordInput} configured={form.has_smtp_password} required={smtpNeedsPassword}
               clearPending={clearSmtpPassword} onUndoClear={() => setClearSmtpPassword(false)}
-              hint="Đa số hộp thư dùng mã ủy quyền SMTP; khi tắt vẫn có thể cập nhật hoặc xóa thông tin xác thực."
-              error={smtpNeedsPassword && clearSmtpPassword ? "Vui lòng tắt SMTP hoặc xóa tên đăng nhập của relay không cần xác thực trước, rồi mới xóa mật khẩu." : undefined}
+              hint={tr("paymentSettings.smtpPasswordHint")}
+              error={smtpNeedsPassword && clearSmtpPassword ? tr("paymentSettings.smtpPasswordClearBlocked") : undefined}
               onChange={(value) => { setSmtpPasswordInput(value); setClearSmtpPassword(false); }} onClear={() => setClearSmtpPassword(true)} />
-            <LabeledControl label="Mã hóa STARTTLS" hint={[465, 8465, 2465].includes(form.smtp_port) ? "Cổng hiện tại dùng SSL ngầm định, công tắc này không ảnh hưởng mã hóa." : "Cổng 587 thường bật; tùy theo yêu cầu của nhà cung cấp email."}>
+            <LabeledControl label={tr("paymentSettings.starttls")} hint={[465, 8465, 2465].includes(form.smtp_port) ? tr("paymentSettings.starttlsImplicitHint") : tr("paymentSettings.starttlsHint")}>
               <div className="settings-inline-switch">
-                <Switch aria-label="Bật mã hóa SMTP STARTTLS" disabled={!form.smtp_enabled || [465, 8465, 2465].includes(form.smtp_port)} checked={form.smtp_use_tls} onCheckedChange={(value) => patchField("smtp_use_tls", value)} />
+                <Switch aria-label={tr("paymentSettings.starttlsEnable")} disabled={!form.smtp_enabled || [465, 8465, 2465].includes(form.smtp_port)} checked={form.smtp_use_tls} onCheckedChange={(value) => patchField("smtp_use_tls", value)} />
               </div>
             </LabeledControl>
           </div>
