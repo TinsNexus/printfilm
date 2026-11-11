@@ -4,6 +4,7 @@ import { points } from "@/lib/points";
 import { dashboardRangeLabel, type DashboardFilterState } from "@/pages/dashboard/DashboardFilters";
 import { DashboardKpiCard } from "@/pages/dashboard/DashboardKpiCard";
 import { sumDailyUsage } from "@/pages/dashboard/dashboardMetrics";
+import { tr } from "../../i18n/translate.ts";
 
 type DashboardPeriodKpisProps = {
   stats: AdminStats | null;
@@ -20,23 +21,23 @@ export function DashboardPeriodKpis({ stats, filters, loading }: DashboardPeriod
   return (
     <div className="admin-dashboard-kpi-grid admin-dashboard-kpi-grid--secondary min-[1401px]:!grid-cols-3">
       <DashboardKpiCard
-        label={`${rangeLabel}Lượt gọi`}
+        label={tr("dashUi.rangeCalls", { range: rangeLabel })}
         value={stats ? period.calls.toLocaleString() : placeholder}
-        hint={stats ? `Tổng ${stats.usage_calls_total ?? 0} lần` : "Số lần gọi"}
+        hint={stats ? tr("dashUi.totalCallsN", { n: stats.usage_calls_total ?? 0 }) : tr("dashUi.metricCalls")}
         icon={Activity}
         tone="mint"
       />
       <DashboardKpiCard
-        label={`${rangeLabel}扣费`}
+        label={tr("dashUi.rangeCharge", { range: rangeLabel })}
         value={stats ? `${points(period.charge_fen)}` : placeholder}
-        hint={stats ? `本月 ${points(stats.usage_charge_month_fen ?? 0)}` : "用户扣费"}
+        hint={stats ? tr("dashUi.monthAmount", { amount: points(stats.usage_charge_month_fen ?? 0) }) : tr("dashUi.userCharges")}
         icon={TrendingUp}
         tone="blue"
       />
       <DashboardKpiCard
-        label="Dự án phim truyện"
+        label={tr("layout.dramaProjects")}
         value={stats ? stats.drama_project_count ?? 0 : placeholder}
-        hint={stats ? `Người dùng ${stats.user_count}` : "Quy mô dự án"}
+        hint={stats ? tr("dashUi.usersN", { n: stats.user_count }) : tr("dashUi.projectScale")}
         icon={Film}
         tone="slate"
       />

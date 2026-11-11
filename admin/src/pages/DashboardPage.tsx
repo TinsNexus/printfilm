@@ -38,16 +38,18 @@ import { sumDailyUsage } from "@/pages/dashboard/dashboardMetrics";
 import { UsageDistributionChart } from "@/pages/dashboard/UsageDistributionChart";
 import { TopUsersRankingChart } from "@/pages/dashboard/TopUsersRankingChart";
 import { UsageTrendChart } from "@/pages/dashboard/UsageTrendChart";
+import { tr } from "../i18n/translate.ts";
 
 type OrderRes = { items: AdminOrder[]; meta: PageMeta };
 
 const CAPABILITY_LABELS: Record<string, string> = {
-  llm: "LLM văn bản",
-  image: "Tạo ảnh",
-  video: "Video",
-  tts: "Lồng tiếng",
-  unknown: "Khác",
-  other: "Khác",
+  // getter：读取时按当前语言取文案
+  get llm() { return tr("dashUi.cap.llm"); },
+  get image() { return tr("dashUi.cap.image"); },
+  get video() { return tr("dashUi.cap.video"); },
+  get tts() { return tr("dashUi.cap.tts"); },
+  get unknown() { return tr("dashUi.cap.other"); },
+  get other() { return tr("dashUi.cap.other"); },
 };
 
 function statusClass(status: string): string {
@@ -64,7 +66,7 @@ function capabilityLabel(key: string): string {
 }
 
 function domainChartLabel(key: string): string {
-  if (key === "kepu") return "Video ngắn AI";
+  if (key === "kepu") return tr("dashUi.domain.kepu");
   return taskDomainLabel(key);
 }
 
@@ -86,7 +88,7 @@ export function DashboardPage() {
       setStats(s);
       setOrders(o.items);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Tải thất bại");
+      toast.error(err instanceof Error ? err.message : tr("dashUi.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -111,38 +113,38 @@ export function DashboardPage() {
   const domainInsights = buildDomainInsights(byDomain, filters.metric, domainChartLabel);
   const financeInsights = buildFinanceInsights(stats);
   const projectInsights = buildProjectInsights(stats, sumDailyUsage(daily));
-  const metricHint = filters.metric === "calls" ? "Số lần gọi" : "Số tiền trừ";
+  const metricHint = tr(filters.metric === "calls" ? "dashUi.metricCalls" : "dashUi.metricCharge");
 
   return (
     <div className="admin-page admin-dashboard-page">
-      <PageHeader title="Tổng quan vận hành" description="Tổng quan người dùng, nạp tiền, lượt gọi AI và chi phí" />
+      <PageHeader title={tr("dashUi.title")} description={tr("dashUi.desc")} />
 
       <div className="admin-dashboard-kpi-grid">
         <DashboardKpiCard
-          label="Tổng số người dùng"
+          label={tr("dashUi.totalUsers")}
           value={kpiReady ? stats!.user_count : kpiPlaceholder}
-          hint="Tổng người dùng đăng ký"
+          hint={tr("dashUi.totalUsersHint")}
           icon={Users}
           tone="teal"
         />
         <DashboardKpiCard
-          label="Tổng đã thanh toán"
+          label={tr("dashUi.totalPaid")}
           value={kpiReady ? `¥${fenToYuan(stats!.order_paid_total_fen)}` : kpiPlaceholder}
-          hint="Nạp tiền lịch sử"
+          hint={tr("dashUi.totalPaidHint")}
           icon={Banknote}
           tone="blue"
         />
         <DashboardKpiCard
-          label="本月 AI 扣费"
+          label={tr("dashUi.aiChargeMonth")}
           value={kpiReady ? `${points(stats!.usage_charge_month_fen ?? 0)}` : kpiPlaceholder}
-          hint={kpiReady ? `今日 ${points(stats!.usage_charge_today_fen ?? 0)}` : "今日扣费"}
+          hint={kpiReady ? tr("dashUi.todayAmount", { amount: points(stats!.usage_charge_today_fen ?? 0) }) : tr("dashUi.todayCharge")}
           icon={Zap}
           tone="purple"
         />
         <DashboardKpiCard
-          label="Lượt gọi tháng này"
+          label={tr("dashUi.callsMonth")}
           value={kpiReady ? (stats!.usage_calls_month ?? 0).toLocaleString() : kpiPlaceholder}
-          hint={kpiReady ? `Hôm nay ${(stats!.usage_calls_today ?? 0).toLocaleString()} lần` : "Số lần gọi"}
+          hint={kpiReady ? tr("dashUi.todayCalls", { n: (stats!.usage_calls_today ?? 0).toLocaleString() }) : tr("dashUi.metricCalls")}
           icon={Activity}
           tone="sand"
         />
@@ -157,8 +159,8 @@ export function DashboardPage() {
         <>
           <div className="admin-dashboard-charts">
             <PageSection
-              title={`${rangeLabel}Xu hướng mức dùng`}
-              description={loading ? "Đang tải…" : "Xu hướng theo ngày tổng hợp theo điều kiện lọc"}
+              title={tr("dashUi.usageTrend", { range: rangeLabel })}
+              description={tr(loading ? "dashUi.loading" : "dashUi.usageTrendDesc")}
               bodyClassName="!pt-2"
               className="admin-dashboard-chart-main admin-dashboard-glass min-h-0"
             >
@@ -166,7 +168,7 @@ export function DashboardPage() {
             </PageSection>
 
             <PageSection
-              title="Phân bố năng lực"
+              title={tr("dashUi.capDistribution")}
               description={`${rangeLabel} · ${metricHint}`}
               bodyClassName="!pt-2"
               className="admin-dashboard-chart-side admin-dashboard-glass min-h-0"
@@ -181,10 +183,10 @@ export function DashboardPage() {
           </div>
 
           <PageSection
-            title={`TOP3 chi tiêu người dùng (${rangeLabel}）`}
+            title={tr("dashUi.top3", { range: rangeLabel })}
             actions={
               <Link to="/orders?tab=usage" className="admin-link">
-                Xem thêm →
+                {tr("dashUi.more")}
               </Link>
             }
             bodyClassName="!pt-2"
@@ -195,7 +197,7 @@ export function DashboardPage() {
 
           <div className="admin-dashboard-charts">
             <PageSection
-              title="Phân bố lĩnh vực"
+              title={tr("dashUi.domainDistribution")}
               description={`${rangeLabel} · ${metricHint}`}
               bodyClassName="!pt-2"
               className="admin-dashboard-chart-main admin-dashboard-glass min-h-0"
@@ -208,7 +210,7 @@ export function DashboardPage() {
               />
             </PageSection>
             <PageSection
-              title="Thông tin lĩnh vực"
+              title={tr("dashUi.domainInsights")}
               description={`${rangeLabel} · ${metricHint}`}
               bodyClassName="!pt-2"
               className="admin-dashboard-chart-side admin-dashboard-glass min-h-0"
@@ -223,8 +225,8 @@ export function DashboardPage() {
         <>
           <div className="admin-dashboard-charts">
             <PageSection
-              title={`${rangeLabel}Xu hướng mức dùng`}
-              description={loading ? "Đang tải…" : "Phí trừ / lượt gọi tổng hợp theo ngày"}
+              title={tr("dashUi.usageTrend", { range: rangeLabel })}
+              description={tr(loading ? "dashUi.loading" : "dashUi.usageDailyDesc")}
               bodyClassName="!pt-2"
               className="admin-dashboard-chart-main admin-dashboard-glass min-h-0"
             >
@@ -232,7 +234,7 @@ export function DashboardPage() {
             </PageSection>
 
             <PageSection
-              title="Phân bố năng lực"
+              title={tr("dashUi.capDistribution")}
               description={`${rangeLabel} · ${metricHint}`}
               bodyClassName="!pt-2"
               className="admin-dashboard-chart-side admin-dashboard-glass min-h-0"
@@ -248,7 +250,7 @@ export function DashboardPage() {
 
           <div className="admin-dashboard-charts">
             <PageSection
-              title="Phân bố lĩnh vực"
+              title={tr("dashUi.domainDistribution")}
               description={`${rangeLabel} · ${metricHint}`}
               bodyClassName="!pt-2"
               className="admin-dashboard-chart-main admin-dashboard-glass min-h-0"
@@ -261,10 +263,10 @@ export function DashboardPage() {
               />
             </PageSection>
             <PageSection
-              title={`Xếp hạng chi tiêu người dùng (${rangeLabel}）`}
+              title={tr("dashUi.ranking", { range: rangeLabel })}
               actions={
                 <Link to="/orders?tab=usage" className="admin-link">
-                  Chi tiết mức dùng →
+                  {tr("dashUi.usageDetailsLink")}
                 </Link>
               }
               description={metricHint}
@@ -280,11 +282,11 @@ export function DashboardPage() {
       {section === "finance" ? (
         <div className="admin-dashboard-body admin-dashboard-body--finance">
           <PageSection
-            title="Tổng quan tài chính"
-            description="Nạp tiền và phí trừ người dùng"
+            title={tr("dashUi.financeTitle")}
+            description={tr("dashUi.financeDesc")}
             actions={
               <Link to="/finance" className="admin-link">
-                Danh sách tài chính →
+                {tr("dashUi.financeLink")}
               </Link>
             }
             bodyClassName="!pt-2"
@@ -294,11 +296,11 @@ export function DashboardPage() {
           </PageSection>
 
           <PageSection
-            title="Đơn hàng gần đây"
-            description="Chỉ hiển thị thanh toán thành công"
+            title={tr("dashUi.recentOrders")}
+            description={tr("dashUi.recentOrdersDesc")}
             actions={
               <Link to="/orders" className="admin-link">
-                Tất cả →
+                {tr("dashUi.allLink")}
               </Link>
             }
             bodyClassName="!pt-0"
@@ -308,16 +310,16 @@ export function DashboardPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>Tên người dùng</th>
-                    <th>Số tiền</th>
-                    <th>Thời gian thanh toán</th>
+                    <th>{tr("dashUi.colUserName")}</th>
+                    <th>{tr("dashUi.colAmount")}</th>
+                    <th>{tr("dashUi.colPaidAt")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {orders.length === 0 ? (
                     <tr>
                       <td colSpan={3} className="!text-center text-[var(--admin-muted)]">
-                        Chưa có đơn hàng đã thanh toán
+                        {tr("dashUi.noPaidOrders")}
                       </td>
                     </tr>
                   ) : (
@@ -343,8 +345,8 @@ export function DashboardPage() {
       {section === "projects" ? (
         <>
           <PageSection
-            title="Tổng quan vận hành hệ thống"
-            description="Quy mô dự án, lượt gọi và phân bố trạng thái"
+            title={tr("dashUi.opsTitle")}
+            description={tr("dashUi.opsDesc")}
             bodyClassName="!pt-2"
             className="admin-dashboard-glass min-h-0"
           >
@@ -353,14 +355,14 @@ export function DashboardPage() {
 
           <div className="admin-dashboard-project-row">
             <PageSection
-              title="Trạng thái dự án video ngắn AI"
-              description={`Dự án phim truyện ${stats?.drama_project_count ?? 0} bộ`}
+              title={tr("dashUi.kepuStatus")}
+              description={tr("dashUi.dramaProjectsN", { n: stats?.drama_project_count ?? 0 })}
               bodyClassName="!pt-2"
               className="admin-dashboard-glass min-h-0"
             >
               <div className="flex flex-wrap gap-1.5">
                 {statusEntries.length === 0 ? (
-                  <span className="text-xs text-[var(--admin-muted)]">Chưa có dữ liệu</span>
+                  <span className="text-xs text-[var(--admin-muted)]">{tr("dashUi.noData")}</span>
                 ) : (
                   statusEntries.map(([status, count]) => (
                     <span key={status} className={`admin-status-pill !px-2.5 !py-1 !text-[11px] ${statusClass(status)}`}>
@@ -371,22 +373,22 @@ export function DashboardPage() {
               </div>
             </PageSection>
 
-            <PageSection title="Thống kê lượt gọi" bodyClassName="!pt-2" className="admin-dashboard-glass min-h-0">
+            <PageSection title={tr("dashUi.callStats")} bodyClassName="!pt-2" className="admin-dashboard-glass min-h-0">
               <div className="admin-dashboard-stat-grid">
                 <div>
-                  <div className="admin-dashboard-stat-grid-label">Lượt gọi hôm nay</div>
+                  <div className="admin-dashboard-stat-grid-label">{tr("dashUi.callsToday")}</div>
                   <div className="admin-dashboard-stat-grid-value">
                     {kpiReady ? stats!.usage_calls_today ?? 0 : kpiPlaceholder}
                   </div>
                 </div>
                 <div>
-                  <div className="admin-dashboard-stat-grid-label">Lượt gọi tháng này</div>
+                  <div className="admin-dashboard-stat-grid-label">{tr("dashUi.callsMonth")}</div>
                   <div className="admin-dashboard-stat-grid-value">
                     {kpiReady ? stats!.usage_calls_month ?? 0 : kpiPlaceholder}
                   </div>
                 </div>
                 <div>
-                  <div className="admin-dashboard-stat-grid-label">Tổng lượt gọi</div>
+                  <div className="admin-dashboard-stat-grid-label">{tr("dashUi.callsTotal")}</div>
                   <div className="admin-dashboard-stat-grid-value">
                     {kpiReady ? stats!.usage_calls_total ?? 0 : kpiPlaceholder}
                   </div>
@@ -395,7 +397,7 @@ export function DashboardPage() {
             </PageSection>
           </div>
 
-          <PageSection title={`Phân bố lĩnh vực (${projectsRangeLabel}）`} bodyClassName="!pt-2" className="admin-dashboard-glass min-h-0">
+          <PageSection title={tr("dashUi.domainDistributionRange", { range: projectsRangeLabel })} bodyClassName="!pt-2" className="admin-dashboard-glass min-h-0">
             <UsageDistributionChart
               data={byDomain}
               metric="charge"
@@ -404,39 +406,39 @@ export function DashboardPage() {
             />
           </PageSection>
 
-          <PageSection title="Lối tắt" bodyClassName="!pt-2" className="admin-dashboard-glass">
+          <PageSection title={tr("dashUi.shortcuts")} bodyClassName="!pt-2" className="admin-dashboard-glass">
             <div className="admin-dashboard-tools">
               <Link to="/templates" className="admin-dashboard-tool-btn">
                 <Shapes className="h-5 w-5" />
-                <span>Quản lý mẫu</span>
+                <span>{tr("layout.templates")}</span>
               </Link>
               <Link to="/orders?tab=usage" className="admin-dashboard-tool-btn">
                 <Receipt className="h-5 w-5" />
-                <span>Mức dùng đơn hàng</span>
+                <span>{tr("dashUi.orderUsage")}</span>
               </Link>
               <Link to="/users" className="admin-dashboard-tool-btn">
                 <Users className="h-5 w-5" />
-                <span>Quản lý người dùng</span>
+                <span>{tr("layout.users")}</span>
               </Link>
               <Link to="/projects" className="admin-dashboard-tool-btn">
                 <Clapperboard className="h-5 w-5" />
-                <span>Video ngắn AI</span>
+                <span>{tr("dashUi.domain.kepu")}</span>
               </Link>
               <Link to="/drama-projects" className="admin-dashboard-tool-btn">
                 <Film className="h-5 w-5" />
-                <span>Dự án phim truyện</span>
+                <span>{tr("layout.dramaProjects")}</span>
               </Link>
               <Link to="/queues" className="admin-dashboard-tool-btn">
                 <Layers className="h-5 w-5" />
-                <span>Hàng đợi tác vụ</span>
+                <span>{tr("dashUi.taskQueue")}</span>
               </Link>
               <Link to="/settings" className="admin-dashboard-tool-btn">
                 <Settings className="h-5 w-5" />
-                <span>Cấu hình hệ thống</span>
+                <span>{tr("dashUi.systemConfig")}</span>
               </Link>
               <Link to="/orders" className="admin-dashboard-tool-btn">
                 <Activity className="h-5 w-5" />
-                <span>Biến động tài chính</span>
+                <span>{tr("dashUi.financeLedger")}</span>
               </Link>
             </div>
           </PageSection>

@@ -1,5 +1,6 @@
 import { AdminChipFilter } from "@/components/admin/AdminChipFilter";
 import { AdminFilterBar } from "@/components/admin/AdminFilterBar";
+import { tr } from "../../i18n/translate.ts";
 
 /** 仪表盘筛选维度 */
 export type DashboardDays = "1" | "7" | "14" | "30";
@@ -30,37 +31,37 @@ export const PROJECTS_DASHBOARD_FILTERS: DashboardFilterState = {
 };
 
 const DAY_OPTIONS = [
-  { value: "1", label: "Hôm nay" },
-  { value: "7", label: "7 ngày qua" },
-  { value: "14", label: "14 ngày qua" },
-  { value: "30", label: "30 ngày qua" },
+  { value: "1", get label() { return tr("dashUi.range.today"); } },
+  { value: "7", get label() { return tr("dashUi.range.lastN", { n: 7 }); } },
+  { value: "14", get label() { return tr("dashUi.range.lastN", { n: 14 }); } },
+  { value: "30", get label() { return tr("dashUi.range.lastN", { n: 30 }); } },
 ];
 
 /** 图表 / 区块标题用的时间范围文案 */
 export function dashboardRangeLabel(days: DashboardDays): string {
-  if (days === "1") return "Hôm nay";
-  return `$ ngày qua{days} Ngày`;
+  if (days === "1") return tr("dashUi.range.today");
+  return tr("dashUi.range.lastN", { n: days });
 }
 
 const DOMAIN_OPTIONS = [
-  { value: "all", label: "Tất cả lĩnh vực" },
-  { value: "drama", label: "Phim truyện" },
-  { value: "kepu", label: "Video ngắn AI" },
-  { value: "tools", label: "Công cụ" },
+  { value: "all", get label() { return tr("dashUi.allDomains"); } },
+  { value: "drama", get label() { return tr("dashUi.domain.drama"); } },
+  { value: "kepu", get label() { return tr("dashUi.domain.kepu"); } },
+  { value: "tools", get label() { return tr("dashUi.domain.tools"); } },
   { value: "studio", label: "Studio" },
 ];
 
 const CAPABILITY_OPTIONS = [
-  { value: "all", label: "Tất cả năng lực" },
+  { value: "all", get label() { return tr("dashUi.allCaps"); } },
   { value: "llm", label: "LLM" },
-  { value: "image", label: "Tạo ảnh" },
-  { value: "video", label: "Video" },
-  { value: "tts", label: "Lồng tiếng" },
+  { value: "image", get label() { return tr("dashUi.cap.image"); } },
+  { value: "video", get label() { return tr("dashUi.cap.video"); } },
+  { value: "tts", get label() { return tr("dashUi.cap.tts"); } },
 ];
 
 const METRIC_OPTIONS = [
-  { value: "charge", label: "Trừ phí" },
-  { value: "calls", label: "Lượt gọi" },
+  { value: "charge", get label() { return tr("dashUi.metric.charge"); } },
+  { value: "calls", get label() { return tr("dashUi.metric.calls"); } },
 ];
 
 type DashboardFiltersProps = {
@@ -75,28 +76,28 @@ export function DashboardFilters({ value, onChange }: DashboardFiltersProps) {
   return (
     <AdminFilterBar className="admin-dashboard-filters">
       <AdminChipFilter
-        label="Chiều thời gian"
+        label={tr("dashUi.filterRange")}
         value={value.days}
         options={DAY_OPTIONS}
         onChange={(days) => patch({ days: days as DashboardDays })}
         className="admin-chip-filter--segment"
       />
       <AdminChipFilter
-        label="Lĩnh vực nghiệp vụ"
+        label={tr("dashUi.filterDomain")}
         value={value.domain}
         options={DOMAIN_OPTIONS}
         onChange={(domain) => patch({ domain: domain as DashboardDomain })}
         className="admin-chip-filter--segment"
       />
       <AdminChipFilter
-        label="Loại năng lực"
+        label={tr("dashUi.filterCap")}
         value={value.capability}
         options={CAPABILITY_OPTIONS}
         onChange={(capability) => patch({ capability: capability as DashboardCapability })}
         className="admin-chip-filter--segment"
       />
       <AdminChipFilter
-        label="Chỉ số thống kê"
+        label={tr("dashUi.filterMetric")}
         value={value.metric}
         options={METRIC_OPTIONS}
         onChange={(metric) => patch({ metric: metric as DashboardMetric })}

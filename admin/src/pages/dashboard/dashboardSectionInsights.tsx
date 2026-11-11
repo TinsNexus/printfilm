@@ -16,6 +16,7 @@ import type { DashboardInsightItem } from "@/pages/dashboard/DashboardInsightGri
 import { sumDailyUsage, sumProjectStatuses } from "@/pages/dashboard/dashboardMetrics";
 import { fenToYuan } from "@/lib/utils";
 import { projectStatusLabel } from "@/lib/statusLabels";
+import { tr } from "../../i18n/translate.ts";
 
 /** 财务账单 Tab 图标指标 */
 export function buildFinanceInsights(stats: AdminStats | null): DashboardInsightItem[] {
@@ -26,25 +27,25 @@ export function buildFinanceInsights(stats: AdminStats | null): DashboardInsight
   return [
     {
       key: "paid-total",
-      label: "Tổng nạp tiền",
+      label: tr("dashUi.totalTopup"),
       value: `¥${fenToYuan(stats.order_paid_total_fen)}`,
-      hint: `Hôm nay ¥${fenToYuan(stats.order_paid_today_fen)}`,
+      hint: tr("dashUi.todayAmount", { amount: `¥${fenToYuan(stats.order_paid_today_fen)}` }),
       icon: Banknote,
       tone: "blue",
     },
     {
       key: "charge-month",
-      label: "Phí trừ tháng này",
+      label: tr("dashUi.chargeMonth"),
       value: `¥${fenToYuan(monthCharge)}`,
-      hint: `今日 ${points(stats.usage_charge_today_fen ?? 0)}`,
+      hint: tr("dashUi.todayAmount", { amount: points(stats.usage_charge_today_fen ?? 0) }),
       icon: Zap,
       tone: "purple",
     },
     {
       key: "paid-today",
-      label: "Ghi có hôm nay",
+      label: tr("dashUi.creditedToday"),
       value: `¥${fenToYuan(stats.order_paid_today_fen)}`,
-      hint: "Đơn nạp tiền",
+      hint: tr("dashUi.topupOrders"),
       icon: CircleDollarSign,
       tone: "teal",
     },
@@ -68,33 +69,33 @@ export function buildProjectInsights(stats: AdminStats | null, periodDaily: Retu
   const items: DashboardInsightItem[] = [
     {
       key: "kepu-total",
-      label: "Dự án khoa học",
+      label: tr("layout.explainerProjects"),
       value: kepuTotal,
-      hint: `Phim truyện ${stats.drama_project_count ?? 0} bộ`,
+      hint: tr("dashUi.dramaN", { n: stats.drama_project_count ?? 0 }),
       icon: Clapperboard,
       tone: "blue",
     },
     {
       key: "drama-total",
-      label: "Dự án phim truyện",
+      label: tr("layout.dramaProjects"),
       value: stats.drama_project_count ?? 0,
-      hint: "Dự án toàn site",
+      hint: tr("dashUi.siteProjects"),
       icon: Film,
       tone: "teal",
     },
     {
       key: "calls-today",
-      label: "Lượt gọi hôm nay",
+      label: tr("dashUi.callsToday"),
       value: (stats.usage_calls_today ?? 0).toLocaleString(),
-      hint: `Tháng này ${stats.usage_calls_month ?? 0} lần`,
+      hint: tr("dashUi.monthCallsN", { n: stats.usage_calls_month ?? 0 }),
       icon: Activity,
       tone: "mint",
     },
     {
       key: "calls-total",
-      label: "Tổng lượt gọi",
+      label: tr("dashUi.callsTotal"),
       value: (stats.usage_calls_total ?? 0).toLocaleString(),
-      hint: `Khoảng gần đây ${periodDaily.calls.toLocaleString()} lần`,
+      hint: tr("dashUi.windowCallsN", { n: periodDaily.calls.toLocaleString() }),
       icon: Layers,
       tone: "slate",
     },
@@ -110,7 +111,7 @@ export function buildProjectInsights(stats: AdminStats | null, periodDaily: Retu
       key: `status-${status}`,
       label: projectStatusLabel(status),
       value: count,
-      hint: kepuTotal > 0 ? `Chiếm khoa học ${((count / kepuTotal) * 100).toFixed(1)}%` : undefined,
+      hint: kepuTotal > 0 ? tr("dashUi.shareOfKepu", { pct: ((count / kepuTotal) * 100).toFixed(1) }) : undefined,
       icon: meta.icon,
       tone: meta.tone,
     });

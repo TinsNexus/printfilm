@@ -1,6 +1,7 @@
 import type { AdminTopUser, AdminUsageBucket } from "@/api/client";
 import type { DashboardMetric } from "@/pages/dashboard/DashboardFilters";
 import { UsageDistributionChart } from "@/pages/dashboard/UsageDistributionChart";
+import { tr } from "../../i18n/translate.ts";
 
 /** 用户排行转为柱状图数据桶 */
 export function topUsersToBuckets(users: AdminTopUser[]): AdminUsageBucket[] {
@@ -29,7 +30,7 @@ type TopUsersRankingChartProps = {
 export function TopUsersRankingChart({ users, metric }: TopUsersRankingChartProps) {
   const rows = topUsersToBuckets(users);
   if (rows.length === 0) {
-    return <div className="admin-chart-empty">Chưa có xếp hạng</div>;
+    return <div className="admin-chart-empty">{tr("dashUi.noRanking")}</div>;
   }
 
   return (

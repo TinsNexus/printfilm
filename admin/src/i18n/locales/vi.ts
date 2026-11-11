@@ -1,3 +1,4 @@
+import { viAdminDashboardUi } from "./vi/adminDashboardUi.ts";
 import { viAdminTaskUi } from "./vi/adminTaskUi.ts";
 import { viAdminMarketplaceStatus } from "./vi/adminMarketplaceStatus.ts";
 import { viAdminMarketplaceErrors } from "./vi/adminMarketplaceErrors.ts";
@@ -44,6 +45,7 @@ import { viAdminStatus } from "./vi/adminStatus.ts";
 import { viShell } from "./vi/shell.ts";
 
 export const vi = {
+  ...viAdminDashboardUi,
   ...viAdminTaskUi,
   ...viAdminMarketplaceStatus,
   ...viAdminMarketplaceErrors,

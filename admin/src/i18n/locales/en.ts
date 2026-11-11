@@ -1,3 +1,4 @@
+import { enAdminDashboardUi } from "./en/adminDashboardUi.ts";
 import { enAdminTaskUi } from "./en/adminTaskUi.ts";
 import { enAdminMarketplaceStatus } from "./en/adminMarketplaceStatus.ts";
 import { enAdminMarketplaceErrors } from "./en/adminMarketplaceErrors.ts";
@@ -44,6 +45,7 @@ import { enAdminStatus } from "./en/adminStatus.ts";
 import { enShell } from "./en/shell.ts";
 
 export const en = {
+  ...enAdminDashboardUi,
   ...enAdminTaskUi,
   ...enAdminMarketplaceStatus,
   ...enAdminMarketplaceErrors,

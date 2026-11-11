@@ -10,6 +10,7 @@ import {
 import type { AdminDailyUsage } from "@/api/client";
 import { points } from "@/lib/points";
 import type { DashboardMetric } from "./DashboardFilters";
+import { tr } from "../../i18n/translate.ts";
 
 type UsageTrendChartProps = {
   data: AdminDailyUsage[];
@@ -17,8 +18,8 @@ type UsageTrendChartProps = {
 };
 
 function metricLabel(metric: DashboardMetric): string {
-  if (metric === "calls") return "Số lần gọi";
-  return "Số tiền trừ";
+  if (metric === "calls") return tr("dashUi.metricCalls");
+  return tr("dashUi.metricCharge");
 }
 
 function readMetric(row: AdminDailyUsage, metric: DashboardMetric): number {
@@ -45,7 +46,7 @@ export function UsageTrendChart({ data, metric }: UsageTrendChartProps) {
   }));
 
   if (chartData.length === 0) {
-    return <div className="admin-chart-empty">Chưa có dữ liệu xu hướng</div>;
+    return <div className="admin-chart-empty">{tr("dashUi.noTrend")}</div>;
   }
 
   return (

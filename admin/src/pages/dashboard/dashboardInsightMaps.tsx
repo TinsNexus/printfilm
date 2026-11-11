@@ -13,21 +13,22 @@ import type { AdminUsageBucket } from "@/api/client";
 import type { DashboardMetric } from "@/pages/dashboard/DashboardFilters";
 import type { DashboardInsightItem, DashboardInsightTone } from "@/pages/dashboard/DashboardInsightGrid";
 import { formatDashboardMetric, readBucketMetric } from "@/pages/dashboard/dashboardMetrics";
+import { tr } from "../../i18n/translate.ts";
 
 const CAPABILITY_META: Record<string, { label: string; icon: LucideIcon; tone: DashboardInsightTone }> = {
-  llm: { label: "LLM văn bản", icon: MessageSquareText, tone: "purple" },
-  image: { label: "Tạo ảnh", icon: Image, tone: "blue" },
-  video: { label: "Video", icon: Video, tone: "teal" },
-  tts: { label: "Lồng tiếng", icon: Mic, tone: "sand" },
-  unknown: { label: "Khác", icon: Wrench, tone: "slate" },
+  llm: { get label() { return tr("dashUi.cap.llm"); }, icon: MessageSquareText, tone: "purple" },
+  image: { get label() { return tr("dashUi.cap.image"); }, icon: Image, tone: "blue" },
+  video: { get label() { return tr("dashUi.cap.video"); }, icon: Video, tone: "teal" },
+  tts: { get label() { return tr("dashUi.cap.tts"); }, icon: Mic, tone: "sand" },
+  unknown: { get label() { return tr("dashUi.cap.other"); }, icon: Wrench, tone: "slate" },
 };
 
 const DOMAIN_META: Record<string, { label: string; icon: LucideIcon; tone: DashboardInsightTone }> = {
-  drama: { label: "Phim truyện", icon: Film, tone: "teal" },
-  kepu: { label: "Video ngắn AI", icon: Clapperboard, tone: "blue" },
-  tools: { label: "Công cụ", icon: Wrench, tone: "sand" },
-  studio: { label: "Studio", icon: Palette, tone: "mint" },
-  unknown: { label: "Khác", icon: Wrench, tone: "slate" },
+  drama: { get label() { return tr("dashUi.domain.drama"); }, icon: Film, tone: "teal" },
+  kepu: { get label() { return tr("dashUi.domain.kepu"); }, icon: Clapperboard, tone: "blue" },
+  tools: { get label() { return tr("dashUi.domain.tools"); }, icon: Wrench, tone: "sand" },
+  studio: { get label() { return tr("dashUi.domain.studio"); }, icon: Palette, tone: "mint" },
+  unknown: { get label() { return tr("dashUi.cap.other"); }, icon: Wrench, tone: "slate" },
 };
 
 function buildInsightItems(
@@ -49,12 +50,12 @@ function buildInsightItems(
     .map(({ row, value }) => {
       const meta = metaMap[row.key] ?? metaMap.unknown;
       const sharePct = total > 0 ? ((value / total) * 100).toFixed(1) : null;
-      const shareHint = sharePct ? `Tỷ trọng ${sharePct}%` : undefined;
+      const shareHint = sharePct ? tr("dashUi.share", { pct: sharePct }) : undefined;
       return {
         key: row.key,
         label: labelForKey?.(row.key) ?? meta.label,
         value: formatDashboardMetric(value, metric),
-        hint: [shareHint, `${row.calls.toLocaleString()} lượt gọi`].filter(Boolean).join(" · "),
+        hint: [shareHint, tr("dashUi.callsN", { n: row.calls.toLocaleString() })].filter(Boolean).join(" · "),
         icon: meta.icon,
         tone: meta.tone,
       };

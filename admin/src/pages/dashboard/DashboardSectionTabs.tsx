@@ -1,5 +1,6 @@
 import { BarChart3, Clapperboard, LayoutDashboard, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { tr } from "../../i18n/translate.ts";
 
 /** 仪表盘主板块 */
 export type DashboardSection = "overview" | "usage" | "finance" | "projects";
@@ -10,10 +11,10 @@ const SECTIONS: {
   desc: string;
   icon: typeof LayoutDashboard;
 }[] = [
-  { id: "overview", label: "Tổng quan kinh doanh", desc: "Chỉ số cốt lõi và xu hướng", icon: LayoutDashboard },
-  { id: "usage", label: "Phân tích mức dùng", desc: "Lượt gọi và phân bố", icon: BarChart3 },
-  { id: "finance", label: "Hóa đơn tài chính", desc: "Nạp tiền và trừ phí", icon: Wallet },
-  { id: "projects", label: "Vận hành dự án", desc: "Sản xuất và lối tắt", icon: Clapperboard },
+  { id: "overview", get label() { return tr("dashUi.sec.overview"); }, get desc() { return tr("dashUi.sec.overviewDesc"); }, icon: LayoutDashboard },
+  { id: "usage", get label() { return tr("dashUi.sec.usage"); }, get desc() { return tr("dashUi.sec.usageDesc"); }, icon: BarChart3 },
+  { id: "finance", get label() { return tr("dashUi.sec.finance"); }, get desc() { return tr("dashUi.sec.financeDesc"); }, icon: Wallet },
+  { id: "projects", get label() { return tr("dashUi.sec.projects"); }, get desc() { return tr("dashUi.sec.projectsDesc"); }, icon: Clapperboard },
 ];
 
 type DashboardSectionTabsProps = {
@@ -24,7 +25,7 @@ type DashboardSectionTabsProps = {
 /** 仪表盘板块切换 */
 export function DashboardSectionTabs({ value, onChange }: DashboardSectionTabsProps) {
   return (
-    <div className="admin-dashboard-section-tabs" role="tablist" aria-label="Các khối bảng điều khiển">
+    <div className="admin-dashboard-section-tabs" role="tablist" aria-label={tr("dashUi.sectionsAria")}>
       {SECTIONS.map((item) => {
         const active = value === item.id;
         const Icon = item.icon;
