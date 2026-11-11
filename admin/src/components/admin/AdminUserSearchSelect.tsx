@@ -4,6 +4,7 @@ import { api, type AdminUserRow, type PageMeta } from "@/api/client";
 import { formatAccountId, parseAccountIdQuery } from "@/lib/admin-account";
 import { cn } from "@/lib/utils";
 import "@/styles/admin-controls.css";
+import { tr } from "../../i18n/translate.ts";
 
 type ListRes = { items: AdminUserRow[]; meta: PageMeta };
 
@@ -18,7 +19,7 @@ type AdminUserSearchSelectProps = {
 export function AdminUserSearchSelect({
   value,
   onChange,
-  placeholder = "Tìm email người dùng / ID tài khoản",
+  placeholder = tr("users.ui.userSearchPlaceholder"),
   className,
 }: AdminUserSearchSelectProps) {
   const [query, setQuery] = useState("");
@@ -145,18 +146,18 @@ export function AdminUserSearchSelect({
             setOpen(true);
             inputRef.current?.focus();
           }}
-          aria-label="Xóa người dùng"
+          aria-label={tr("users.ui.clearUser")}
         >
           <X size={13} />
         </button>
       ) : null}
       {open ? (
         <div className="admin-user-search-dropdown admin-user-combobox-popover">
-          <div className="admin-user-combobox-heading"><Search size={13} aria-hidden="true" /><span>{query.trim() ? "Người dùng khớp" : "Tìm người dùng"}</span>{options.length ? <span className="admin-user-combobox-count">{options.length} người</span> : null}</div>
-          <div id={listId} role="listbox" aria-label="Tìm người dùng" className="admin-user-combobox-list" aria-busy={loading}>
-          {loading ? <div className="admin-user-search-empty" role="status"><LoaderCircle size={17} className="admin-control-spinner" />Đang tìm người dùng…</div> : null}
+          <div className="admin-user-combobox-heading"><Search size={13} aria-hidden="true" /><span>{tr(query.trim() ? "users.ui.matchedUsers" : "users.ui.findUser")}</span>{options.length ? <span className="admin-user-combobox-count">{tr("users.ui.peopleN", { n: options.length })}</span> : null}</div>
+          <div id={listId} role="listbox" aria-label={tr("users.ui.searchUsers")} className="admin-user-combobox-list" aria-busy={loading}>
+          {loading ? <div className="admin-user-search-empty" role="status"><LoaderCircle size={17} className="admin-control-spinner" />{tr("users.ui.searching")}</div> : null}
           {!loading && options.length === 0 ? (
-            <div className="admin-user-search-empty" role="status">{error ? "Tìm kiếm thất bại, vui lòng nhập lại và thử lại" : query.trim() ? "Không tìm thấy người dùng phù hợp" : "Nhập email, biệt danh hoặc ID tài khoản để tìm"}</div>
+            <div className="admin-user-search-empty" role="status">{tr(error ? "users.ui.searchFailed" : query.trim() ? "users.ui.noMatch" : "users.ui.searchPrompt")}</div>
           ) : null}
           {options.map((u, index) => (
             <button
@@ -182,7 +183,7 @@ export function AdminUserSearchSelect({
             </button>
           ))}
           </div>
-          <div className="admin-user-combobox-footer"><span><kbd>↑</kbd><kbd>↓</kbd> Chọn</span><span><kbd>Enter</kbd> Xác nhận</span></div>
+          <div className="admin-user-combobox-footer"><span><kbd>↑</kbd><kbd>↓</kbd> {tr("users.ui.keySelect")}</span><span><kbd>Enter</kbd> {tr("users.ui.keyConfirm")}</span></div>
         </div>
       ) : null}
     </div>

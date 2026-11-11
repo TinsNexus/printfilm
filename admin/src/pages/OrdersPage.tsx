@@ -21,6 +21,7 @@ import { useAdminDetailQuery } from "@/hooks/useAdminDetailQuery";
 
 import { orderPaymentLabel } from "@/lib/orderPayment";
 import { ledgerKindLabel, orderStatusLabel, payTypeLabel, taskDomainLabel } from "@/lib/statusLabels";
+import { tr } from "../i18n/translate.ts";
 
 type OrderRes = PageResult<AdminOrder>;
 type LedgerRes = PageResult<AdminLedger>;
@@ -65,7 +66,7 @@ export function OrdersPage() {
     try {
       setOrders(await listAdminOrders(page, { status: orderStatus, userId: orderUserId }));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Tải đơn hàng thất bại");
+      toast.error(err instanceof Error ? err.message : tr("orders.ui.loadOrdersFailed"));
     }
   }
 
@@ -74,7 +75,7 @@ export function OrdersPage() {
     try {
       setLedger(await listAdminLedger(page, { kind: ledgerKind, userId: ledgerUserId }));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Tải biến động thất bại");
+      toast.error(err instanceof Error ? err.message : tr("orders.ui.loadLedgerFailed"));
     }
   }
 
@@ -96,7 +97,7 @@ export function OrdersPage() {
         dateTo: usageDateTo,
       }));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Tải mức dùng thất bại");
+      toast.error(err instanceof Error ? err.message : tr("orders.ui.loadUsageFailed"));
     }
   }
 
@@ -155,20 +156,20 @@ export function OrdersPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader title="Giao dịch đơn hàng" description="Xem đơn nạp tiền, biến động ví và chi tiết mức dùng AI" />
+      <PageHeader title={tr("orders.ui.title")} description={tr("orders.ui.desc")} />
       <Tabs value={tab} onValueChange={onTabChange}>
         <TabsList>
-          <TabsTrigger value="orders">Đơn nạp tiền</TabsTrigger>
-          <TabsTrigger value="ledger">Biến động ví</TabsTrigger>
-          <TabsTrigger value="usage">Chi tiết mức dùng</TabsTrigger>
+          <TabsTrigger value="orders">{tr("orders.ui.tabOrders")}</TabsTrigger>
+          <TabsTrigger value="ledger">{tr("orders.ui.tabLedger")}</TabsTrigger>
+          <TabsTrigger value="usage">{tr("orders.ui.tabUsage")}</TabsTrigger>
         </TabsList>
         <TabsContent value="orders" className="space-y-4">
           <AdminFilterBar>
             <Select value={orderStatus} onChange={(e) => setOrderStatus(e.target.value)}>
-              <option value="">Tất cả trạng thái</option>
-              <option value="pending">Chờ thanh toán</option>
-              <option value="paid">Đã thanh toán</option>
-              <option value="closed">Đã tắt</option>
+              <option value="">{tr("orders.ui.allStatuses")}</option>
+              <option value="pending">{tr("status.pendingPayment")}</option>
+              <option value="paid">{tr("status.paid")}</option>
+              <option value="closed">{tr("status.closed")}</option>
             </Select>
             <AdminUserSearchSelect value={orderUserId} onChange={(id) => setOrderUserId(id)} />
             <Button
@@ -180,7 +181,7 @@ export function OrdersPage() {
                 void loadOrders(1);
               }}
             >
-              Lọc
+              {tr("orders.ui.filter")}
             </Button>
           </AdminFilterBar>
           <div className="rounded-lg border bg-background">
@@ -188,16 +189,16 @@ export function OrdersPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>ID</TableHead>
-                  <TableHead>Mã đơn merchant</TableHead>
-                  <TableHead>Người dùng</TableHead>
+                  <TableHead>{tr("orders.ui.colOutTradeNo")}</TableHead>
+                  <TableHead>{tr("orders.ui.colUser")}</TableHead>
                   <TableHead>SKU</TableHead>
-                  <TableHead>支付金额</TableHead>
-                  <TableHead>到账积分</TableHead>
-                  <TableHead>支付</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead>渠道单号</TableHead>
-                  <TableHead>支付时间</TableHead>
-                  <TableHead>创建时间</TableHead>
+                  <TableHead>{tr("orders.ui.colAmount")}</TableHead>
+                  <TableHead>{tr("orders.ui.colCreditedPoints")}</TableHead>
+                  <TableHead>{tr("orders.ui.colPayType")}</TableHead>
+                  <TableHead>{tr("orders.ui.colStatus")}</TableHead>
+                  <TableHead>{tr("orders.ui.colTradeNo")}</TableHead>
+                  <TableHead>{tr("orders.ui.colPaidAt")}</TableHead>
+                  <TableHead>{tr("orders.ui.colCreatedAt")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -248,14 +249,14 @@ export function OrdersPage() {
         <TabsContent value="ledger" className="space-y-4">
           <AdminFilterBar>
             <Select value={ledgerKind} onChange={(e) => setLedgerKind(e.target.value)}>
-              <option value="">Tất cả loại</option>
-              <option value="topup">Nạp tiền</option>
-              <option value="grant">Tặng</option>
-              <option value="adjust">Điều chỉnh</option>
-              <option value="freeze">Đóng băng</option>
-              <option value="unfreeze">Mở băng</option>
-              <option value="settle">Quyết toán</option>
-              <option value="refund">Hoàn tiền</option>
+              <option value="">{tr("orders.ui.allKinds")}</option>
+              <option value="topup">{tr("status.topUp")}</option>
+              <option value="grant">{tr("status.grant")}</option>
+              <option value="adjust">{tr("status.adjustment")}</option>
+              <option value="freeze">{tr("status.hold")}</option>
+              <option value="unfreeze">{tr("status.release")}</option>
+              <option value="settle">{tr("status.settlement")}</option>
+              <option value="refund">{tr("status.refund")}</option>
             </Select>
             <AdminUserSearchSelect value={ledgerUserId} onChange={(id) => setLedgerUserId(id)} />
             <Button
@@ -267,7 +268,7 @@ export function OrdersPage() {
                 void loadLedger(1);
               }}
             >
-              Lọc
+              {tr("orders.ui.filter")}
             </Button>
           </AdminFilterBar>
           <div className="rounded-lg border bg-background">
@@ -275,13 +276,13 @@ export function OrdersPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>ID</TableHead>
-                  <TableHead>用户</TableHead>
-                  <TableHead>变动</TableHead>
-                  <TableHead>剩余积分</TableHead>
-                  <TableHead>类型</TableHead>
-                  <TableHead>关联</TableHead>
-                  <TableHead>备注</TableHead>
-                  <TableHead>时间</TableHead>
+                  <TableHead>{tr("orders.ui.colUser")}</TableHead>
+                  <TableHead>{tr("orders.ui.colChange")}</TableHead>
+                  <TableHead>{tr("orders.ui.colPointsAfter")}</TableHead>
+                  <TableHead>{tr("orders.ui.colKind")}</TableHead>
+                  <TableHead>{tr("orders.ui.colRef")}</TableHead>
+                  <TableHead>{tr("orders.ui.colNote")}</TableHead>
+                  <TableHead>{tr("orders.ui.colTime")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -321,11 +322,11 @@ export function OrdersPage() {
         <TabsContent value="usage" className="space-y-4">
           <AdminFilterBar>
             <AdminUserSearchSelect value={usageUserId} onChange={(id) => setUsageUserId(id)} />
-            <Input placeholder="ID tác vụ" value={usageTaskId} onChange={(e) => setUsageTaskId(e.target.value)} />
+            <Input placeholder={tr("orders.ui.taskId")} value={usageTaskId} onChange={(e) => setUsageTaskId(e.target.value)} />
             <Select value={usageDomain} onChange={(e) => setUsageDomain(e.target.value)}>
-              <option value="">Tất cả lĩnh vực</option>
-              <option value="kepu">Khoa học</option>
-              <option value="drama">Phim truyện</option>
+              <option value="">{tr("orders.ui.allDomains")}</option>
+              <option value="kepu">{tr("orders.ui.domainKepu")}</option>
+              <option value="drama">{tr("orders.ui.domainDrama")}</option>
               <option value="studio">Studio</option>
             </Select>
             <Input
@@ -334,23 +335,23 @@ export function OrdersPage() {
               onChange={(e) => setUsageBillingKey(e.target.value)}
             />
             <Select value={usageCapability} onChange={(e) => setUsageCapability(e.target.value)}>
-              <option value="">Tất cả năng lực</option>
-              <option value="llm">LLM văn bản</option>
-              <option value="image">Tạo ảnh</option>
-              <option value="video">Video</option>
-              <option value="tts">Lồng tiếng</option>
+              <option value="">{tr("orders.ui.allCapabilities")}</option>
+              <option value="llm">{tr("orders.ui.capLlm")}</option>
+              <option value="image">{tr("orders.ui.capImage")}</option>
+              <option value="video">{tr("orders.ui.capVideo")}</option>
+              <option value="tts">{tr("orders.ui.capTts")}</option>
             </Select>
             <Input
-              placeholder="Model (như seedance-2.5)"
+              placeholder={tr("orders.ui.modelPlaceholder")}
               value={usageModel}
               onChange={(e) => setUsageModel(e.target.value)}
             />
             <Select value={usageBasis} onChange={(e) => setUsageBasis(e.target.value)}>
-              <option value="">Tất cả căn cứ tính phí</option>
-              <option value="estimate">Ước tính</option>
-              <option value="upstream">Đo thực tế</option>
-              <option value="upstream_usage">Đo thực tế (token)</option>
-              <option value="upstream_cost">Đo thực tế (chi phí)</option>
+              <option value="">{tr("orders.ui.allBases")}</option>
+              <option value="estimate">{tr("orders.ui.estimated")}</option>
+              <option value="upstream">{tr("orders.ui.measured")}</option>
+              <option value="upstream_usage">{tr("orders.ui.measuredTokens")}</option>
+              <option value="upstream_cost">{tr("orders.ui.measuredCost")}</option>
             </Select>
             <AdminDateRangeFilter
               from={usageDateFrom}
@@ -372,7 +373,7 @@ export function OrdersPage() {
                 void loadUsage(1, { billing_key: "llm_chat", capability: "llm", model: "" });
               }}
             >
-              Mức dùng LLM
+              {tr("orders.ui.llmUsage")}
             </Button>
             <Button
               size="sm"
@@ -397,23 +398,23 @@ export function OrdersPage() {
                 void loadUsage(1);
               }}
             >
-              Lọc
+              {tr("orders.ui.filter")}
             </Button>
           </AdminFilterBar>
           <div className="rounded-lg border bg-background">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Thời gian</TableHead>
-                  <TableHead>Người dùng</TableHead>
-                  <TableHead>Tác vụ</TableHead>
-                  <TableHead>Dự án</TableHead>
-                  <TableHead>Lĩnh vực</TableHead>
-                  <TableHead>Năng lực</TableHead>
+                  <TableHead>{tr("orders.ui.colTime")}</TableHead>
+                  <TableHead>{tr("orders.ui.colUser")}</TableHead>
+                  <TableHead>{tr("orders.ui.colTask")}</TableHead>
+                  <TableHead>{tr("orders.ui.colProject")}</TableHead>
+                  <TableHead>{tr("orders.ui.colDomain")}</TableHead>
+                  <TableHead>{tr("orders.ui.colCapability")}</TableHead>
                   <TableHead>Model</TableHead>
                   <TableHead>Tokens</TableHead>
-                  <TableHead>Trừ phí</TableHead>
-                  <TableHead>Căn cứ tính phí</TableHead>
+                  <TableHead>{tr("orders.ui.colCharge")}</TableHead>
+                  <TableHead>{tr("orders.ui.colBasis")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -429,7 +430,7 @@ export function OrdersPage() {
                       {row.task_run_id ? (
                         <AdminEntityLink kind="task" id={row.task_run_id} />
                       ) : (
-                        "Lịch sử/chưa liên kết"
+                        tr("orders.ui.legacyUnlinked")
                       )}
                     </TableCell>
                     <TableCell className="text-xs">
@@ -455,13 +456,13 @@ export function OrdersPage() {
                         }
                         title={
                           row.billing_basis === "upstream_cost"
-                            ? "Trừ phí theo chi phí thực tế đã ghi"
+                            ? tr("orders.ui.basisCost")
                             : row.billing_basis === "upstream_usage"
-                              ? "Trừ phí theo lượng Token thực tế và đơn giá đã cấu hình"
-                              : "Trừ phí theo Token ước tính từ cấu hình"
+                              ? tr("orders.ui.basisUsage")
+                              : tr("orders.ui.basisEstimate")
                         }
                       >
-                        {row.billing_basis_label ?? (row.estimated ? "Ước tính" : "Đo thực tế")}
+                        {row.billing_basis_label ?? (row.estimated ? tr("orders.ui.estimated") : tr("orders.ui.measured"))}
                       </Badge>
                     </TableCell>
                   </TableRow>

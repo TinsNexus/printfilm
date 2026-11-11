@@ -22,6 +22,7 @@ import { formatAccountId } from "@/lib/admin-account";
 
 import { orderPaymentLabel } from "@/lib/orderPayment";
 import { ledgerKindLabel, orderStatusLabel } from "@/lib/statusLabels";
+import { tr } from "../../i18n/translate.ts";
 
 type ListRes<T> = PageResult<T>;
 
@@ -58,7 +59,7 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
         setLedger(ledgerRes.items);
         setUsage(usageRes.items);
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Tải chi tiết người dùng thất bại");
+        toast.error(err instanceof Error ? err.message : tr("users.ui.drawerLoadFailed"));
       } finally {
         setLoading(false);
       }
@@ -70,12 +71,12 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
       open={open}
       onOpenChange={onOpenChange}
       size="xl"
-      title="Chi tiết người dùng"
+      title={tr("users.ui.drawerTitle")}
       subtitle={
         user
           ? `${user.email} · ID：${formatAccountId(user.id)}`
           : loading
-            ? "Đang tải…"
+            ? tr("users.ui.loading")
             : "—"
       }
       bodyClassName="!pt-2"
@@ -83,22 +84,22 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
       {user ? (
         <Tabs defaultValue="info" className="admin-detail-tabs">
           <TabsList>
-            <TabsTrigger value="info">Thông tin cơ bản</TabsTrigger>
-            <TabsTrigger value="orders">Đơn hàng gần đây</TabsTrigger>
-            <TabsTrigger value="ledger">Biến động ví</TabsTrigger>
-            <TabsTrigger value="usage">Tóm tắt mức dùng</TabsTrigger>
+            <TabsTrigger value="info">{tr("users.ui.tabInfo")}</TabsTrigger>
+            <TabsTrigger value="orders">{tr("users.ui.tabOrders")}</TabsTrigger>
+            <TabsTrigger value="ledger">{tr("users.ui.tabLedger")}</TabsTrigger>
+            <TabsTrigger value="usage">{tr("users.ui.tabUsage")}</TabsTrigger>
           </TabsList>
           <TabsContent value="info">
             <AdminDetailSection>
               <AdminDetailMeta
                 items={[
-                  { label: "昵称", value: user.nickname || "—" },
-                  { label: "手机", value: user.phone || "—" },
-                  { label: "角色", value: user.role },
-                  { label: "可用积分", value: points(user.balance_fen) },
-                  { label: "冻结", value: points(user.frozen_fen) },
+                  { label: tr("users.ui.colNickname"), value: user.nickname || "—" },
+                  { label: tr("users.ui.colPhone"), value: user.phone || "—" },
+                  { label: tr("users.ui.colRole"), value: user.role },
+                  { label: tr("users.ui.availablePoints"), value: points(user.balance_fen) },
+                  { label: tr("users.ui.colFrozen"), value: points(user.frozen_fen) },
                   {
-                    label: "Thời gian đăng ký",
+                    label: tr("users.ui.colRegistered"),
                     value: user.created_at ? new Date(user.created_at).toLocaleString() : "—",
                     full: true,
                   },
@@ -111,17 +112,17 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
               <table>
                 <thead>
                   <tr>
-                    <th>Mã đơn</th>
-                    <th>Số tiền</th>
-                    <th>Trạng thái</th>
-                    <th>Thời gian</th>
+                    <th>{tr("users.ui.colOrderNo")}</th>
+                    <th>{tr("users.ui.colAmount")}</th>
+                    <th>{tr("users.ui.colStatus")}</th>
+                    <th>{tr("users.ui.colTime")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {orders.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="!text-center text-[var(--admin-muted)]">
-                        Chưa có đơn hàng
+                        {tr("users.ui.noOrders")}
                       </td>
                     </tr>
                   ) : (
@@ -143,17 +144,17 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
               <table>
                 <thead>
                   <tr>
-                    <th>类型</th>
-                    <th>变动</th>
-                    <th>剩余积分</th>
-                    <th>备注</th>
+                    <th>{tr("users.ui.colKind")}</th>
+                    <th>{tr("users.ui.colChange")}</th>
+                    <th>{tr("users.ui.colPointsAfter")}</th>
+                    <th>{tr("users.ui.colNote")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {ledger.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="!text-center text-[var(--admin-muted)]">
-                        Chưa có biến động
+                        {tr("users.ui.noLedger")}
                       </td>
                     </tr>
                   ) : (
@@ -175,17 +176,17 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
               <table>
                 <thead>
                   <tr>
-                    <th>Thời gian</th>
-                    <th>Năng lực</th>
-                    <th>Trừ phí</th>
-                    <th>Tác vụ</th>
+                    <th>{tr("users.ui.colTime")}</th>
+                    <th>{tr("users.ui.colCapability")}</th>
+                    <th>{tr("users.ui.colCharge")}</th>
+                    <th>{tr("users.ui.colTask")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {usage.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="!text-center text-[var(--admin-muted)]">
-                        Chưa có mức dùng
+                        {tr("users.ui.noUsage")}
                       </td>
                     </tr>
                   ) : (
@@ -212,7 +213,7 @@ export function UserDetailDrawer({ userId, open, onOpenChange, initialUser }: Us
           </TabsContent>
         </Tabs>
       ) : loading ? (
-        <div className="py-10 text-center text-sm text-[var(--admin-muted)]">Đang tải…</div>
+        <div className="py-10 text-center text-sm text-[var(--admin-muted)]">{tr("users.ui.loading")}</div>
       ) : null}
     </AdminModal>
   );

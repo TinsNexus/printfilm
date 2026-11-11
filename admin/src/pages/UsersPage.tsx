@@ -21,6 +21,7 @@ import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { points, parsePoints } from "@/lib/points";
 
 import { Switch } from "@/components/ui/switch";
+import { tr } from "../i18n/translate.ts";
 
 type ListRes = { items: AdminUserRow[]; meta: PageMeta };
 
@@ -58,11 +59,11 @@ export function UsersPage() {
     ? editing.balance_fen + (form.balance_dir === "decrease" ? -amountFen : amountFen)
     : editing?.balance_fen ?? 0;
   const amountError = !adjustBalance ? "" : !form.balance_amount_points.trim()
-    ? "请输入需要调整的积分"
-    : amountFen === null ? "请输入有效的整数积分"
-    : amountFen === 0 ? "调整积分须大于 0"
-    : !Number.isSafeInteger(balanceAfterFen) ? "调整后积分过大，请减少调整数量"
-    : balanceAfterFen < 0 ? "减少积分不能超过当前积分"
+    ? tr("users.ui.errAmountRequired")
+    : amountFen === null ? tr("users.ui.errAmountInvalid")
+    : amountFen === 0 ? tr("users.ui.errAmountZero")
+    : !Number.isSafeInteger(balanceAfterFen) ? tr("users.ui.errAmountTooLarge")
+    : balanceAfterFen < 0 ? tr("users.ui.errAmountExceeds")
     : "";
   const visibleAmountError = amountTouched || submitAttempted ? amountError : "";
   const roleChanged = editing !== null && form.role !== editing.role;
@@ -80,7 +81,7 @@ export function UsersPage() {
       const res = await api<ListRes>(`/api/admin/users?${params}`);
       setData(res);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Tải thất bại");
+      toast.error(err instanceof Error ? err.message : tr("users.ui.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -96,7 +97,7 @@ export function UsersPage() {
       .then(setStats)
       .catch((err) => {
         setStats(null);
-        toast.error(err instanceof Error ? err.message : "Tải thống kê thất bại");
+        toast.error(err instanceof Error ? err.message : tr("users.ui.statsFailed"));
       });
   }, []);
 
@@ -144,11 +145,11 @@ export function UsersPage() {
         method: "PATCH",
         body: JSON.stringify(payload),
       });
-      toast.success(payload.balance_delta_fen ? "Đã điều chỉnh và lưu" : "Đã lưu");
+      toast.success(tr(payload.balance_delta_fen ? "users.ui.adjustedSaved" : "users.ui.saved"));
       setEditing(null);
       await load();
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Lưu thất bại, vui lòng thử lại");
+      setSaveError(err instanceof Error ? err.message : tr("users.ui.saveFailed"));
     } finally {
       pendingSave.current = false;
       setSaving(false);
@@ -162,37 +163,37 @@ export function UsersPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader title="用户管理" description="搜索用户，调整角色与积分" />
+      <PageHeader title={tr("users.ui.title")} description={tr("users.ui.desc")} />
 
       <AdminFilterBar>
         <AdminSearchInput
           value={q}
           onChange={setQ}
-          placeholder="Tìm email / biệt danh / ID tài khoản"
+          placeholder={tr("users.ui.searchPlaceholder")}
           onKeyDown={(e) => {
             if (e.key === "Enter") applyFilters();
           }}
         />
         <Select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
-          <option value="">Tất cả vai trò</option>
-          <option value="user">Người dùng thường</option>
-          <option value="admin">Quản trị viên</option>
+          <option value="">{tr("users.ui.allRoles")}</option>
+          <option value="user">{tr("users.ui.roleUser")}</option>
+          <option value="admin">{tr("users.ui.roleAdmin")}</option>
         </Select>
         <Button size="sm" className="admin-filter-action" onClick={applyFilters} disabled={loading}>
-          {loading ? "Đang tải…" : "Tìm kiếm"}
+          {tr(loading ? "users.ui.loading" : "users.ui.search")}
         </Button>
       </AdminFilterBar>
 
       <AdminListStats
         items={[
-          { label: "Tổng số người dùng", value: stats?.user_count ?? (loading ? "…" : "—") },
+          { label: tr("users.ui.totalUsers"), value: stats?.user_count ?? (loading ? "…" : "—") },
           {
-            label: "Lượt gọi tháng này",
+            label: tr("users.ui.callsMonth"),
             value: stats != null ? (stats.usage_calls_month ?? 0) : loading ? "…" : "—",
-            hint: stats ? `Hôm nay ${stats.usage_calls_today ?? 0} lần` : undefined,
+            hint: stats ? tr("users.ui.callsToday", { n: stats.usage_calls_today ?? 0 }) : undefined,
           },
           {
-            label: "Tổng lượt gọi",
+            label: tr("users.ui.callsTotal"),
             value: stats != null ? (stats.usage_calls_total ?? 0) : loading ? "…" : "—",
           },
         ]}
@@ -202,15 +203,15 @@ export function UsersPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>账号 ID</TableHead>
-              <TableHead>邮箱</TableHead>
-              <TableHead>昵称</TableHead>
-              <TableHead>手机</TableHead>
-              <TableHead>积分</TableHead>
-              <TableHead>冻结</TableHead>
-              <TableHead>角色</TableHead>
-              <TableHead>注册时间</TableHead>
-              <TableHead className="w-[140px]">操作</TableHead>
+              <TableHead>{tr("users.ui.colAccountId")}</TableHead>
+              <TableHead>{tr("users.ui.colEmail")}</TableHead>
+              <TableHead>{tr("users.ui.colNickname")}</TableHead>
+              <TableHead>{tr("users.ui.colPhone")}</TableHead>
+              <TableHead>{tr("users.ui.colPoints")}</TableHead>
+              <TableHead>{tr("users.ui.colFrozen")}</TableHead>
+              <TableHead>{tr("users.ui.colRole")}</TableHead>
+              <TableHead>{tr("users.ui.colRegistered")}</TableHead>
+              <TableHead className="w-[140px]">{tr("users.ui.colActions")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -223,7 +224,7 @@ export function UsersPage() {
                 <TableCell className="tabular-nums">{points(u.balance_fen)}</TableCell>
                 <TableCell className="tabular-nums">{points(u.frozen_fen)}</TableCell>
                 <TableCell>
-                  <Badge variant={u.role === "admin" ? "success" : "secondary"}>{u.role === "admin" ? "Quản trị viên" : "Người dùng thường"}</Badge>
+                  <Badge variant={u.role === "admin" ? "success" : "secondary"}>{tr(u.role === "admin" ? "users.ui.roleAdmin" : "users.ui.roleUser")}</Badge>
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">
                   {u.created_at ? new Date(u.created_at).toLocaleString() : "—"}
@@ -238,10 +239,10 @@ export function UsersPage() {
                         userDetail.open(u.id);
                       }}
                     >
-                      Xem
+                      {tr("users.ui.view")}
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => openEdit(u)}>
-                      Chỉnh sửa
+                      {tr("users.ui.edit")}
                     </Button>
                   </div>
                 </TableCell>
@@ -250,7 +251,7 @@ export function UsersPage() {
             {!loading && (data?.items.length ?? 0) === 0 && (
               <TableRow>
                 <TableCell colSpan={9} className="p-0">
-                  <EmptyState title="Chưa có người dùng" description="Thử đổi từ khóa tìm kiếm" />
+                  <EmptyState title={tr("users.ui.empty")} description={tr("users.ui.emptyHint")} />
                 </TableCell>
               </TableRow>
             )}
@@ -284,53 +285,53 @@ export function UsersPage() {
         open={!!editing}
         onOpenChange={(open) => { if (!open && !pendingSave.current) setEditing(null); }}
         size="lg"
-        title="Chỉnh sửa người dùng"
+        title={tr("users.ui.editTitle")}
         subtitle={editing?.email}
         footer={
           <>
-            <Button type="button" variant="outline" disabled={saving} onClick={() => setEditing(null)}>Hủy</Button>
+            <Button type="button" variant="outline" disabled={saving} onClick={() => setEditing(null)}>{tr("users.ui.cancel")}</Button>
             <Button type="submit" form={editFormId} disabled={saving || !hasChanges} aria-busy={saving}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-              {saving ? "Đang lưu…" : adjustBalance ? "Xác nhận điều chỉnh và lưu" : "Lưu thay đổi quyền"}
+              {tr(saving ? "users.ui.saving" : adjustBalance ? "users.ui.confirmAdjust" : "users.ui.saveRole")}
             </Button>
           </>
         }
       >
         <form id={editFormId} noValidate onSubmit={(event) => { event.preventDefault(); void saveEdit(); }} className="space-y-6">
           <div className="admin-form-summary grid gap-4 rounded-xl border border-[var(--admin-border)] bg-[#f7f9f4] p-4 sm:grid-cols-2">
-            <div className="admin-form-summary-item"><div className="text-xs text-[var(--admin-muted)]">当前账户积分</div><div className="mt-1.5 text-2xl font-semibold tabular-nums text-[var(--admin-text)]">{points(editing?.balance_fen ?? 0)}</div></div>
-            <div className="admin-form-summary-item"><div className="text-xs text-[var(--admin-muted)]">已冻结积分</div><div className="mt-1.5 text-lg font-medium tabular-nums text-[var(--admin-text)]">{points(editing?.frozen_fen ?? 0)}</div><p className="mt-1 text-xs leading-relaxed text-[var(--admin-muted)]">调账不会修改任务已冻结的积分</p></div>
+            <div className="admin-form-summary-item"><div className="text-xs text-[var(--admin-muted)]">{tr("users.ui.currentPoints")}</div><div className="mt-1.5 text-2xl font-semibold tabular-nums text-[var(--admin-text)]">{points(editing?.balance_fen ?? 0)}</div></div>
+            <div className="admin-form-summary-item"><div className="text-xs text-[var(--admin-muted)]">{tr("users.ui.frozenPoints")}</div><div className="mt-1.5 text-lg font-medium tabular-nums text-[var(--admin-text)]">{points(editing?.frozen_fen ?? 0)}</div><p className="mt-1 text-xs leading-relaxed text-[var(--admin-muted)]">{tr("users.ui.frozenNote")}</p></div>
           </div>
           <fieldset disabled={saving} className="admin-form-section min-w-0 space-y-4">
-            <legend className="admin-form-section-title mb-1 text-sm font-semibold text-[var(--admin-text)]">Quyền tài khoản</legend>
-            <AdminField label="Vai trò tài khoản" required hint="Quản trị viên có thể vào trang quản trị, xem và quản lý toàn bộ dữ liệu nghiệp vụ.">
+            <legend className="admin-form-section-title mb-1 text-sm font-semibold text-[var(--admin-text)]">{tr("users.ui.permissions")}</legend>
+            <AdminField label={tr("users.ui.role")} required hint={tr("users.ui.roleHint")}>
               <Select value={form.role} onChange={(e) => { setSaveError(""); setForm((f) => ({ ...f, role: e.target.value })); }} disabled={saving}>
-                <option value="user">Người dùng thường</option><option value="admin">Quản trị viên</option>
+                <option value="user">{tr("users.ui.roleUser")}</option><option value="admin">{tr("users.ui.roleAdmin")}</option>
               </Select>
             </AdminField>
           </fieldset>
           <section className="admin-form-section space-y-4 border-t border-[var(--admin-border)] pt-5">
             <div className="flex items-start justify-between gap-4">
-              <div><label htmlFor={adjustmentToggleId} className="text-sm font-semibold text-[var(--admin-text)]">调整账户积分</label><p className="mt-1 text-xs leading-relaxed text-[var(--admin-muted)]">按需开启；仅修改角色时，账户积分保持不变。</p></div>
+              <div><label htmlFor={adjustmentToggleId} className="text-sm font-semibold text-[var(--admin-text)]">{tr("users.ui.adjustPoints")}</label><p className="mt-1 text-xs leading-relaxed text-[var(--admin-muted)]">{tr("users.ui.adjustPointsHint")}</p></div>
               <Switch id={adjustmentToggleId} checked={adjustBalance} disabled={saving} onCheckedChange={(checked) => { setAdjustBalance(checked); setSaveError(""); }} />
             </div>
             {adjustBalance ? <fieldset disabled={saving} className="min-w-0 space-y-4">
               <div className="admin-form-grid admin-form-grid--2">
-                <AdminField label="Hướng điều chỉnh" required>
+                <AdminField label={tr("users.ui.direction")} required>
                   <Select value={form.balance_dir} disabled={saving} onChange={(e) => { setSaveError(""); setForm((f) => ({ ...f, balance_dir: e.target.value === "decrease" ? "decrease" : "increase" })); }}>
-                    <option value="increase">增加积分</option><option value="decrease">减少积分</option>
+                    <option value="increase">{tr("users.ui.increase")}</option><option value="decrease">{tr("users.ui.decrease")}</option>
                   </Select>
                 </AdminField>
-                <AdminField label="调整积分" required hint="大于 0 的整数积分。" error={visibleAmountError}>
-                  <Input inputMode="numeric" value={form.balance_amount_points} disabled={saving} placeholder="例如 10000" onBlur={() => setAmountTouched(true)} onChange={(e) => { setSaveError(""); setForm((f) => ({ ...f, balance_amount_points: e.target.value })); }} />
+                <AdminField label={tr("users.ui.amount")} required hint={tr("users.ui.amountHint")} error={visibleAmountError}>
+                  <Input inputMode="numeric" value={form.balance_amount_points} disabled={saving} placeholder={tr("users.ui.amountPlaceholder")} onBlur={() => setAmountTouched(true)} onChange={(e) => { setSaveError(""); setForm((f) => ({ ...f, balance_amount_points: e.target.value })); }} />
                 </AdminField>
               </div>
-              <AdminField label="Ghi chú điều chỉnh" optional hint="Ghi chú sẽ được ghi vào biến động tài khoản, thuận tiện cho việc đối chiếu sau này.">
-                <Input value={form.balance_note} disabled={saving} onChange={(e) => setForm((f) => ({ ...f, balance_note: e.target.value }))} placeholder="Ví dụ: cấp bù thưởng sự kiện, thu hồi hoàn tiền" />
+              <AdminField label={tr("users.ui.note")} optional hint={tr("users.ui.noteHint")}>
+                <Input value={form.balance_note} disabled={saving} onChange={(e) => setForm((f) => ({ ...f, balance_note: e.target.value }))} placeholder={tr("users.ui.notePlaceholder")} />
               </AdminField>
               {!amountError && amountFen !== null ? <div className="admin-form-preview rounded-xl border border-[#d5e6d1] bg-[var(--admin-accent-soft)] p-4" aria-live="polite">
-                <div className="mb-2 flex items-center gap-2 text-xs font-medium text-[var(--admin-forest)]"><Wallet className="h-4 w-4" aria-hidden="true" />保存后的账户积分</div>
-                <div className="flex flex-wrap items-center gap-3 text-lg font-semibold tabular-nums text-[var(--admin-text)]"><span className="text-[var(--admin-muted)]">{points(editing?.balance_fen ?? 0)}</span><ArrowRight className="h-4 w-4 text-[var(--admin-muted)]" aria-hidden="true" /><span>{points(balanceAfterFen)}</span><span className="text-xs font-medium text-[var(--admin-forest)]">{form.balance_dir === "decrease" ? "减少" : "增加"} {points(amountFen)}</span></div>
+                <div className="mb-2 flex items-center gap-2 text-xs font-medium text-[var(--admin-forest)]"><Wallet className="h-4 w-4" aria-hidden="true" />{tr("users.ui.pointsAfterSave")}</div>
+                <div className="flex flex-wrap items-center gap-3 text-lg font-semibold tabular-nums text-[var(--admin-text)]"><span className="text-[var(--admin-muted)]">{points(editing?.balance_fen ?? 0)}</span><ArrowRight className="h-4 w-4 text-[var(--admin-muted)]" aria-hidden="true" /><span>{points(balanceAfterFen)}</span><span className="text-xs font-medium text-[var(--admin-forest)]">{tr(form.balance_dir === "decrease" ? "users.ui.minusN" : "users.ui.plusN", { amount: points(amountFen) })}</span></div>
               </div> : null}
             </fieldset> : null}
           </section>
