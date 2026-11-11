@@ -4,7 +4,6 @@ import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import { Download, Eye, FileCheck2, ShieldCheck } from 'lucide-react'
 import { date, letterFile, request } from './api'
 import Modal from '../../components/ui/Modal'
-import { tv } from '../../i18n/tv'
 
 type Signed = { id: number; signer_name: string; created_at: string; template_version: string }
 type Status = { template: { version: string; title: string; notices: string[]; body: string }; reading_reference?: { version: string; title: string; notices: string[]; body: string; disclaimer: string } | null; current: Signed | null }

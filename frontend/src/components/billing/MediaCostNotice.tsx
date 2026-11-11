@@ -1,7 +1,6 @@
 import { points, pointUnitRate, pointText } from '../../lib/points'
 import { useMediaModelsCatalog } from '../../hooks/useMediaModelsCatalog'
 import { mediaQuoteFen } from '../../lib/mediaQuote'
-import { tv } from '../../i18n/tv'
 
 export function MediaCostNotice({ modelId, resolution, seconds, count = 1 }: {
   modelId?: string; resolution?: string; seconds?: number; count?: number

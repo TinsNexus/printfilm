@@ -12,7 +12,6 @@ import AssetPreview from './AssetPreview'
 import { dialog } from '../../lib/dialog'
 import { isFreeWork } from './playbackPolicy'
 import { explainMarketplaceError } from './messages'
-import { tv } from '../../i18n/tv'
 
 const fileKindNames: Record<string, string> = new Proxy<Record<string, string>>({ video: '视频', image: '图片', document: '文档' }, { get: (target, key: string) => target[key] ? mt(target[key]) : undefined })
 

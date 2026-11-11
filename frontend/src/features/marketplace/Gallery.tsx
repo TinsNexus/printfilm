@@ -11,7 +11,6 @@ import { date, money, request, type Listing, type Row } from './api'
 import { Media, Pager } from './shared'
 import { EmptyState } from './ui'
 import { isFreeWork } from './playbackPolicy'
-import { tv } from '../../i18n/tv'
 
 function plazaHref(item: Row, recruits: boolean) {
   if (item.kind === 'series') return `/marketplace/series/${item.id}`

@@ -38,7 +38,6 @@ import TeamPage from './features/teams/TeamPage'
 import { TeamPreviewProvider } from './features/teams/TeamPreviewContext'
 import './styles/printfilm.css'
 import './App.css'
-import { tv } from './i18n/tv'
 
 const Marketplace = lazy(() => import('./features/marketplace/Marketplace'))
 

@@ -3,7 +3,6 @@ import { marketText as mt, marketFeedback } from './translate'
 import { useEffect, useState } from 'react'
 import { media, request, type Row } from './api'
 import { explainMarketplaceError } from './messages'
-import { tv } from '../../i18n/tv'
 
 const fileStatusNames: Record<string, string> = new Proxy<Record<string, string>>({ ready: '上传完成', uploading: '上传中', processing: '正在校验文件', failed: '文件校验失败', cancelled: '已取消上传', expired: '上传已过期' }, { get: (target, key: string) => target[key] ? mt(target[key]) : undefined })
 

@@ -8,7 +8,6 @@ import { localDate, request, type Row } from './api'
 import { Save } from 'lucide-react'
 import Button from '../../components/ui/Button'
 import { FormSection, PageHeading, PublishGuide } from './ui'
-import { tv } from '../../i18n/tv'
 
 // 需求可以无附件发布；实质条款锁定由服务端最终校验。
 export default function RecruitEditor() {

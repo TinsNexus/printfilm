@@ -6,7 +6,6 @@ import { request, type Handoff } from './api'
 import { internalReturn, PageHeading, withReturn } from './ui'
 import Button from '../../components/ui/Button'
 import DramaPublishModal from './DramaPublishModal'
-import { tv } from '../../i18n/tv'
 
 type ProjectSource = { id: number; title: string; updated_at: string; has_cover: boolean; status: string }
 type DramaSource = { id: number; title: string; episodes: { id: number; name: string; ready: boolean }[] }

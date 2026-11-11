@@ -6,7 +6,6 @@ import RightsPage from './RightsPage'
 import AuthorizationPanel from './AuthorizationPanel'
 import { isFreeWork, previewStatusLabel } from './playbackPolicy'
 import { explainMarketplaceError } from './messages'
-import { tv } from '../../i18n/tv'
 
 // 发布步骤始终显示；缺少视频时明确指向第一步，不再隐藏权属入口。
 export default function WorkPublishingSteps({ item, onUpdated }: { item: Row; onUpdated: () => void }) {

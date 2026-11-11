@@ -5,7 +5,6 @@ import { request, upload } from './api'
 import { CheckCircle2, UploadCloud } from 'lucide-react'
 import AssetPreview, { PreviewContent } from './AssetPreview'
 import { explainMarketplaceError } from './messages'
-import { tv } from '../../i18n/tv'
 
 // 上传状态与“处理就绪”分开显示，只允许绑定 ready 文件。locked 时不提供手动选择。
 export default function AssetPicker({ kind, value, onChange, title = mt("选择或上传文件"), required = false, locked = false }: { kind: 'video' | 'document' | 'image'; value: number | null; onChange: (id: number) => void; title?: string; required?: boolean; locked?: boolean }) {

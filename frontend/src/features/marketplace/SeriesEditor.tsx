@@ -16,7 +16,6 @@ import DramaPublishModal from './DramaPublishModal'
 import { handoffLabel, isHandoffActive, latestEpisodeHandoffs, mergeSyncedCover, mergeSyncedEpisodes } from './dramaPublishing'
 import { isFreeEpisode, previewStatusLabel } from './playbackPolicy'
 import { explainMarketplaceError } from './messages'
-import { tv } from '../../i18n/tv'
 
 type EpisodeDraft = { id?: number; version?: number; episode_no: number; title: string; description?: string; asset_id: number | null; cover_asset_id: number | null; copyright_price_fen: number; unlock_price_fen: number; source?: 'printfilm' | 'external' | 'original' | 'ai' | 'authorized'; preview_status?: string; preview_error?: string }
 type SeriesDraft = { app_editions?: AppEdition[]; id: number; version: number; title: string; description: string; category: string; category_code?: string; category_labels?: { zh: string; en: string }; tags: string[]; cover_asset_id?: number | null; sale_type: 'free' | 'copyright_contact' | 'platform_unlock'; copyright_price_fen: number; free_episode_count?: number; audit_status?: string; listed?: boolean; episodes: EpisodeDraft[]; authorization_ready?: boolean; sync_in_progress?: boolean; pending_handoffs?: Handoff[] }

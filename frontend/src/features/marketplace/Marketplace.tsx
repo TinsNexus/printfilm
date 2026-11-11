@@ -14,7 +14,6 @@ import SeriesEditor from './SeriesEditor'
 import SeriesDetail from './SeriesDetail'
 import FromPrintfilm from './FromPrintfilm'
 import './marketplace.css'
-import { tv } from '../../i18n/tv'
 
 // 独立下游路由壳；不替换原 studio、作品或个人设置页面。
 export default function Marketplace() {

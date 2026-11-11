@@ -11,7 +11,6 @@ import { PageHeading } from './ui'
 import WorkPublishingSteps from './WorkPublishingSteps'
 import { dialog } from '../../lib/dialog'
 import { isFreeWork } from './playbackPolicy'
-import { tv } from '../../i18n/tv'
 
 // 公开详情与作者管理分离，招募统一由客服协调接单。
 export default function Detail({ recruit = false, manage = false }: { recruit?: boolean; manage?: boolean }) {

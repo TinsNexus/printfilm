@@ -2,7 +2,6 @@ import { points, pointText } from '../../lib/points'
 import { useCallback, useEffect, useRef } from 'react'
 import { api } from '../../api'
 import { dialog } from '../../lib/dialog'
-import { tv } from '../../i18n/tv'
 
 type BillingAlertItem = {
   id: number

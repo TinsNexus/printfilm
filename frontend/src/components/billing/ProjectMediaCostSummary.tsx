@@ -3,7 +3,6 @@ import type { Project } from '../../api'
 import { useMediaModelsCatalog } from '../../hooks/useMediaModelsCatalog'
 import { mediaQuoteFen } from '../../lib/mediaQuote'
 import { MediaCostNotice } from './MediaCostNotice'
-import { tv } from '../../i18n/tv'
 
 export function ProjectMediaCostSummary({ project }: { project: Project }) {
   const catalog = useMediaModelsCatalog()

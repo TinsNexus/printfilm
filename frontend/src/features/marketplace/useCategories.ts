@@ -17,7 +17,7 @@ export function useCategories() {
   const label = (code: string, original?: { category?: string; category_labels?: { zh: string; en: string } } | null) => {
     const item = items.find(item => item.code === code)
     return item ? (locale === 'en' ? item.name_en || item.name_zh : item.name_zh)
-      : original?.category_labels?.[locale] || original?.category || code
+      : original?.category_labels?.[locale === 'en' || locale === 'vi' ? 'en' : 'zh'] || original?.category || code
   }
   return { items, names, label, error }
 }

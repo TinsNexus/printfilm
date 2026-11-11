@@ -1,7 +1,6 @@
 import { marketText as mt } from './translate'
 import { useEffect, useState } from 'react'
 import { request, type Capabilities } from './api'
-import { tv } from '../../i18n/tv'
 
 // 菜单和页面以服务端开关为准，失败时不展示下游入口。
 export function useMarketplace() {

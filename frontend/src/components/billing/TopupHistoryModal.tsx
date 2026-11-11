@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import Modal from '../ui/Modal'
 import { api, type BillingOrder } from '../../api'
 import { billingOrderChargeLabel, } from '../../lib/billingPayments'
+import { tv } from '../../i18n/tv'
 
 type Props = {
   open: boolean

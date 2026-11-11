@@ -1,5 +1,6 @@
 import { points } from '../../lib/points.ts'
 import { marketText as mt, marketFeedback } from './translate.ts'
+import { tv } from '../../i18n/tv'
 /** 用户提示与接口错误码分开处理，不改变服务端状态和错误契约。 */
 const businessMessages: Record<string, string> = {
   MARKETPLACE_STORAGE_UNAVAILABLE: '文件服务暂未配置或暂时不可用，请稍后重试或联系客服。',

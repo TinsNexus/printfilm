@@ -9,7 +9,6 @@ import { Contact, Media, NeedLogin } from './shared'
 import { money, request, type Row } from './api'
 import { PageHeading } from './ui'
 import { isFreeEpisode } from './playbackPolicy'
-import { tv } from '../../i18n/tv'
 
 type Episode = Row & { episode_no: number; description?: string }
 type Series = { is_featured?: boolean; is_pinned?: boolean; id: number; title: string; description?: string; category?: string; category_label?: string; sale_type: string; copyright_price_fen?: number; free_episode_count?: number; episodes: Episode[] }

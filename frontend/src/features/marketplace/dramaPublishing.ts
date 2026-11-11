@@ -1,6 +1,5 @@
 import { marketText as mt } from './translate.ts'
 import type { Handoff } from './api'
-import { tv } from '../../i18n/tv'
 
 export type PublishEpisode = {
   id: number; name: string; episode_number: number; fragment_count: number; completed_count: number

@@ -9,7 +9,6 @@ import { request } from './api'
 import { internalReturn, withReturn } from './ui'
 import { publishSelection, sourceRelation, type DramaPublishContext, type DramaPublishResult } from './dramaPublishing'
 import './dramaPublishing.css'
-import { tv } from '../../i18n/tv'
 
 /** HTTP 页面没有 randomUUID，改用随机字节拼一个不少于 8 位的幂等键。 */
 function publishKey() {

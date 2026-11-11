@@ -7,7 +7,6 @@ import AssetPicker from './AssetPicker'
 import { PageHeading } from './ui'
 import AuthorizationPanel from './AuthorizationPanel'
 import AssetPreview from './AssetPreview'
-import { tv } from '../../i18n/tv'
 
 function safeDraftReturn(value: string | null) {
   if (!value) return ''

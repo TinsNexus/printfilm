@@ -4,7 +4,6 @@ import type { ReactNode } from 'react'
 import { ArrowLeft, ArrowUpRight, FolderOpen, ShieldCheck } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import Button from '../../components/ui/Button'
-import { tv } from '../../i18n/tv'
 
 /** 只接受站内相对地址，避免把返回链到外部网站。 */
 export function internalReturn(value: string | null | undefined): string | undefined {

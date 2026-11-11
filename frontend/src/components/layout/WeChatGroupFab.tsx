@@ -4,6 +4,7 @@ import { Check, Copy, X } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useFabDragPosition } from '../../hooks/useFabDragPosition'
 import { WECHAT_ID } from '../../lib/siteContact'
+import { tv } from '../../i18n/tv'
 
 /** 社区加群微信号（不加图片二维码） */
 const POS_STORAGE_KEY = 'pf-wx-group-fab-pos'

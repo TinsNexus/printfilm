@@ -33,7 +33,6 @@ import { formatGenerationErrorMessage } from '../lib/generationError'
 import { formatDateTime, useI18n } from '../i18n'
 import './drama/project-list.css'
 import './shortVideoList.css'
-import { tv } from '../i18n/tv'
 
 type HistoryItem = Omit<Project, 'shots'> & {
   published?: boolean

@@ -1,7 +1,6 @@
 import { getActiveLocale } from '../../i18n/detect.ts'
 import { marketText as mt } from './translate.ts'
 import { explainMarketplaceError, marketplaceErrorCode } from './messages'
-import { tv } from '../../i18n/tv'
 
 /** 下游独立客户端；不修改原 api.ts。金额统一以分传输。 */
 export type Row = {
