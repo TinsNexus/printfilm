@@ -18,7 +18,7 @@ import { MediaCostNotice } from '../components/billing/MediaCostNotice'
 import { useGenerationEstimate } from '../hooks/useGenerationEstimate'
 import { generationReferenceLimits, serializeGenerationReferences, validateGenerationReferences, type GenerationReference, type VideoGenerationMode } from '../lib/generationReferences'
 import { detectPromptMentionTrigger, measureTextareaCaretRect, type MentionCaretRect } from '../lib/promptMention'
-import { tv } from '../i18n/tv'
+import { tr } from '../i18n/translate.ts'
 
 /** 图片、视频、音频使用明确的独立生成入口。 */
 export default function GenerationPage({ kind }: { kind: MediaKind }) {
@@ -107,7 +107,7 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
         const data = await listToolRuns(1, 6, { kind })
         if (disposed) return
         setRecent(data.items); setRecentTotal(data.total); setHistoryError('')
-      } catch (err) { if (!disposed) setHistoryError(err instanceof Error ? err.message : text(tv('加载失败', 'Tải thất bại'), 'Loading failed')) }
+      } catch (err) { if (!disposed) setHistoryError(err instanceof Error ? err.message : text(tr('generationPage.failedLoad'), 'Loading failed')) }
       finally { if (!disposed) timer = setTimeout(refresh, 5000) }
     }
     void refresh()
@@ -121,8 +121,8 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
 
   function pickFiles(incoming: File[]) {
     const limit = referenceImageLimit
-    if (incoming.some(file => file.size > 40 * 1024 * 1024)) { setError(text(tv('单个文件不能超过 40MB', 'Mỗi tệp không được vượt quá 40MB'), 'Each file must be under 40 MB')); return }
-    if (files.length + incoming.length > limit) { setError(text(tv(`最多选择 ${limit} 个参考文件`, `Chọn tối đa ${limit} tệp tham chiếu`), `Choose up to ${limit} reference files`)); return }
+    if (incoming.some(file => file.size > 40 * 1024 * 1024)) { setError(text(tr('generationPage.eachFileMust40Mb'), 'Each file must be under 40 MB')); return }
+    if (files.length + incoming.length > limit) { setError(text(tr('generationPage.chooseUpReferenceFiles', { limit }), `Choose up to ${limit} reference files`)); return }
     setFiles(previous => [...previous, ...incoming]); setError('')
   }
 
@@ -164,13 +164,13 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
   async function submit(event: React.FormEvent) {
     event.preventDefault()
     if (submitting || !prompt.trim()) return
-    if (invalidParameters) { setError(text(tv('请先选择有效的生成模型和参数', 'Vui lòng chọn model tạo và tham số hợp lệ trước'), 'Choose a valid model and settings first')); return }
+    if (invalidParameters) { setError(text(tr('generationPage.chooseValidModelSettingsFirst'), 'Choose a valid model and settings first')); return }
     if (kind === 'video' && (referenceError || !quote || estimating || estimateError)) {
-      setError(referenceError || estimateError || text(tv('请等待预计消耗计算完成', 'Vui lòng chờ tính xong chi phí dự kiến'), 'Wait for the cost estimate before generating'))
+      setError(referenceError || estimateError || text(tr('generationPage.waitCostEstimateFinish'), 'Wait for the cost estimate before generating'))
       return
     }
     if (kind === 'image' && files.length > referenceImageLimit) {
-      setError(text(tv(`所选模型最多支持 ${referenceImageLimit} 个参考文件，请移除多余文件`, `Model đã chọn hỗ trợ tối đa ${referenceImageLimit} tệp tham chiếu, vui lòng bỏ bớt tệp thừa`), `The selected model supports up to ${referenceImageLimit} reference files. Remove the extra files.`))
+      setError(text(tr('generationPage.selectedModelSupportsUpReference', { referenceImageLimit }), `The selected model supports up to ${referenceImageLimit} reference files. Remove the extra files.`))
       return
     }
     setSubmitting(true); setError(''); setNotice('')
@@ -178,9 +178,9 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
       const result = await runStudioTool({ toolId: kind === 'audio' ? 'audio' : kind === 'video' ? 't2v' : files.length ? 'i2i' : 't2i',
         prompt, files: kind === 'video' ? serializedReferences.files : files, ratio, duration, voice, modelId: model, resolution,
         ...(kind === 'video' ? { videoMode, references: serializedReferences.references, priceVersion: quote?.price_version ?? 0 } : {}) })
-      setNotice(text(tv(`任务 ${result.task_id} 已提交，离开页面后仍会继续生成。`, `Tác vụ ${result.task_id} đã được gửi, rời khỏi trang vẫn tiếp tục tạo.`), `Task ${result.task_id} queued. Generation continues after you leave.`))
+      setNotice(text(tr('generationPage.taskSubmittedKeepsGeneratingEven', { task_id: result.task_id }), `Task ${result.task_id} queued. Generation continues after you leave.`))
       setRevision(value => value + 1)
-    } catch (err) { setError(err instanceof Error ? err.message : text(tv('提交失败', 'Gửi thất bại'), 'Submission failed')) }
+    } catch (err) { setError(err instanceof Error ? err.message : text(tr('generationPage.submissionFailed'), 'Submission failed')) }
     finally { setSubmitting(false) }
   }
   async function download(item: ToolRunRecord) {
@@ -188,31 +188,31 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
     try {
       const url = resolveToolMediaUrl(item.urls[0])
       triggerBlobDownload(await fetchMediaBlob(url), `printfilm_${kind}_${item.id}.${kind === 'video' ? 'mp4' : kind === 'audio' ? 'mp3' : 'png'}`)
-    } catch (err) { setError(err instanceof Error ? err.message : text(tv('下载失败', 'Tải xuống thất bại'), 'Download failed')) }
+    } catch (err) { setError(err instanceof Error ? err.message : text(tr('generationPage.downloadFailed'), 'Download failed')) }
     finally { setDownloading(null) }
   }
   const titles = {
-    video: [text(tv('一句话，', 'Một câu,'), 'One idea.'), text(tv('生成你的下一幕', 'tạo màn tiếp theo của bạn'), 'Your next scene.')],
-    image: [text(tv('一句话，', 'Một câu,'), 'One idea.'), text(tv('画出你的想象', 'Vẽ ra trí tưởng tượng của bạn'), 'Bring it to life.')],
-    audio: [text(tv('一段文字，', 'Một đoạn chữ,'), 'Your words.'), text(tv('让故事开口', 'để câu chuyện cất tiếng'), 'A voice to tell them.')],
+    video: [text(tr('generationPage.oneSentence'), 'One idea.'), text(tr('generationPage.nextScene'), 'Your next scene.')],
+    image: [text(tr('generationPage.oneSentence'), 'One idea.'), text(tr('generationPage.drawWhatImagine'), 'Bring it to life.')],
+    audio: [text(tr('generationPage.fewWords'), 'Your words.'), text(tr('generationPage.storySpeaks'), 'A voice to tell them.')],
   }
-  const placeholder = kind === 'audio' ? text(tv('输入你想朗读的文字…', 'Nhập văn bản bạn muốn đọc…'), 'Enter the text you want to read…') : kind === 'image'
-    ? text(tv('描述你想生成的图片，或说明如何修改参考图。试试：午后阳光穿过玻璃，桌上一枝白色郁金香，胶片质感。', 'Mô tả hình ảnh bạn muốn tạo, hoặc nói cách sửa ảnh tham chiếu. Thử xem: nắng chiều xuyên qua lớp kính, một cành tulip trắng trên bàn, chất phim.'), 'Describe an image or the changes to your references…')
-    : text(tv('描述你想生成的视频：主体 + 动作 + 环境 + 运镜。输入 @ 可提及下方已加入的参考图、视频或音频。', 'Mô tả video bạn muốn tạo: chủ thể + hành động + môi trường + chuyển động máy. Gõ @ để nhắc đến ảnh, video hoặc âm thanh tham chiếu đã thêm bên dưới.'), 'Describe your video: subject, action, setting, camera movement. Type @ to mention a reference you added below.')
+  const placeholder = kind === 'audio' ? text(tr('generationPage.enterTextReadAloud'), 'Enter the text you want to read…') : kind === 'image'
+    ? text(tr('generationPage.describeImageWantHowChange'), 'Describe an image or the changes to your references…')
+    : text(tr('generationPage.describeVideoSubjectActionSetting'), 'Describe your video: subject, action, setting, camera movement. Type @ to mention a reference you added below.')
 
   return <GenerationLayout kind={kind}>
     <header className={`gen-hero gen-hero-${kind}`}>
-      <div className="gen-eyebrow"><Icon size={22} />{text(kind === 'video' ? tv('AI 视频', 'Video AI') : kind === 'image' ? tv('AI 图片', 'Hình ảnh AI') : tv('AI 音频', 'Âm thanh AI'), `AI ${kind.toUpperCase()}`)}</div>
+      <div className="gen-eyebrow"><Icon size={22} />{text(kind === 'video' ? tr('generationPage.aiVideo') : kind === 'image' ? tr('generationPage.aiImage') : tr('generationPage.aiAudio'), `AI ${kind.toUpperCase()}`)}</div>
       <h1>{titles[kind][0]}<span>{titles[kind][1]}</span></h1>
-      <p>{kind === 'audio' ? text(tv('选一款音色，为你的文字注入情绪与温度。', 'Chọn một giọng nói, thổi cảm xúc và hơi ấm vào chữ của bạn.'), 'Choose a voice and give your words warmth.') : text(tv('从一个想法开始，让灵感自然发生。', 'Bắt đầu từ một ý tưởng, để cảm hứng tự nhiên xảy ra.'), 'Start with an idea. Let inspiration happen.')}</p>
+      <p>{kind === 'audio' ? text(tr('generationPage.pickVoiceGiveWordsEmotion'), 'Choose a voice and give your words warmth.') : text(tr('generationPage.startIdeaLetInspirationFlow'), 'Start with an idea. Let inspiration happen.')}</p>
       <div className="gen-hero-art" aria-hidden>{kind === 'audio' ? <><AudioLines className="gen-wave" /><Mic /></> : <Icon />}</div>
     </header>
     <form className="gen-composer" onSubmit={submit}>
       {kind === 'image' && catalog?.billing_mode === 'fixed_media' && <div className="gen-price-summary">
         <MediaCostNotice modelId={model} resolution={resolution} />
       </div>}
-      {catalog && invalidParameters && <p className="gen-inline-error" role="alert">{text(tv('当前模型不支持所选参数，请重新选择分辨率、画幅或时长。', 'Model hiện tại không hỗ trợ tham số đã chọn, vui lòng chọn lại độ phân giải, tỷ lệ khung hoặc thời lượng.'), 'These settings are not supported by the selected model. Please adjust them.')}</p>}
-      <div className="gen-composer-heading"><span><Sparkles size={15} />{text(kind === 'audio' ? tv('朗读内容', 'Nội dung đọc') : tv('创作描述', 'Mô tả sáng tạo'), kind === 'audio' ? 'Your script' : 'Your creative brief')}</span><small>{text(tv('把想象，写成下一件作品', 'Viết trí tưởng tượng thành tác phẩm tiếp theo'), 'A little detail goes a long way')}</small></div>
+      {catalog && invalidParameters && <p className="gen-inline-error" role="alert">{text(tr('generationPage.currentModelDoesNotSupport'), 'These settings are not supported by the selected model. Please adjust them.')}</p>}
+      <div className="gen-composer-heading"><span><Sparkles size={15} />{text(kind === 'audio' ? tr('generationPage.textRead') : tr('generationPage.description'), kind === 'audio' ? 'Your script' : 'Your creative brief')}</span><small>{text(tr('generationPage.turnImaginationIntoNextPiece'), 'A little detail goes a long way')}</small></div>
       <div className="gen-input-area">
         {kind === 'video' && <GenerationReferences mode={videoMode} limits={referenceLimits} value={currentReferences}
           onChange={value => { setVideoReferences(previous => ({ ...previous, [videoMode]: value })); setError(''); setNotice('') }} onError={setError} disabled={submitting} />}
@@ -220,40 +220,40 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
           <span className="gen-ref-count"><ImagePlus size={14} />{files.length}/{referenceImageLimit}</span>
           <div className="gen-ref-grid">
             {previews.map((url, index) => <div className="gen-ref-item" key={url}>
-              <img src={url} alt={text(tv('参考图', 'Ảnh tham chiếu'), 'Reference')} />
-              <button type="button" aria-label={text(tv('移除参考文件', 'Xóa tệp tham chiếu'), 'Remove reference')} onClick={() => setFiles(items => items.filter((_, i) => i !== index))}><X size={13} /></button>
+              <img src={url} alt={text(tr('generationPage.referenceImages'), 'Reference')} />
+              <button type="button" aria-label={text(tr('generationPage.removeReferenceFile'), 'Remove reference')} onClick={() => setFiles(items => items.filter((_, i) => i !== index))}><X size={13} /></button>
             </div>)}
             {files.length < referenceImageLimit && <button type="button" className="gen-upload" onClick={() => upload.current?.click()}
               onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); pickFiles(Array.from(event.dataTransfer.files)) }}>
-              <Plus size={24} /><span>{text(tv('选择参考图', 'Chọn ảnh tham chiếu'), 'Add reference')}</span>
+              <Plus size={24} /><span>{text(tr('generationPage.chooseReferenceImage'), 'Add reference')}</span>
             </button>}
           </div>
           <input type="file" hidden ref={upload} multiple accept="image/png,image/jpeg,image/webp" onChange={event => { pickFiles(Array.from(event.target.files || [])); event.target.value = '' }} />
         </div>}
         <div className="gen-prompt-wrap">
-          <textarea ref={promptRef} aria-label={text(tv('生成内容', 'Nội dung tạo'), 'Generation prompt')} placeholder={placeholder} maxLength={maxLength} value={prompt}
+          <textarea ref={promptRef} aria-label={text(tr('generationPage.output'), 'Generation prompt')} placeholder={placeholder} maxLength={maxLength} value={prompt}
             onChange={event => { setPrompt(event.target.value); setNotice(''); syncMention() }}
             onKeyDown={onPromptKeyDown} onKeyUp={syncMention} onClick={syncMention} onBlur={() => window.setTimeout(() => setMention(null), 120)} />
-          <span className="gen-counter">{prompt.length.toLocaleString()} / {maxLength.toLocaleString()}{kind === 'audio' ? text(tv(` · 约 ${Math.ceil(prompt.length / 4)} 秒`, ` · Khoảng ${Math.ceil(prompt.length / 4)} giây`), ` · ~${Math.ceil(prompt.length / 4)} sec`) : ''}</span>
+          <span className="gen-counter">{prompt.length.toLocaleString()} / {maxLength.toLocaleString()}{kind === 'audio' ? text(tr('generationPage.aboutS', { ceil: Math.ceil(prompt.length / 4) }), ` · ~${Math.ceil(prompt.length / 4)} sec`) : ''}</span>
         </div>
       </div>
       <div className="gen-toolbar">
-        {kind === 'video' && <GenerationSelect label={text(tv('生成方式', 'Cách tạo'), 'Generation mode')} icon={<Sparkles size={18} />} value={videoMode} disabled={submitting}
+        {kind === 'video' && <GenerationSelect label={text(tr('generationPage.generationMode'), 'Generation mode')} icon={<Sparkles size={18} />} value={videoMode} disabled={submitting}
           onChange={value => { setVideoMode(value as VideoGenerationMode); setError(''); setNotice(''); setMention(null) }} options={[
-            { value: 'text_to_video', label: text(tv('文生视频', 'Văn bản thành video'), 'Text to video'), description: text(tv('只写一句话，画面由模型生成', 'Chỉ cần viết một câu, hình ảnh do model tạo'), 'Describe your idea without reference media') },
-            { value: 'first_last_frame', label: text(tv('首尾帧', 'Khung đầu cuối'), 'First / last frame'), description: text(tv('指定首帧，可选尾帧，补全中间运动', 'Chỉ định khung đầu, tùy chọn khung cuối, bổ sung chuyển động ở giữa'), 'Choose the first frame and an optional final frame') },
-            { value: 'omni_reference', label: text(tv('全能参考', 'Tham chiếu đa năng'), 'Omni reference'), description: text(tv(`图片 ${referenceLimits.images} 张 / 视频 ${referenceLimits.videos} 段 / 音频 ${referenceLimits.audios} 段 · 最多 12 份`, `Ảnh ${referenceLimits.images} / Video ${referenceLimits.videos} / Âm thanh ${referenceLimits.audios} · Tối đa 12 tài liệu`), `${referenceLimits.images} images / ${referenceLimits.videos} videos / ${referenceLimits.audios} audio clips · 12 total`) },
+            { value: 'text_to_video', label: text(tr('generationPage.textVideo'), 'Text to video'), description: text(tr('generationPage.writeOneSentenceModelCreates'), 'Describe your idea without reference media') },
+            { value: 'first_last_frame', label: text(tr('generationPage.firstLastFrame'), 'First / last frame'), description: text(tr('generationPage.setFirstFrameOptionallyLast'), 'Choose the first frame and an optional final frame') },
+            { value: 'omni_reference', label: text(tr('generationPage.multiReference'), 'Omni reference'), description: text(tr('generationPage.imagesVideosAudioUp12', { images: referenceLimits.images, videos: referenceLimits.videos, audios: referenceLimits.audios }), `${referenceLimits.images} images / ${referenceLimits.videos} videos / ${referenceLimits.audios} audio clips · 12 total`) },
           ]} />}
-        {kind === 'audio' ? <span className="gen-control gen-model">{model || text(tv('站点默认模型', 'Model mặc định của site'), 'Default model')}</span> : <GenerationSelect label={text(tv('生成模型', 'Model tạo'), 'Model')} icon={<Icon size={19} />} value={model} onChange={setModel} options={models.filter(item => item.available !== false).map(item => ({ value: item.id, label: item.label, description: item.pricing_hint }))} />}
-        {kind === 'audio' ? <GenerationSelect label={text(tv('音色', 'Giọng nói'), 'Voice')} icon={<Mic size={18} />} value={voice} onChange={setVoice} options={[
-          { value: 'narrator_calm', label: text(tv('沉静旁白', 'Lời dẫn trầm lắng'), 'Calm narrator'), description: text(tv('平稳自然，适合故事旁白', 'Ổn định tự nhiên, phù hợp lời dẫn truyện'), 'Steady and natural, for narration') },
-          { value: 'warm_storyteller', label: text(tv('温暖讲述', 'Kể chuyện ấm áp'), 'Warm storyteller'), description: text(tv('柔和亲切，适合温馨叙事', 'Mềm mại thân thiện, phù hợp tự sự ấm cúng'), 'Warm and gentle, for storytelling') },
-          { value: 'teacher_clear', label: text(tv('清晰男声', 'Giọng nam rõ ràng'), 'Clear male voice'), description: text(tv('清楚明快，适合知识讲解', 'Rõ ràng nhanh gọn, phù hợp giảng giải kiến thức'), 'Clear and bright, for explainers') },
+        {kind === 'audio' ? <span className="gen-control gen-model">{model || text(tr('generationPage.siteDefaultModel'), 'Default model')}</span> : <GenerationSelect label={text(tr('generationPage.model'), 'Model')} icon={<Icon size={19} />} value={model} onChange={setModel} options={models.filter(item => item.available !== false).map(item => ({ value: item.id, label: item.label, description: item.pricing_hint }))} />}
+        {kind === 'audio' ? <GenerationSelect label={text(tr('generationPage.voice'), 'Voice')} icon={<Mic size={18} />} value={voice} onChange={setVoice} options={[
+          { value: 'narrator_calm', label: text(tr('generationPage.calmNarrator'), 'Calm narrator'), description: text(tr('generationPage.steadyNaturalGreatStoryNarration'), 'Steady and natural, for narration') },
+          { value: 'warm_storyteller', label: text(tr('generationPage.warmStoryteller'), 'Warm storyteller'), description: text(tr('generationPage.softFriendlyGreatHeartwarmingStories'), 'Warm and gentle, for storytelling') },
+          { value: 'teacher_clear', label: text(tr('generationPage.clearMaleVoice'), 'Clear male voice'), description: text(tr('generationPage.clearBriskGreatExplainers'), 'Clear and bright, for explainers') },
         ]} /> : <>
-          <GenerationSelect label={text(tv('分辨率', 'Độ phân giải'), 'Resolution')} value={resolution} onChange={setResolution} options={allowedResolutions.map(value => ({ value, label: value, description: selectedModel?.prices?.[value] ? `¥${selectedModel.prices[value]}/${kind === 'video' ? tv('秒', 'giây') : tv('张', 'ảnh')}` : '' }))} />
-          <GenerationSelect label={text(tv('画幅', 'Tỷ lệ khung'), 'Aspect ratio')} value={ratio} onChange={setRatio} options={(selectedModel?.allowed_aspect_ratios ?? []).map(value => ({ value, label: value, icon: value === '1:1' ? <Square size={19} /> : value === '9:16' || value === '3:4' ? <RectangleVertical size={19} /> : <RectangleHorizontal size={21} /> }))} />
-          {kind === 'video' && <GenerationSelect label={text(tv('视频时长', 'Thời lượng video'), 'Duration')} icon={<Clock3 size={18} />} value={duration} onChange={setDuration} options={Array.from({ length: (selectedModel?.duration_max ?? 30) - (selectedModel?.duration_min ?? 4) + 1 }, (_, index) => (selectedModel?.duration_min ?? 4) + index).map(value => ({ value: `${value}s`, label: text(tv(`${value} 秒`, `${value} giây`), `${value} sec`), description: text(tv(`${resolution} · 单次生成一个片段`, `${resolution} · Mỗi lần tạo một đoạn`), `${resolution} · One video per request`) }))} />}
-          <span className="gen-control gen-output-count"><Layers size={17} /><span><small>{text(tv('生成数量', 'Số lượng tạo'), 'Output')}</small><strong>× 1</strong></span></span>
+          <GenerationSelect label={text(tr('generationPage.resolution'), 'Resolution')} value={resolution} onChange={setResolution} options={allowedResolutions.map(value => ({ value, label: value, description: selectedModel?.prices?.[value] ? `¥${selectedModel.prices[value]}/${kind === 'video' ? tr('generationPage.s') : tr('generationPage.images')}` : '' }))} />
+          <GenerationSelect label={text(tr('generationPage.aspectRatio'), 'Aspect ratio')} value={ratio} onChange={setRatio} options={(selectedModel?.allowed_aspect_ratios ?? []).map(value => ({ value, label: value, icon: value === '1:1' ? <Square size={19} /> : value === '9:16' || value === '3:4' ? <RectangleVertical size={19} /> : <RectangleHorizontal size={21} /> }))} />
+          {kind === 'video' && <GenerationSelect label={text(tr('generationPage.videoDuration'), 'Duration')} icon={<Clock3 size={18} />} value={duration} onChange={setDuration} options={Array.from({ length: (selectedModel?.duration_max ?? 30) - (selectedModel?.duration_min ?? 4) + 1 }, (_, index) => (selectedModel?.duration_min ?? 4) + index).map(value => ({ value: `${value}s`, label: text(tr('generationPage.s2', { value }), `${value} sec`), description: text(tr('generationPage.oneClipPerGeneration', { resolution }), `${resolution} · One video per request`) }))} />}
+          <span className="gen-control gen-output-count"><Layers size={17} /><span><small>{text(tr('generationPage.count'), 'Output')}</small><strong>× 1</strong></span></span>
         </>}
         {kind === 'video' && <PromptMentionPopover open={Boolean(mention)} items={mentionItems} anchorRect={mention?.rect ?? null}
           activeIndex={mentionActiveIndex} onActiveIndexChange={setMentionActiveIndex} onSelect={selectMention} onClose={() => setMention(null)} />}
@@ -271,29 +271,29 @@ function GenerationWorkspace({ kind }: { kind: MediaKind }) {
     {referenceError && <p className="gen-inline-error" role="alert">{referenceError}</p>}
     {estimateError && <p className="gen-inline-error" role="alert">{estimateError}</p>}
     {error && <BillingErrorNotice message={error} />}
-    {notice && <div className="gen-notice" role="status"><Check size={18} />{notice}<Link to={`/tasks?kind=${kind}`}>{text(tv('查看任务', 'Xem tác vụ'), 'View task')}<ArrowRight size={15} /></Link></div>}
+    {notice && <div className="gen-notice" role="status"><Check size={18} />{notice}<Link to={`/tasks?kind=${kind}`}>{text(tr('generationPage.viewTasks'), 'View task')}<ArrowRight size={15} /></Link></div>}
     <section className="gen-recent">
-      <header><h2>{text(tv('最近生成', 'Tạo gần đây'), 'Recent creations')}</h2><Link to={`/tasks?kind=${kind}`}>{text(tv(`查看全部 ${recentTotal} 个`, `Xem tất cả ${recentTotal}`), `View all ${recentTotal}`)}<ArrowRight size={17} /></Link></header>
+      <header><h2>{text(tr('generationPage.recentGenerations'), 'Recent creations')}</h2><Link to={`/tasks?kind=${kind}`}>{text(tr('generationPage.viewAll', { recentTotal }), `View all ${recentTotal}`)}<ArrowRight size={17} /></Link></header>
       {historyError && <p className="gen-inline-error" role="alert">{historyError}</p>}
-      {!recent.length && !historyError ? <div className="gen-empty"><Icon size={34} /><strong>{text(tv('你的灵感，从这里开始', 'Cảm hứng của bạn, bắt đầu từ đây'), 'Your next idea starts here')}</strong><p>{text(tv('提交第一个生成任务，作品会自动出现在这里。', 'Gửi tác vụ tạo đầu tiên, tác phẩm sẽ tự động xuất hiện ở đây.'), 'Submit your first generation. Your creations will appear here.')}</p></div> : <div className="gen-gallery">
+      {!recent.length && !historyError ? <div className="gen-empty"><Icon size={34} /><strong>{text(tr('generationPage.ideasStartHere'), 'Your next idea starts here')}</strong><p>{text(tr('generationPage.submitFirstGenerationResultsAppear'), 'Submit your first generation. Your creations will appear here.')}</p></div> : <div className="gen-gallery">
         {recent.map(item => <article key={item.id} className="gen-gallery-item">
-          <button type="button" className="gen-gallery-preview" onClick={() => openDetail(item)} aria-label={text(tv(`查看生成详情：${item.prompt || '未命名创作'}`, `Xem chi tiết tạo: ${item.prompt || '未命名创作'}`), `View generation details: ${item.prompt || 'Untitled creation'}`)}>
+          <button type="button" className="gen-gallery-preview" onClick={() => openDetail(item)} aria-label={text(tr('generationPage.viewGenerationDetails', { prompt: item.prompt || '未命名创作' }), `View generation details: ${item.prompt || 'Untitled creation'}`)}>
             {kind === 'image' && (item.preview_url || item.urls[0]) ? <img src={resolveToolMediaUrl(item.preview_url || item.urls[0])} alt={item.prompt} /> : kind === 'video' && item.urls[0] ? <video src={resolveToolMediaUrl(item.urls[0])} poster={resolveToolMediaUrl(item.preview_url)} muted preload="metadata" /> : kind === 'video' && item.preview_url ? <img src={resolveToolMediaUrl(item.preview_url)} alt={item.prompt} /> : <Icon size={38} />}
-            <span className={`gen-result-status is-${item.status}`}>{text(item.status === 'succeeded' ? tv('已完成', 'Đã hoàn tất') : item.status === 'failed' ? tv('失败', 'Thất bại') : item.status === 'cancelled' ? tv('已取消', 'Đã hủy') : tv('处理中', 'Đang xử lý'), item.status)}</span>
-            <span className="gen-cover-overlay" aria-hidden><Eye size={20} /><span>{text(tv('查看详情', 'Xem chi tiết'), 'View details')}</span></span>
+            <span className={`gen-result-status is-${item.status}`}>{text(item.status === 'succeeded' ? tr('generationPage.done') : item.status === 'failed' ? tr('generationPage.failed') : item.status === 'cancelled' ? tr('generationPage.cancelled') : tr('generationPage.processing'), item.status)}</span>
+            <span className="gen-cover-overlay" aria-hidden><Eye size={20} /><span>{text(tr('generationPage.viewDetails'), 'View details')}</span></span>
           </button>
           {kind === 'audio' && item.urls[0] && <audio controls src={resolveToolMediaUrl(item.urls[0])} preload="metadata" />}
-          <div className="gen-gallery-caption"><button type="button" className="gen-gallery-title" title={item.prompt} onClick={() => openDetail(item)}>{item.prompt || text(tv('未命名创作', 'Sáng tạo chưa đặt tên'), 'Untitled creation')}</button>{item.status === 'succeeded' && item.urls[0] && <button type="button" className="gen-icon-button" disabled={downloading === item.id} onClick={() => void download(item)} aria-label={text(tv('下载', 'Tải xuống'), 'Download')}><Download size={16} /></button>}</div>
+          <div className="gen-gallery-caption"><button type="button" className="gen-gallery-title" title={item.prompt} onClick={() => openDetail(item)}>{item.prompt || text(tr('generationPage.untitledCreation'), 'Untitled creation')}</button>{item.status === 'succeeded' && item.urls[0] && <button type="button" className="gen-icon-button" disabled={downloading === item.id} onClick={() => void download(item)} aria-label={text(tr('generationPage.download'), 'Download')}><Download size={16} /></button>}</div>
         </article>)}
       </div>}
     </section>
     {detail && detailAsset && <AssetDetailDialog asset={detailAsset} onClose={closeDetail}
       notice={<section className="pf-asset-detail-prompt"><div className="pf-asset-detail-text">
-        <p role="status">{text(detail.status === 'succeeded' ? tv('已完成', 'Đã hoàn tất') : detail.status === 'failed' ? tv('生成失败', 'Tạo thất bại') : detail.status === 'cancelled' ? tv('已取消', 'Đã hủy') : tv('正在生成，结果会自动更新。', 'Đang tạo, kết quả sẽ tự cập nhật.'), detail.status === 'succeeded' ? 'Completed' : detail.status === 'failed' ? 'Generation failed' : detail.status === 'cancelled' ? 'Cancelled' : 'Generating. Results will update automatically.')}</p>
+        <p role="status">{text(detail.status === 'succeeded' ? tr('generationPage.done') : detail.status === 'failed' ? tr('generationPage.generationFailed') : detail.status === 'cancelled' ? tr('generationPage.cancelled') : tr('generationPage.generatingResultsUpdateAutomatically'), detail.status === 'succeeded' ? 'Completed' : detail.status === 'failed' ? 'Generation failed' : detail.status === 'cancelled' ? 'Cancelled' : 'Generating. Results will update automatically.')}</p>
         {(detail.error || detailError) && <p role="alert">{formatGenerationErrorMessage(detail.error || detailError)}</p>}
       </div></section>}
-      actions={detail.urls.length > 1 && <div className="pf-asset-detail-utilities" role="group" aria-label={text(tv('生成结果', 'Kết quả tạo'), 'Generation results')}>
-        {detail.urls.map((url, index) => <button type="button" key={url} className="pf-btn pf-btn-sm" aria-pressed={resultIndex === index} onClick={() => selectResult(index)}>{text(tv(`结果 ${index + 1}`, `Kết quả ${index + 1}`), `Result ${index + 1}`)}</button>)}
+      actions={detail.urls.length > 1 && <div className="pf-asset-detail-utilities" role="group" aria-label={text(tr('generationPage.results'), 'Generation results')}>
+        {detail.urls.map((url, index) => <button type="button" key={url} className="pf-btn pf-btn-sm" aria-pressed={resultIndex === index} onClick={() => selectResult(index)}>{text(tr('generationPage.result', { n: index + 1 }), `Result ${index + 1}`)}</button>)}
       </div>}>
     </AssetDetailDialog>}
   </GenerationLayout>

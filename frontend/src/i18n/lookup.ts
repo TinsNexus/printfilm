@@ -1,6 +1,7 @@
 /** 按点路径取文案，并用 {name} 做插值 */
 
-export type TVars = Record<string, string | number>
+// 插值变量：与模板字符串一致，任意值都按 String() 输出
+export type TVars = Record<string, unknown>
 
 // 从嵌套对象按 "nav.home" 取字符串
 export function lookupMessage(source: unknown, path: string): string | undefined {
