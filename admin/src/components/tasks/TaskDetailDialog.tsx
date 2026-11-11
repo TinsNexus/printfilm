@@ -22,6 +22,7 @@ import { taskDomainLabel, taskStatusLabel, taskTypeLabel } from "@/lib/statusLab
 import { hasJsonContent, prettyJson } from "@/lib/jsonPreview";
 import { cn, fenToYuan } from "@/lib/utils";
 import { redactTaskData, redactTaskText, taskBilling, taskStatusTone } from "@/lib/taskObservability";
+import { tr } from "../../i18n/translate.ts";
 
 type TaskDetailDialogProps = {
   taskId: number | null;
@@ -34,26 +35,27 @@ type DetailTab = "overview" | "upstream" | "billing" | "steps" | "events" | "jso
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
 
+// 只存 key（模块级常量不能存已翻译文字），渲染时 tr
 const PAYLOAD_FIELD_LABELS: Record<string, string> = {
-  prompt: "Prompt",
-  name: "Tên",
-  kind: "Loại",
-  model_id: "Model",
-  image_style_id: "Phong cách",
-  aspect_ratio: "Tỷ lệ khung",
-  resolution: "Độ phân giải",
-  duration_sec: "Thời lượng (giây)",
-  duration: "Thời lượng",
-  force: "Buộc chạy lại",
-  total: "Tổng số",
-  project_id: "ID dự án khoa học",
-  user_id: "ID người dùng",
-  asset_id: "ID tài sản",
-  episode_count: "Số tập",
-  phase: "Giai đoạn",
-  sync: "Đồng bộ",
-  refresh_prompts: "Làm mới prompt",
-  reextract_props: "Bốc lại đạo cụ",
+  prompt: "taskUi.dd.field.prompt",
+  name: "taskUi.dd.field.name",
+  kind: "taskUi.dd.field.kind",
+  model_id: "taskUi.dd.field.model_id",
+  image_style_id: "taskUi.dd.field.image_style_id",
+  aspect_ratio: "taskUi.dd.field.aspect_ratio",
+  resolution: "taskUi.dd.field.resolution",
+  duration_sec: "taskUi.dd.field.duration_sec",
+  duration: "taskUi.dd.field.duration",
+  force: "taskUi.dd.field.force",
+  total: "taskUi.dd.field.total",
+  project_id: "taskUi.dd.field.project_id",
+  user_id: "taskUi.dd.field.user_id",
+  asset_id: "taskUi.dd.field.asset_id",
+  episode_count: "taskUi.dd.field.episode_count",
+  phase: "taskUi.dd.field.phase",
+  sync: "taskUi.dd.field.sync",
+  refresh_prompts: "taskUi.dd.field.refresh_prompts",
+  reextract_props: "taskUi.dd.field.reextract_props",
 };
 
 // 格式化时间为本地字符串
@@ -68,7 +70,7 @@ function fmtJson(value: unknown): string {
 }
 
 function money(value: number | null | undefined): string {
-  return value == null ? "Chưa ghi nhận" : `¥${fenToYuan(value)}`;
+  return value == null ? tr("taskUi.notRecorded") : `¥${fenToYuan(value)}`;
 }
 
 // 仅在有值时渲染一行定义列表项
@@ -109,12 +111,13 @@ function payloadSummaryRows(
 ): Array<{ key: string; label: string; value: string }> {
   if (!payload || typeof payload !== "object") return [];
   const rows: Array<{ key: string; label: string; value: string }> = [];
-  for (const [key, label] of Object.entries(PAYLOAD_FIELD_LABELS)) {
+  for (const [key, labelKey] of Object.entries(PAYLOAD_FIELD_LABELS)) {
+    const label = tr(labelKey);
     if (!(key in payload)) continue;
     const raw = payload[key];
     if (raw == null || raw === "") continue;
     if (typeof raw === "boolean") {
-      rows.push({ key, label, value: raw ? "Có" : "Không" });
+      rows.push({ key, label, value: tr(raw ? "taskUi.dd.yes" : "taskUi.dd.no") });
       continue;
     }
     const text = String(raw).trim();
@@ -138,7 +141,7 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
     try {
       setTask(await api<AdminTaskDetail>(`/api/admin/tasks/${id}`));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Tải chi tiết tác vụ thất bại");
+      toast.error(err instanceof Error ? err.message : tr("taskUi.dd.loadFailed"));
       onOpenChange(false);
     } finally {
       setLoading(false);
@@ -190,21 +193,21 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
 
   async function handleCancel() {
     if (!task || !canCancel) return;
-    if (!window.confirm(`Xác nhận hủy tác vụ #${task.id}？`)) return;
+    if (!window.confirm(tr("taskUi.dd.confirmCancel", { id: task.id }))) return;
     setCancelling(true);
     try {
       const updated = await api<AdminTaskDetail>(`/api/admin/tasks/${task.id}/cancel`, { method: "POST" });
       setTask(updated);
-      toast.success("Đã gửi yêu cầu hủy");
+      toast.success(tr("taskUi.dd.cancelRequested"));
       onCancelled?.();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Hủy thất bại");
+      toast.error(err instanceof Error ? err.message : tr("taskUi.dd.cancelFailed"));
     } finally {
       setCancelling(false);
     }
   }
 
-  const title = task ? `Tác vụ #${task.id} · ${taskDomainLabel(task.domain)}` : "Chi tiết tác vụ";
+  const title = task ? tr("taskUi.dd.title", { id: task.id, domain: taskDomainLabel(task.domain) }) : tr("taskUi.dd.titleEmpty");
 
   return (
     <AdminModal
@@ -225,18 +228,18 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
       footer={
         <>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Đóng
+            {tr("taskUi.dd.close")}
           </Button>
           {taskId ? (
             <Button variant="outline" disabled={loading} onClick={() => void loadDetail(taskId)}>
               <RefreshCw className={cn("mr-2 h-4 w-4", loading && "animate-spin")} />
-              Làm mới
+              {tr("taskUi.dd.refresh")}
             </Button>
           ) : null}
           {canCancel ? (
             <Button variant="destructive" disabled={cancelling} onClick={() => void handleCancel()}>
               {cancelling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Ban className="mr-2 h-4 w-4" />}
-              Hủy tác vụ
+              {tr("taskUi.cancelTask")}
             </Button>
           ) : null}
         </>
@@ -245,7 +248,7 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
       {loading && !task ? (
         <div className="task-detail-loading">
           <Loader2 className="h-6 w-6 animate-spin text-[#67c23a]" />
-          <span>Đang tải chi tiết tác vụ…</span>
+          <span>{tr("taskUi.dd.loading")}</span>
         </div>
       ) : task ? (
         <Tabs className="task-detail-body" value={tab} onValueChange={(value) => setTab(value as DetailTab)}>
@@ -253,12 +256,12 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
           <TabsList className="task-detail-tabs !h-auto !justify-start !rounded-none !bg-white !p-0">
             {(
               [
-                ["overview", "Tổng quan"],
-                ["upstream", "Yêu cầu upstream"],
-                ["billing", `Tính phí (${task.usage_lines?.length ?? 0})`],
-                ["steps", `Bước (${task.steps?.length ?? 0})`],
-                ["events", `Sự kiện (${task.events_total ?? task.events?.length ?? 0})`],
-                ["json", "JSON tác vụ (đã ẩn thông tin nhạy cảm)"],
+                ["overview", tr("taskUi.dd.tabOverview")],
+                ["upstream", tr("taskUi.dd.tabUpstream")],
+                ["billing", tr("taskUi.dd.tabBilling", { n: task.usage_lines?.length ?? 0 })],
+                ["steps", tr("taskUi.dd.tabSteps", { n: task.steps?.length ?? 0 })],
+                ["events", tr("taskUi.dd.tabEvents", { n: task.events_total ?? task.events?.length ?? 0 })],
+                ["json", tr("taskUi.dd.tabJson")],
               ] as const
             ).map(([key, label]) => (
               <TabsTrigger
@@ -276,8 +279,8 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
               <div className="task-detail-grid">
                 {waitingActivation || task.error_code || task.error_message ? (
                   <section className="task-detail-section task-detail-section--full">
-                    <h4>Ngoại lệ và nhắc nhở</h4>
-                    {waitingActivation ? <p className="task-detail-meta !mt-0">Tác vụ chưa được kích hoạt, đang chờ điều kiện tiên quyết hoặc chỗ trống đồng thời.</p> : null}
+                    <h4>{tr("taskUi.dd.alerts")}</h4>
+                    {waitingActivation ? <p className="task-detail-meta !mt-0">{tr("taskUi.dd.waitingActivation")}</p> : null}
                     {task.error_code || task.error_message ? (
                       <pre className="task-detail-error">
                         {redactTaskText([task.error_code, task.error_message].filter(Boolean).join(" · "))}
@@ -286,11 +289,11 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
                   </section>
                 ) : null}
 
-                <DetailSection title="Điều phối">
-                  <DlRow label="Ưu tiên">{task.priority}</DlRow>
+                <DetailSection title={tr("taskUi.dd.secSchedule")}>
+                  <DlRow label={tr("taskUi.dd.priority")}>{task.priority}</DlRow>
                   <DlRow label="scheduled_at">{task.scheduled_at ? fmtTime(task.scheduled_at) : null}</DlRow>
                   <DlRow label="next_action_at">{task.next_action_at ? fmtTime(task.next_action_at) : null}</DlRow>
-                  <DlRow label="Hết hạn thuê">{task.lease_until ? fmtTime(task.lease_until) : null}</DlRow>
+                  <DlRow label={tr("taskUi.dd.leaseUntil")}>{task.lease_until ? fmtTime(task.lease_until) : null}</DlRow>
                   <DlRow label="provider_task_id">
                     {task.provider_task_id ? (
                       <span className="font-mono text-xs break-all">{redactTaskText(task.provider_task_id)}</span>
@@ -298,26 +301,26 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
                   </DlRow>
                 </DetailSection>
 
-                <DetailSection title="Thực thể liên quan">
-                  <DlRow label="Người dùng">
+                <DetailSection title={tr("taskUi.dd.secEntities")}>
+                  <DlRow label={tr("taskUi.dd.user")}>
                     <AdminEntityLink kind="user" id={task.requested_by} label={task.user_email ?? undefined} />
                   </DlRow>
-                  <DlRow label="Dự án phim truyện">
+                  <DlRow label={tr("taskUi.dd.dramaProject")}>
                     {task.drama_project_id ? <AdminEntityLink kind="drama" id={task.drama_project_id} /> : null}
                   </DlRow>
-                  <DlRow label="Tài sản">
+                  <DlRow label={tr("taskUi.dd.asset")}>
                     {task.asset_id ? <AdminEntityLink kind="drama_asset" id={task.asset_id} /> : null}
                   </DlRow>
-                  <DlRow label="Kịch bản">{task.script_id ? `#${task.script_id}` : null}</DlRow>
-                  <DlRow label="Tập">{task.episode_id ? `#${task.episode_id}` : null}</DlRow>
-                  <DlRow label="Phân cảnh">{task.fragment_id ? `#${task.fragment_id}` : null}</DlRow>
-                  <DlRow label="Dự án khoa học">
+                  <DlRow label={tr("taskUi.dd.script")}>{task.script_id ? `#${task.script_id}` : null}</DlRow>
+                  <DlRow label={tr("taskUi.dd.episode")}>{task.episode_id ? `#${task.episode_id}` : null}</DlRow>
+                  <DlRow label={tr("taskUi.dd.shot")}>{task.fragment_id ? `#${task.fragment_id}` : null}</DlRow>
+                  <DlRow label={tr("taskUi.dd.explainerProject")}>
                     {task.project_id ? <AdminEntityLink kind="project" id={task.project_id} /> : null}
                   </DlRow>
-                  <DlRow label="Cảnh quay">{task.shot_id ? `#${task.shot_id}` : null}</DlRow>
+                  <DlRow label={tr("taskUi.dd.camShot")}>{task.shot_id ? `#${task.shot_id}` : null}</DlRow>
                 </DetailSection>
 
-                <DetailSection title="Định danh">
+                <DetailSection title={tr("taskUi.dd.secIds")}>
                   <DlRow label="dedupe_key">
                     {task.dedupe_key ? <span className="font-mono text-xs break-all">{task.dedupe_key}</span> : null}
                   </DlRow>
@@ -332,14 +335,14 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
                 </DetailSection>
 
                 <section className="task-detail-section task-detail-section--full">
-                  <h4>Dòng thời gian</h4>
+                  <h4>{tr("taskUi.dd.timeline")}</h4>
                   <ol className="task-timeline">
                     {(
                       [
-                        ["Tạo", task.created_at],
-                        ["Bắt đầu", task.started_at],
-                        ["Kết thúc", task.finished_at],
-                        ["Cập nhật", task.updated_at],
+                        [tr("taskUi.dd.tCreated"), task.created_at],
+                        [tr("taskUi.dd.tStarted"), task.started_at],
+                        [tr("taskUi.dd.tFinished"), task.finished_at],
+                        [tr("taskUi.dd.tUpdated"), task.updated_at],
                       ] as const
                     ).map(([label, value]) => (
                       <li key={label} className={cn(value && "is-reached")}>
@@ -351,8 +354,8 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
                 </section>
 
                 <section className="task-detail-section task-detail-section--full">
-                  <h4>Tham số tác vụ (payload đưa vào hàng đợi)</h4>
-                  <p className="mb-3 text-xs text-[var(--admin-muted)]">Đây là tham số điều phối nội bộ; yêu cầu thực sự gửi tới upstream xem ở “Yêu cầu upstream”.</p>
+                  <h4>{tr("taskUi.dd.payloadTitle")}</h4>
+                  <p className="mb-3 text-xs text-[var(--admin-muted)]">{tr("taskUi.dd.payloadNote")}</p>
                   {payloadRows.length > 0 ? (
                     <dl className="task-detail-dl task-detail-dl--payload mb-3">
                       {payloadRows.map((row) => (
@@ -368,16 +371,16 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
                   {hasJsonContent(task.payload) ? (
                     <pre className="task-detail-json">{fmtJson(task.payload)}</pre>
                   ) : (
-                    <p className="task-detail-meta">Chưa ghi nhận tham số tác vụ</p>
+                    <p className="task-detail-meta">{tr("taskUi.dd.noPayload")}</p>
                   )}
                 </section>
 
                 <section className="task-detail-section task-detail-section--full">
-                  <h4>Kết quả</h4>
+                  <h4>{tr("taskUi.dd.result")}</h4>
                   {hasJsonContent(task.result_payload) ? (
                     <pre className="task-detail-json">{fmtJson(task.result_payload)}</pre>
                   ) : (
-                    <p className="task-detail-meta">Chưa có kết quả (chưa hoàn tất hoặc chưa ghi lại result_payload)</p>
+                    <p className="task-detail-meta">{tr("taskUi.dd.noResult")}</p>
                   )}
                 </section>
               </div>
@@ -388,56 +391,56 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
             {tab === "billing" ? (
               <div className="task-detail-grid">
                 <section className="task-detail-section">
-                  <h4>Tóm tắt quyết toán</h4>
+                  <h4>{tr("taskUi.dd.settlementTitle")}</h4>
                   <dl className="task-detail-dl">
                     <div>
-                      <dt>Trạng thái tính phí</dt>
+                      <dt>{tr("taskUi.dd.billingStatus")}</dt>
                       <dd><Badge variant={billing.settled ? "success" : "warning"}>{billing.label}</Badge></dd>
                     </div>
                     <div>
-                      <dt>Ước tính</dt>
+                      <dt>{tr("taskUi.dd.estimate")}</dt>
                       <dd>{money(billing.estimateFen)}</dd>
                     </div>
                     <div>
-                      <dt>Đang đóng băng</dt>
+                      <dt>{tr("taskUi.dd.frozen")}</dt>
                       <dd>{money(billing.frozenFen)}</dd>
                     </div>
                     <div>
-                      <dt>Thực trừ</dt>
-                      <dd>{billing.settled || (billing.chargedFen ?? 0) > 0 ? money(billing.chargedFen) : "Chưa quyết toán"}</dd>
+                      <dt>{tr("taskUi.dd.charged")}</dt>
+                      <dd>{billing.settled || (billing.chargedFen ?? 0) > 0 ? money(billing.chargedFen) : tr("taskUi.dd.notSettled")}</dd>
                     </div>
                     <div>
-                      <dt>Hoàn lại</dt>
-                      <dd>{billing.settled || (billing.refundedFen ?? 0) > 0 ? money(billing.refundedFen) : "Chưa quyết toán"}</dd>
+                      <dt>{tr("taskUi.dd.refunded")}</dt>
+                      <dd>{billing.settled || (billing.refundedFen ?? 0) > 0 ? money(billing.refundedFen) : tr("taskUi.dd.notSettled")}</dd>
                     </div>
                   </dl>
                 </section>
 
                 <section className="task-detail-section task-detail-section--full">
-                  <h4>Chi tiết mức dùng</h4>
+                  <h4>{tr("taskUi.dd.usageTitle")}</h4>
                   {task.billing_snapshot && <div className="mb-3 text-xs text-[var(--admin-muted)]">
-                    <p>Chế độ tính phí lúc tiếp nhận:{task.billing_snapshot.mode === 'fixed_media' ? `Giá trên site #${task.billing_snapshot.price_version}` : 'Quy tắc tính phí gốc'} · Route cố định, thất bại không tự chuyển</p>
-                    {task.billing_snapshot.items.map((item, index) => <p key={index}>{item.model_id} · {item.params.resolution} · {item.params.duration ? `${item.params.duration} giây` : `${item.params.count} ảnh`} · {item.route.channel_name || item.route.channel_id} → {item.route.upstream_model}</p>)}
+                    <p>{tr("taskUi.dd.billingMode", { mode: task.billing_snapshot.mode === "fixed_media" ? tr("taskUi.dd.sitePrice", { v: task.billing_snapshot.price_version }) : tr("taskUi.dd.legacyRules") })}</p>
+                    {task.billing_snapshot.items.map((item, index) => <p key={index}>{item.model_id} · {item.params.resolution} · {item.params.duration ? tr("taskUi.dd.nSeconds", { n: item.params.duration }) : tr("taskUi.dd.nImages", { n: item.params.count })} · {item.route.channel_name || item.route.channel_id} → {item.route.upstream_model}</p>)}
                   </div>}
-                  <p className="mb-3 text-xs text-[var(--admin-muted)]">Bản ghi mức dùng cho biết căn cứ tính phí của lần gọi; khoản trừ và hoàn thực tế của ví lấy theo tóm tắt quyết toán của tác vụ.</p>
+                  <p className="mb-3 text-xs text-[var(--admin-muted)]">{tr("taskUi.dd.usageNote")}</p>
                   <div className="admin-table-wrap">
                     <table>
                       <thead>
                         <tr>
-                          <th>Thời gian</th>
-                          <th>Năng lực</th>
+                          <th>{tr("taskUi.dd.colTime")}</th>
+                          <th>{tr("taskUi.dd.colCapability")}</th>
                           <th>billing_key</th>
                           <th>Model</th>
                           <th>Tokens</th>
-                          <th>Trừ phí</th>
-                          <th>Căn cứ tính phí</th>
+                          <th>{tr("taskUi.dd.colCharge")}</th>
+                          <th>{tr("taskUi.dd.colBasis")}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {(task.usage_lines?.length ?? 0) === 0 ? (
                           <tr>
                             <td colSpan={7} className="text-center text-sm text-[#909399]">
-                              Chưa có bản ghi mức dùng
+                              {tr("taskUi.dd.noUsage")}
                             </td>
                           </tr>
                         ) : (
@@ -450,9 +453,9 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
                               <td>{line.total_tokens ?? 0}</td>
                               <td>¥{fenToYuan(line.charge_fen ?? 0)}</td>
                               <td>{line.billing_detail?.mode === 'fixed_media' ? <>
-                                <div>{line.billing_detail.resolution} · ¥{line.billing_detail.unit_price_yuan} × {line.billing_detail.duration ?? 1}{line.billing_detail.duration ? ' giây' : ' ảnh'}</div>
-                                <div className="text-xs text-[var(--admin-muted)]">Giá #{line.billing_detail.price_version} · {line.billing_detail.route.channel_name || line.billing_detail.route.channel_id} · {line.billing_detail.delivered ? 'Đã giao' : 'Chưa giao'}</div>
-                              </> : line.billing_basis_label ?? (line.estimated ? "Ước tính" : "Đo thực tế")}</td>
+                                <div>{line.billing_detail.resolution} · ¥{line.billing_detail.unit_price_yuan} × {line.billing_detail.duration ?? 1}{tr(line.billing_detail.duration ? "taskUi.dd.unitSecond" : "taskUi.dd.unitImage")}</div>
+                                <div className="text-xs text-[var(--admin-muted)]">{tr("taskUi.dd.priceN", { v: line.billing_detail.price_version })} · {line.billing_detail.route.channel_name || line.billing_detail.route.channel_id} · {tr(line.billing_detail.delivered ? "taskUi.dd.delivered" : "taskUi.dd.notDelivered")}</div>
+                              </> : line.billing_basis_label ?? (line.estimated ? tr("taskUi.dd.estimated") : tr("taskUi.dd.measured"))}</td>
                             </tr>
                           ))
                         )}
@@ -468,19 +471,19 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
                 <table>
                   <thead>
                     <tr>
-                      <th>Bước</th>
-                      <th>Trạng thái</th>
-                      <th>Lần thử</th>
+                      <th>{tr("taskUi.dd.colStep")}</th>
+                      <th>{tr("taskUi.status")}</th>
+                      <th>{tr("taskUi.dd.colAttempt")}</th>
                       <th>Provider</th>
-                      <th>Lỗi</th>
-                      <th>Thời gian</th>
+                      <th>{tr("taskUi.up.error")}</th>
+                      <th>{tr("taskUi.dd.colTime")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {(task.steps?.length ?? 0) === 0 ? (
                       <tr>
                         <td colSpan={6} className="text-center text-sm text-[#909399]">
-                          Chưa có bản ghi bước
+                          {tr("taskUi.dd.noSteps")}
                         </td>
                       </tr>
                     ) : (
@@ -504,8 +507,8 @@ export function TaskDetailDialog({ taskId, open, onOpenChange, onCancelled }: Ta
                             {redactTaskText(step.error_message ?? "—")}
                           </td>
                           <td className="text-[11px] text-[#909399]">
-                            <div>Bắt đầu {fmtTime(step.started_at)}</div>
-                            <div>Kết thúc {fmtTime(step.finished_at)}</div>
+                            <div>{tr("taskUi.dd.stepStart", { time: fmtTime(step.started_at) })}</div>
+                            <div>{tr("taskUi.dd.stepEnd", { time: fmtTime(step.finished_at) })}</div>
                           </td>
                         </tr>
                       ))

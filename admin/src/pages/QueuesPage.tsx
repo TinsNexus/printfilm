@@ -17,16 +17,17 @@ import { canCancelTask, taskBilling, taskUpstream } from "@/lib/taskObservabilit
 import { cn } from "@/lib/utils";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { taskDomainLabel, taskTypeLabel } from "@/lib/statusLabels";
+import { tr } from "../i18n/translate.ts";
 
 const REFRESH_MS = 15000;
 const TERMINAL_STATUSES = new Set(["succeeded", "failed", "cancelled"]);
 
 function formatElapsed(seconds: number | null | undefined): string {
-  if (seconds == null || !Number.isFinite(seconds)) return "Chưa có bản ghi";
+  if (seconds == null || !Number.isFinite(seconds)) return tr("taskUi.q.noRecord");
   const value = Math.max(0, Math.floor(seconds));
-  if (value < 60) return `${value}giây`;
-  if (value < 3600) return `${Math.floor(value / 60)}phút${value % 60}giây`;
-  return `${Math.floor(value / 3600)}giờ${Math.floor((value % 3600) / 60)}phút`;
+  if (value < 60) return tr("taskUi.q.durSeconds", { s: value });
+  if (value < 3600) return tr("taskUi.q.durMinutes", { m: Math.floor(value / 60), s: value % 60 });
+  return tr("taskUi.q.durHours", { h: Math.floor(value / 3600), m: Math.floor((value % 3600) / 60) });
 }
 
 // 统一任务平台监控页
@@ -84,7 +85,7 @@ export function QueuesPage() {
         setData(res);
       } catch (err) {
         if (!silent) {
-          toast.error(err instanceof Error ? err.message : "Tải tác vụ thất bại");
+          toast.error(err instanceof Error ? err.message : tr("taskUi.q.loadFailed"));
         }
       } finally {
         setLoading(false);
@@ -100,7 +101,7 @@ export function QueuesPage() {
       try {
         await Promise.all([loadStats(), loadTasks(true)]);
       } catch (err) {
-        if (!silent) toast.error(err instanceof Error ? err.message : "Làm mới thất bại");
+        if (!silent) toast.error(err instanceof Error ? err.message : tr("taskUi.q.refreshFailed"));
       } finally {
         setRefreshing(false);
         setLoading(false);
@@ -125,14 +126,14 @@ export function QueuesPage() {
   const handleCancel = useCallback(
     async (task: AdminTaskRow) => {
       if (!canCancelTask(task)) return;
-      if (!window.confirm(`Xác nhận hủy tác vụ #${task.id}（${taskTypeLabel(task.task_type)}）？`)) return;
+      if (!window.confirm(tr("taskUi.q.confirmCancel", { id: task.id, type: taskTypeLabel(task.task_type) }))) return;
       setCancelLoading(task.id);
       try {
         await api(`/api/admin/tasks/${task.id}/cancel`, { method: "POST" });
-        toast.success("Đã gửi yêu cầu hủy");
+        toast.success(tr("taskUi.dd.cancelRequested"));
         await refreshAll(true);
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Hủy thất bại");
+        toast.error(err instanceof Error ? err.message : tr("taskUi.dd.cancelFailed"));
       } finally {
         setCancelLoading(null);
       }
@@ -147,8 +148,8 @@ export function QueuesPage() {
 
   return (
     <div className="admin-page">
-      <PageHeader title="Trung tâm tác vụ"
-        description={`Nền tảng tác vụ thống nhất · tự làm mới ${REFRESH_MS / 1000}s · ${apiOnlyNode ? "Nút này chỉ có API / hàng đợi do nút thực thi xử lý" : `Đồng thời của nút này ${stats?.scheduler_running_jobs ?? 0}/${stats?.max_concurrency ?? 0}`}`}
+      <PageHeader title={tr("taskUi.q.title")}
+        description={tr("taskUi.q.desc", { sec: REFRESH_MS / 1000, node: apiOnlyNode ? tr("taskUi.q.apiOnlyQueue") : tr("taskUi.q.nodeConcurrency", { running: stats?.scheduler_running_jobs ?? 0, max: stats?.max_concurrency ?? 0 }) })}
         actions={
           <button
             type="button"
@@ -157,7 +158,7 @@ export function QueuesPage() {
             disabled={refreshing}
           >
             {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Làm mới
+            {tr("taskUi.dd.refresh")}
           </button>
         }
       />
@@ -165,73 +166,73 @@ export function QueuesPage() {
       {loading && !stats ? (
         <div className="admin-panel flex items-center justify-center py-16 text-[var(--admin-muted)]">
           <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-          Đang tải…
+          {tr("taskUi.q.loading")}
         </div>
       ) : (
         <>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <StatCard
-              label="Chờ xử lý"
+              label={tr("taskUi.wait.pending")}
               value={stats?.pending_count ?? 0}
-              hint={`Chờ điều phối ${stats?.pending_ready_count ?? "—"} · Chờ kích hoạt ${stats?.pending_deferred_count ?? "—"} · Trì hoãn ${stats?.pending_delayed_count ?? "—"}`}
+              hint={tr("taskUi.q.pendingHint", { ready: stats?.pending_ready_count ?? "—", deferred: stats?.pending_deferred_count ?? "—", delayed: stats?.pending_delayed_count ?? "—" })}
               icon={Layers}
               tone="warn"
             />
             <StatCard
-              label="Đang tiến hành"
+              label={tr("taskUi.q.inProgress")}
               value={stats?.active_count ?? 0}
-              hint={`Thực thi ${stats?.running_count ?? 0} · Thăm dò ${stats?.awaiting_poll_count ?? 0} · Đang hủy ${stats?.cancel_requested_count ?? 0}`}
+              hint={tr("taskUi.q.activeHint", { running: stats?.running_count ?? 0, polling: stats?.awaiting_poll_count ?? 0, cancelling: stats?.cancel_requested_count ?? 0 })}
               icon={Activity}
               tone="info"
             />
             <StatCard
-              label="Khe thực thi của nút này"
+              label={tr("taskUi.q.nodeSlots")}
               value={
-                apiOnlyNode ? <span className="text-lg">Chỉ API</span> : <>
+                apiOnlyNode ? <span className="text-lg">{tr("taskUi.q.apiOnly")}</span> : <>
                   {stats?.scheduler_running_jobs ?? 0}
                   <span className="text-lg text-[var(--admin-muted)]"> / {stats?.max_concurrency ?? 0}</span>
                 </>
               }
-              hint={apiOnlyNode ? "Hàng đợi do nút thực thi xử lý" : `Đã thuê toàn site ${stats?.leased_count ?? 0}`}
+              hint={apiOnlyNode ? tr("taskUi.q.queueByWorker") : tr("taskUi.q.siteLeased", { n: stats?.leased_count ?? 0 })}
               icon={RefreshCw}
             />
             <StatCard
-              label="Thống kê trạng thái cuối"
+              label={tr("taskUi.q.terminalStats")}
               icon={Ban}
               tone="success"
               value={
                 <span className="admin-terminal-stats">
-                  <span><small>Thành công</small><strong>{stats?.succeeded_count ?? 0}</strong></span>
-                  <span><small>Thất bại</small><strong>{stats?.failed_count ?? 0}</strong></span>
-                  <span><small>Hủy</small><strong>{stats?.cancelled_count ?? 0}</strong></span>
+                  <span><small>{tr("taskUi.q.succeeded")}</small><strong>{stats?.succeeded_count ?? 0}</strong></span>
+                  <span><small>{tr("taskUi.q.failed")}</small><strong>{stats?.failed_count ?? 0}</strong></span>
+                  <span><small>{tr("taskUi.q.cancelled")}</small><strong>{stats?.cancelled_count ?? 0}</strong></span>
                 </span>
               }
-              hint={`Cập nhật ${stats?.fetched_at ? new Date(stats.fetched_at).toLocaleTimeString() : "—"}`}
+              hint={tr("taskUi.q.updatedAt", { time: stats?.fetched_at ? new Date(stats.fetched_at).toLocaleTimeString() : "—" })}
             />
           </div>
 
           <div className="admin-panel mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3 text-xs text-[var(--admin-muted)]">
             <span className={cn("admin-status-pill", stats?.runtime_healthy === undefined ? "" : stats.runtime_healthy ? "is-done" : "is-fail")}>
-              {apiOnlyNode ? "Nút này chỉ có API" : `Runtime ${stats?.runtime_healthy === undefined ? "Trạng thái không xác định" : stats.runtime_healthy ? "Bình thường" : "Bất thường"}`}
+              {apiOnlyNode ? tr("taskUi.q.nodeApiOnly") : tr("taskUi.q.runtime", { state: tr(stats?.runtime_healthy === undefined ? "taskUi.q.stateUnknown" : stats.runtime_healthy ? "taskUi.q.stateOk" : "taskUi.q.stateBad") })}
             </span>
-            {apiOnlyNode ? <span>Nút này chỉ có API / hàng đợi do nút thực thi xử lý</span> : <>
-              <span>Bộ điều phối {stats?.scheduler ?? "—"} · Bộ thăm dò {stats?.poller ?? "—"} · Watchdog {stats?.watchdog ?? "—"}</span>
-              <span>Lần điều phối thành công gần nhất:{stats?.scheduler_success_age_sec == null ? "Chưa có bản ghi" : `${formatElapsed(stats.scheduler_success_age_sec)}trước`}</span>
-              <span>Số lần thất bại liên tiếp:{stats?.scheduler_consecutive_failures ?? "—"}</span>
+            {apiOnlyNode ? <span>{tr("taskUi.q.apiOnlyQueue")}</span> : <>
+              <span>{tr("taskUi.q.loops", { scheduler: stats?.scheduler ?? "—", poller: stats?.poller ?? "—", watchdog: stats?.watchdog ?? "—" })}</span>
+              <span>{tr("taskUi.q.lastSuccess", { ago: stats?.scheduler_success_age_sec == null ? tr("taskUi.q.noRecord") : tr("taskUi.q.agoN", { t: formatElapsed(stats.scheduler_success_age_sec) }) })}</span>
+              <span>{tr("taskUi.q.consecutiveFailures", { n: stats?.scheduler_consecutive_failures ?? "—" })}</span>
             </>}
-            <span>Thời gian chờ của tác vụ đến hạn cũ nhất chưa được điều phối:{formatElapsed(stats?.oldest_ready_wait_sec)}</span>
-            <span>Chờ kích hoạt nghĩa là điều kiện tiên quyết hoặc chỗ trống đồng thời chưa thỏa; trì hoãn nghĩa là chưa đến giờ điều phối.</span>
+            <span>{tr("taskUi.q.oldestReadyWait", { t: formatElapsed(stats?.oldest_ready_wait_sec) })}</span>
+            <span>{tr("taskUi.q.waitLegend")}</span>
           </div>
 
-          {stats?.queues?.length ? <PageSection title="Hàng đợi điều phối" bodyClassName="!pt-0">
+          {stats?.queues?.length ? <PageSection title={tr("taskUi.q.queuesTitle")} bodyClassName="!pt-0">
             <div className="grid gap-3 md:grid-cols-3">{stats.queues.map((queue) => <div key={queue.name} className="admin-panel px-4 py-3">
-              <div className="text-sm font-medium">{queue.label}Hàng đợi <span className="font-mono text-xs text-[var(--admin-muted)]">{queue.name}</span></div>
-              <div className="mt-2 text-xs text-[var(--admin-muted)]">Xếp hàng {queue.pending} · Đang chạy {queue.active} · Đồng thời {queue.max_concurrency}</div>
-              {queue.awaiting_poll ? <div className="mt-1 text-xs text-[var(--admin-muted)]">Chờ upstream {queue.awaiting_poll}</div> : null}
+              <div className="text-sm font-medium">{tr("taskUi.queueOf", { kind: queue.label })} <span className="font-mono text-xs text-[var(--admin-muted)]">{queue.name}</span></div>
+              <div className="mt-2 text-xs text-[var(--admin-muted)]">{tr("taskUi.q.queueLine", { pending: queue.pending, active: queue.active, max: queue.max_concurrency })}</div>
+              {queue.awaiting_poll ? <div className="mt-1 text-xs text-[var(--admin-muted)]">{tr("taskUi.q.awaitingUpstream", { n: queue.awaiting_poll })}</div> : null}
             </div>)}</div>
           </PageSection> : null}
           {(stats?.domains.length ?? 0) > 0 ? (
-            <PageSection title="Tác vụ theo lĩnh vực" bodyClassName="!pt-0">
+            <PageSection title={tr("taskUi.q.byDomain")} bodyClassName="!pt-0">
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 {stats?.domains.map((d) => (
                   <div key={d.domain} className="admin-domain-card">
@@ -250,7 +251,7 @@ export function QueuesPage() {
                       </span>
                     </div>
                     <div className="mt-2 text-xs text-[var(--admin-muted)]">
-                      Chờ xử lý {d.pending} · Đang chạy {d.active} · Thành công {d.succeeded}
+                      {tr("taskUi.q.domainLine", { pending: d.pending, active: d.active, succeeded: d.succeeded })}
                     </div>
                   </div>
                 ))}
@@ -259,13 +260,13 @@ export function QueuesPage() {
           ) : null}
 
           <PageSection
-            title="Danh sách tác vụ"
+            title={tr("taskUi.q.listTitle")}
             actions={
               <div className="flex flex-wrap gap-2">
                 {(
                   [
-                    ["active", `Chưa kết thúc (${stats?.pending_count ?? 0}+${stats?.active_count ?? 0})`],
-                    ["all", "Tất cả"],
+                    ["active", tr("taskUi.q.tabActive", { pending: stats?.pending_count ?? 0, active: stats?.active_count ?? 0 })],
+                    ["all", tr("taskUi.q.tabAll")],
                   ] as const
                 ).map(([key, label]) => (
                   <button
@@ -294,7 +295,7 @@ export function QueuesPage() {
                   setPage(1);
                 }}
               >
-                <option value="">Tất cả lĩnh vực</option>
+                <option value="">{tr("taskUi.q.allDomains")}</option>
                 {domainOptions.map((d) => (
                   <option key={d} value={d}>
                     {taskDomainLabel(d)}
@@ -310,16 +311,16 @@ export function QueuesPage() {
                   if (e.target.value) setViewTab("all");
                 }}
               >
-                <option value="">Tất cả trạng thái</option>
+                <option value="">{tr("taskUi.q.allStatuses")}</option>
                 {Object.entries({
-                  pending: "Chờ xử lý",
-                  leased: "Đã thuê",
-                  running: "Đang thực thi",
-                  awaiting_poll: "Chờ thăm dò",
-                  cancel_requested: "Đang hủy",
-                  succeeded: "Đã thành công",
-                  failed: "Thất bại",
-                  cancelled: "Đã hủy",
+                  pending: tr("taskUi.wait.pending"),
+                  leased: tr("taskUi.q.st.leased"),
+                  running: tr("taskUi.q.st.running"),
+                  awaiting_poll: tr("taskUi.q.st.awaitingPoll"),
+                  cancel_requested: tr("taskUi.q.st.cancelling"),
+                  succeeded: tr("taskUi.q.st.succeeded"),
+                  failed: tr("taskUi.q.st.failed"),
+                  cancelled: tr("taskUi.q.st.cancelled"),
                 }).map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
@@ -335,7 +336,7 @@ export function QueuesPage() {
               />
               <input
                 className="admin-input"
-                placeholder="Loại tác vụ"
+                placeholder={tr("taskUi.q.taskType")}
                 value={taskType}
                 onChange={(e) => {
                   setTaskType(e.target.value);
@@ -345,7 +346,7 @@ export function QueuesPage() {
               <AdminSearchInput
                 value={searchInput}
                 onChange={setSearchInput}
-                placeholder="Loại tác vụ / email người dùng / dedupe_key"
+                placeholder={tr("taskUi.q.searchPlaceholder")}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
@@ -362,7 +363,7 @@ export function QueuesPage() {
                   setPage(1);
                 }}
               >
-                Truy vấn
+                {tr("taskUi.q.search")}
               </button>
             </Toolbar>
 
@@ -370,13 +371,13 @@ export function QueuesPage() {
               <table className="task-table">
                 <thead>
                   <tr>
-                    <th>Tác vụ / model</th>
-                    <th>Trạng thái</th>
+                    <th>{tr("taskUi.q.colTask")}</th>
+                    <th>{tr("taskUi.status")}</th>
                     <th>Upstream</th>
-                    <th>Tính phí</th>
-                    <th>Thời gian xử lý</th>
-                    <th>Người dùng / liên kết</th>
-                    <th className="text-right">Thao tác</th>
+                    <th>{tr("taskUi.billing")}</th>
+                    <th>{tr("taskUi.duration")}</th>
+                    <th>{tr("taskUi.q.colUser")}</th>
+                    <th className="text-right">{tr("taskUi.q.colActions")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -384,8 +385,8 @@ export function QueuesPage() {
                     <tr>
                       <td colSpan={7}>
                         <div className="admin-empty !py-10">
-                          <div className="admin-empty-title">Chưa có tác vụ</div>
-                          <div className="admin-empty-desc">Chuyển sang “Tất cả” để xem tác vụ lịch sử</div>
+                          <div className="admin-empty-title">{tr("taskUi.q.empty")}</div>
+                          <div className="admin-empty-desc">{tr("taskUi.q.emptyHint")}</div>
                         </div>
                       </td>
                     </tr>
