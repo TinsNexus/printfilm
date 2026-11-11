@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getToken } from '@/lib/auth'
-import { MarketplaceRequestError } from './errors'
+import { MarketplaceRequestError, marketplaceText } from './errors'
 
 export type Item = { id: number; version?: number; [key: string]: unknown }
 export type Listing = { items: Item[]; meta: { page: number; page_size: number; total: number } }
@@ -11,7 +11,7 @@ export async function request<T>(path: string, method = 'GET', body?: unknown): 
   try {
     response = await fetch(path, { method, headers: { Authorization: `Bearer ${getToken() ?? ''}`, ...(body !== undefined ? { 'Content-Type': body instanceof Blob ? 'application/octet-stream' : 'application/json' } : {}) }, body: body === undefined ? undefined : body instanceof Blob ? body : JSON.stringify(body) })
   } catch (cause) {
-    throw new MarketplaceRequestError(undefined, 0, 'Tạm thời không kết nối được dịch vụ, vui lòng kiểm tra mạng rồi thử lại.', cause)
+    throw new MarketplaceRequestError(undefined, 0, marketplaceText('network'), cause)
   }
   const value = await response.json().catch(() => ({}))
   if (!response.ok) throw new MarketplaceRequestError(value?.detail, response.status)
@@ -24,11 +24,11 @@ export async function letterFile(id: number): Promise<Blob> {
   try {
     response = await fetch(`/api/marketplace/authorizations/${id}/file`, { headers: { Authorization: `Bearer ${getToken() ?? ''}` } })
   } catch (cause) {
-    throw new MarketplaceRequestError(undefined, 0, 'Tạm thời không mở được thư ủy quyền, vui lòng kiểm tra mạng rồi thử lại.', cause)
+    throw new MarketplaceRequestError(undefined, 0, marketplaceText('letterNetwork'), cause)
   }
   if (!response.ok) {
     const value = await response.json().catch(() => ({}))
-    throw new MarketplaceRequestError(value?.detail, response.status, 'Tạm thời không mở được thư ủy quyền, vui lòng thử lại sau.')
+    throw new MarketplaceRequestError(value?.detail, response.status, marketplaceText('letterUnavailable'))
   }
   return response.blob()
 }
@@ -42,7 +42,7 @@ export function useMarketplaceStatus() {
     setState({ enabled: false, loading: true, error: '' })
     request<{ enabled: boolean }>('/api/marketplace/capabilities')
       .then(value => { if (active) setState({ enabled: value.enabled, loading: false, error: '' }) })
-      .catch(error => { if (active) setState({ enabled: false, loading: false, error: error instanceof Error ? error.message : 'Đọc trạng thái dịch vụ thất bại.' }) })
+      .catch(error => { if (active) setState({ enabled: false, loading: false, error: error instanceof Error ? error.message : marketplaceText('statusFailed') }) })
     return () => { active = false }
   }, [revision])
   return { ...state, retry: () => setRevision(value => value + 1) }
@@ -62,7 +62,7 @@ export async function assetFile(id: number, purpose = 'original'): Promise<Blob>
   const response = await fetch(`/api/marketplace/media/asset/${id}/inline?purpose=${encodeURIComponent(purpose)}`, { headers: { Authorization: `Bearer ${getToken() ?? ''}` } })
   if (!response.ok) {
     const value = await response.json().catch(() => ({}))
-    throw new Error(typeof value.detail === 'string' ? value.detail : 'Tệp tạm thời chưa thể xem trước')
+    throw new Error(typeof value.detail === 'string' ? value.detail : marketplaceText('previewUnavailable'))
   }
   const type = response.headers.get('content-type') || 'application/octet-stream'
   const blob = await response.blob()

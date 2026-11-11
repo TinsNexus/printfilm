@@ -1,3 +1,5 @@
+import { viAdminMarketplaceStatus } from "./vi/adminMarketplaceStatus.ts";
+import { viAdminMarketplaceErrors } from "./vi/adminMarketplaceErrors.ts";
 import { viAdminTaskObservability } from "./vi/adminTaskObservability.ts";
 import { viAdminWalletMigration } from "./vi/adminWalletMigration.ts";
 import { viAdminAppleSettings } from "./vi/adminAppleSettings.ts";
@@ -41,6 +43,8 @@ import { viAdminStatus } from "./vi/adminStatus.ts";
 import { viShell } from "./vi/shell.ts";
 
 export const vi = {
+  ...viAdminMarketplaceStatus,
+  ...viAdminMarketplaceErrors,
   ...viAdminTaskObservability,
   ...viAdminStatus,
   ...viAdminWalletMigration,

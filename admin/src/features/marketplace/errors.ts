@@ -1,22 +1,35 @@
 import { points } from '../../lib/points.ts'
-const messages: Record<string, string> = {
-  MARKETPLACE_STORAGE_UNAVAILABLE: 'Dịch vụ tệp chưa được cấu hình, vui lòng kiểm tra cài đặt dịch vụ tệp trong trang quản trị.',
-  MARKETPLACE_PAYMENT_UNAVAILABLE: 'Dịch vụ thanh toán tạm thời không khả dụng, vui lòng kiểm tra cấu hình thanh toán rồi thử lại.',
-  MARKETPLACE_REVENUE_CONFIG_REQUIRED: 'Vui lòng cấu hình và bật tỷ lệ chiết khấu nền tảng trước, rồi mới gửi tác phẩm doanh thu quảng bá nền tảng.',
-  MARKETPLACE_RIGHTS_REQUIRED: 'Vui lòng bổ sung tài liệu bản quyền rồi hãy thao tác.',
-  MARKETPLACE_EPISODE_NOT_READY: 'Phiên bản phát hoàn chỉnh chưa sẵn sàng, vui lòng thử lại sau.',
-  MARKETPLACE_ENTITLEMENT_REQUIRED: 'Chưa có quyền phát hoàn chỉnh của phiên bản này.',
-  MARKETPLACE_SOURCE_NOT_READY: 'Phim nguồn chưa hoàn tất, vui lòng hoàn thành toàn bộ video phân cảnh của các tập đã chọn rồi đồng bộ lại.',
-  MARKETPLACE_SOURCE_CHANGED: 'Phim nguồn đã được cập nhật, vui lòng chọn lại rồi đồng bộ.',
-  MARKETPLACE_SOURCE_INCOMPATIBLE: 'Quy cách video phân cảnh không đồng nhất, vui lòng thống nhất tỷ lệ khung hình rồi đồng bộ lại.',
-  MARKETPLACE_TARGET_CHANGED: 'Bản nháp chợ đã được cập nhật, vui lòng làm mới để xem rồi thao tác lại.',
-  MARKETPLACE_SYNC_IN_PROGRESS: 'Phim đang đồng bộ, vui lòng đợi đồng bộ xong rồi mới lưu hoặc gửi.',
-  MARKETPLACE_SUBMISSIONS_DISABLED: 'Tuyển dụng do CSKH kết nối, vui lòng liên hệ CSKH trong chi tiết tuyển dụng để nhận việc.',
+import { tr } from '../../i18n/translate.ts'
+// 错误码与字段名：只存 key，读取时按当前语言 tr（模块级常量不能存已翻译文字）
+const MESSAGE_CODES = new Set([
+  'MARKETPLACE_STORAGE_UNAVAILABLE',
+  'MARKETPLACE_PAYMENT_UNAVAILABLE',
+  'MARKETPLACE_REVENUE_CONFIG_REQUIRED',
+  'MARKETPLACE_RIGHTS_REQUIRED',
+  'MARKETPLACE_EPISODE_NOT_READY',
+  'MARKETPLACE_ENTITLEMENT_REQUIRED',
+  'MARKETPLACE_SOURCE_NOT_READY',
+  'MARKETPLACE_SOURCE_CHANGED',
+  'MARKETPLACE_SOURCE_INCOMPATIBLE',
+  'MARKETPLACE_TARGET_CHANGED',
+  'MARKETPLACE_SYNC_IN_PROGRESS',
+  'MARKETPLACE_SUBMISSIONS_DISABLED',
+])
+const FIELD_NAMES = new Set([
+  'version', 'title', 'reason', 'checks', 'owner_id', 'user_id', 'amount_fen', 'platform_share_bps', 'enabled', 'status', 'note', 'names', 'name', 'wechat', 'hours', 'qr_asset_id', 'resolution',
+])
+
+/** 供 api.ts 等取通用提示（api.ts 在单测里以 data: URL 加载，只能经由 ./errors 取得 tr） */
+export function marketplaceText(key: 'network' | 'letterNetwork' | 'letterUnavailable' | 'statusFailed' | 'previewUnavailable'): string {
+  return tr(`mkErr.text.${key}`)
 }
-const fields: Record<string, string> = {
-  version: 'Phiên bản nội dung', title: 'Tiêu đề', reason: 'Lý do duyệt', checks: 'Mục kiểm tra duyệt', owner_id: 'Mã nhà sáng tạo', user_id: 'Mã người dùng mua',
-  amount_fen: 'Số tiền', platform_share_bps: 'Tỷ lệ chiết khấu nền tảng', enabled: 'Trạng thái bật', status: 'Trạng thái', note: 'Ghi chú', names: 'Tên danh mục',
-  name: 'Tên CSKH', wechat: 'ID WeChat', hours: 'Thời gian phục vụ', qr_asset_id: 'Mã QR CSKH', resolution: 'Kết quả xử lý báo cáo',
+
+function codeMessage(code: string): string | undefined {
+  return MESSAGE_CODES.has(code) ? tr(`mkErr.code.${code}`) : undefined
+}
+
+function fieldName(name: string): string | undefined {
+  return FIELD_NAMES.has(name) ? tr(`mkErr.field.${name}`) : undefined
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -29,7 +42,7 @@ function readableText(value: string) {
 }
 
 function boundary(value: unknown, field: string): string {
-  if ((typeof value !== 'number' && typeof value !== 'string') || value === '' || !Number.isFinite(Number(value))) return '允许范围'
+  if ((typeof value !== 'number' && typeof value !== 'string') || value === '' || !Number.isFinite(Number(value))) return tr('mkErr.allowedRange')
   if (field === 'unlock_price_fen') return points(Number(value))
   return field.endsWith('_fen') ? `¥${(Number(value) / 100).toFixed(2)}` : String(value)
 }
@@ -39,32 +52,32 @@ function explainValidation(value: Record<string, unknown>, field: string) {
   const translated = readableText(raw)
   if (translated) return translated
   const ctx = record(value.ctx) || {}
-  const length = (key: string) => typeof ctx[key] === 'number' && Number.isInteger(ctx[key]) && Number(ctx[key]) >= 0 ? String(ctx[key]) : 'Số lượng quy định'
+  const length = (key: string) => typeof ctx[key] === 'number' && Number.isInteger(ctx[key]) && Number(ctx[key]) >= 0 ? String(ctx[key]) : tr('mkErr.requiredCount')
   switch (value.type) {
-    case 'missing': return 'Đây là mục bắt buộc'
-    case 'string_too_short': return `Nhập ít nhất ${length('min_length')} ký tự`
-    case 'string_too_long': return `Không được vượt quá ${length('max_length')} ký tự`
-    case 'too_short': return `Cần ít nhất ${length('min_length')} mục`
-    case 'too_long': return `Cho phép tối đa ${length('max_length')} mục`
-    case 'greater_than': return `Giá trị phải lớn hơn ${boundary(ctx.gt, field)}`
-    case 'greater_than_equal': return `Giá trị không được nhỏ hơn ${boundary(ctx.ge, field)}`
-    case 'less_than': return `Giá trị phải nhỏ hơn ${boundary(ctx.lt, field)}`
-    case 'less_than_equal': return `Giá trị không được lớn hơn ${boundary(ctx.le, field)}`
-    case 'int_parsing': case 'int_type': case 'int_from_float': return 'Vui lòng nhập số nguyên'
-    case 'float_parsing': case 'float_type': case 'finite_number': return 'Vui lòng nhập số hợp lệ'
-    case 'literal_error': return ctx.expected === 'True' ? 'Vui lòng tích xác nhận' : 'Vui lòng chọn tùy chọn hợp lệ'
-    case 'bool_parsing': case 'bool_type': return 'Vui lòng xác nhận tùy chọn này'
-    case 'extra_forbidden': return 'Mục này không hỗ trợ gửi, vui lòng làm mới rồi thử lại'
+    case 'missing': return tr('mkErr.required')
+    case 'string_too_short': return tr('mkErr.strMin', { n: length('min_length') })
+    case 'string_too_long': return tr('mkErr.strMax', { n: length('max_length') })
+    case 'too_short': return tr('mkErr.itemsMin', { n: length('min_length') })
+    case 'too_long': return tr('mkErr.itemsMax', { n: length('max_length') })
+    case 'greater_than': return tr('mkErr.gt', { v: boundary(ctx.gt, field) })
+    case 'greater_than_equal': return tr('mkErr.ge', { v: boundary(ctx.ge, field) })
+    case 'less_than': return tr('mkErr.lt', { v: boundary(ctx.lt, field) })
+    case 'less_than_equal': return tr('mkErr.le', { v: boundary(ctx.le, field) })
+    case 'int_parsing': case 'int_type': case 'int_from_float': return tr('mkErr.integer')
+    case 'float_parsing': case 'float_type': case 'finite_number': return tr('mkErr.validNumber')
+    case 'literal_error': return ctx.expected === 'True' ? tr('mkErr.checkConfirm') : tr('mkErr.validOption')
+    case 'bool_parsing': case 'bool_type': return tr('mkErr.confirmOption')
+    case 'extra_forbidden': return tr('mkErr.extraForbidden')
   }
-  if (/field required/i.test(raw)) return 'Đây là mục bắt buộc'
-  if (/valid integer/i.test(raw)) return 'Vui lòng nhập số nguyên'
-  if (/valid number/i.test(raw)) return 'Vui lòng nhập số'
+  if (/field required/i.test(raw)) return tr('mkErr.required')
+  if (/valid integer/i.test(raw)) return tr('mkErr.integer')
+  if (/valid number/i.test(raw)) return tr('mkErr.number')
   const bound = raw.match(/(greater than or equal to|less than or equal to|greater than|less than|at least|at most)\s+(-?[\d.]+)/i)
   if (bound) {
-    if (/string/i.test(raw)) return `Vui lòng nhập ${/at least/i.test(bound[1]) ? 'Tối thiểu' : 'Không quá'} ${bound[2]} ký tự`
-    return `Giá trị ${/greater|at least/i.test(bound[1]) ? /or equal|at least/i.test(bound[1]) ? 'Không được nhỏ hơn' : 'Phải lớn hơn' : /or equal|at most/i.test(bound[1]) ? 'Không được lớn hơn' : 'Phải nhỏ hơn'} ${boundary(bound[2], field)}`
+    if (/string/i.test(raw)) return tr(/at least/i.test(bound[1]) ? 'mkErr.strMin' : 'mkErr.strMaxAlt', { n: bound[2] })
+    return tr(/greater|at least/i.test(bound[1]) ? /or equal|at least/i.test(bound[1]) ? 'mkErr.ge' : 'mkErr.gt' : /or equal|at most/i.test(bound[1]) ? 'mkErr.le' : 'mkErr.lt', { v: boundary(bound[2], field) })
   }
-  return 'Vui lòng kiểm tra nội dung đã nhập'
+  return tr('mkErr.checkInput')
 }
 
 function validationMessage(detail: unknown[]) {
@@ -73,21 +86,21 @@ function validationMessage(detail: unknown[]) {
     if (!value) return []
     const parts = (Array.isArray(value.loc) ? value.loc : []).filter(part => (typeof part === 'string' || typeof part === 'number') && !['body', 'query', 'path'].includes(String(part)))
     const field = String(parts.findLast(part => typeof part === 'string') || '')
-    const location = parts.map(part => typeof part === 'number' ? `Mục ${part + 1}` : fields[String(part)] || 'Nội dung biểu mẫu').join('')
+    const location = parts.map(part => typeof part === 'number' ? tr('mkErr.itemN', { n: part + 1 }) : fieldName(String(part)) || tr('mkErr.formContent')).join(tr('mkErr.locJoin'))
     const message = explainValidation(value, field)
-    return [location ? `${location}：${message}` : message]
+    return [location ? tr('mkErr.locMessage', { location, message }) : message]
   })
-  return [...new Set(lines)].join('；') || 'Vui lòng kiểm tra nội dung biểu mẫu và các trường bắt buộc.'
+  return [...new Set(lines)].join(tr('mkErr.lineSep')) || tr('mkErr.checkForm')
 }
 
 function fallbackMessage(status: number) {
-  if (status === 401) return 'Đăng nhập đã hết hạn, vui lòng đăng nhập lại để tiếp tục.'
-  if (status === 403) return 'Tài khoản hiện tại không có quyền thực hiện thao tác này.'
-  if (status === 404) return 'Nội dung không tồn tại hoặc tạm thời không truy cập được, vui lòng làm mới rồi thử lại.'
-  if (status === 409) return 'Trạng thái nội dung đã thay đổi, vui lòng làm mới rồi thao tác lại.'
-  if (status === 422) return 'Vui lòng kiểm tra nội dung biểu mẫu và các trường bắt buộc.'
-  if (status === 429) return 'Thao tác quá thường xuyên, vui lòng thử lại sau.'
-  return 'Tạm thời không thể hoàn tất thao tác, vui lòng thử lại sau.'
+  if (status === 401) return tr('mkErr.http401')
+  if (status === 403) return tr('mkErr.http403')
+  if (status === 404) return tr('mkErr.http404')
+  if (status === 409) return tr('mkErr.http409')
+  if (status === 422) return tr('mkErr.checkForm')
+  if (status === 429) return tr('mkErr.http429')
+  return tr('mkErr.httpOther')
 }
 
 export class MarketplaceRequestError extends Error {
@@ -100,7 +113,7 @@ export class MarketplaceRequestError extends Error {
     const match = raw.match(/^(MARKETPLACE_[A-Z_]+)(?=[:：\s]|$)/)
     const code = typeof object?.code === 'string' ? object.code : match?.[1]
     const text = match ? raw.slice(match[0].length).replace(/^\s*[:：]?\s*/, '') : raw
-    const message = Array.isArray(detail) ? validationMessage(detail) : readableText(text) || (code ? messages[code] : undefined) || fallback || fallbackMessage(status)
+    const message = Array.isArray(detail) ? validationMessage(detail) : readableText(text) || (code ? codeMessage(code) : undefined) || fallback || fallbackMessage(status)
     super(message, { cause })
     this.name = 'MarketplaceRequestError'
     this.code = code

@@ -1,3 +1,5 @@
+import { enAdminMarketplaceStatus } from "./en/adminMarketplaceStatus.ts";
+import { enAdminMarketplaceErrors } from "./en/adminMarketplaceErrors.ts";
 import { enAdminTaskObservability } from "./en/adminTaskObservability.ts";
 import { enAdminWalletMigration } from "./en/adminWalletMigration.ts";
 import { enAdminAppleSettings } from "./en/adminAppleSettings.ts";
@@ -41,6 +43,8 @@ import { enAdminStatus } from "./en/adminStatus.ts";
 import { enShell } from "./en/shell.ts";
 
 export const en = {
+  ...enAdminMarketplaceStatus,
+  ...enAdminMarketplaceErrors,
   ...enAdminTaskObservability,
   ...enAdminStatus,
   ...enAdminWalletMigration,
