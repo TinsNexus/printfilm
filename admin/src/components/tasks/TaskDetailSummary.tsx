@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { formatTaskDuration, taskBilling, taskDurations, taskStatusTone, taskUpstream } from "@/lib/taskObservability";
 import { taskStatusLabel } from "@/lib/statusLabels";
 import { cn, fenToYuan } from "@/lib/utils";
+import { tr } from "@/i18n";
 
 type TaskDetailSummaryProps = {
   task: AdminTaskDetail;
@@ -22,15 +23,15 @@ export function CopyText({ value, className }: { value: string; className?: stri
     e.stopPropagation();
     try {
       await navigator.clipboard.writeText(value);
-      toast.success("Đã sao chép");
+      toast.success(tr("taskUi.copied"));
     } catch {
-      toast.error("Sao chép thất bại, vui lòng chọn thủ công");
+      toast.error(tr("taskUi.copyFailed"));
     }
   }
   return (
     <span className={cn("task-copy", className)} title={value}>
       <span className="truncate">{value}</span>
-      <button type="button" aria-label="Sao chép" onClick={(e) => void copy(e)}>
+      <button type="button" aria-label={tr("taskUi.copy")} onClick={(e) => void copy(e)}>
         <Copy className="h-3 w-3" />
       </button>
     </span>
@@ -48,41 +49,41 @@ export function TaskDetailSummary({ task, now, onJump }: TaskDetailSummaryProps)
   return (
     <div className={cn("task-summary", `is-${tone}`)}>
       <div className="task-summary-item">
-        <span className="task-summary-label">Trạng thái</span>
+        <span className="task-summary-label">{tr("taskUi.status")}</span>
         <div className="flex items-center gap-2">
-          <span className={`admin-status-pill is-${tone}`}>{waitingActivation ? "Chờ kích hoạt" : taskStatusLabel(task.status)}</span>
+          <span className={`admin-status-pill is-${tone}`}>{waitingActivation ? tr("taskUi.wait.deferred") : taskStatusLabel(task.status)}</span>
           <span className="text-xs tabular-nums text-[var(--admin-muted)]">{task.progress_percent}%</span>
         </div>
         <div className="task-progress"><span style={{ width: `${task.progress_percent}%` }} /></div>
-        <span className="task-summary-sub font-mono">{task.current_step_key || "Chưa ghi nhận bước"}{task.current_step_status ? ` · ${task.current_step_status}` : ""}</span>
-        {task.execution_mode === "direct" ? <span className="task-summary-sub">?? LLM ? ????</span> : task.queue_type ? <span className="task-summary-sub">{{ text: "Văn bản", image: "Hình ảnh", video: "Video" }[task.queue_type]}Hàng đợi{task.provider_status ? ` · Upstream ${task.provider_status}` : ""}</span> : null}
+        <span className="task-summary-sub font-mono">{task.current_step_key || tr("taskUi.stepNotRecorded")}{task.current_step_status ? ` · ${task.current_step_status}` : ""}</span>
+        {task.execution_mode === "direct" ? <span className="task-summary-sub">{tr("taskUi.directLlm")}</span> : task.queue_type ? <span className="task-summary-sub">{tr("taskUi.queueOf", { kind: tr(`taskUi.queue.${task.queue_type}`) })}{task.provider_status ? tr("taskUi.upstreamStatusSuffix", { status: task.provider_status }) : ""}</span> : null}
       </div>
 
       <div className="task-summary-item">
-        <span className="task-summary-label">{upstream.latest?.phase === "simulated" ? "Model mô phỏng" : upstream.modelFromRequest ? "Model thực tế" : "Model tác vụ đã chọn"}</span>
-        <span className="task-summary-value break-all">{upstream.model || "Chưa ghi nhận"}</span>
-        <span className="task-summary-sub">Provider · {upstream.provider || "Chưa ghi nhận"}</span>
+        <span className="task-summary-label">{tr(upstream.latest?.phase === "simulated" ? "taskUi.simulatedModel" : upstream.modelFromRequest ? "taskUi.actualModelShort" : "taskUi.selectedModel")}</span>
+        <span className="task-summary-value break-all">{upstream.model || tr("taskUi.notRecorded")}</span>
+        <span className="task-summary-sub">Provider · {upstream.provider || tr("taskUi.notRecorded")}</span>
       </div>
 
       <div className="task-summary-item">
-        <span className="task-summary-label">Upstream<button type="button" className="task-summary-jump" onClick={() => onJump("upstream")}>Xem yêu cầu</button></span>
+        <span className="task-summary-label">{tr("taskUi.upstream")}<button type="button" className="task-summary-jump" onClick={() => onJump("upstream")}>{tr("taskUi.viewRequest")}</button></span>
         <Badge variant={upstream.latest?.phase === "failed" ? "destructive" : upstream.records.length ? "info" : "secondary"}>{upstream.phase}</Badge>
-        {upstream.providerTaskId ? <CopyText value={upstream.providerTaskId} className="task-summary-sub" /> : <span className="task-summary-sub">Chưa ghi nhận ID tác vụ upstream</span>}
+        {upstream.providerTaskId ? <CopyText value={upstream.providerTaskId} className="task-summary-sub" /> : <span className="task-summary-sub">{tr("taskUi.upstreamIdNotRecorded")}</span>}
       </div>
 
       <div className="task-summary-item">
-        <span className="task-summary-label">Thời gian xử lý{duration.live ? <span className="task-live-dot" title="Đang tính giờ" /> : null}</span>
+        <span className="task-summary-label">{tr("taskUi.duration")}{duration.live ? <span className="task-live-dot" title={tr("taskUi.timing")} /> : null}</span>
         <span className="task-summary-value tabular-nums">{formatTaskDuration(duration.totalMs)}</span>
         <span className="task-summary-sub tabular-nums">
-          Chờ {formatTaskDuration(duration.waitingMs)} · Đang chạy {duration.runningMs == null && !task.started_at && duration.live ? "Chưa bắt đầu" : formatTaskDuration(duration.runningMs)}
+          {tr("taskUi.waitRun", { wait: formatTaskDuration(duration.waitingMs), run: duration.runningMs == null && !task.started_at && duration.live ? tr("taskUi.notStarted") : formatTaskDuration(duration.runningMs) })}
         </span>
       </div>
 
       <div className="task-summary-item">
-        <span className="task-summary-label">Tính phí · {billing.settled ? "Đã quyết toán" : "Chưa quyết toán"}<button type="button" className="task-summary-jump" onClick={() => onJump("billing")}>Chi tiết</button></span>
-        <span className="task-summary-value tabular-nums">{charged ? money(billing.chargedFen) : (billing.frozenFen ?? 0) > 0 ? `Đóng băng ${money(billing.frozenFen)}` : "Chưa trừ phí"}</span>
+        <span className="task-summary-label">{tr("taskUi.billing")} · {tr(billing.settled ? "taskUi.settled" : "taskUi.unsettled")}<button type="button" className="task-summary-jump" onClick={() => onJump("billing")}>{tr("taskUi.breakdown")}</button></span>
+        <span className="task-summary-value tabular-nums">{charged ? money(billing.chargedFen) : (billing.frozenFen ?? 0) > 0 ? tr("taskUi.frozenAmount", { amount: money(billing.frozenFen) }) : tr("taskUi.notCharged")}</span>
         <span className="task-summary-sub tabular-nums">
-          Ước tính {money(billing.estimateFen)}{charged ? ` · Hoàn lại ${money(billing.refundedFen)}` : ""}
+          {tr("taskUi.estimate", { amount: money(billing.estimateFen) })}{charged ? tr("taskUi.refundLong", { amount: money(billing.refundedFen) }) : ""}
         </span>
       </div>
     </div>

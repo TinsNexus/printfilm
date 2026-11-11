@@ -15,6 +15,7 @@ import {
 } from "@/lib/taskObservability";
 import { cn, fenToYuan } from "@/lib/utils";
 import { taskDomainLabel, taskStatusLabel, taskTypeLabel } from "@/lib/statusLabels";
+import { tr } from "@/i18n";
 
 const TERMINAL_STATUSES = new Set(["succeeded", "failed", "cancelled"]);
 
@@ -31,9 +32,9 @@ type TaskListRowProps = {
 // 待处理任务细分为待激活 / 延时等待 / 待调度
 function queueStatusLabel(task: AdminTaskRow): string {
   if (task.status !== "pending") return taskStatusLabel(task.status);
-  if (task.next_action_at === undefined) return "Chờ xử lý";
-  if (task.next_action_at === null) return "Chờ kích hoạt";
-  return new Date(task.next_action_at).getTime() > Date.now() ? "Chờ trì hoãn" : "Chờ điều phối";
+  if (task.next_action_at === undefined) return tr("taskUi.wait.pending");
+  if (task.next_action_at === null) return tr("taskUi.wait.deferred");
+  return new Date(task.next_action_at).getTime() > Date.now() ? tr("taskUi.wait.delayed") : tr("taskUi.wait.ready");
 }
 
 // 列表内只显示月日时分，完整时间放 title
@@ -57,8 +58,8 @@ function scopeLinks(task: AdminTaskRow): ReactNode {
   if (task.drama_project_id) parts.push(<AdminEntityLink key="drama" kind="drama" id={task.drama_project_id} />);
   if (task.project_id) parts.push(<AdminEntityLink key="project" kind="project" id={task.project_id} />);
   if (task.asset_id) parts.push(<AdminEntityLink key="asset" kind="drama_asset" id={task.asset_id} />);
-  if (task.episode_id) parts.push(<span key="ep">Tập#{task.episode_id}</span>);
-  if (task.fragment_id) parts.push(<span key="frag">Phân cảnh#{task.fragment_id}</span>);
+  if (task.episode_id) parts.push(<span key="ep">{tr("taskUi.episodeN", { id: task.episode_id })}</span>);
+  if (task.fragment_id) parts.push(<span key="frag">{tr("taskUi.shotN", { id: task.fragment_id })}</span>);
   if (parts.length === 0) return null;
   return <div className="task-cell-sub flex flex-wrap gap-x-2" onClick={stopRowClick}>{parts}</div>;
 }
@@ -70,12 +71,12 @@ function BillingCell({ billing }: { billing: ReturnType<typeof taskBilling> }) {
   return (
     <>
       <div className={cn("task-cell-main tabular-nums", frozen && "text-[#b45309]", !charged && !frozen && "!font-normal text-[var(--admin-muted)]")}>
-        {charged ? money(billing.chargedFen) : frozen ? `Đóng băng ${money(billing.frozenFen)}` : "Chưa trừ phí"}
+        {charged ? money(billing.chargedFen) : frozen ? tr("taskUi.frozenAmount", { amount: money(billing.frozenFen) }) : tr("taskUi.notCharged")}
       </div>
       <div className="task-cell-sub tabular-nums" title={billing.label}>
-        Ước tính {money(billing.estimateFen)}
-        {charged && (billing.refundedFen ?? 0) > 0 ? ` · Hoàn ${money(billing.refundedFen)}` : ""}
-        {!billing.settled ? " · Chưa quyết toán" : ""}
+        {tr("taskUi.estimate", { amount: money(billing.estimateFen) })}
+        {charged && (billing.refundedFen ?? 0) > 0 ? tr("taskUi.refundShort", { amount: money(billing.refundedFen) }) : ""}
+        {!billing.settled ? tr("taskUi.unsettledSuffix") : ""}
       </div>
     </>
   );
@@ -94,14 +95,14 @@ export function TaskListRow({ task, upstream, billing, now, cancelling, onOpen, 
       <td className="min-w-[200px]">
         <div className="flex items-baseline gap-2">
           <span className="font-mono text-xs font-semibold">#{task.id}</span>
-          {task.execution_mode === "direct" ? <Badge variant="secondary">????</Badge> : task.queue_type ? <Badge variant="secondary">{{ text: "Văn bản", image: "Hình ảnh", video: "Video" }[task.queue_type]}Hàng đợi</Badge> : null}
+          {task.execution_mode === "direct" ? <Badge variant="secondary">{tr("taskUi.directExec")}</Badge> : task.queue_type ? <Badge variant="secondary">{tr("taskUi.queueOf", { kind: tr(`taskUi.queue.${task.queue_type}`) })}</Badge> : null}
           <span className="task-cell-main">{taskDomainLabel(task.domain)} · {taskTypeLabel(task.task_type)}</span>
         </div>
         <div
           className="task-model-chip"
-          title={upstream.modelFromRequest ? `Model yêu cầu thực tế ${upstream.provider ? ` · ${upstream.provider}` : ""}` : "Model tác vụ đã chọn"}
+          title={upstream.modelFromRequest ? tr("taskUi.actualModel") + (upstream.provider ? ` · ${upstream.provider}` : "") : tr("taskUi.selectedModel")}
         >
-          {upstream.model || "Chưa ghi nhận model"}
+          {upstream.model || tr("taskUi.modelNotRecorded")}
         </div>
       </td>
       <td className="min-w-[170px]">
@@ -115,7 +116,7 @@ export function TaskListRow({ task, upstream, billing, now, cancelling, onOpen, 
         {error ? (
           <div className="task-cell-sub max-w-[220px] truncate !text-[#dc2626]" title={error}>{error}</div>
         ) : (
-          <div className="task-cell-sub font-mono">{task.current_step_key || "Chưa ghi nhận bước"}{task.current_step_status ? ` · ${task.current_step_status}` : ""}</div>
+          <div className="task-cell-sub font-mono">{task.current_step_key || tr("taskUi.stepNotRecorded")}{task.current_step_status ? ` · ${task.current_step_status}` : ""}</div>
         )}
       </td>
       <td className="min-w-[210px]">
@@ -139,10 +140,10 @@ export function TaskListRow({ task, upstream, billing, now, cancelling, onOpen, 
       <td className="min-w-[140px]">
         <div className="task-cell-main tabular-nums">
           {formatTaskDuration(duration.totalMs)}
-          {duration.live ? <span className="task-live-dot" title="Đang tính giờ" /> : null}
+          {duration.live ? <span className="task-live-dot" title={tr("taskUi.timing")} /> : null}
         </div>
         <div className="task-cell-sub tabular-nums">
-          Chờ {formatTaskDuration(duration.waitingMs)} · Đang chạy {duration.runningMs == null && !task.started_at && duration.live ? "Chưa bắt đầu" : formatTaskDuration(duration.runningMs)}
+          {tr("taskUi.waitRun", { wait: formatTaskDuration(duration.waitingMs), run: duration.runningMs == null && !task.started_at && duration.live ? tr("taskUi.notStarted") : formatTaskDuration(duration.runningMs) })}
         </div>
       </td>
       <td className="min-w-[170px]">
@@ -150,15 +151,15 @@ export function TaskListRow({ task, upstream, billing, now, cancelling, onOpen, 
           <AdminEntityLink kind="user" id={task.requested_by} label={task.user_email ?? undefined} className="text-xs" />
         </div>
         {scopeLinks(task)}
-        <div className="task-cell-sub" title={task.created_at ? new Date(task.created_at).toLocaleString() : undefined}>Tạo {shortTime(task.created_at)}</div>
+        <div className="task-cell-sub" title={task.created_at ? new Date(task.created_at).toLocaleString() : undefined}>{tr("taskUi.createdAt", { time: shortTime(task.created_at) })}</div>
       </td>
       <td className="text-right" onClick={stopRowClick}>
         <div className="inline-flex gap-1">
-          <button type="button" className="task-icon-btn" title="Chi tiết" aria-label="Chi tiết" onClick={() => onOpen(task.id)}>
+          <button type="button" className="task-icon-btn" title={tr("taskUi.details")} aria-label={tr("taskUi.details")} onClick={() => onOpen(task.id)}>
             <Eye className="h-4 w-4" />
           </button>
           {canCancelTask(task) ? (
-            <button type="button" className="task-icon-btn is-danger" title="Hủy tác vụ" aria-label="Hủy tác vụ" disabled={cancelling} onClick={() => onCancel(task)}>
+            <button type="button" className="task-icon-btn is-danger" title={tr("taskUi.cancelTask")} aria-label={tr("taskUi.cancelTask")} disabled={cancelling} onClick={() => onCancel(task)}>
               {cancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4" />}
             </button>
           ) : null}

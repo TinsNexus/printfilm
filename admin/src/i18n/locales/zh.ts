@@ -1,3 +1,4 @@
+import { zhAdminTaskUi } from "./zh/adminTaskUi.ts";
 import { zhAdminMarketplaceStatus } from "./zh/adminMarketplaceStatus.ts";
 import { zhAdminMarketplaceErrors } from "./zh/adminMarketplaceErrors.ts";
 import { zhAdminTaskObservability } from "./zh/adminTaskObservability.ts";
@@ -43,6 +44,7 @@ import { zhAdminStatus } from "./zh/adminStatus.ts";
 import { zhShell } from "./zh/shell.ts";
 
 export const zh = {
+  ...zhAdminTaskUi,
   ...zhAdminMarketplaceStatus,
   ...zhAdminMarketplaceErrors,
   ...zhAdminTaskObservability,
