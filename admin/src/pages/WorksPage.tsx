@@ -16,6 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { PageHeader } from "@/components/ui/page";
 import { useAdminDetailQuery } from "@/hooks/useAdminDetailQuery";
 import { auditStatusLabel, visibilityLabel } from "@/lib/statusLabels";
+import { tr } from "../i18n/translate.ts";
 
 type ListRes = { items: AdminWork[]; meta: PageMeta };
 
@@ -46,7 +47,7 @@ export function WorksPage() {
       if (userId) params.set("user_id", String(userId));
       setData(await api<ListRes>(`/api/admin/works?${params}`));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Tải thất bại");
+      toast.error(err instanceof Error ? err.message : tr("projects.works.loadFailed"));
     }
   }
 
@@ -64,10 +65,10 @@ export function WorksPage() {
   async function patchWork(id: number, body: { visibility?: string; audit_status?: string }) {
     try {
       await api(`/api/admin/works/${id}`, { method: "PATCH", body: JSON.stringify(body) });
-      toast.success("Đã cập nhật");
+      toast.success(tr("projects.works.updated"));
       await load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Cập nhật thất bại");
+      toast.error(err instanceof Error ? err.message : tr("projects.works.updateFailed"));
     }
   }
 
@@ -78,12 +79,12 @@ export function WorksPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader title="Duyệt tác phẩm" description="Điều chỉnh khả năng hiển thị và trạng thái duyệt" />
+      <PageHeader title={tr("projects.works.title")} description={tr("projects.works.desc")} />
       <AdminFilterBar>
         <AdminSearchInput
           value={q}
           onChange={setQ}
-          placeholder="Tìm tiêu đề"
+          placeholder={tr("projects.works.searchTitle")}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               setPage(1);
@@ -93,16 +94,16 @@ export function WorksPage() {
         />
         <AdminUserSearchSelect value={userId} onChange={(id) => setUserId(id)} />
         <Select value={auditStatus} onChange={(e) => setAuditStatus(e.target.value)}>
-          <option value="">Tất cả trạng thái duyệt</option>
-          <option value="pending">Chờ duyệt</option>
-          <option value="passed">Đã duyệt</option>
-          <option value="rejected">Đã từ chối</option>
+          <option value="">{tr("projects.works.allAudit")}</option>
+          <option value="pending">{tr("status.pendingReview")}</option>
+          <option value="passed">{tr("status.approved")}</option>
+          <option value="rejected">{tr("status.rejected")}</option>
         </Select>
         <Select value={visibility} onChange={(e) => setVisibility(e.target.value)}>
-          <option value="">Tất cả mức hiển thị</option>
-          <option value="public">Công khai</option>
-          <option value="private">Riêng tư</option>
-          <option value="unlisted">Không liệt kê công khai</option>
+          <option value="">{tr("projects.works.allVisibility")}</option>
+          <option value="public">{tr("status.public")}</option>
+          <option value="private">{tr("status.private")}</option>
+          <option value="unlisted">{tr("status.unlisted")}</option>
         </Select>
         <Button
           size="sm"
@@ -113,21 +114,21 @@ export function WorksPage() {
             void load(1);
           }}
         >
-          Lọc
+          {tr("projects.ui.filter")}
         </Button>
       </AdminFilterBar>
       <div className="rounded-lg border bg-background">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Ảnh bìa</TableHead>
+              <TableHead>{tr("projects.ui.cover")}</TableHead>
               <TableHead>ID</TableHead>
-              <TableHead>Tiêu đề</TableHead>
-              <TableHead>Người dùng</TableHead>
-              <TableHead>Khả năng hiển thị</TableHead>
-              <TableHead>Duyệt</TableHead>
-              <TableHead>Thời gian đăng</TableHead>
-              <TableHead>Thao tác</TableHead>
+              <TableHead>{tr("projects.ui.colTitle")}</TableHead>
+              <TableHead>{tr("projects.ui.colUser")}</TableHead>
+              <TableHead>{tr("projects.works.visibility")}</TableHead>
+              <TableHead>{tr("projects.works.audit")}</TableHead>
+              <TableHead>{tr("projects.works.publishedAt")}</TableHead>
+              <TableHead>{tr("projects.works.actions")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -173,17 +174,17 @@ export function WorksPage() {
                 <TableCell>
                   <div className="flex flex-wrap gap-1">
                     <Button size="sm" variant="outline" onClick={() => openWork(w)}>
-                      Chi tiết
+                      {tr("projects.ui.details")}
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => void patchWork(w.id, { audit_status: "passed" })}>
-                      Duyệt qua
+                      {tr("projects.works.approve")}
                     </Button>
                     <Button
                       size="sm"
                       variant="outline"
                       onClick={() => void patchWork(w.id, { audit_status: "rejected" })}
                     >
-                      Từ chối
+                      {tr("projects.works.reject")}
                     </Button>
                     <Button
                       size="sm"
@@ -194,7 +195,7 @@ export function WorksPage() {
                         })
                       }
                     >
-                      {w.visibility === "public" ? "Đặt riêng tư" : "Đặt công khai"}
+                      {w.visibility === "public" ? tr("projects.works.makePrivate") : tr("projects.works.makePublic")}
                     </Button>
                   </div>
                 </TableCell>
@@ -221,13 +222,13 @@ export function WorksPage() {
           }
         }}
         size="lg"
-        title={detail?.title ?? "Chi tiết tác phẩm"}
-        subtitle={detail ? `Tác phẩm #${detail.id}` : undefined}
+        title={detail?.title ?? tr("projects.works.detailTitle")}
+        subtitle={detail ? tr("projects.works.workN", { id: detail.id }) : undefined}
       >
         {detail ? (
           <>
             {(detail.cover_url || detail.video_url) ? (
-              <AdminDetailSection title="Xem trước phương tiện">
+              <AdminDetailSection title={tr("projects.ui.secMedia")}>
                 <div className="admin-detail-media">
                   {detail.cover_url ? (
                     <img src={coverSrc(detail.cover_url)} alt={detail.title} />
@@ -238,11 +239,11 @@ export function WorksPage() {
                 </div>
               </AdminDetailSection>
             ) : null}
-            <AdminDetailSection title="Thông tin cơ bản">
+            <AdminDetailSection title={tr("projects.ui.secBasic")}>
               <AdminDetailMeta
                 items={[
                   {
-                    label: "Người dùng",
+                    label: tr("projects.ui.colUser"),
                     value: (
                       <AdminEntityLink
                         kind="user"
@@ -252,17 +253,17 @@ export function WorksPage() {
                     ),
                   },
                   {
-                    label: "Dự án liên quan",
+                    label: tr("projects.works.relatedProject"),
                     value: detail.project_id ? (
                       <AdminEntityLink kind="project" id={detail.project_id} />
                     ) : (
                       "—"
                     ),
                   },
-                  { label: "Khả năng hiển thị", value: visibilityLabel(detail.visibility) },
-                  { label: "Duyệt", value: auditStatusLabel(detail.audit_status) },
+                  { label: tr("projects.works.visibility"), value: visibilityLabel(detail.visibility) },
+                  { label: tr("projects.works.audit"), value: auditStatusLabel(detail.audit_status) },
                   {
-                    label: "Thời gian đăng",
+                    label: tr("projects.works.publishedAt"),
                     value: new Date(detail.published_at).toLocaleString(),
                     full: true,
                   },
@@ -272,7 +273,7 @@ export function WorksPage() {
             {detail.video_url ? (
               <Button size="sm" variant="outline" asChild>
                 <a href={detail.video_url} target="_blank" rel="noreferrer">
-                  Mở video trong cửa sổ mới
+                  {tr("projects.works.openVideo")}
                 </a>
               </Button>
             ) : null}

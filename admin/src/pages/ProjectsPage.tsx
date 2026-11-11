@@ -23,6 +23,7 @@ import { PageHeader } from "@/components/ui/page";
 import { useAdminDetailQuery } from "@/hooks/useAdminDetailQuery";
 import { projectStatusOptions, projectStatusLabel, taskStatusLabel, taskTypeLabel } from "@/lib/statusLabels";
 import { points } from "@/lib/points";
+import { tr } from "../i18n/translate.ts";
 
 type ListRes = { items: AdminProject[]; meta: PageMeta };
 
@@ -60,7 +61,7 @@ export function ProjectsPage() {
       if (userId) params.set("user_id", String(userId));
       setData(await api<ListRes>(`/api/admin/projects?${params}`));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Tải thất bại");
+      toast.error(err instanceof Error ? err.message : tr("projects.ui.loadFailed"));
     }
   }
 
@@ -75,7 +76,7 @@ export function ProjectsPage() {
     try {
       setDetail(await api<AdminProject>(`/api/admin/projects/${id}`));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Tải chi tiết thất bại");
+      toast.error(err instanceof Error ? err.message : tr("projects.ui.detailFailed"));
       projectDetail.close();
     } finally {
       setDetailLoading(false);
@@ -96,7 +97,7 @@ export function ProjectsPage() {
 
   return (
     <div className="admin-list-page">
-      <PageHeader title="Dự án khoa học" description="Dự án pipeline khoa học: trạng thái, cảnh quay, tác vụ liên quan và chi phí" />
+      <PageHeader title={tr("projects.ui.title")} description={tr("projects.ui.desc")} />
       <AdminFilterBar>
         <Select value={status} onChange={(e) => setStatus(e.target.value)}>
           {projectStatusOptions().map((opt) => (
@@ -105,7 +106,7 @@ export function ProjectsPage() {
             </option>
           ))}
         </Select>
-        <Input placeholder="Tiêu đề / thông tin lỗi" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Input placeholder={tr("projects.ui.searchPlaceholder")} value={q} onChange={(e) => setQ(e.target.value)} />
         <AdminUserSearchSelect value={userId} onChange={(id) => setUserId(id)} />
         <Button
           size="sm"
@@ -116,7 +117,7 @@ export function ProjectsPage() {
             void load(1);
           }}
         >
-          Lọc
+          {tr("projects.ui.filter")}
         </Button>
       </AdminFilterBar>
       <div className="rounded-lg border bg-background">
@@ -124,16 +125,16 @@ export function ProjectsPage() {
           <TableHeader>
             <TableRow>
               <TableHead>ID</TableHead>
-              <TableHead>Tiêu đề</TableHead>
-              <TableHead>Người dùng</TableHead>
-              <TableHead>Mẫu</TableHead>
+              <TableHead>{tr("projects.ui.colTitle")}</TableHead>
+              <TableHead>{tr("projects.ui.colUser")}</TableHead>
+              <TableHead>{tr("projects.ui.colTemplate")}</TableHead>
               <TableHead>Pipeline</TableHead>
-              <TableHead>Trạng thái</TableHead>
-              <TableHead>Tiến độ</TableHead>
-              <TableHead>Cảnh quay</TableHead>
-              <TableHead>Chi phí</TableHead>
-              <TableHead>Tạo</TableHead>
-              <TableHead>Cập nhật</TableHead>
+              <TableHead>{tr("projects.ui.colStatus")}</TableHead>
+              <TableHead>{tr("projects.ui.colProgress")}</TableHead>
+              <TableHead>{tr("projects.ui.colShots")}</TableHead>
+              <TableHead>{tr("projects.ui.colCost")}</TableHead>
+              <TableHead>{tr("projects.ui.colCreated")}</TableHead>
+              <TableHead>{tr("projects.ui.colUpdated")}</TableHead>
               <TableHead></TableHead>
             </TableRow>
           </TableHeader>
@@ -161,7 +162,7 @@ export function ProjectsPage() {
                 </TableCell>
                 <TableCell>
                   <Button size="sm" variant="outline" onClick={() => void openDetail(p.id)}>
-                    Chi tiết
+                    {tr("projects.ui.details")}
                   </Button>
                 </TableCell>
               </TableRow>
@@ -187,20 +188,20 @@ export function ProjectsPage() {
           }
         }}
         size="full"
-        title={detail ? `Dự án khoa học #${detail.id} · ${detail.title}` : "Chi tiết dự án khoa học"}
-        subtitle={detail ? projectStatusLabel(detail.status) : detailLoading ? "Đang tải…" : undefined}
+        title={detail ? tr("projects.ui.detailTitle", { id: detail.id, title: detail.title }) : tr("projects.ui.detailTitleEmpty")}
+        subtitle={detail ? projectStatusLabel(detail.status) : detailLoading ? tr("projects.ui.loading") : undefined}
         bodyClassName="space-y-3"
       >
         {detailLoading && !detail ? (
-          <div className="py-10 text-center text-sm text-[var(--admin-muted)]">Đang tải…</div>
+          <div className="py-10 text-center text-sm text-[var(--admin-muted)]">{tr("projects.ui.loading")}</div>
         ) : null}
         {detail ? (
           <>
-            <AdminDetailSection title="Thông tin cơ bản">
+            <AdminDetailSection title={tr("projects.ui.secBasic")}>
               <AdminDetailMeta
                 items={[
                   {
-                    label: "Người dùng",
+                    label: tr("projects.ui.colUser"),
                     value: (
                       <AdminEntityLink
                         kind="user"
@@ -210,29 +211,29 @@ export function ProjectsPage() {
                     ),
                   },
                   {
-                    label: "Trạng thái / tiến độ",
-                    value: `${projectStatusLabel(detail.status)} · ${detail.progress}% · Cảnh quay ${detail.shot_count}`,
+                    label: tr("projects.ui.statusProgress"),
+                    value: tr("projects.ui.statusLine", { status: projectStatusLabel(detail.status), progress: detail.progress, shots: detail.shot_count }),
                   },
-                  { label: "Mẫu", value: detail.template_id },
+                  { label: tr("projects.ui.colTemplate"), value: detail.template_id },
                   { label: "Pipeline", value: detail.pipeline_mode },
-                  { label: "Nguồn", value: detail.source_type || "—" },
+                  { label: tr("projects.ui.source"), value: detail.source_type || "—" },
                   {
-                    label: "Độ phân giải / tỷ lệ",
+                    label: tr("projects.ui.resolutionRatio"),
                     value: `${detail.resolution_mode || "—"} · ${detail.output_ratio || "—"}`,
                   },
-                  { label: "Lồng tiếng", value: detail.voice_id || "—", full: true },
+                  { label: tr("projects.ui.voice"), value: detail.voice_id || "—", full: true },
                 ]}
               />
               <AdminDetailNote empty={!detail.error_msg} className="mt-3">
-                {detail.error_msg || "Không có thông tin lỗi"}
+                {detail.error_msg || tr("projects.ui.noError")}
               </AdminDetailNote>
             </AdminDetailSection>
 
             {(detail.cover_url || detail.final_video_url) ? (
-              <AdminDetailSection title="Xem trước phương tiện">
+              <AdminDetailSection title={tr("projects.ui.secMedia")}>
                 <div className="admin-detail-media">
                   {detail.cover_url ? (
-                    <img src={mediaSrc(detail.cover_url)} alt="Ảnh bìa" />
+                    <img src={mediaSrc(detail.cover_url)} alt={tr("projects.ui.cover")} />
                   ) : null}
                   {detail.final_video_url ? (
                     <video src={mediaSrc(detail.final_video_url)} controls className="max-w-full" />
@@ -241,38 +242,38 @@ export function ProjectsPage() {
               </AdminDetailSection>
             ) : null}
 
-            <AdminDetailSection title="Tổng hợp chi phí">
+            <AdminDetailSection title={tr("projects.ui.secCost")}>
               <AdminDetailStatGrid
                 items={[
-                  { label: "扣费", value: `${points(usage?.charge_fen ?? detail.charge_fen ?? 0)}` },
-                  { label: "调用", value: usage?.calls ?? 0 },
+                  { label: tr("projects.ui.charge"), value: `${points(usage?.charge_fen ?? detail.charge_fen ?? 0)}` },
+                  { label: tr("projects.ui.calls"), value: usage?.calls ?? 0 },
                   { label: "Tokens", value: usage?.tokens ?? 0 },
                   {
-                    label: "Ảnh/Video/LLM/TTS",
+                    label: tr("projects.ui.mediaBreakdown"),
                     value: `${usage?.image_gens ?? 0}/${usage?.video_gens ?? 0}/${usage?.llm_calls ?? 0}/${usage?.tts_gens ?? 0}`,
                   },
                 ]}
               />
             </AdminDetailSection>
 
-            <AdminDetailSection title={`Cảnh quay (${(detail.shots ?? []).length}）`}>
+            <AdminDetailSection title={tr("projects.ui.shotsN", { n: (detail.shots ?? []).length })}>
               <AdminDetailTableWrap>
                 <table>
                   <thead>
                     <tr>
                       <th>#</th>
-                      <th>Trạng thái</th>
-                      <th>Thời lượng</th>
-                      <th>Ảnh</th>
+                      <th>{tr("projects.ui.colStatus")}</th>
+                      <th>{tr("projects.ui.colDuration")}</th>
+                      <th>{tr("projects.ui.colImage")}</th>
                       <th>Video</th>
-                      <th>Âm thanh</th>
+                      <th>{tr("projects.ui.colAudio")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {(detail.shots ?? []).length === 0 ? (
                       <tr>
                         <td colSpan={6} className="!text-center text-[var(--admin-muted)]">
-                          Chưa có cảnh quay
+                          {tr("projects.ui.noShots")}
                         </td>
                       </tr>
                     ) : (
@@ -281,9 +282,9 @@ export function ProjectsPage() {
                           <td>{s.shot_no}</td>
                           <td>{s.status}</td>
                           <td>{s.duration}s</td>
-                          <td>{s.has_image ? "Có" : "—"}</td>
-                          <td>{s.has_video ? "Có" : "—"}</td>
-                          <td>{s.has_audio ? "Có" : "—"}</td>
+                          <td>{s.has_image ? tr("projects.ui.yes") : "—"}</td>
+                          <td>{s.has_video ? tr("projects.ui.yes") : "—"}</td>
+                          <td>{s.has_audio ? tr("projects.ui.yes") : "—"}</td>
                         </tr>
                       ))
                     )}
@@ -292,22 +293,22 @@ export function ProjectsPage() {
               </AdminDetailTableWrap>
             </AdminDetailSection>
 
-            <AdminDetailSection title={`Tác vụ liên quan (gần nhất ${(detail.recent_tasks ?? []).length}）`}>
+            <AdminDetailSection title={tr("projects.ui.recentTasksN", { n: (detail.recent_tasks ?? []).length })}>
               <AdminDetailTableWrap className="max-h-[200px]">
                 <table>
                   <thead>
                     <tr>
                       <th>ID</th>
-                      <th>Loại</th>
-                      <th>Trạng thái</th>
-                      <th>Đã trừ / ước tính</th>
+                      <th>{tr("projects.ui.colType")}</th>
+                      <th>{tr("projects.ui.colStatus")}</th>
+                      <th>{tr("projects.ui.chargedEstimate")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {(detail.recent_tasks ?? []).length === 0 ? (
                       <tr>
                         <td colSpan={4} className="!text-center text-[var(--admin-muted)]">
-                          Chưa có tác vụ
+                          {tr("projects.ui.noTasks")}
                         </td>
                       </tr>
                     ) : (
@@ -330,7 +331,7 @@ export function ProjectsPage() {
             </AdminDetailSection>
 
             {detail.source_text ? (
-              <AdminDetailSection title="Văn bản nguồn">
+              <AdminDetailSection title={tr("projects.ui.secSource")}>
                 <AdminDetailNote>{detail.source_text}</AdminDetailNote>
               </AdminDetailSection>
             ) : null}
