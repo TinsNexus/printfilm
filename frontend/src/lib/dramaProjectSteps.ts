@@ -1,4 +1,4 @@
-import { tv } from '../i18n/tv'
+import { tr } from '../i18n/translate.ts'
 /** Drama project workflow steps: 剧情大纲 → 分镜 → 生成视频 */
 
 export type ProjectStepKey = 'outline' | 'storyboard' | 'video'
@@ -19,13 +19,13 @@ export type WorkspaceLocationState = {
 export function buildProjectSteps(hasScript: boolean): ProjectStepItem[] {
   const steps: Array<{ key: ProjectStepKey; label: string }> = hasScript
     ? [
-        { key: 'outline', label: tv('剧情大纲', 'Dàn ý cốt truyện') },
-        { key: 'storyboard', label: tv('分镜', 'Phân cảnh') },
-        { key: 'video', label: tv('生成视频', 'Tạo video') },
+        { key: 'outline', label: tr('dramaProjectSteps.storyOutline') },
+        { key: 'storyboard', label: tr('dramaProjectSteps.shots') },
+        { key: 'video', label: tr('dramaProjectSteps.generateVideo') },
       ]
     : [
-        { key: 'storyboard', label: tv('分镜', 'Phân cảnh') },
-        { key: 'video', label: tv('生成视频', 'Tạo video') },
+        { key: 'storyboard', label: tr('dramaProjectSteps.shots') },
+        { key: 'video', label: tr('dramaProjectSteps.generateVideo') },
       ]
   return steps.map((step, index) => ({ ...step, order: index + 1 }))
 }

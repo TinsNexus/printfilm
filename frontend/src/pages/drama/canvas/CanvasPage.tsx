@@ -2,7 +2,7 @@
 import { useParams } from 'react-router-dom'
 import RequireAuth from '../RequireAuth'
 import { CanvasWorkspace } from './CanvasWorkspace'
-import { tv } from '../../../i18n/tv'
+import { tr } from '../../../i18n/translate.ts'
 
 /** 鉴权后渲染全屏自由画布 */
 export default function CanvasPage() {
@@ -21,7 +21,7 @@ function CanvasPageInner() {
   if (!Number.isFinite(id) || id <= 0) {
     return (
       <div className="free-canvas-page" style={{ display: 'grid', placeItems: 'center' }}>
-        <p style={{ color: '#64748b' }}>{tv("无效的项目 ID", "ID dự án không hợp lệ")}</p>
+        <p style={{ color: '#64748b' }}>{tr('canvasPage.invalidProjectId')}</p>
       </div>
     )
   }

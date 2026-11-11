@@ -7,7 +7,7 @@ import { resolveStoryboardPath } from '../../lib/dramaStoryboardNav'
 import { dramaApi } from '../../api/drama'
 import RequireAuth from './RequireAuth'
 import './drama.css'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 
 export default function EpisodesPage() {
   return (
@@ -38,7 +38,7 @@ function EpisodesRedirect() {
         const path = await resolveStoryboardPath(pid)
         if (!cancelled) navigate(path, { replace: true })
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : tv('无法进入分镜', 'Không vào được phân cảnh'))
+        if (!cancelled) setError(err instanceof Error ? err.message : tr('episodesPage.couldNotOpenStoryboard'))
       }
     })()
     return () => {
@@ -49,7 +49,7 @@ function EpisodesRedirect() {
   return (
     <AppShell active="drama" flush>
       <div className="drama-workspace-status">
-        {error || tv('正在进入分镜…', 'Đang vào phân cảnh…')}
+        {error || tr('episodesPage.openingStoryboard')}
       </div>
     </AppShell>
   )

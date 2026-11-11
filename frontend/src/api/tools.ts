@@ -5,7 +5,7 @@ import { API_BASE, createJsonRequester } from './client'
 import { apiErrorMessage } from './http'
 import type { DramaAsset } from './drama'
 import type { AssetDetailReference } from '../lib/assetDetailReferences'
-import { tv } from '../i18n/tv'
+import { tr } from '../i18n/translate.ts'
 
 /** 工具请求统一处理登录失效；仅生成入口沿用全局计费提示。 */
 function requestToolJson<T>(
@@ -15,7 +15,7 @@ function requestToolJson<T>(
   notifyBilling = false,
 ): Promise<T> {
   return createJsonRequester((response, detail) => {
-    if (response.status === 401) throw new Error(tv('未登录', 'Chưa đăng nhập'))
+    if (response.status === 401) throw new Error(tr('tools.notSigned'))
     if (notifyBilling) throwApiError(response.status, detail, fallback)
     throw new Error(apiErrorMessage(detail, fallback))
   })<T>(path, init)
@@ -130,7 +130,7 @@ export type StudioToolEstimate = {
 
 /** 生成前只读报价，不上传媒体、不创建任务或冻结余额。 */
 export function estimateStudioTool(payload: StudioToolEstimatePayload, signal?: AbortSignal): Promise<StudioToolEstimate> {
-  return requestToolJson('/api/tools/estimate', tv('预计消耗暂不可用', 'Tạm thời không có chi phí dự kiến'), { method: 'POST', body: JSON.stringify(payload), signal })
+  return requestToolJson('/api/tools/estimate', tr('tools.estimatedCostUnavailable'), { method: 'POST', body: JSON.stringify(payload), signal })
 }
 
 /** 服务端分页查询当前用户可引用的资产媒体。 */
@@ -140,7 +140,7 @@ export function listToolReferenceAssets({ kind, q = '', page = 1, pageSize = 24 
   const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
   if (kind) qs.set('kind', kind)
   if (q) qs.set('q', q)
-  return requestToolJson(`/api/tools/reference-assets?${qs}`, tv('加载资产库失败', 'Tải thư viện tài sản thất bại'), { signal })
+  return requestToolJson(`/api/tools/reference-assets?${qs}`, tr('tools.failedLoadAssetLibrary'), { signal })
 }
 
 // 提交工具生成（multipart）
@@ -164,12 +164,12 @@ export async function runStudioTool(payload: ToolRunPayload): Promise<ToolRunRes
   for (const file of payload.files || []) {
     body.append('files', file)
   }
-  return requestToolJson('/api/tools/run', tv('生成失败', 'Tạo thất bại'), { method: 'POST', body }, true)
+  return requestToolJson('/api/tools/run', tr('tools.generationFailed'), { method: 'POST', body }, true)
 }
 
 // 查询视频任务状态
 export async function pollStudioToolTask(taskId: string): Promise<ToolTaskResult> {
-  return requestToolJson(`/api/tools/tasks/${encodeURIComponent(taskId)}`, tv('查询失败', 'Truy vấn thất bại'))
+  return requestToolJson(`/api/tools/tasks/${encodeURIComponent(taskId)}`, tr('tools.queryFailed'))
 }
 
 // 个人中心：分页拉取工具创作记录
@@ -178,14 +178,14 @@ export type ToolRunFilters = { kind?: string; status?: string; task_id?: string;
 export async function listToolRuns(page = 1, pageSize = 8, filters: ToolRunFilters = {}): Promise<ToolRunList> {
   const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
   for (const [key, value] of Object.entries(filters)) if (value) qs.set(key, value)
-  return requestToolJson(`/api/tools/runs?${qs}`, tv('加载失败', 'Tải thất bại'))
+  return requestToolJson(`/api/tools/runs?${qs}`, tr('tools.failedLoad'))
 }
 
 export async function getGenerationConfig(): Promise<{ models: Record<string, string> }> {
-  return requestToolJson('/api/tools/config', tv('加载模型配置失败', 'Tải cấu hình model thất bại'))
+  return requestToolJson('/api/tools/config', tr('tools.failedLoadModelSettings'))
 }
 
 // 个人中心：单条创作详情（含 OSS 结果地址）
 export async function getToolRun(runId: number): Promise<ToolRunRecord> {
-  return requestToolJson(`/api/tools/runs/${runId}`, tv('加载失败', 'Tải thất bại'))
+  return requestToolJson(`/api/tools/runs/${runId}`, tr('tools.failedLoad'))
 }

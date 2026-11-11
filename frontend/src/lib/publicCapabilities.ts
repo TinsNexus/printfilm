@@ -1,7 +1,7 @@
-import { tv } from '../i18n/tv'
+import { tr } from '../i18n/translate.ts'
 export type PublicCapabilities = { drama_voice_generation_enabled: boolean }
 
-export const VOICE_GENERATION_DISABLED_MESSAGE = tv('音色生成暂时停用，可选择已有音色或上传音频。', 'Tạo giọng nói tạm thời bị dừng, có thể chọn giọng có sẵn hoặc tải âm thanh lên.')
+export const VOICE_GENERATION_DISABLED_MESSAGE = tr('publicCapabilities.voiceGenerationTemporarilyUnavailableChoose')
 
 export function characterVoiceGenerationEnabled(value: unknown): boolean {
   return value !== null && typeof value === 'object' &&

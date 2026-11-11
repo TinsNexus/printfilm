@@ -580,5 +580,6 @@ const LEGAL_DOCS_ZH: Record<'terms' | 'privacy', LegalDocument> = {
 
 /** 按界面语言返回指定法务文档，路由只接受 terms 或 privacy。 */
 export function getLegalDoc(slug: 'terms' | 'privacy', locale = 'zh'): LegalDocument {
-  return locale === 'en' ? LEGAL_DOCS[slug] : LEGAL_DOCS_ZH[slug]
+  // 法律文本只有中文与英文正式版本；越南语界面展示英文版（需人工审校后再提供越南语版）
+  return locale === 'zh' ? LEGAL_DOCS_ZH[slug] : LEGAL_DOCS[slug]
 }

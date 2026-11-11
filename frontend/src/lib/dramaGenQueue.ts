@@ -2,7 +2,7 @@
 import { useSyncExternalStore } from 'react'
 import type { DramaTaskBrief } from '../api/drama'
 import { subscribeWorkspace, workspaceScope } from '../features/teams/workspaceScope.ts'
-import { tv } from '../i18n/tv'
+import { tr } from '../i18n/translate.ts'
 
 export type DramaGenJobKind = 'image' | 'video'
 
@@ -19,6 +19,7 @@ export type DramaGenJob = {
   taskId?: number
   title: string
   /** 子类型文案：角色 / 场景 / 分镜视频 等 */
+  /** 视频：'shot_video' | 'canvas_video'（稳定 id，勿存翻译文字）；图片：资产类型 */
   subtype: string
   status: DramaGenJobStatus
   message?: string
@@ -221,16 +222,16 @@ export function syncImageJobToUnified(input: {
     kind: 'image',
     projectId: input.projectId,
     targetId: input.assetId,
-    title: input.assetName || tv(`资产 ${input.assetId}`, `Tài sản ${input.assetId}`),
+    title: input.assetName || tr('dramaGenQueue.asset', { assetId: input.assetId }),
     subtype: input.assetType || 'image',
     status: input.status,
     taskId: input.taskId,
     error: input.error,
     message:
       input.status === 'running'
-        ? tv('生图中', 'Đang tạo ảnh')
+        ? tr('dramaGenQueue.generatingImage')
         : input.status === 'queued'
-          ? tv('排队中', 'Đang xếp hàng')
+          ? tr('dramaGenQueue.queued')
           : undefined,
   })
 }
@@ -253,15 +254,15 @@ export function syncAssetVideoJobToUnified(input: {
     kind: 'video',
     projectId: input.projectId,
     targetId: input.assetId,
-    title: input.assetName || tv(`视频 ${input.assetId}`, `Video ${input.assetId}`),
-    subtype: tv('画布视频', 'Video canvas'),
+    title: input.assetName || tr('dramaGenQueue.video', { assetId: input.assetId }),
+    subtype: 'canvas_video',
     status: input.status,
     error: input.error,
     message:
       input.status === 'running'
-        ? tv('生视频中', 'Đang tạo video')
+        ? tr('dramaGenQueue.generatingVideo')
         : input.status === 'queued'
-          ? tv('排队中', 'Đang xếp hàng')
+          ? tr('dramaGenQueue.queued')
           : undefined,
   })
 }
@@ -283,14 +284,14 @@ function resolveFragmentLabel(
 ): string | null {
   const frag = fragments.find((f) => f.id === fragId)
   if (frag && typeof frag.sort_order === 'number' && frag.sort_order >= 0) {
-    return tv(`片段 ${String(frag.sort_order + 1).padStart(2, '0')}`, `Đoạn ${String(frag.sort_order + 1).padStart(2, '0')}`)
+    return tr('dramaGenQueue.clip', { p: String(frag.sort_order + 1).padStart(2, '0') })
   }
   // 仅当列表里已有可靠 sort_order 时，才允许用下标兜底（完整有序列表）
   const hasAnySortOrder = fragments.some((f) => typeof f.sort_order === 'number' && f.sort_order >= 0)
   if (!hasAnySortOrder) return null
   const idx = fragments.findIndex((f) => f.id === fragId)
   if (idx < 0) return null
-  return tv(`片段 ${String(idx + 1).padStart(2, '0')}`, `Đoạn ${String(idx + 1).padStart(2, '0')}`)
+  return tr('dramaGenQueue.clip', { p: String(idx + 1).padStart(2, '0') })
 }
 
 // 组装队列标题：有可靠镜序时写入/纠正；否则保留已有标题
@@ -310,7 +311,7 @@ function resolveVideoJobTitle(
   }
   if (existing?.title) return existing.title
   const prefix = (episodeName || '').trim()
-  return prefix ? tv(`${prefix} · 分镜视频`, `${prefix} · Video phân cảnh`) : tv('分镜视频', 'Video phân cảnh')
+  return prefix ? tr('dramaGenQueue.shotVideo', { prefix }) : tr('dramaGenQueue.shotVideo2')
 }
 
 type FragmentTaskItem = DramaTaskBrief
@@ -372,14 +373,14 @@ export function syncEpisodeVideoJobs(input: {
             episodeId: input.episodeId,
             taskId: activeTask.id,
             title: resolveVideoJobTitle(existing, input.episodeName, fragLabel(item.fragment_id)),
-            subtype: tv('分镜视频', 'Video phân cảnh'),
+            subtype: 'shot_video',
             status: activeTask.status === 'pending' || activeTask.status === 'leased' ? 'queued' : 'running',
             message:
               activeTask.current_step_key === 'assets'
-                ? tv('生成参考图…', 'Đang tạo ảnh tham chiếu…')
+                ? tr('dramaGenQueue.generatingReferenceImage')
                 : activeTask.status === 'pending' || activeTask.status === 'leased'
-                  ? tv('排队中', 'Đang xếp hàng')
-                  : tv('生成中', 'Đang tạo'),
+                  ? tr('dramaGenQueue.queued')
+                  : tr('dramaGenQueue.generating'),
           },
           { silent: true },
         )
@@ -397,7 +398,7 @@ export function syncEpisodeVideoJobs(input: {
             title: existing.title,
             subtype: existing.subtype,
             status: 'failed',
-            error: latestTask?.error_message || tv('任务已中断，请重新生成', 'Tác vụ đã bị gián đoạn, vui lòng tạo lại'),
+            error: latestTask?.error_message || tr('dramaGenQueue.taskInterruptedPleaseGenerateAgain'),
           },
           { silent: true },
         )
@@ -419,14 +420,14 @@ export function syncEpisodeVideoJobs(input: {
       (raw === 'cancelled' || status === 'failed'
         ? latestTask?.error_message || undefined
         : undefined) ||
-      (raw === 'cancelled' ? tv('已取消', 'Đã hủy') : undefined)
+      (raw === 'cancelled' ? tr('dramaGenQueue.cancelled') : undefined)
 
     const messageFromTask =
       activeTask && status === 'running'
         ? activeTask.current_step_key === 'assets'
-          ? tv('生成参考图…', 'Đang tạo ảnh tham chiếu…')
-          : item.message || (item.phase === 'assets' ? tv('生成参考图…', 'Đang tạo ảnh tham chiếu…') : tv('生成中', 'Đang tạo'))
-        : item.message || (item.phase === 'assets' ? tv('生成参考图…', 'Đang tạo ảnh tham chiếu…') : undefined)
+          ? tr('dramaGenQueue.generatingReferenceImage')
+          : item.message || (item.phase === 'assets' ? tr('dramaGenQueue.generatingReferenceImage') : tr('dramaGenQueue.generating'))
+        : item.message || (item.phase === 'assets' ? tr('dramaGenQueue.generatingReferenceImage') : undefined)
 
     upsertDramaGenJob(
       {
@@ -437,9 +438,9 @@ export function syncEpisodeVideoJobs(input: {
         episodeId: input.episodeId,
         taskId: boundTaskId,
         title: resolveVideoJobTitle(existing, input.episodeName, fragLabel(item.fragment_id)),
-        subtype: tv('分镜视频', 'Video phân cảnh'),
+        subtype: 'shot_video',
         status,
-        message: status === 'queued' ? item.message || tv('排队中', 'Đang xếp hàng') : messageFromTask,
+        message: status === 'queued' ? item.message || tr('dramaGenQueue.queued') : messageFromTask,
         error: errText,
       },
       { silent: true },
@@ -466,7 +467,7 @@ export function enqueueEpisodeVideoJobs(input: {
     .map((f) => ({
       fragment_id: f.id,
       status: 'queued',
-      message: tv('已入队', 'Đã vào hàng đợi'),
+      message: tr('dramaGenQueue.queued2'),
     }))
   syncEpisodeVideoJobs({
     projectId: input.projectId,
@@ -516,7 +517,7 @@ async function pollActiveEpisodeVideoJobs(): Promise<void> {
   const active = jobs.filter(
     (job) =>
       job.kind === 'video' &&
-      job.subtype === '分镜视频' &&
+      job.subtype === 'shot_video' &&
       (job.status === 'queued' || job.status === 'running') &&
       typeof job.episodeId === 'number',
   )
@@ -541,7 +542,7 @@ async function pollActiveEpisodeVideoJobs(): Promise<void> {
         const tracked = jobs.filter(
           (job) =>
             job.kind === 'video' &&
-            job.subtype === '分镜视频' &&
+            job.subtype === 'shot_video' &&
             job.episodeId === episodeId,
         )
         const trackedIds = new Set(tracked.map((job) => job.targetId))
@@ -624,7 +625,7 @@ export function markVideoJobsCancelled(fragmentIds?: number[]): void {
     return {
       ...job,
       status: 'failed' as const,
-      error: tv('已取消', 'Đã hủy'),
+      error: tr('dramaGenQueue.cancelled'),
       finishedAt: Date.now(),
     }
   })

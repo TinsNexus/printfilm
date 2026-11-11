@@ -31,7 +31,7 @@ import {
 } from '../../lib/dramaSubtitleSettings'
 import type { DramaProject, DramaScript } from '../../api/drama'
 import { dramaApi } from '../../api/drama'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 
 type Props = {
   open: boolean
@@ -136,7 +136,7 @@ export function DramaProjectSettingsModal({
       const updated = await dramaApi.updateProject(projectId, { params: nextParams })
       onProjectChange(updated)
     } catch (err) {
-      onError(err instanceof Error ? err.message : tv('项目设置保存失败', 'Lưu cài đặt dự án thất bại'))
+      onError(err instanceof Error ? err.message : tr('dramaProjectSettingsModal.failedSaveProjectSettings'))
     } finally {
       setSaving(false)
     }
@@ -152,7 +152,7 @@ export function DramaProjectSettingsModal({
       const p = await dramaApi.getProject(projectId)
       onProjectChange(p)
     } catch (err) {
-      onError(err instanceof Error ? err.message : tv('风格保存失败', 'Lưu phong cách thất bại'))
+      onError(err instanceof Error ? err.message : tr('dramaProjectSettingsModal.failedSaveStyle'))
     } finally {
       setSaving(false)
     }
@@ -162,23 +162,23 @@ export function DramaProjectSettingsModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={tv("项目设置", "Cài đặt dự án")}
+      title={tr('dramaProjectSettingsModal.projectSettings')}
       size="md"
       className="drama-project-settings-modal"
       footer={
         <button type="button" className="drama-btn-primary" onClick={onClose} disabled={saving}>
-          {tv("完成", "Xong")}
+          {tr('dramaProjectSettingsModal.done')}
         </button>
       }
     >
       <div className="drama-project-settings">
         <p className="drama-muted drama-project-settings-lead">
-          {tv("全项目统一；分镜页只读展示。修改画幅后请重新生成相关镜头。", "Thống nhất toàn dự án; trang phân cảnh chỉ hiển thị, không sửa. Sau khi đổi tỷ lệ khung hãy tạo lại các cảnh liên quan.")}
+          {tr('dramaProjectSettingsModal.appliesWholeProjectReadOnly')}
         </p>
 
         <section className="drama-project-settings-section">
           <div className="drama-project-settings-head">
-            <h4>{tv("画幅", "Tỷ lệ khung")}</h4>
+            <h4>{tr('dramaProjectSettingsModal.aspectRatio')}</h4>
           </div>
           <SettingsChoiceRow
             value={aspectRatio}
@@ -187,7 +187,7 @@ export function DramaProjectSettingsModal({
             onChange={(ratio) => void patchProjectParams({ aspect_ratio: ratio })}
           />
           <div className="drama-project-settings-head">
-            <h4>{tv("清晰度", "Độ nét")}</h4>
+            <h4>{tr('dramaProjectSettingsModal.quality')}</h4>
           </div>
           <SettingsChoiceRow
             value={clampedResolution}
@@ -199,13 +199,13 @@ export function DramaProjectSettingsModal({
 
         <section className="drama-project-settings-section">
           <div className="drama-project-settings-head">
-            <h4>{tv("画面风格", "Phong cách hình ảnh")}</h4>
+            <h4>{tr('dramaProjectSettingsModal.visualStyle')}</h4>
           </div>
           <DramaImageStyleModal
             variant="field"
             fieldLabel=""
-            title={tv("选择项目风格", "Chọn phong cách dự án")}
-            emptyLabel={tv("选择风格", "Chọn phong cách")}
+            title={tr('dramaProjectSettingsModal.chooseProjectStyle')}
+            emptyLabel={tr('dramaProjectSettingsModal.chooseStyle')}
             value={styleId}
             disabled={saving}
             onChange={(id) => void handleStyleChange(id)}
@@ -214,14 +214,14 @@ export function DramaProjectSettingsModal({
 
         <section className="drama-project-settings-section">
           <div className="drama-project-settings-head">
-            <h4>{tv("字幕方式", "Cách làm phụ đề")}</h4>
+            <h4>{tr('dramaProjectSettingsModal.subtitles')}</h4>
           </div>
           <SettingsChoiceRow
             value={subtitleMode}
             disabled={saving}
             options={[
-              { value: 'post' as DramaSubtitleMode, label: tv('后期字幕', 'Phụ đề hậu kỳ') },
-              { value: 'model' as DramaSubtitleMode, label: tv('模型字幕', 'Phụ đề do model') },
+              { value: 'post' as DramaSubtitleMode, label: tr('dramaProjectSettingsModal.postProductionSubtitles') },
+              { value: 'model' as DramaSubtitleMode, label: tr('dramaProjectSettingsModal.modelSubtitles') },
             ]}
             onChange={(mode) =>
               void patchProjectParams({
@@ -230,19 +230,19 @@ export function DramaProjectSettingsModal({
               })
             }
           />
-          <p className="drama-muted">{tv("后期字幕成片后拼接；模型字幕生成时烧录。", "Phụ đề hậu kỳ được ghép sau khi có phim; phụ đề do model được đốt khi tạo.")}</p>
+          <p className="drama-muted">{tr('dramaProjectSettingsModal.postProductionSubtitlesAddedAfter')}</p>
         </section>
 
         <section className="drama-project-settings-section">
           <div className="drama-project-settings-head">
-            <h4>{tv("人物介绍叠字", "Chữ giới thiệu nhân vật")}</h4>
+            <h4>{tr('dramaProjectSettingsModal.characterIntroCaptions')}</h4>
           </div>
           <SettingsChoiceRow
             value={characterIntroMode}
             disabled={saving}
             options={[
-              { value: 'off' as DramaCharacterIntroMode, label: tv('无介绍叠字', 'Không chữ giới thiệu') },
-              { value: 'model' as DramaCharacterIntroMode, label: tv('人物介绍', 'Giới thiệu nhân vật') },
+              { value: 'off' as DramaCharacterIntroMode, label: tr('dramaProjectSettingsModal.noIntroCaptions') },
+              { value: 'model' as DramaCharacterIntroMode, label: tr('dramaProjectSettingsModal.characterIntro') },
             ]}
             onChange={(mode) =>
               void patchProjectParams({
@@ -255,18 +255,18 @@ export function DramaProjectSettingsModal({
 
         <section className="drama-project-settings-section">
           <div className="drama-project-settings-head">
-            <h4>{tv("镜间衔接", "Nối giữa các cảnh")}</h4>
+            <h4>{tr('dramaProjectSettingsModal.shotContinuity')}</h4>
           </div>
           <SettingsChoiceRow
             value={linkLastFrame}
             disabled={saving}
             options={[
-              { value: true, label: tv('尾帧衔接', 'Nối khung cuối') },
-              { value: false, label: tv('并发生成', 'Tạo đồng thời') },
+              { value: true, label: tr('dramaProjectSettingsModal.lastFrameContinuity') },
+              { value: false, label: tr('dramaProjectSettingsModal.parallelGeneration') },
             ]}
             onChange={(enabled) => void patchProjectParams({ linkLastFrame: enabled })}
           />
-          <p className="drama-muted">{tv("开启后后一镜会参考前一镜尾帧，风格更连贯。", "Khi bật, cảnh sau sẽ tham chiếu khung cuối cảnh trước, phong cách liền mạch hơn.")}</p>
+          <p className="drama-muted">{tr('dramaProjectSettingsModal.whenEachShotReferencesPrevious')}</p>
         </section>
       </div>
     </Modal>

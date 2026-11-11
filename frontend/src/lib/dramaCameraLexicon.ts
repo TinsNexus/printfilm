@@ -1,3 +1,4 @@
+import { tr } from '../i18n/translate.ts'
 /**
  * 漫剧运镜 / 景别词库（对齐 docs/EPISODE_RULES.md §5）
  * 供分集编辑 @ 菜单插入画面行前缀或运镜短语
@@ -18,27 +19,27 @@ export type DramaCameraLexiconItem = {
 
 /** 景别标签：写入画面行，勿标成对白 */
 export const DRAMA_SHOT_SIZE_LEXICON: DramaCameraLexiconItem[] = [
-  { id: 'empty', group: 'shot', label: '空镜', insert: '空镜：', hint: '环境建立，无对白无旁白' },
-  { id: 'wide', group: 'shot', label: '远景', insert: '远景：', hint: '交代空间关系' },
-  { id: 'full', group: 'shot', label: '全景', insert: '全景：', hint: '全身与环境同框' },
-  { id: 'medium', group: 'shot', label: '中景', insert: '中景：', hint: '腰部以上，对白常用' },
-  { id: 'close', group: 'shot', label: '近景', insert: '近景：', hint: '胸部以上，情绪贴近' },
-  { id: 'closeup', group: 'shot', label: '特写', insert: '特写：', hint: '脸或关键道具' },
-  { id: 'ecu', group: 'shot', label: '大特写', insert: '大特写：', hint: '眼、手、细节' },
-  { id: 'establish', group: 'shot', label: '建立镜头', insert: '建立镜头：', hint: '开场定场景气氛' },
-  { id: 'atmosphere', group: 'shot', label: '气氛镜头', insert: '气氛镜头：', hint: '光影/天气/物件烘托' },
+  { id: 'empty', group: 'shot', get label() { return tr('dramaCameraLexicon.emptyLabel') }, insert: '空镜：', get hint() { return tr('dramaCameraLexicon.emptyHint') } },
+  { id: 'wide', group: 'shot', get label() { return tr('dramaCameraLexicon.wideLabel') }, insert: '远景：', get hint() { return tr('dramaCameraLexicon.wideHint') } },
+  { id: 'full', group: 'shot', get label() { return tr('dramaCameraLexicon.fullLabel') }, insert: '全景：', get hint() { return tr('dramaCameraLexicon.fullHint') } },
+  { id: 'medium', group: 'shot', get label() { return tr('dramaCameraLexicon.mediumLabel') }, insert: '中景：', get hint() { return tr('dramaCameraLexicon.mediumHint') } },
+  { id: 'close', group: 'shot', get label() { return tr('dramaCameraLexicon.closeLabel') }, insert: '近景：', get hint() { return tr('dramaCameraLexicon.closeHint') } },
+  { id: 'closeup', group: 'shot', get label() { return tr('dramaCameraLexicon.closeupLabel') }, insert: '特写：', get hint() { return tr('dramaCameraLexicon.closeupHint') } },
+  { id: 'ecu', group: 'shot', get label() { return tr('dramaCameraLexicon.ecuLabel') }, insert: '大特写：', get hint() { return tr('dramaCameraLexicon.ecuHint') } },
+  { id: 'establish', group: 'shot', get label() { return tr('dramaCameraLexicon.establishLabel') }, insert: '建立镜头：', get hint() { return tr('dramaCameraLexicon.establishHint') } },
+  { id: 'atmosphere', group: 'shot', get label() { return tr('dramaCameraLexicon.atmosphereLabel') }, insert: '气氛镜头：', get hint() { return tr('dramaCameraLexicon.atmosphereHint') } },
 ]
 
 /** 运镜短语：单段运动轴建议 ≤ 2 */
 export const DRAMA_CAMERA_MOVE_LEXICON: DramaCameraLexiconItem[] = [
-  { id: 'push', group: 'move', label: '推镜', insert: '推镜：', hint: '镜头前推靠近主体' },
-  { id: 'pull', group: 'move', label: '拉镜', insert: '拉镜：', hint: '镜头后拉展开空间' },
-  { id: 'pan', group: 'move', label: '摇镜', insert: '摇镜：', hint: '机位不动，水平/垂直扫视' },
-  { id: 'truck', group: 'move', label: '移镜', insert: '移镜：', hint: '机位平移跟随' },
-  { id: 'follow', group: 'move', label: '跟拍', insert: '跟拍：', hint: '跟随人物移动' },
-  { id: 'high', group: 'move', label: '俯拍', insert: '俯拍：', hint: '高角度向下' },
-  { id: 'low', group: 'move', label: '仰拍', insert: '仰拍：', hint: '低角度向上' },
-  { id: 'aerial', group: 'move', label: '航拍', insert: '航拍：', hint: '大全景俯视' },
+  { id: 'push', group: 'move', get label() { return tr('dramaCameraLexicon.pushLabel') }, insert: '推镜：', get hint() { return tr('dramaCameraLexicon.pushHint') } },
+  { id: 'pull', group: 'move', get label() { return tr('dramaCameraLexicon.pullLabel') }, insert: '拉镜：', get hint() { return tr('dramaCameraLexicon.pullHint') } },
+  { id: 'pan', group: 'move', get label() { return tr('dramaCameraLexicon.panLabel') }, insert: '摇镜：', get hint() { return tr('dramaCameraLexicon.panHint') } },
+  { id: 'truck', group: 'move', get label() { return tr('dramaCameraLexicon.truckLabel') }, insert: '移镜：', get hint() { return tr('dramaCameraLexicon.truckHint') } },
+  { id: 'follow', group: 'move', get label() { return tr('dramaCameraLexicon.followLabel') }, insert: '跟拍：', get hint() { return tr('dramaCameraLexicon.followHint') } },
+  { id: 'high', group: 'move', get label() { return tr('dramaCameraLexicon.highLabel') }, insert: '俯拍：', get hint() { return tr('dramaCameraLexicon.highHint') } },
+  { id: 'low', group: 'move', get label() { return tr('dramaCameraLexicon.lowLabel') }, insert: '仰拍：', get hint() { return tr('dramaCameraLexicon.lowHint') } },
+  { id: 'aerial', group: 'move', get label() { return tr('dramaCameraLexicon.aerialLabel') }, insert: '航拍：', get hint() { return tr('dramaCameraLexicon.aerialHint') } },
 ]
 
 /** 合并词库（插入列表用） */
@@ -49,10 +50,10 @@ export const DRAMA_CAMERA_LEXICON: DramaCameraLexiconItem[] = [
 
 /** 运镜使用提示（只展示，不插入） */
 export const DRAMA_CAMERA_USAGE_TIPS = [
-  '公式：主体 + 动作 + 场景 +（景别/运镜）+（光影）',
-  '每段运动轴 ≤ 2（推+摇可以；推+摇+升易失控）',
-  '近景大旋转易崩脸，环绕留给中景以上',
-  '空镜/景别必须用画面写法，禁止标成对白或旁白',
+  tr('dramaCameraLexicon.tip1'),
+  tr('dramaCameraLexicon.tip2'),
+  tr('dramaCameraLexicon.tip3'),
+  tr('dramaCameraLexicon.tip4'),
 ] as const
 
 // 按关键字过滤词库（匹配 label / insert / hint）

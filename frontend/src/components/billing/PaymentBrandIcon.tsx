@@ -1,4 +1,4 @@
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 type PayBrand = 'alipay' | 'wxpay'
 
 type Props = {
@@ -9,8 +9,8 @@ type Props = {
 }
 
 const BRAND_META: Record<PayBrand, { src: string; alt: string }> = {
-  alipay: { src: '/payment/alipay.svg', alt: tv('支付宝', 'Alipay') },
-  wxpay: { src: '/payment/wechatpay.svg', alt: tv('微信支付', 'WeChat Pay') },
+  alipay: { src: '/payment/alipay.svg', alt: tr('paymentBrandIcon.alipay') },
+  wxpay: { src: '/payment/wechatpay.svg', alt: tr('paymentBrandIcon.wechatPay') },
 }
 
 /** 支付渠道品牌图标 */

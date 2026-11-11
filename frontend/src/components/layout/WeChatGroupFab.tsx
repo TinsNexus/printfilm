@@ -4,7 +4,7 @@ import { Check, Copy, X } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useFabDragPosition } from '../../hooks/useFabDragPosition'
 import { WECHAT_ID } from '../../lib/siteContact'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 
 /** 社区加群微信号（不加图片二维码） */
 const POS_STORAGE_KEY = 'pf-wx-group-fab-pos'
@@ -107,7 +107,7 @@ export default function WeChatGroupFab() {
         }}
         aria-expanded={open}
         aria-label={t('wechatGroup.open')}
-        title={tv(`${t('wechatGroup.open')}（可拖动）`, `${t('wechatGroup.open')} (có thể kéo)`)}
+        title={tr('weChatGroupFab.draggable', { t: t('wechatGroup.open') })}
         {...bindDrag}
       >
         <WeChatIcon />

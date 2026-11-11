@@ -5,7 +5,7 @@ import type { Template } from '../api'
 import BillingErrorNotice from '../components/billing/BillingErrorNotice'
 import AppShell from '../components/layout/AppShell'
 import { shortVideoCreatePath } from '../lib/shortVideoRoutes'
-import { tv } from '../i18n/tv'
+import { tr } from '../i18n/translate.ts'
 
 export default function TemplatesPage() {
   const nav = useNavigate()
@@ -40,15 +40,15 @@ export default function TemplatesPage() {
     <AppShell active="templates">
       <div className="pf-section-head">
         <div>
-          <h2>{tv("模板库", "Thư viện mẫu")}</h2>
-          <p>{tv("四种精选动画与插画风格，从想法、文案分镜到画面配音，分步完成短片。默认使用 3D 动画。", "Bốn phong cách hoạt hình và minh họa chọn lọc, từ ý tưởng, lời dẫn và phân cảnh đến hình ảnh và lồng tiếng, hoàn thành phim ngắn từng bước. Mặc định dùng hoạt hình 3D.")}</p>
+          <h2>{tr('templatesPage.templates')}</h2>
+          <p>{tr('templatesPage.fourCuratedAnimationIllustrationStyles')}</p>
         </div>
       </div>
       <div className="pf-search" style={{ maxWidth: 420, marginBottom: '1rem' }}>
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder={tv("搜索模板名称或描述", "Tìm tên hoặc mô tả mẫu")}
+          placeholder={tr('templatesPage.searchTemplateNamesDescriptions')}
         />
       </div>
       {error ? <BillingErrorNotice message={error} /> : null}
@@ -68,7 +68,7 @@ export default function TemplatesPage() {
           </button>
         ))}
       </div>
-      {filtered.length === 0 ? <p className="pf-muted">{tv("没有匹配的模板。", "Không có mẫu phù hợp.")}</p> : null}
+      {filtered.length === 0 ? <p className="pf-muted">{tr('templatesPage.noMatchingTemplates')}</p> : null}
     </AppShell>
   )
 }

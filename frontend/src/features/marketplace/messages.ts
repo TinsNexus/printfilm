@@ -1,6 +1,6 @@
 import { points } from '../../lib/points.ts'
 import { marketText as mt, marketFeedback } from './translate.ts'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 /** 用户提示与接口错误码分开处理，不改变服务端状态和错误契约。 */
 const businessMessages: Record<string, string> = {
   MARKETPLACE_STORAGE_UNAVAILABLE: '文件服务暂未配置或暂时不可用，请稍后重试或联系客服。',
@@ -18,19 +18,19 @@ const businessMessages: Record<string, string> = {
 }
 
 const fieldNames: Record<string, string> = {
-  title: tv('标题', 'Tiêu đề'), description: tv('简介', 'Giới thiệu'), category: tv('分类', 'Danh mục'), tags: tv('标签', 'Nhãn'), price_fen: tv('参考价', 'Giá tham khảo'),
-  copyright_price_fen: tv('参考价', 'Giá tham khảo'), unlock_price_fen: tv('观众解锁价', 'Giá mở khóa cho khán giả'), share_bps: tv('平台抽成比例', 'Tỷ lệ chiết khấu nền tảng'),
-  license_scope: tv('拟授权用途及限制', 'Mục đích và giới hạn dự kiến được cấp phép'), scope: tv('授权范围', 'Phạm vi cấp phép'), asset_id: tv('视频', 'Video'), cover_asset_id: tv('封面', 'Ảnh bìa'), source: tv('内容来源', 'Nguồn nội dung'),
-  certificate_number: tv('版权证书编号', 'Số chứng chỉ bản quyền'), certificate_asset_id: tv('版权证明图片', 'Ảnh chứng minh bản quyền'), dispute_ack: tv('版权声明', 'Tuyên bố bản quyền'),
-  episode_no: tv('集号', 'Số tập'), episodes: tv('分集', 'Tập'), episode_ids: tv('所选分集', 'Tập đã chọn'), episode_id: tv('分集', 'Tập'), free_episode_count: tv('免费集数', 'Số tập miễn phí'),
-  budget_fen: tv('单条预算', 'Ngân sách mỗi mục'), wanted_count: tv('征集数量', 'Số lượng thu thập'), requirements: tv('交付要求', 'Yêu cầu bàn giao'), deadline_at: tv('截止时间', 'Hạn chót'),
-  image_ids: tv('参考图片', 'Ảnh tham chiếu'), evidence_ids: tv('证明材料', 'Tài liệu chứng minh'), valid_until: tv('授权有效期', 'Thời hạn hiệu lực cấp phép'), details: tv('版权信息', 'Thông tin bản quyền'),
-  signer_name: tv('签署人姓名', 'Họ tên người ký'), strokes: tv('手写签名', 'Chữ ký tay'), accepted_terms: tv('授权条款', 'Điều khoản cấp phép'), adult: tv('成年确认', 'Xác nhận đủ tuổi'),
-  read_all: tv('阅读确认', 'Xác nhận đã đọc'), accept_key: tv('重点条款确认', 'Xác nhận điều khoản trọng điểm'), template_version: tv('授权条款版本', 'Phiên bản điều khoản cấp phép'),
-  sale_type: tv('收益方式', 'Cách chia doanh thu'), filename: tv('文件名', 'Tên tệp'), size_bytes: tv('文件大小', 'Dung lượng tệp'), kind: tv('文件类型', 'Loại tệp'),
-  statement: tv('举报说明', 'Mô tả báo cáo'), contact: tv('联系方式', 'Cách liên hệ'), version: tv('内容版本', 'Phiên bản nội dung'), series_version: tv('短剧版本', 'Phiên bản phim ngắn'),
-  drama_project_id: tv('漫剧项目', 'Dự án phim truyện'), project_id: tv('成片项目', 'Dự án phim'), series_id: tv('市场短剧', 'Phim ngắn trên chợ'), source_version: tv('源成片版本', 'Phiên bản phim nguồn'),
-  idempotency_key: tv('本次操作编号', 'Mã thao tác lần này'), target_type: tv('咨询类型', 'Loại tư vấn'), target_id: tv('咨询内容', 'Nội dung tư vấn'),
+  title: tr('messages.title'), description: tr('messages.description'), category: tr('messages.category'), tags: tr('messages.tags'), price_fen: tr('messages.referencePrice'),
+  copyright_price_fen: tr('messages.referencePrice'), unlock_price_fen: tr('messages.viewerUnlockPrice'), share_bps: tr('messages.platformFeeRate'),
+  license_scope: tr('messages.intendedLicenseUseLimits'), scope: tr('messages.licenseScope'), asset_id: tr('messages.video'), cover_asset_id: tr('messages.cover'), source: tr('messages.contentSource'),
+  certificate_number: tr('messages.copyrightCertificateNumber'), certificate_asset_id: tr('messages.copyrightProofImage'), dispute_ack: tr('messages.copyrightStatement'),
+  episode_no: tr('messages.episodeNumber'), episodes: tr('messages.episode'), episode_ids: tr('messages.selectedEpisode'), episode_id: tr('messages.episode'), free_episode_count: tr('messages.freeEpisodes'),
+  budget_fen: tr('messages.budgetPerItem'), wanted_count: tr('messages.wantedCount'), requirements: tr('messages.deliveryRequirements'), deadline_at: tr('messages.deadline'),
+  image_ids: tr('messages.referenceImages'), evidence_ids: tr('messages.evidence'), valid_until: tr('messages.licenseValidity'), details: tr('messages.copyrightInformation'),
+  signer_name: tr('messages.signerName'), strokes: tr('messages.handwrittenSignature'), accepted_terms: tr('messages.licenseTerms'), adult: tr('messages.ageConfirmation'),
+  read_all: tr('messages.readConfirmation'), accept_key: tr('messages.keyTermsConfirmation'), template_version: tr('messages.licenseTermsVersion'),
+  sale_type: tr('messages.earningsModel'), filename: tr('messages.fileName'), size_bytes: tr('messages.fileSize'), kind: tr('messages.fileType'),
+  statement: tr('messages.reportDetails'), contact: tr('messages.contact'), version: tr('messages.contentVersion'), series_version: tr('messages.shortDramaVersion'),
+  drama_project_id: tr('messages.dramaProject'), project_id: tr('messages.finishedProject'), series_id: tr('messages.marketplaceShortDrama'), source_version: tr('messages.sourceVideoVersion'),
+  idempotency_key: tr('messages.operationId'), target_type: tr('messages.inquiryType'), target_id: tr('messages.inquiryDetails'),
 }
 
 function record(value: unknown): Record<string, unknown> | null {

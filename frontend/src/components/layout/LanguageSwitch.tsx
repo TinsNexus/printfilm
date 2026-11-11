@@ -16,8 +16,8 @@ export default function LanguageSwitch() {
           onClick={() => {
             if (code === locale) return
             setLocale(code)
-            // 顶层常量里的 tv() 只在加载时取值，进出越南语时刷新页面使其生效
-            if ((code === 'vi' || locale === 'vi') && typeof window !== 'undefined') window.location.reload()
+            // 模块级常量与未订阅 i18n 的组件只在加载/渲染时取文案：偏好已写入 localStorage，刷新页面让全站统一生效
+            if (typeof window !== 'undefined') window.location.reload()
           }}
         >
           {code === 'zh' ? t('nav.langZh') : code === 'vi' ? t('nav.langVi') : t('nav.langEn')}

@@ -22,7 +22,7 @@ import { AssetsStep } from './AssetsStep'
 import { OutlineStep } from './OutlineStep'
 import RequireAuth from './RequireAuth'
 import './drama.css'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 
 export default function ProjectWorkspacePage() {
   return (
@@ -66,7 +66,7 @@ function WorkspaceInner() {
     if (normalized && isEpisodesRouteStep(normalized)) {
       void resolveStoryboardPath(id)
         .then((path) => navigate(path, { replace: true }))
-        .catch((err) => { if (!isRequestAborted(err)) setError(err instanceof Error ? err.message : tv('无法进入分镜', 'Không vào được phân cảnh')) })
+        .catch((err) => { if (!isRequestAborted(err)) setError(err instanceof Error ? err.message : tr('projectWorkspacePage.couldNotOpenStoryboard')) })
       return
     }
     if (normalized && isProjectStepKey(normalized)) {
@@ -103,7 +103,7 @@ function WorkspaceInner() {
             if (isEpisodesRouteStep(initial)) {
               void resolveStoryboardPath(id)
                 .then((path) => navigate(path, { replace: true }))
-                .catch((err) => { if (!isRequestAborted(err)) setError(err instanceof Error ? err.message : tv('无法进入分镜', 'Không vào được phân cảnh')) })
+                .catch((err) => { if (!isRequestAborted(err)) setError(err instanceof Error ? err.message : tr('projectWorkspacePage.couldNotOpenStoryboard')) })
               return
             }
             setActiveStep(initial)
@@ -111,7 +111,7 @@ function WorkspaceInner() {
           locationApplied.current = true
         }
       })
-      .catch((err) => { if (!isRequestAborted(err)) setError(err instanceof Error ? err.message : tv('加载失败', 'Tải thất bại')) })
+      .catch((err) => { if (!isRequestAborted(err)) setError(err instanceof Error ? err.message : tr('projectWorkspacePage.failedLoad')) })
       .finally(() => setLoading(false))
   }, [id])
 
@@ -145,7 +145,7 @@ function WorkspaceInner() {
       setTitleDraft(updated.title)
     } catch (err) {
       if (isRequestAborted(err)) return
-      setError(err instanceof Error ? err.message : tv('标题保存失败', 'Lưu tiêu đề thất bại'))
+      setError(err instanceof Error ? err.message : tr('projectWorkspacePage.failedSaveTitle'))
     } finally {
       setEditingTitle(false)
     }
@@ -154,7 +154,7 @@ function WorkspaceInner() {
   if (!Number.isFinite(id) || id <= 0) {
     return (
       <AppShell active="drama" flush>
-        <div className="drama-workspace-status">{tv("项目 ID 无效", "ID dự án không hợp lệ")}</div>
+        <div className="drama-workspace-status">{tr('projectWorkspacePage.invalidProjectId')}</div>
       </AppShell>
     )
   }
@@ -162,7 +162,7 @@ function WorkspaceInner() {
   if (loading) {
     return (
       <AppShell active="drama" flush>
-        <div className="drama-workspace-status">{tv("加载中…", "Đang tải…")}</div>
+        <div className="drama-workspace-status">{tr('projectWorkspacePage.loading')}</div>
       </AppShell>
     )
   }
@@ -178,7 +178,7 @@ function WorkspaceInner() {
   if (!project) {
     return (
       <AppShell active="drama" flush>
-        <div className="drama-workspace-status">{tv("项目不存在", "Dự án không tồn tại")}</div>
+        <div className="drama-workspace-status">{tr('projectWorkspacePage.projectNotFound')}</div>
       </AppShell>
     )
   }
@@ -191,7 +191,7 @@ function WorkspaceInner() {
             <button
               type="button"
               className="drama-icon-btn"
-              aria-label={tv("返回", "Quay lại")}
+              aria-label={tr('projectWorkspacePage.back')}
               onClick={() => navigate(project.team_id ? `/teams/${project.team_id}?tab=projects` : '/drama/dramas')}
             >
               <ChevronLeft size={20} strokeWidth={1.75} />
@@ -221,7 +221,7 @@ function WorkspaceInner() {
 
           <div className="drama-workspace-top-right">
             {project.usage ? (
-              <span className="drama-usage-chip" title={tv("本剧累计费用与生成次数", "Tổng chi phí và số lần tạo của phim này")}>
+              <span className="drama-usage-chip" title={tr('projectWorkspacePage.totalCostGenerationsDrama')}>
                 {formatDramaUsageBrief(project.usage)}
               </span>
             ) : null}
@@ -231,12 +231,12 @@ function WorkspaceInner() {
               onClick={() => setAssetsOpen((open) => !open)}
             >
               <Boxes size={15} strokeWidth={2} aria-hidden />
-              {tv("资产库", "Thư viện tài sản")}
+              {tr('projectWorkspacePage.assetLibrary')}
             </button>
           </div>
         </header>
 
-        {titleLock.error && <p role="alert" className="pf-team-alert">{titleLock.error}<button type="button" onClick={titleLock.retry}>{tv("重新取得编辑权", "Lấy lại quyền chỉnh sửa")}</button></p>}
+        {titleLock.error && <p role="alert" className="pf-team-alert">{titleLock.error}<button type="button" onClick={titleLock.retry}>{tr('projectWorkspacePage.getEditingRightsAgain')}</button></p>}
         {error ? <DramaErrorNotice message={error} className="drama-workspace-alert" onDismiss={() => setError('')} /> : null}
 
         <main className="drama-workspace-main">

@@ -35,10 +35,10 @@ import DramaPublishModal from '../../features/marketplace/DramaPublishModal'
 import { useMarketplace } from '../../features/marketplace/hooks'
 import './drama.css'
 import './project-list.css'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 
 const CANVAS_PLACEHOLDER =
-  tv('自由画布创作项目，稍后在画布中完善故事与资产。', 'Dự án sáng tạo canvas tự do, sau này hoàn thiện câu chuyện và tài sản trong canvas.')
+  tr('dramaListPage.freeCanvasProjectBuildOut')
 
 // 格式化更新时间
 function formatUpdatedAt(raw?: string) {
@@ -120,7 +120,7 @@ function DramaListInner({ workflow }: { workflow: DramaWorkflow }) {
       if (res.meta.page !== page) setPage(res.meta.page)
     } catch (err) {
       if (seq !== loadSeq.current) return
-      setError(err instanceof Error ? err.message : tv('加载失败', 'Tải thất bại'))
+      setError(err instanceof Error ? err.message : tr('dramaListPage.failedLoad'))
     } finally {
       if (seq === loadSeq.current) setLoading(false)
     }
@@ -258,11 +258,11 @@ function DramaListInner({ workflow }: { workflow: DramaWorkflow }) {
           </Button>
         </header>
 
-        <section className="pf-project-list-panel" aria-label={canvasMode ? tv('我的画布', 'Canvas của tôi') : tv('我的项目', 'Dự án của tôi')}>
+        <section className="pf-project-list-panel" aria-label={canvasMode ? tr('dramaListPage.myCanvases') : tr('dramaListPage.myProjects')}>
           <div className="pf-project-list-heading">
             <div>
-              <h2>{canvasMode ? tv('我的画布', 'Canvas của tôi') : tv('我的项目', 'Dự án của tôi')}{!loading && <span>{total}</span>}</h2>
-              <p>{canvasMode ? tv('收集灵感，自由连接每一个创作节点。', 'Thu thập cảm hứng, kết nối tự do từng nút sáng tạo.') : tv('让每一个好故事，稳步成为作品。', 'Để mỗi câu chuyện hay vững vàng trở thành tác phẩm.')}</p>
+              <h2>{canvasMode ? tr('dramaListPage.myCanvases') : tr('dramaListPage.myProjects')}{!loading && <span>{total}</span>}</h2>
+              <p>{canvasMode ? tr('dramaListPage.collectIdeasFreelyConnectEvery') : tr('dramaListPage.helpEveryGoodStorySteadily')}</p>
             </div>
             <Button variant="lime" onClick={() => setShowCreate(true)}>
               <Plus size={19} strokeWidth={1.8} aria-hidden />{createLabel}
@@ -289,7 +289,7 @@ function DramaListInner({ workflow }: { workflow: DramaWorkflow }) {
 
           {error ? <BillingErrorNotice message={error} className="drama-error" /> : null}
           {loading ? (
-            <div aria-busy="true" aria-label={tv("正在加载项目", "Đang tải dự án")}>
+            <div aria-busy="true" aria-label={tr('dramaListPage.loadingProjects')}>
               <ProjectGrid>{Array.from({ length: pageSize }).map((_, i) => <div key={i} className="pf-project-list-skeleton" aria-hidden />)}</ProjectGrid>
             </div>
           ) : pristineEmpty ? (
@@ -301,8 +301,8 @@ function DramaListInner({ workflow }: { workflow: DramaWorkflow }) {
             </div>
           ) : items.length === 0 ? (
             <div className="pf-empty-state is-compact">
-              <p className="pf-muted">{tv("没有符合筛选的项目", "Không có dự án khớp bộ lọc")}</p>
-              <Button variant="ghost" size="sm" onClick={() => { setFilter('all'); setQuery('') }}>{tv("清除筛选", "Xóa bộ lọc")}</Button>
+              <p className="pf-muted">{tr('dramaListPage.noProjectsMatchFilters')}</p>
+              <Button variant="ghost" size="sm" onClick={() => { setFilter('all'); setQuery('') }}>{tr('dramaListPage.clearFilters')}</Button>
             </div>
           ) : (
             <>
@@ -310,21 +310,21 @@ function DramaListInner({ workflow }: { workflow: DramaWorkflow }) {
               {items.map((item) => {
                 const canvas = isCanvasWorkflow(item)
                 const active = canvas ? item.asset_count > 0 : item.has_script
-                const status = item.cover_pending && !canvas ? tv('封面生成中', 'Đang tạo ảnh bìa') : active ? (canvas ? tv('创作中', 'Đang sáng tạo') : tv('已写剧本', 'Đã viết kịch bản')) : (canvas ? tv('空画布', 'Canvas trống') : tv('构思中', 'Đang lên ý tưởng'))
+                const status = item.cover_pending && !canvas ? tr('dramaListPage.generatingCover') : active ? (canvas ? tr('dramaListPage.progress') : tr('dramaListPage.scriptWritten')) : (canvas ? tr('dramaListPage.emptyCanvas') : tr('dramaListPage.planning'))
                 return <ProjectCard
                   key={item.id}
                   title={item.title}
                   kind={canvas ? 'canvas' : 'drama'}
                   coverUrl={item.cover_url ? resolveDramaMediaUrl(item.cover_url) : undefined}
-                  category={canvas ? tv('自由画布', 'Canvas tự do') : tv(`漫剧项目 · ${item.episode_count} 集`, `Phim truyện · ${item.episode_count} tập`)}
+                  category={canvas ? tr('dramaListPage.freeCanvas') : tr('dramaListPage.dramaEpisodes', { episode_count: item.episode_count })}
                   status={{ label: status, tone: active || item.cover_pending ? 'producing' : 'draft' }}
-                  description={item.description || (canvas ? tv('在画布中添加图片、视频与灵感，展开自由创作。', 'Thêm hình ảnh, video và cảm hứng vào canvas, mở ra sáng tạo tự do.') : tv('从故事到分镜，在项目中继续完善你的作品。', 'Từ câu chuyện đến phân cảnh, tiếp tục hoàn thiện tác phẩm của bạn trong dự án.'))}
+                  description={item.description || (canvas ? tr('dramaListPage.addImagesVideosIdeasCanvas') : tr('dramaListPage.storyShotsKeepRefiningWork'))}
                   meta={<>
                     <span className="pf-project-list-card-meta"><Layers size={14} aria-hidden />{formatDramaCardMeta(item)}</span>
-                    <span title={canvasMode ? t('canvasList.usageTitle') : tv('本剧累计费用与生成次数', 'Tổng chi phí và số lần tạo của phim này')}>{formatDramaUsageBrief(item.usage)}</span>
+                    <span title={canvasMode ? t('canvasList.usageTitle') : tr('dramaListPage.totalCostGenerationsDrama')}>{formatDramaUsageBrief(item.usage)}</span>
                   </>}
                   footer={<>
-                    <span><UserRound size={13} aria-hidden />{tv("个人项目", "Dự án cá nhân")}</span>
+                    <span><UserRound size={13} aria-hidden />{tr('dramaListPage.personalProject')}</span>
                     <time dateTime={item.updated_at || item.created_at}>{formatUpdatedAt(item.updated_at || item.created_at)}</time>
                   </>}
                   menu={<DramaProjectCardMenu
@@ -332,9 +332,9 @@ function DramaListInner({ workflow }: { workflow: DramaWorkflow }) {
                     onDelete={() => void handleDeleteOne(item)}
                     onPublish={capabilities?.enabled ? () => setPublishProjectId(item.id) : undefined}
                   />}
-                  selection={{ checked: selected.has(item.id), visible: selectionMode, onChange: () => toggleSelect(item.id), label: tv(`选择 ${item.title}`, `Chọn ${item.title}`) }}
+                  selection={{ checked: selected.has(item.id), visible: selectionMode, onChange: () => toggleSelect(item.id), label: tr('dramaListPage.select', { title: item.title }) }}
                   onOpen={() => openProject(item)}
-                  openLabel={selectionMode ? tv(`切换选择 ${item.title}`, `Bật/tắt chọn ${item.title}`) : tv(`打开 ${item.title}`, `Mở ${item.title}`)}
+                  openLabel={selectionMode ? tr('dramaListPage.toggleSelection', { title: item.title }) : tr('dramaListPage.open', { title: item.title })}
                 />
               })}
             </ProjectGrid>
@@ -358,14 +358,14 @@ function DramaListInner({ workflow }: { workflow: DramaWorkflow }) {
         {selected.size > 0 ? (
           <div className="drama-project-selection-bar">
             <div className="drama-project-selection-inner">
-              <span>{tv("已选择", "Đã chọn")} {selected.size} {tv("个项目", "dự án")}</span>
+              <span>{tr('dramaListPage.selected')} {selected.size} {tr('dramaListPage.projects')}</span>
               <button
                 type="button"
                 className="drama-project-selection-cancel"
                 disabled={deleting}
                 onClick={() => setSelected(new Set())}
               >
-                {tv("取消选择", "Bỏ chọn")}
+                {tr('dramaListPage.clearSelection')}
               </button>
               <button
                 type="button"
@@ -374,7 +374,7 @@ function DramaListInner({ workflow }: { workflow: DramaWorkflow }) {
                 onClick={() => void handleDeleteSelected()}
               >
                 <Trash2 size={16} strokeWidth={1.8} />
-                {deleting ? tv('删除中…', 'Đang xóa…') : tv('删除', 'Xóa')}
+                {deleting ? tr('dramaListPage.deleting') : tr('dramaListPage.delete')}
               </button>
             </div>
           </div>

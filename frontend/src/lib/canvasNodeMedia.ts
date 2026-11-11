@@ -1,6 +1,6 @@
 /** 画布节点媒体：识别可播放类型与下载文件名 */
 import { fetchMediaBlob, triggerBlobDownload } from './clientDownload'
-import { tv } from '../i18n/tv'
+import { tr } from '../i18n/translate.ts'
 
 const VIDEO_EXT = /\.(mp4|webm|mov)(\?|#|$)/i
 const AUDIO_EXT = /\.(mp3|wav|m4a|aac|ogg|flac|webm)(\?|#|$)/i
@@ -28,12 +28,12 @@ export function isAudioUrl(url: string) {
 
 /** 从展示名生成安全文件名主干 */
 export function sanitizeMediaBasename(label: string) {
-  const cleaned = (label || tv('未命名', 'Chưa đặt tên'))
+  const cleaned = (label || tr('canvasNodeMedia.untitled'))
     .replace(/[<>:"/\\|?*\x00-\x1f]+/g, '_')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 60)
-  return cleaned || tv('未命名', 'Chưa đặt tên')
+  return cleaned || tr('canvasNodeMedia.untitled')
 }
 
 /** 从 URL 推断扩展名 */

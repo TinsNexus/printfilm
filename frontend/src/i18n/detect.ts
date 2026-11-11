@@ -18,14 +18,15 @@ export const LOCALE_DATE: Record<Locale, string> = {
   vi: 'vi-VN',
 }
 
-// 当前生效语言（供非 React 工具函数读取）；模块加载时即按本地偏好/浏览器语言初始化，保证顶层常量里的 tv() 取到正确语言
+// 当前生效语言（供非 React 工具函数读取）；模块加载时即按本地偏好/浏览器语言初始化，保证模块级 tr() 取到正确语言
 let activeLocale: Locale = initialLocale()
 
 function initialLocale(): Locale {
   try {
     const raw = typeof localStorage === 'undefined' ? null : localStorage.getItem(LOCALE_STORAGE_KEY)
     if (raw === 'zh' || raw === 'en' || raw === 'vi') return raw
-    if (typeof navigator === 'undefined') return 'zh'
+    // 非浏览器环境（node 单测）没有 window：固定中文，避免 Node 自带的 navigator.language 把文案切成英文
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') return 'zh'
     return localeFromBrowser(navigator.language || navigator.languages?.[0] || 'zh')
   } catch {
     return 'zh'

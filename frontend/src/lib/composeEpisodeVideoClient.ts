@@ -4,7 +4,7 @@ import type { DramaFragment } from '../api/drama'
 import { dramaApi, resolveDramaMediaUrl } from '../api/drama'
 import { fetchMediaBlob } from './clientDownload'
 import { sanitizeMediaBasename } from './canvasNodeMedia'
-import { tv } from '../i18n/tv'
+import { tr } from '../i18n/translate.ts'
 
 export type EpisodeComposeClip = {
   id: number
@@ -26,7 +26,7 @@ export function listEpisodeComposeClips(fragments: DramaFragment[]): EpisodeComp
     if (!url || fragment.id == null) return
     clips.push({
       id: fragment.id,
-      label: tv(`分镜${index + 1}`, `Phân cảnh ${index + 1}`),
+      label: tr('composeEpisodeVideoClient.shot', { n: index + 1 }),
       url,
     })
   })
@@ -35,7 +35,8 @@ export function listEpisodeComposeClips(fragments: DramaFragment[]): EpisodeComp
 
 /** 全片下载文件名 */
 export function episodeComposeFilename(episodeName: string) {
-  return tv(`${sanitizeMediaBasename(episodeName || '本集')}_全片.mp4`, `${sanitizeMediaBasename(episodeName || '本集')}_toàn phim.mp4`)
+  const base = sanitizeMediaBasename(episodeName || tr('composeEpisodeVideoClient.episode'))
+  return tr('composeEpisodeVideoClient.fullMp4', { base })
 }
 
 /** 服务端统一重编码拼接并拉回 Blob */
@@ -50,7 +51,7 @@ async function composeEpisodeVideoServer(
     clips.map((c) => c.id),
   )
   const url = resolveDramaMediaUrl(result.video_url)
-  if (!url) throw new Error(tv('服务端合成未返回可下载地址', 'Ghép phía máy chủ không trả về địa chỉ tải xuống'))
+  if (!url) throw new Error(tr('composeEpisodeVideoClient.serverSideCompositingReturnedNo'))
   const blob = await fetchMediaBlob(url)
   onProgress?.({ phase: 'server', done: clips.length, total: clips.length })
   return blob
@@ -63,7 +64,7 @@ export async function composeEpisodeVideoClient(
   options?: { episodeId?: number },
 ): Promise<Blob> {
   if (clips.length === 0) {
-    throw new Error(tv('本集还没有可拼接的分镜视频', 'Tập này chưa có video phân cảnh để ghép'))
+    throw new Error(tr('composeEpisodeVideoClient.episodeHasNoShotVideos'))
   }
 
   const buffers: Uint8Array[] = new Array(clips.length)
@@ -87,7 +88,7 @@ export async function composeEpisodeVideoClient(
   const names = clips.map((clip) => clip.label)
   for (let i = 0; i < buffers.length; i++) {
     if (!isMp4(buffers[i])) {
-      throw new Error(tv(`${names[i]} 不是可拼接的 MP4`, `${names[i]} không phải MP4 có thể ghép`))
+      throw new Error(tr('composeEpisodeVideoClient.notMp4CanJoined', { p: names[i] }))
     }
   }
   const compat = mp4Compat(buffers, { names })
@@ -97,10 +98,9 @@ export async function composeEpisodeVideoClient(
       // Seedance 各镜 HEVC SPS/PPS 常不一致，服务端统一重编码即可
       return composeEpisodeVideoServer(episodeId, clips, onProgress)
     }
+    const reason = compat.reason ? `（${compat.reason}）` : ''
     throw new Error(
-      tv(`各镜编码不一致，无法在浏览器里无损拼接。请用同一模型、比例和清晰度生成后再试。${
-        compat.reason ? `（${compat.reason}）` : ''
-      }`, `Mã hóa giữa các cảnh không đồng nhất, không thể ghép không suy hao trong trình duyệt. Vui lòng tạo bằng cùng model, tỷ lệ và độ nét rồi thử lại. ${compat.reason ? `（${compat.reason}）` : ''}`),
+      tr('composeEpisodeVideoClient.shotsUseDifferentEncodingsSo', { reason }),
     )
   }
   const merged = concatMp4(buffers)

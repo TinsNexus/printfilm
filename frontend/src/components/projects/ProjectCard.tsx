@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { ArrowUpRight, Clapperboard, LayoutGrid } from 'lucide-react'
 import './project-card.css'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 
 export type ProjectCardProps = {
   title: string
@@ -27,7 +27,7 @@ export function ProjectCard({ title, coverUrl, kind, category, status, descripti
   const ratio = progress && progress.total > 0 ? Math.max(0, Math.min(100, progress.value / progress.total * 100)) : 0
   return (
     <article className={`pf-shared-project-card pf-shared-project-card--${kind}${selection?.checked ? ' is-selected' : ''} ${className}`}>
-      <button type="button" className="pf-shared-project-open-target" aria-label={openLabel || tv(`打开 ${title}`, `Mở ${title}`)} title={title} onClick={onOpen} />
+      <button type="button" className="pf-shared-project-open-target" aria-label={openLabel || tr('projectCard.open', { title })} title={title} onClick={onOpen} />
       <div className={`pf-shared-project-cover${coverUrl ? ' has-image' : ''}`}>
         {coverUrl ? <img src={coverUrl} alt="" loading="lazy" /> : <Mark className="pf-shared-project-cover-mark" size={104} strokeWidth={0.8} aria-hidden="true" />}
         <span className="pf-shared-project-cover-shade" />

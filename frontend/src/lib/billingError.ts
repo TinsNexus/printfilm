@@ -1,7 +1,7 @@
-import { pointText, points } from './points'
+import { points } from './points'
 import { dialog } from './dialog'
 import { workspaceScope } from '../features/teams/workspaceScope'
-import { tv } from '../i18n/tv'
+import { tr } from '../i18n/translate.ts'
 
 export const PRICING_PATH = '/pricing'
 
@@ -28,14 +28,14 @@ export async function handleBillingError(
   const message = err instanceof Error ? err.message : String(err || '')
   if (!isBillingError(message)) return false
   if (workspaceScope.teamId !== null) {
-    await dialog.alert({ title: tv('团队消费受限', 'Chi tiêu nhóm bị giới hạn'), message: tv(`${message}。请在团队钱包查看本人额度；团队余额与充值由所有者管理。`, `${message}. Vui lòng xem hạn mức của bạn trong ví nhóm; số dư và nạp tiền của nhóm do chủ sở hữu quản lý.`), confirmText: tv('知道了', 'Đã hiểu') })
+    await dialog.alert({ title: tr('billingError.teamSpendingLimited'), message: tr('billingError.checkLimitTeamWalletTeam', { message }), confirmText: tr('billingError.got') })
     return true
   }
   const go = await dialog.confirm({
-    title: pointText('积分不足', 'Insufficient Points'),
-    message: pointText('当前积分不足以开始生成，请先充值。', 'You do not have enough Points. Please top up to continue.'),
-    confirmText: pointText('去充值', 'Top up'),
-    cancelText: pointText('知道了', 'OK'),
+    title: tr('billingError.insufficientPoints'),
+    message: tr('billingError.doNotHaveEnoughPoints'),
+    confirmText: tr('billingError.topUp'),
+    cancelText: tr('billingError.ok'),
     tone: 'danger',
   })
   if (go) {
@@ -59,5 +59,5 @@ export function billingPointsMessage(message: string): string {
   const match = message.match(/^余额不足：需要 ¥(\d+\.\d{2})，当前 ¥(\d+\.\d{2})，请先充值$/)
   if (!match) return message
   const units = (value: string) => Number(value.replace('.', ''))
-  return pointText(`积分不足：需要 ${points(units(match[1]))}，当前 ${points(units(match[2]))}，请先充值`, `Insufficient Points: required ${points(units(match[1]))}, available ${points(units(match[2]))}. Please top up.`)
+  return tr('billingError.insufficientPointsRequiredAvailablePlease', { p: points(units(match[1])), p2: points(units(match[2])) })
 }

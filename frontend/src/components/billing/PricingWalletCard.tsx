@@ -1,9 +1,10 @@
-import { points, pointText } from '../../lib/points'
+import { points } from '../../lib/points'
 import { ArrowUpRight, Eye, EyeOff, RefreshCw, WalletCards } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { UsageSummary, Wallet } from '../../api'
 import { useI18n } from '../../i18n'
+import { tr } from '../../i18n/translate.ts'
 
 type Props = {
   wallet: Wallet | null
@@ -61,20 +62,20 @@ export default function PricingWalletCard({ wallet, usage, loggedIn, updatedAt, 
       </div>
 
       <strong className={`pf-pricing-wallet-dark-balance${loading && !hasBalance ? ' is-loading' : ''}`} aria-label={loading && !hasBalance ? t('pricing.loadingWallet') : undefined}>
-        {hasBalance ? (balanceVisible ? points(balanceYuan) : pointText('**** 积分', '**** Points')) : '—'}
+        {hasBalance ? (balanceVisible ? points(balanceYuan) : tr('pricingWalletCard.points')) : '—'}
       </strong>
 
       <dl className="pf-pricing-wallet-dark-meta">
         <div>
           <dt>{t('pricing.monthCharge')}</dt>
-          <dd>{loggedIn && usage ? (balanceVisible ? points(monthCharge) : pointText('**** 积分', '**** Points')) : '—'}</dd>
+          <dd>{loggedIn && usage ? (balanceVisible ? points(monthCharge) : tr('pricingWalletCard.points2')) : '—'}</dd>
         </div>
         <div>
           <dt>{t('pricing.frozenLabel')}</dt>
-          <dd>{hasBalance ? (balanceVisible ? points(frozenYuan) : pointText('**** 积分', '**** Points')) : '—'}</dd>
+          <dd>{hasBalance ? (balanceVisible ? points(frozenYuan) : tr('pricingWalletCard.points3')) : '—'}</dd>
         </div>
-        {wallet?.debt_fen !== undefined && <div><dt>{pointText('欠费', 'Debt')}</dt><dd>{balanceVisible ? points(wallet.debt_fen) : '****'}</dd></div>}
-        {wallet?.spendable_fen !== undefined && <div><dt>{pointText('实际可消费', 'Spendable')}</dt><dd>{balanceVisible ? points(wallet.spendable_fen) : '****'}</dd></div>}
+        {wallet?.debt_fen !== undefined && <div><dt>{tr('pricingWalletCard.debt')}</dt><dd>{balanceVisible ? points(wallet.debt_fen) : '****'}</dd></div>}
+        {wallet?.spendable_fen !== undefined && <div><dt>{tr('pricingWalletCard.spendable')}</dt><dd>{balanceVisible ? points(wallet.spendable_fen) : '****'}</dd></div>}
       </dl>
 
       {!loggedIn ? (

@@ -4,7 +4,7 @@ import { useMarketplaceLocale } from '../../features/marketplace/useMarketplaceL
 import { useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { MoreHorizontal } from 'lucide-react'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 
 type Props = {
   onRename: () => void
@@ -92,7 +92,7 @@ export function DramaProjectCardMenu({ onRename, onDelete, onPublish }: Props) {
       <button
         type="button"
         className="drama-project-row-more-btn"
-        aria-label={tv("更多操作", "Thao tác khác")}
+        aria-label={tr('dramaProjectCardMenu.moreActions')}
         aria-expanded={open}
         aria-haspopup="menu"
         onClick={(event) => {
@@ -124,7 +124,7 @@ export function DramaProjectCardMenu({ onRename, onDelete, onPublish }: Props) {
               closeThenRun(onRename)
             }}
           >
-            {tv("重命名", "Đổi tên")}
+            {tr('dramaProjectCardMenu.rename')}
           </button>
           <button
             type="button"
@@ -141,7 +141,7 @@ export function DramaProjectCardMenu({ onRename, onDelete, onPublish }: Props) {
               closeThenRun(onDelete)
             }}
           >
-            {tv("删除", "Xóa")}
+            {tr('dramaProjectCardMenu.delete')}
           </button>
         </div>
       ) : null}

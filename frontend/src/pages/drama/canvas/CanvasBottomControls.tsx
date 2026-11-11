@@ -3,7 +3,7 @@ import { useCallback, useState } from 'react'
 import { LocateFixed, Magnet, Map, Minus, Plus, Redo2, Scan, Undo2 } from 'lucide-react'
 import { useOnViewportChange, useReactFlow } from '@xyflow/react'
 import { useCanvasStore } from './CanvasStore'
-import { tv } from '../../../i18n/tv'
+import { tr } from '../../../i18n/translate.ts'
 
 /** 渲染画布左下角控制条 */
 export function CanvasBottomControls() {
@@ -37,8 +37,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className="fc-icon-btn is-sm"
-          aria-label={tv("撤销", "Hoàn tác")}
-          title={tv("撤销", "Hoàn tác")}
+          aria-label={tr('canvasBottomControls.undo')}
+          title={tr('canvasBottomControls.undo')}
           disabled={!canUndo}
           onClick={undo}
         >
@@ -47,8 +47,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className="fc-icon-btn is-sm"
-          aria-label={tv("重做", "Làm lại")}
-          title={tv("重做", "Làm lại")}
+          aria-label={tr('canvasBottomControls.redo')}
+          title={tr('canvasBottomControls.redo')}
           disabled={!canRedo}
           onClick={redo}
         >
@@ -60,8 +60,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className="fc-icon-btn is-sm"
-          aria-label={tv("定位到内容", "Định vị đến nội dung")}
-          title={tv("定位到内容", "Định vị đến nội dung")}
+          aria-label={tr('canvasBottomControls.goContent')}
+          title={tr('canvasBottomControls.goContent')}
           onClick={() => void fitView({ duration: 200 })}
         >
           <LocateFixed size={16} strokeWidth={1.8} />
@@ -69,8 +69,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className="fc-icon-btn is-sm"
-          aria-label={tv("适应画布", "Vừa canvas")}
-          title={tv("适应画布", "Vừa canvas")}
+          aria-label={tr('canvasBottomControls.fitView')}
+          title={tr('canvasBottomControls.fitView')}
           onClick={() => void fitView({ duration: 200, padding: 0.2 })}
         >
           <Scan size={16} strokeWidth={1.8} />
@@ -81,8 +81,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className={`fc-icon-btn is-sm${snapToGrid ? ' is-active' : ''}`}
-          aria-label={snapToGrid ? tv('关闭网格吸附', 'Tắt bám lưới') : tv('开启网格吸附', 'Bật bám lưới')}
-          title={snapToGrid ? tv('关闭网格吸附', 'Tắt bám lưới') : tv('开启网格吸附', 'Bật bám lưới')}
+          aria-label={snapToGrid ? tr('canvasBottomControls.turnOffGridSnapping') : tr('canvasBottomControls.turnGridSnapping')}
+          title={snapToGrid ? tr('canvasBottomControls.turnOffGridSnapping') : tr('canvasBottomControls.turnGridSnapping')}
           aria-pressed={snapToGrid}
           onClick={toggleSnapToGrid}
         >
@@ -91,8 +91,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className={`fc-icon-btn is-sm${showMinimap ? ' is-active' : ''}`}
-          aria-label={showMinimap ? tv('关闭小地图', 'Tắt bản đồ nhỏ') : tv('开启小地图', 'Bật bản đồ nhỏ')}
-          title={showMinimap ? tv('关闭小地图', 'Tắt bản đồ nhỏ') : tv('开启小地图', 'Bật bản đồ nhỏ')}
+          aria-label={showMinimap ? tr('canvasBottomControls.hideMinimap') : tr('canvasBottomControls.showMinimap')}
+          title={showMinimap ? tr('canvasBottomControls.hideMinimap') : tr('canvasBottomControls.showMinimap')}
           aria-pressed={showMinimap}
           onClick={toggleMinimap}
         >
@@ -104,8 +104,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className="fc-icon-btn is-sm"
-          aria-label={tv("缩小", "Thu nhỏ")}
-          title={tv("缩小", "Thu nhỏ")}
+          aria-label={tr('canvasBottomControls.zoomOut')}
+          title={tr('canvasBottomControls.zoomOut')}
           onClick={() => zoomOut({ duration: 150 })}
         >
           <Minus size={16} strokeWidth={1.8} />
@@ -113,8 +113,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className="fc-zoom-label"
-          aria-label={tv("重置缩放", "Đặt lại thu phóng")}
-          title={tv("重置缩放", "Đặt lại thu phóng")}
+          aria-label={tr('canvasBottomControls.resetZoom')}
+          title={tr('canvasBottomControls.resetZoom')}
           onClick={handleResetZoom}
         >
           {zoomPercent}%
@@ -122,8 +122,8 @@ export function CanvasBottomControls() {
         <button
           type="button"
           className="fc-icon-btn is-sm"
-          aria-label={tv("放大", "Phóng to")}
-          title={tv("放大", "Phóng to")}
+          aria-label={tr('canvasBottomControls.zoom')}
+          title={tr('canvasBottomControls.zoom')}
           onClick={() => zoomIn({ duration: 150 })}
         >
           <Plus size={16} strokeWidth={1.8} />

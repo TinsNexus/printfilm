@@ -4,7 +4,7 @@ import { useTeamReadOnly } from '../../../features/teams/readOnlyContext'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import { Clapperboard, Plus } from 'lucide-react'
 import type { EpisodeFragmentNodeData } from './buildEpisodeFlow'
-import { tv } from '../../../i18n/tv'
+import { tr } from '../../../i18n/translate.ts'
 
 type Props = NodeProps<Node<EpisodeFragmentNodeData>> & {
   onPromptChange?: (fragmentId: number, content: string) => void
@@ -38,15 +38,15 @@ function EpisodeFragmentNodeComponent({
           <button
             type="button"
             className="ep-frag-link-btn nodrag nopan"
-            title={tv("关联出境资产", "Tài sản xuất hiện liên kết")}
-            aria-label={tv("关联出境资产", "Tài sản xuất hiện liên kết")}
+            title={tr('episodeFragmentNode.linkedScreenAssets')}
+            aria-label={tr('episodeFragmentNode.linkedScreenAssets')}
             disabled={readOnly}
             onClick={() => onRequestLinkAsset?.(data.fragmentId)}
           >
             <Plus size={14} strokeWidth={2} />
           </button>
         ) : (
-          <em className="ep-frag-link-count">{data.linkedCount || 0} {tv("资产", "Tài sản")}</em>
+          <em className="ep-frag-link-count">{data.linkedCount || 0} {tr('episodeFragmentNode.asset')}</em>
         )}
       </div>
 
@@ -64,26 +64,26 @@ function EpisodeFragmentNodeComponent({
           <img src={media} alt="" draggable={false} />
         ) : (
           <div className="ep-frag-media-empty">
-            <span>{tv("暂无成片", "Chưa có phim")}</span>
-            <small>{tv("生成后显示在此", "Sau khi tạo sẽ hiển thị ở đây")}</small>
+            <span>{tr('episodeFragmentNode.noVideoYet')}</span>
+            <small>{tr('episodeFragmentNode.appearsHereAfterGeneration')}</small>
           </div>
         )}
       </div>
 
       <div className="ep-frag-prompt">
-        <label>{tv("提示词", "Prompt")}</label>
+        <label>{tr('episodeFragmentNode.prompt')}</label>
         {selected ? (
           <textarea
             className="ep-frag-prompt-input nodrag nowheel"
             value={data.content}
             readOnly={readOnly}
             onChange={handlePromptChange}
-            placeholder={tv("分镜脚本 / Seedance 提示词…", "Kịch bản phân cảnh / prompt Seedance…")}
+            placeholder={tr('episodeFragmentNode.shotScriptSeedancePrompt')}
             rows={5}
           />
         ) : (
           <p className="ep-frag-prompt-text">
-            {(data.content || '').trim() || tv('（空提示词）', '(Prompt trống)')}
+            {(data.content || '').trim() || tr('episodeFragmentNode.emptyPrompt')}
           </p>
         )}
       </div>

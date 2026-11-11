@@ -1,4 +1,5 @@
 /** Tiếng Việt: trang chủ, trợ giúp, liên hệ, công cụ, bảng giá, lịch sử, danh sách phim truyện */
+import { SUPPORT_EMAIL, SUPPORT_PHONE, SUPPORT_PHONE_HREF, WECHAT_ID } from '../../../lib/siteContact.ts'
 
 export const viPages = {
   home: {
@@ -166,7 +167,7 @@ export const viPages = {
     introLink: 'trung tâm trợ giúp',
     introSuffix: ' trước.',
     formTitle: 'Gửi phản hồi',
-    formLead: 'Bấm gửi sẽ mở ứng dụng thư của bạn với bản nháp gửi tới support@printfilm.com. Vui lòng kiểm tra rồi gửi đi.',
+    formLead: `Bấm gửi sẽ mở ứng dụng thư của bạn với bản nháp gửi tới ${SUPPORT_EMAIL}. Vui lòng kiểm tra rồi gửi đi.`,
     topic: 'Chủ đề',
     email: 'Email của bạn',
     emailPlaceholder: 'Để chúng tôi phản hồi',
@@ -182,26 +183,46 @@ export const viPages = {
     mailEmail: 'Email liên hệ: {email}',
     mailEmailEmpty: '(không cung cấp)',
     mailEmpty: '(không có chi tiết)',
+    copyWechat: 'Sao chép WeChat ID',
+    copied: 'Đã sao chép',
     channels: [
       {
+        id: 'email',
         title: 'Hỗ trợ qua email',
         desc: 'Chúng tôi thường phản hồi trong 1–2 ngày làm việc. Vui lòng ghi rõ email tài khoản và mã đơn hàng nếu có.',
-        href: 'mailto:support@printfilm.com',
-        actionLabel: 'support@printfilm.com',
+        href: `mailto:${SUPPORT_EMAIL}`,
+        actionLabel: SUPPORT_EMAIL,
       },
       {
+        id: 'phone',
+        title: 'Hỗ trợ qua điện thoại',
+        desc: 'Gọi cho chúng tôi vào ngày làm việc để hỏi về tài khoản, nạp tiền hoặc hợp tác.',
+        href: SUPPORT_PHONE_HREF,
+        actionLabel: SUPPORT_PHONE,
+      },
+      {
+        id: 'wechat',
+        title: 'Hỗ trợ qua WeChat',
+        desc: 'Khi kết bạn WeChat, hãy ghi chú PRINTFILM và nội dung cần hỏi để được kết nối nhanh.',
+        copyText: WECHAT_ID,
+        actionLabel: WECHAT_ID,
+      },
+      {
+        id: 'help',
         title: 'Trung tâm trợ giúp',
         desc: 'Thanh toán, tải xuống, phim truyện và công cụ đều có trong phần trợ giúp tự phục vụ.',
         href: '/help',
         actionLabel: 'Đến trang trợ giúp',
       },
       {
+        id: 'enterprise',
         title: 'Doanh nghiệp / chuyển khoản',
         desc: 'Với tín dụng số lượng lớn, hợp tác doanh nghiệp hoặc hóa đơn, hãy email tên công ty và yêu cầu của bạn.',
-        href: 'mailto:support@printfilm.com?subject=PRINTFILM%20Enterprise',
+        href: `mailto:${SUPPORT_EMAIL}?subject=PRINTFILM%20Enterprise`,
         actionLabel: 'Email bộ phận hợp tác',
       },
       {
+        id: 'github',
         title: 'Mã nguồn mở',
         desc: 'Mã nguồn, issue và tài liệu triển khai có trên GitHub. Hoan nghênh star, issue và PR.',
         href: 'https://github.com/yi1108/printfilm',

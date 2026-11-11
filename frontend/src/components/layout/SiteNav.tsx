@@ -18,7 +18,7 @@ import LanguageSwitch from './LanguageSwitch'
 import AccountMenu from './AccountMenu'
 import { useTeamPreview } from '../../features/teams/useTeamPreview'
 import { useMarketplace } from '../../features/marketplace/hooks'
-import { tv } from '../../i18n/tv'
+import { tr } from '../../i18n/translate.ts'
 
 export type { NavActive } from '../../lib/siteNavigation'
 
@@ -50,7 +50,7 @@ export default function SiteNav({ active }: Props) {
   const current = resolveNavActive(location.pathname, active)
   const inMarketplace = location.pathname === '/marketplace' || location.pathname.startsWith('/marketplace/')
   const currentItem = [HOME_NAV, ...CREATION_NAV, ...RESOURCE_NAV, ...PERSONAL_NAV].find((item) => item.key === current)
-  const currentLabel = inMarketplace ? (locale === 'vi' ? 'Chợ tài sản số' : locale === 'en' ? 'Marketplace' : tv('数字资产市场', 'Chợ tài sản số')) : currentItem ? t(currentItem.label) : current ? t(`nav.${current === 'settings' ? 'profile' : current}`) : t('nav.home')
+  const currentLabel = inMarketplace ? tr('siteNav.digitalAssetMarket') : currentItem ? t(currentItem.label) : current ? t(`nav.${current === 'settings' ? 'profile' : current}`) : t('nav.home')
 
   /** 产品菜单与头像菜单互斥，回调保持稳定以免重复移动焦点。 */
   const changeAccountOpen = useCallback((open: boolean) => {
@@ -201,7 +201,7 @@ export default function SiteNav({ active }: Props) {
     if (!marketplace?.enabled) return null
     return <Link to="/marketplace" className={`pf-topbar-link${expanded ? ' pf-topbar-menu-link' : ''}${inMarketplace ? ' is-active' : ''}`} aria-current={inMarketplace ? 'page' : undefined} onClick={() => { selectTeam(null); setMenuOpen(false) }}>
       {expanded && <Store size={18} strokeWidth={1.8} aria-hidden />}
-      <span>{locale === 'vi' ? 'Chợ tài sản số' : locale === 'en' ? 'Marketplace' : tv('数字资产市场', 'Chợ tài sản số')}</span>
+      <span>{tr('siteNav.digitalAssetMarket')}</span>
       {expanded && inMarketplace && <ChevronRight size={15} className="pf-topbar-link-arrow" aria-hidden />}
     </Link>
   }

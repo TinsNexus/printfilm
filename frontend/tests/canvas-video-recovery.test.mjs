@@ -14,6 +14,7 @@ async function loadQueue(api, timers = {}) {
     require(name) {
       if (name === '../api/drama') return { dramaApi: api }
       if (name === './dramaGenQueue') return { syncAssetVideoJobToUnified() {} }
+      if (name === '../i18n/translate.ts') return { tr: (key) => key }
       throw new Error(`Unexpected dependency: ${name}`)
     },
   }

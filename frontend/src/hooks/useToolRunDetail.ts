@@ -4,7 +4,7 @@ import { getGenerationTaskDetail } from '../api/generationTasks'
 import { toolRunDetailAsset } from '../lib/toolRunDetails'
 import { useGenerationText } from '../lib/generationMedia'
 import { subscribeWorkspace, workspaceScope } from '../features/teams/workspaceScope'
-import { tv } from '../i18n/tv'
+import { tr } from '../i18n/translate.ts'
 
 /** 管理选中生成记录及刷新；展示、复制和下载统一交给全局资产详情。 */
 export function useToolRunDetail() {
@@ -35,7 +35,7 @@ export function useToolRunDetail() {
         if (record.status === 'queued' || record.status === 'running') timer = setTimeout(refresh, 5000)
       } catch (cause) {
         if (disposed || epoch !== workspaceScope.epoch) return
-        setError(cause instanceof Error ? cause.message : text(tv('详情更新失败，正在重试', 'Cập nhật chi tiết thất bại, đang thử lại'), 'Could not update details. Retrying.'))
+        setError(cause instanceof Error ? cause.message : tr('useToolRunDetail.failedUpdateDetailsRetrying'))
         timer = setTimeout(refresh, 10000)
       }
     }
