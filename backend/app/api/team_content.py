@@ -24,6 +24,7 @@ class TeamProjectCreate(BaseModel):
     source: str = Field(min_length=20, max_length=100000)
     episode_count: int = Field(default=1, strict=True, ge=1, le=120, description="初始集数，支持 1 至 120 集，后续可在项目中增加分集")
     workflow: Literal["script", "canvas"] = "script"
+    content_language: Literal["zh", "en", "vi"] | None = Field(default=None, description="剧本与资产的生成语言，省略为中文")
 
 
 class TeamAssetCopy(BaseModel):
@@ -65,7 +66,11 @@ async def list_assets(team_id: int, page: int = Query(1, ge=1, description="页�
 async def create_project(team_id: int, body: TeamProjectCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)) -> DramaProjectOut:
     """需要登录且为团队有效成员，根据用户提供的真实创意创建绑定团队的漫剧项目，支持剧本或画布工作流。创建时不自动提交收费生成任务。"""
     from app.api.drama.projects import create_project as create_drama_project
-    return await create_drama_project(DramaProjectCreate(team_id=team_id, **body.model_dump()), db=db, user=user, scope_team_id=team_id)
+    data = body.model_dump()
+    language = data.pop("content_language", None)
+    if language:
+        data["params"] = {"contentLanguage": language}
+    return await create_drama_project(DramaProjectCreate(team_id=team_id, **data), db=db, user=user, scope_team_id=team_id)
 
 
 @router.get(

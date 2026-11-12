@@ -1,4 +1,5 @@
 import type { ImageStyleId } from './dramaImageStyles'
+import type { DramaContentLanguage } from './dramaContentLanguage'
 import { tr } from '../i18n/translate.ts'
 
 export type ProjectCreateKind = 'drama' | 'canvas'
@@ -9,6 +10,8 @@ export type ProjectCreateValues = {
   description: string
   episodeCount: number
   imageStyleId: ImageStyleId | ''
+  /** 剧本与资产的生成语言 */
+  contentLanguage: DramaContentLanguage
 }
 
 export type ProjectCreateDraft = Omit<ProjectCreateValues, 'episodeCount'> & { episodeCount: string }
@@ -45,7 +48,7 @@ export function validateProjectCreate(
   }
 
   return {
-    values: { title, source: kind === 'canvas' ? '' : source, description, episodeCount: kind === 'canvas' ? 1 : episodeCount, imageStyleId: kind === 'canvas' ? '' : draft.imageStyleId },
+    values: { title, source: kind === 'canvas' ? '' : source, description, episodeCount: kind === 'canvas' ? 1 : episodeCount, imageStyleId: kind === 'canvas' ? '' : draft.imageStyleId, contentLanguage: draft.contentLanguage },
     errors,
   }
 }

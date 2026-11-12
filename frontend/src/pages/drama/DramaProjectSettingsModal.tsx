@@ -32,6 +32,10 @@ import {
 import type { DramaProject, DramaScript } from '../../api/drama'
 import { dramaApi } from '../../api/drama'
 import { tr } from '../../i18n/translate.ts'
+import {
+  dramaContentLanguageOptions,
+  readDramaContentLanguage,
+} from '../../lib/dramaContentLanguage'
 
 type Props = {
   open: boolean
@@ -120,6 +124,7 @@ export function DramaProjectSettingsModal({
   const subtitleMode = readEpisodeSubtitleMode(projectParams)
   const characterIntroMode = readEpisodeCharacterIntroMode(projectParams)
   const linkLastFrame = coerceLinkLastFrame(projectParams)
+  const contentLanguage = readDramaContentLanguage(projectParams)
 
   useEffect(() => {
     if (!open || saving) return
@@ -195,6 +200,19 @@ export function DramaProjectSettingsModal({
             options={resolutionOptions.map((r) => ({ value: r as DramaResolution, label: r }))}
             onChange={(res) => void patchProjectParams({ resolution: res })}
           />
+        </section>
+
+        <section className="drama-project-settings-section">
+          <div className="drama-project-settings-head">
+            <h4>{tr('dramaContentLanguage.label')}</h4>
+          </div>
+          <SettingsChoiceRow
+            value={contentLanguage}
+            disabled={saving}
+            options={dramaContentLanguageOptions()}
+            onChange={(lang) => void patchProjectParams({ contentLanguage: lang })}
+          />
+          <p className="drama-muted">{tr('dramaContentLanguage.hint')}</p>
         </section>
 
         <section className="drama-project-settings-section">

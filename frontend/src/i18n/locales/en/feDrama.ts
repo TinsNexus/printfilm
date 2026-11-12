@@ -1,6 +1,14 @@
 /** 英文：前端文案：src/pages/drama */
 
 export const enFeDrama = {
+  dramaContentLanguage: {
+    label: "Generation language",
+    hint: "Scripts, summaries, dialogue and character/scene/prop names are generated in this language. Existing content is not translated; regenerate it to switch.",
+    zh: "中文",
+    en: "English",
+    vi: "Tiếng Việt",
+    saveFailed: "Failed to save generation language",
+  },
   dramaProjectCardMenu: {
     moreActions: "More actions",
     rename: "Rename",

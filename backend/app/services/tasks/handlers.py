@@ -26,6 +26,33 @@ class TaskHandler:
         return [TaskStepCreate(step_key=body.task_type, step_type="job")]
 
 
+async def _drama_task_language(task: TaskRun) -> str:
+    """读任务所属漫剧项目的生成语言；找不到项目时用默认 zh。"""
+    from app.database import AsyncSessionLocal
+    from app.models_drama import DramaEpisode, DramaProject
+    from app.services.drama.content_language import DEFAULT_CONTENT_LANGUAGE, project_content_language
+
+    async with AsyncSessionLocal() as db:
+        project_id = task.drama_project_id
+        if project_id is None and task.episode_id is not None:
+            episode = await db.get(DramaEpisode, int(task.episode_id))
+            project_id = episode.project_id if episode is not None else None
+        project = await db.get(DramaProject, int(project_id)) if project_id is not None else None
+        return project_content_language(project) if project is not None else DEFAULT_CONTENT_LANGUAGE
+
+
+def _with_drama_language(executor: TaskExecutor) -> TaskExecutor:
+    """包一层：执行期间把项目生成语言设进上下文，剧本/资产/分镜提示词据此换语言。"""
+
+    async def run(task: TaskRun) -> dict[str, Any] | None:
+        from app.services.drama.content_language import content_language_scope
+
+        with content_language_scope(await _drama_task_language(task)):
+            return await executor(task)
+
+    return run
+
+
 # 执行漫剧剧本摘要任务。
 async def _run_drama_script_summary(task: TaskRun) -> dict[str, Any] | None:
     from app.services.drama.jobs import run_script_summary_job
@@ -358,13 +385,13 @@ def _require_int(value: int | None, field_name: str) -> int:
 
 TASK_HANDLERS: dict[tuple[str, str], TaskHandler] = {
     ("kepu", "creation_turn"): TaskHandler("kepu", "creation_turn", _run_creation_turn),
-    ("drama", "script_summary"): TaskHandler("drama", "script_summary", _run_drama_script_summary),
-    ("drama", "episode_script"): TaskHandler("drama", "episode_script", _run_drama_episode_script),
-    ("drama", "fragment_plan"): TaskHandler("drama", "fragment_plan", _run_drama_fragment_plan),
+    ("drama", "script_summary"): TaskHandler("drama", "script_summary", _with_drama_language(_run_drama_script_summary)),
+    ("drama", "episode_script"): TaskHandler("drama", "episode_script", _with_drama_language(_run_drama_episode_script)),
+    ("drama", "fragment_plan"): TaskHandler("drama", "fragment_plan", _with_drama_language(_run_drama_fragment_plan)),
     ("drama", "fragment_video"): TaskHandler("drama", "fragment_video", _run_drama_fragment_video),
-    ("drama", "asset_image"): TaskHandler("drama", "asset_image", _run_drama_asset_image),
+    ("drama", "asset_image"): TaskHandler("drama", "asset_image", _with_drama_language(_run_drama_asset_image)),
     ("drama", "asset_video"): TaskHandler("drama", "asset_video", _run_drama_asset_video),
-    ("drama", "seed_assets"): TaskHandler("drama", "seed_assets", _run_drama_seed_assets),
+    ("drama", "seed_assets"): TaskHandler("drama", "seed_assets", _with_drama_language(_run_drama_seed_assets)),
     ("drama", "agent_chat"): TaskHandler("drama", "agent_chat", _noop_ephemeral),
     ("drama", "skill_optimize"): TaskHandler("drama", "skill_optimize", _noop_ephemeral),
     ("drama", "voice_prompt"): TaskHandler("drama", "voice_prompt", _noop_ephemeral),

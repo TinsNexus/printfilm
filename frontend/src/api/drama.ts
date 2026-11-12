@@ -303,6 +303,7 @@ export const dramaApi = {
     episode_count?: number
     image_style_id?: string
     workflow?: 'script' | 'canvas'
+    params?: Record<string, unknown>
   }) =>
     request<DramaProject>('/api/drama/projects', { method: 'POST', body: JSON.stringify(body) }),
   getProject: (id: number) => request<DramaProject>(`/api/drama/projects/${id}`),

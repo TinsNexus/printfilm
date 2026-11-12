@@ -52,7 +52,7 @@ export function CreateTeamProjectModal({ open, onClose, teamId }: { open: boolea
   const navigate = useNavigate()
 
   async function submit(values: ProjectCreateValues) {
-    const id = await createProject(teamId, { title: values.title, description: values.description, source: values.source, episodes: values.episodeCount })
+    const id = await createProject(teamId, { title: values.title, description: values.description, source: values.source, episodes: values.episodeCount, contentLanguage: values.contentLanguage })
     onClose()
     navigate(`/drama/projects/${id}`)
   }

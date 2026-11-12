@@ -23,6 +23,11 @@ import { DramaProjectSettingsModal } from './DramaProjectSettingsModal'
 import { OutlineEpisodePanel } from './OutlineEpisodePanel'
 import { useTeamEditLock } from '../../features/teams/useTeamEditLock'
 import { tr } from '../../i18n/translate.ts'
+import {
+  dramaContentLanguageOptions,
+  readDramaContentLanguage,
+  type DramaContentLanguage,
+} from '../../lib/dramaContentLanguage'
 
 type MetaModalKey = 'source' | 'summary' | 'project'
 
@@ -89,6 +94,7 @@ export function OutlineStep({
         project.params?.episode_count,
     ) || 0
   const imageStyleId = getImageStyleId(script, project)
+  const contentLanguage = readDramaContentLanguage(project.params as Record<string, unknown> | null)
 
   function openSourceModal() {
     setSourceEditing(false)
@@ -391,6 +397,18 @@ export function OutlineStep({
     }
   }
 
+  // 更新生成语言（写入 project.params，之后的摘要/剧本/资产按此语言生成）
+  async function handleContentLanguageChange(lang: DramaContentLanguage) {
+    try {
+      const params = { ...(projectRef.current.params || {}), contentLanguage: lang }
+      const p = await dramaApi.updateProject(projectId, { params })
+      onProjectChange(p)
+    } catch (err) {
+      if (isRequestAborted(err)) return
+      onError(err instanceof Error ? err.message : tr('dramaContentLanguage.saveFailed'))
+    }
+  }
+
   // 进入剧本摘要编辑
   function startSummaryEdit() {
     if (!summary) return
@@ -447,6 +465,18 @@ export function OutlineStep({
             value={(imageStyleId as ImageStyleId | '') || ''}
             onChange={(id) => void handleStyleChange(id)}
           />
+          <label className="drama-style-select">
+            <span>{tr('dramaContentLanguage.label')}</span>
+            <select
+              value={contentLanguage}
+              title={tr('dramaContentLanguage.hint')}
+              onChange={(e) => void handleContentLanguageChange(e.target.value as DramaContentLanguage)}
+            >
+              {dramaContentLanguageOptions().map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </label>
           <span className="drama-outline-toolbar-meta">
             {episodeCount ? tr('outlineStep.episodes', { episodeCount }) : tr('outlineStep.episodeCountTbd')}
             {summaryGenerating || summaryStatus === 'generating'

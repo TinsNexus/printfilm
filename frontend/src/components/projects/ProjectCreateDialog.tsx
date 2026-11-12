@@ -6,6 +6,7 @@ import { DramaImageStyleModal } from '../../pages/drama/DramaImageStyleModal'
 import { PROJECT_EPISODE_MAX, validateProjectCreate, type ProjectCreateConstraints, type ProjectCreateDraft, type ProjectCreateErrors, type ProjectCreateValues } from '../../lib/projectCreateForm'
 import './project-create.css'
 import { tr } from '../../i18n/translate.ts'
+import { defaultDramaContentLanguage, dramaContentLanguageOptions } from '../../lib/dramaContentLanguage'
 
 export type { ProjectCreateValues } from '../../lib/projectCreateForm'
 
@@ -41,7 +42,7 @@ function ProjectCreateDialogForm({
   const formId = useId()
   const canvas = kind === 'canvas'
   /* 保留集数输入原文，允许用户清空后重新输入；提交时统一校验。 */
-  const [draft, setDraft] = useState<ProjectCreateDraft>({ title: canvas ? tr('projectCreateDialog.untitledCanvas') : '', source: '', description: '', imageStyleId: '', episodeCount: '1' })
+  const [draft, setDraft] = useState<ProjectCreateDraft>({ title: canvas ? tr('projectCreateDialog.untitledCanvas') : '', source: '', description: '', imageStyleId: '', episodeCount: '1', contentLanguage: defaultDramaContentLanguage() })
   const [errors, setErrors] = useState<ProjectCreateErrors>({})
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -119,6 +120,7 @@ function ProjectCreateDialogForm({
             <div className="pf-project-create-episode-input"><input id={`${formId}-episodeCount`} type="number" inputMode="numeric" min={1} max={PROJECT_EPISODE_MAX} step={1} value={draft.episodeCount} disabled={busy} onChange={(event) => update('episodeCount', event.target.value)} aria-invalid={!!errors.episodeCount} aria-describedby={`${formId}-episodeCount-hint${errors.episodeCount ? ` ${formId}-episodeCount-error` : ''}`} required /><span>{tr('projectCreateDialog.episodes')}</span></div>
             <p id={`${formId}-episodeCount-hint`}>{tr('projectCreateDialog.customCountsSupportedCanAdd')}</p>{fieldError('episodeCount')}
           </div>
+          <div className="pf-project-create-style"><span className="pf-project-create-label">{tr('dramaContentLanguage.label')}</span><div className="pf-project-create-episode-presets" role="group" aria-label={tr('dramaContentLanguage.label')}>{dramaContentLanguageOptions().map((opt) => <button key={opt.value} type="button" aria-pressed={draft.contentLanguage === opt.value} disabled={busy} onClick={() => update('contentLanguage', opt.value)}>{opt.label}</button>)}</div><p>{tr('dramaContentLanguage.hint')}</p></div>
           {allowImageStyle && <div className="pf-project-create-style"><span className="pf-project-create-label"><Sparkles size={14} aria-hidden />{tr('projectCreateDialog.visualStyle')}<small>{tr('projectCreateDialog.optional')}</small></span><DramaImageStyleModal value={draft.imageStyleId} onChange={(value) => update('imageStyleId', value)} disabled={busy} variant="field" fieldLabel="" emptyLabel={tr('projectCreateDialog.chooseVisualStyle')} /><p>{tr('projectCreateDialog.setOneVisualDirectionCharacters')}</p></div>}
         </aside>}
       </div>

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { validateProjectCreate } from '../src/lib/projectCreateForm.ts'
 
-const draft = (overrides = {}) => ({ title: '', source: '一个年轻的邮差在雨夜收到一封写给未来自己的信。', description: '', imageStyleId: '', episodeCount: '1', ...overrides })
+const draft = (overrides = {}) => ({ title: '', source: '一个年轻的邮差在雨夜收到一封写给未来自己的信。', description: '', imageStyleId: '', episodeCount: '1', contentLanguage: 'zh', ...overrides })
 
 test('personal drama accepts an optional name, trims fields, and starts with one episode', () => {
   const { values, errors } = validateProjectCreate(draft({ source: `  ${draft().source}  `, description: '  一封来信  ' }), { kind: 'drama' })

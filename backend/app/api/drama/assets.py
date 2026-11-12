@@ -24,6 +24,7 @@ from app.schemas_drama import (
     DramaAssetUpdate,
     SeedAssetsFromScriptOut,
 )
+from app.services.drama.content_language import content_language_scope, project_content_language
 from app.services.drama.access import get_owned_asset, get_owned_drama_project
 from app.services.drama.asset_reference_views import asset_reference_view
 from app.services.teams.write_access import workspace_team
@@ -466,12 +467,13 @@ async def seed_assets(
     try:
         async def _do_sync_seed():
             project_inner = await get_owned_drama_project(db, project_id, user, with_script=True)
-            seed_result = await seed_assets_from_script(
-                db,
-                project_inner,
-                refresh_prompts=refresh_prompts,
-                reextract_props=reextract_props,
-            )
+            with content_language_scope(project_content_language(project_inner)):
+                seed_result = await seed_assets_from_script(
+                    db,
+                    project_inner,
+                    refresh_prompts=refresh_prompts,
+                    reextract_props=reextract_props,
+                )
             await record_seed_assets_llm_usage(db, user, project_id, seed_result)
             return seed_result
 

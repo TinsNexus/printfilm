@@ -144,6 +144,7 @@ function DramaListInner({ workflow }: { workflow: DramaWorkflow }) {
       description: values.description || undefined,
       episode_count: canvasMode ? 1 : values.episodeCount,
       image_style_id: !canvasMode && values.imageStyleId ? values.imageStyleId : undefined,
+      params: canvasMode ? undefined : { contentLanguage: values.contentLanguage },
       workflow,
     })
     setShowCreate(false)

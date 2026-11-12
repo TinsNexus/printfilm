@@ -7,6 +7,7 @@ import logging
 import re
 from typing import Any
 
+from app.services.drama.content_language import language_directive
 from app.services.llm_client import (
     DEFAULT_MAX_TOKENS,
     LlmUnavailableError,
@@ -88,6 +89,7 @@ async def drama_chat_json(
     max_tokens: int = DEFAULT_MAX_TOKENS,
 ) -> Any:
     """Call text LLM and parse JSON from the reply."""
+    system = (system or "") + language_directive()
     system, user = _ensure_json_word_in_prompt(system, user)
     json_format = {"type": "json_object"}
     try:
@@ -145,7 +147,7 @@ async def drama_chat_text(
 ) -> str:
     """Call text LLM and return plain text."""
     return await chat_completions(
-        system,
+        (system or "") + language_directive(),
         user,
         temperature=temperature,
         max_tokens=max_tokens,

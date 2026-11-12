@@ -1,6 +1,14 @@
 /** 中文：前端文案：src/pages/drama */
 
 export const zhFeDrama = {
+  dramaContentLanguage: {
+    label: "生成语言",
+    hint: "剧本、摘要、台词以及角色/场景/道具名称按此语言生成；已生成的内容不会自动翻译，需重新生成。",
+    zh: "中文",
+    en: "English",
+    vi: "Tiếng Việt",
+    saveFailed: "生成语言保存失败",
+  },
   dramaProjectCardMenu: {
     moreActions: "更多操作",
     rename: "重命名",

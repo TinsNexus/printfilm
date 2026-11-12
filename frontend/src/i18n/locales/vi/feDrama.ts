@@ -1,6 +1,14 @@
 /** 越南语：前端文案：src/pages/drama */
 
 export const viFeDrama = {
+  dramaContentLanguage: {
+    label: "Ngôn ngữ tạo",
+    hint: "Kịch bản, tóm tắt, lời thoại và tên nhân vật/bối cảnh/đạo cụ sẽ được tạo bằng ngôn ngữ này. Nội dung đã tạo không tự dịch, cần tạo lại để đổi.",
+    zh: "中文",
+    en: "English",
+    vi: "Tiếng Việt",
+    saveFailed: "Lưu ngôn ngữ tạo thất bại",
+  },
   dramaProjectCardMenu: {
     moreActions: "Thao tác khác",
     rename: "Đổi tên",
