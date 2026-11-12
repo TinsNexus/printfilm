@@ -37,5 +37,6 @@ export const enFeCommon = {
     untitled: "Untitled",
     voice: "voice",
     asset: "asset",
+    registrationClosed: "Sign-up is currently closed. Contact an administrator for an account.",
   },
 } as const;

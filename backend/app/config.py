@@ -227,6 +227,8 @@ class Settings(BaseSettings):
     )
     # Comma-separated emails promoted to admin on startup (existing users only)
     admin_bootstrap_emails: str = ""
+    # 是否开放自助注册；关闭后仅 ADMIN_BOOTSTRAP_EMAILS 中的邮箱可注册（用于创建首个管理员）
+    registration_enabled: bool = True
 
 
 @lru_cache

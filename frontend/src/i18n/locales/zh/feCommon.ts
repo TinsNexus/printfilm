@@ -37,5 +37,6 @@ export const zhFeCommon = {
     untitled: "未命名",
     voice: "音色",
     asset: "资产",
+    registrationClosed: "当前未开放注册，请联系管理员开通账号。",
   },
 } as const;

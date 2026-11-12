@@ -1,5 +1,5 @@
 import { USER_UPDATED_EVENT } from '../lib/userEvents'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
@@ -7,6 +7,9 @@ import BrandMark from '../components/BrandMark'
 import LanguageSwitch from '../components/layout/LanguageSwitch'
 import { useI18n } from '../i18n'
 import { isValidAuthPassword, isValidEmailInput } from '../lib/validateAuthForm'
+import { getPublicCapabilities } from '../api/publicCapabilities'
+import { registrationEnabled } from '../lib/publicCapabilities'
+import { tr } from '../i18n/translate.ts'
 
 type AuthMode = 'login' | 'register' | 'forgot' | 'reset'
 
@@ -46,6 +49,13 @@ export default function AuthPage() {
   const [notice, setNotice] = useState('')
   const [loading, setLoading] = useState(false)
   const resetToken = (params.get('token') || '').trim()
+  // 自助注册开关：关闭时隐藏注册入口；?mode=register 仍可用于管理员引导邮箱注册
+  const [signupOpen, setSignupOpen] = useState(true)
+  useEffect(() => {
+    let active = true
+    getPublicCapabilities().then((caps) => { if (active) setSignupOpen(registrationEnabled(caps)) }).catch(() => undefined)
+    return () => { active = false }
+  }, [])
 
   // 切换模式并同步 URL（保留 next）
   function switchMode(next: AuthMode) {
@@ -233,7 +243,8 @@ export default function AuthPage() {
             {t('auth.forgotLink')}
           </button>
         )}
-        {(mode === 'login' || mode === 'register') && (
+        {mode === 'register' && !signupOpen && <p className="pf-muted">{tr('uiCommon.registrationClosed')}</p>}
+        {(mode === 'register' || (mode === 'login' && signupOpen)) && (
           <button
             type="button"
             className="linkish"

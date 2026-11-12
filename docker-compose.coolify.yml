@@ -45,6 +45,7 @@ services:
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://pf.tisorr.online}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://pf.tisorr.online,https://pf-admin.tisorr.online}
       ADMIN_BOOTSTRAP_EMAILS: ${ADMIN_BOOTSTRAP_EMAILS:-}
+      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
       ARK_MOCK: ${ARK_MOCK:-false}
       UPSTREAM_GATEWAY_TYPE: ${UPSTREAM_GATEWAY_TYPE:-tokenfree}
       PIAPI_API_KEY: ${PIAPI_API_KEY:-}

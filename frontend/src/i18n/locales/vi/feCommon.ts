@@ -37,5 +37,6 @@ export const viFeCommon = {
     untitled: "Chưa đặt tên",
     voice: "giọng nói",
     asset: "tài sản",
+    registrationClosed: "Hiện chưa mở đăng ký, vui lòng liên hệ quản trị viên để được cấp tài khoản.",
   },
 } as const;

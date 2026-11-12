@@ -35,6 +35,11 @@ from app.services.password_reset import (
 from app.services.profile import ProfileError, prepare_profile_update
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def bootstrap_admin_emails(raw: str | None) -> set[str]:
+    """ADMIN_BOOTSTRAP_EMAILS 解析为小写邮箱集合。"""
+    return {e.strip().lower() for e in (raw or "").split(",") if e.strip()}
 settings = get_settings()
 
 
@@ -46,6 +51,12 @@ settings = get_settings()
     response_description="注册成功的访问令牌",
 )
 async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
+    current = get_settings()
+    bootstrap = bootstrap_admin_emails(current.admin_bootstrap_emails)
+    email = body.email.lower()
+    # 注册关闭时只放行管理员引导邮箱，保证空库也能创建首个管理员
+    if not current.registration_enabled and email not in bootstrap:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="注册已关闭，请联系管理员开通账号")
     existing = await get_user_by_email(db, body.email)
     if existing:
         raise HTTPException(status_code=400, detail="邮箱已注册")
@@ -58,6 +69,7 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)) ->
         quota_left=settings.new_user_quota,
         balance_fen=0 if wallet.enabled() else grant,
         plan="free",
+        role="admin" if email in bootstrap else "user",
     )
     db.add(user)
     await db.flush()
