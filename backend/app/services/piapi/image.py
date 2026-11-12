@@ -99,6 +99,29 @@ def canonical_image_model(model: str) -> str:
         return (model or "").strip()
 
 
+def public_ref_urls(ref_urls: list[str] | None) -> list[str]:
+    """参考图转成 PiAPI 拉得到的公网地址：/static 相对路径与 localhost 地址改写到 PUBLIC_BASE_URL；data URI 丢弃。"""
+    from urllib.parse import urlparse
+
+    from app.services import storage
+
+    out: list[str] = []
+    for raw in ref_urls or []:
+        url = (raw or "").strip()
+        if not url or url.startswith("data:"):
+            continue
+        if url.startswith(("http://", "https://")):
+            parsed = urlparse(url)
+            host = (parsed.hostname or "").lower()
+            if host in {"localhost", "127.0.0.1", "::1", "api"} or host.startswith(("192.168.", "10.")):
+                url = storage.to_public_url(parsed.path + (f"?{parsed.query}" if parsed.query else ""))
+        else:
+            url = storage.to_public_url(url)
+        if url not in out:
+            out.append(url)
+    return out
+
+
 def build_piapi_image_task(
     *,
     model: str,
@@ -112,6 +135,7 @@ def build_piapi_image_task(
     from app.services.piapi.image_tasks import build_native_task
 
     text = (prompt or "").strip() or "A high quality cinematic shot"
+    ref_urls = public_ref_urls(ref_urls)
     native = build_native_task(
         model_id=canonical_image_model(model),
         prompt=text,
@@ -126,14 +150,22 @@ def build_piapi_image_task(
 
 
 def _task_error(task: dict[str, Any], fallback: str) -> str:
-    """从任务 error 对象取可读短句。"""
+    """从任务 error 对象取可读短句；message 太笼统（如 Internal error）时附上 raw_message。"""
     err = task.get("error")
-    if isinstance(err, dict):
-        for key in ("message", "raw_message"):
-            value = err.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()[:300]
-    return fallback
+    if not isinstance(err, dict):
+        return fallback
+    parts = []
+    for key in ("message", "raw_message"):
+        value = err.get(key)
+        if isinstance(value, str) and value.strip() and value.strip() not in parts:
+            parts.append(value.strip())
+    return "；".join(parts)[:300] or fallback
+
+
+def _describe_task_body(body: dict[str, Any]) -> dict[str, Any]:
+    """日志用：去掉长 prompt，只留模型、任务类型和参数，便于对照上游文档排错。"""
+    inp = {k: v for k, v in (body.get("input") or {}).items() if k != "prompt"}
+    return {"model": body.get("model"), "task_type": body.get("task_type"), "input": inp}
 
 
 def extract_piapi_image_url(task: dict[str, Any]) -> str | None:
@@ -177,6 +209,8 @@ async def generate_image_via_piapi(
     async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=30.0)) as client:
         resp = await client.post(PIAPI_TASK_URL, headers=headers, json=body)
         if resp.status_code >= 400:
+            logger.warning("PiAPI image create rejected body=%s status=%s resp=%s",
+                           _describe_task_body(body), resp.status_code, resp.text[:500])
             raise RuntimeError(f"PiAPI 出图请求失败 HTTP {resp.status_code}: {resp.text[:300]}")
         created = resp.json()
         task = created.get("data") if isinstance(created.get("data"), dict) else {}
@@ -191,7 +225,9 @@ async def generate_image_via_piapi(
                     raise RuntimeError("出图未返回图片地址，请稍后重试")
                 return {"data": [{"url": url}], "piapi_task_id": task_id}
             if status in _FAILED:
-                raise RuntimeError(f"PiAPI 出图失败：{_task_error(task, '上游任务失败')}")
+                logger.warning("PiAPI image task failed task=%s body=%s error=%s",
+                               task_id, _describe_task_body(body), task.get("error"))
+                raise RuntimeError(f"PiAPI 出图失败：{_task_error(task, '上游任务失败')}（任务 {task_id}）")
             if time.monotonic() >= deadline:
                 raise RuntimeError("PiAPI 出图超时，请稍后重试")
             await asyncio.sleep(poll_interval)

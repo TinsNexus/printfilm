@@ -137,3 +137,22 @@ def test_text_to_video_path_builds(model_id):
     duration = strategy.normalize_and_validate({"prompt": "x"})["duration"]
     body = wrap_seedance_payload_for_piapi(_payload(model_id, image=False, duration=duration))
     assert body["task_type"] and "image" not in body["input"] and "image_url" not in body["input"]
+
+
+def test_reference_urls_become_public(monkeypatch):
+    from app.services.piapi.image import public_ref_urls
+
+    monkeypatch.setattr("app.services.storage.get_settings", lambda: type("S", (), {"public_base_url": "https://pf.example.com"})())
+    assert public_ref_urls([
+        "/static/generated/p2/a.png",
+        "http://localhost:8000/static/generated/p2/b.png",
+        "https://cdn.example.com/c.png",
+        "data:image/png;base64,AAAA",
+        "/static/generated/p2/a.png",
+    ]) == [
+        "https://pf.example.com/static/generated/p2/a.png",
+        "https://pf.example.com/static/generated/p2/b.png",
+        "https://cdn.example.com/c.png",
+    ]
+    body = build_piapi_image_task(model="nano-banana-pro", prompt="p", resolution="1K", ref_urls=["/static/x.png"])
+    assert body["input"]["image_urls"][0].endswith("/static/x.png") and body["input"]["image_urls"][0].startswith("https://")
