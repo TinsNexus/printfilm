@@ -4027,6 +4027,18 @@
   border: 1px solid #e2e8f0;
 }
 
+/* 单镜尾帧衔接开关：提示行里的文字按钮 */
+.drama-ep-link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .drama-ep-ref-strip {
   display: flex;
   gap: 8px;

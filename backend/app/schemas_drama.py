@@ -312,6 +312,11 @@ class DramaPlanFragmentsRequest(BaseModel):
     subtitle_enabled: bool | None = None
 
 
+class DramaFragmentLinkLastFrameRequest(BaseModel):
+    # enabled=False：本镜不接上一镜尾帧（项目总开关仍开时也跳过）；True 恢复跟随项目
+    enabled: bool = Field(..., description="本镜是否用上一镜尾帧作首帧")
+
+
 class DramaActivateVideoVersionRequest(BaseModel):
     # version_id 历史成片版本 id（params.video_versions[].id）
     version_id: str = Field(..., min_length=1, max_length=128)

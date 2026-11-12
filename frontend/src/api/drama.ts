@@ -544,6 +544,13 @@ export const dramaApi = {
       body: JSON.stringify({ version_id: versionId }),
     }),
 
+  /** 单镜尾帧衔接开关：enabled=false 时本镜不接上一镜尾帧，true 恢复跟随项目 */
+  setFragmentLinkLastFrame: (fragmentId: number, enabled: boolean) =>
+    request<{ ok: boolean; fragment_id: number; link_last_frame: boolean }>(
+      `/api/drama/fragments/${fragmentId}/link_last_frame`,
+      { method: 'PATCH', body: JSON.stringify({ enabled }) },
+    ),
+
   cancelAllVideoJobs: () =>
     request<{ ok: boolean; purged: number; revoked: number; fragments: number }>(
       '/api/drama/cancel_video_jobs',

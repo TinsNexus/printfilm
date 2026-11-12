@@ -23,6 +23,7 @@ from app.models_drama import (
 )
 from app.schemas_drama import (
     DramaActivateVideoVersionRequest,
+    DramaFragmentLinkLastFrameRequest,
     DramaComposeEpisodeRequest,
     DramaConfirmEpisodeOut,
     DramaConfirmEpisodeRequest,
@@ -54,6 +55,7 @@ from app.services.drama.generation import (
     fragment_generation_status,
     overlay_fragment_status_with_active_task,
     ensure_fragment_last_frame_url,
+    fragment_link_last_frame_enabled,
     project_link_last_frame_enabled,
     read_fragment_last_frame_url,
     reconcile_orphaned_fragment_generations,
@@ -653,6 +655,36 @@ async def activate_video_version(
     return {"ok": True, **payload}
 
 
+@router.patch(
+    "/fragments/{fragment_id}/link_last_frame",
+    summary="设置单镜尾帧衔接",
+    description="按分镜编号 fragment_id 设置本镜是否用上一镜尾帧作首帧。enabled=false 时即使项目开启尾帧衔接也跳过本镜（例如上一镜尾帧易触发审核）；enabled=true 恢复跟随项目设置。分镜在排队或生成中时返回 409。",
+    response_description="分镜编号与本镜衔接开关",
+)
+async def set_fragment_link_last_frame(
+    fragment_id: Annotated[int, Path(description="分镜编号，需有其所属项目的访问权限")],
+    body: DramaFragmentLinkLastFrameRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """只改本镜 params.linkLastFrame，不动其它分镜与内容。"""
+    fragment = (await db.execute(select(DramaEpisodeFragment).where(DramaEpisodeFragment.id == fragment_id))).scalar_one_or_none()
+    if not fragment:
+        raise HTTPException(status_code=404, detail="分镜不存在")
+    await get_owned_episode(db, fragment.episode_id, user)
+    status = str(fragment_generation_status(fragment).get("status") or "")
+    if status in {"queued", "running", "generating"}:
+        raise HTTPException(status_code=409, detail="分镜正在生成，请完成后再修改")
+    params = dict(fragment.params or {})
+    if body.enabled:
+        params.pop("linkLastFrame", None)
+    else:
+        params["linkLastFrame"] = False
+    fragment.params = params
+    await db.commit()
+    return {"ok": True, "fragment_id": fragment_id, "link_last_frame": body.enabled}
+
+
 @router.post(
     "/episodes/{episode_id}/generate",
     summary="提交分镜视频生成任务",
@@ -701,7 +733,7 @@ async def generate_episode(
         index_by_id = {int(f.id): i for i, f in enumerate(all_sorted) if f.id is not None}
         idle_ids = {int(f.id) for f in idle_frags if f.id is not None}
         for frag in idle_frags:
-            if frag.id is None:
+            if frag.id is None or not fragment_link_last_frame_enabled(project, frag):
                 continue
             idx = index_by_id.get(int(frag.id))
             if idx is None or idx <= 0:

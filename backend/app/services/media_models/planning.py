@@ -213,7 +213,7 @@ async def plan_items(db, task) -> list[dict]:
                     helper_needed = False
                 elif project:
                     from sqlalchemy import or_
-                    from app.services.drama.generation import build_fragment_ref_payloads, find_previous_episode_fragment, project_link_last_frame_enabled, read_fragment_last_frame_url
+                    from app.services.drama.generation import build_fragment_ref_payloads, find_previous_episode_fragment, fragment_link_last_frame_enabled, read_fragment_last_frame_url
                     from app.services.drama.build_seedance_generate_body import build_seedance_content_items, build_seedance_reference_catalog
                     from app.services.drama.image_styles import resolve_image_style_board_url
                     mentioned = [int(value) for value in re.findall(r"@asset:(\d+)", fragment.content or "")]
@@ -223,7 +223,7 @@ async def plan_items(db, task) -> list[dict]:
                     payloads = build_fragment_ref_payloads(project, assets)
                     catalog = build_seedance_reference_catalog(payloads, script=fragment.content or "")
                     helper_needed = not (catalog.images or catalog.audios or catalog.videos)
-                    previous = await find_previous_episode_fragment(db, fragment) if project_link_last_frame_enabled(project) else None
+                    previous = await find_previous_episode_fragment(db, fragment) if fragment_link_last_frame_enabled(project, fragment) else None
                     continuity = (read_fragment_last_frame_url(previous) or "pending://previous-frame") if previous and previous.video else None
                     style_id = (project.params or {}).get("image_style_id")
                     references["content"] = build_seedance_content_items(fragment.content or "", payloads, style_id,

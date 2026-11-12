@@ -245,6 +245,14 @@ def project_link_last_frame_enabled(project: DramaProject) -> bool:
     return _coerce_project_bool(raw, True)
 
 
+# 本镜是否接上一镜尾帧：项目开关开启，且本镜没有单独关闭（params.linkLastFrame is False）
+def fragment_link_last_frame_enabled(project: DramaProject, fragment: DramaEpisodeFragment | None) -> bool:
+    if not project_link_last_frame_enabled(project):
+        return False
+    params = fragment.params if fragment is not None and isinstance(fragment.params, dict) else {}
+    return params.get("linkLastFrame") is not False
+
+
 # 查找同集中 sort_order 更小的上一镜
 async def find_previous_episode_fragment(
     db: AsyncSession,
@@ -1589,7 +1597,7 @@ async def prepare_fragment_video_for_submit(
     video_board_url = board_url if catalog.images else ""
 
     continuity_url: str | None = None
-    if project_link_last_frame_enabled(project):
+    if fragment_link_last_frame_enabled(project, fragment):
         prev = await find_previous_episode_fragment(db, fragment)
         continuity_url = await ensure_fragment_last_frame_url(project, prev)
         if continuity_url:

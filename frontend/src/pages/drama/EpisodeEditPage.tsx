@@ -204,6 +204,10 @@ function EpisodeEditInner() {
   }, [mediaCatalog])
 
   const selected = fragments[selectedIndex] || null
+  // selectedLinkOff 当前镜单独关闭了尾帧衔接（params.linkLastFrame === false）
+  const selectedLinkOff = Boolean(
+    selected?.params && typeof selected.params === 'object' && (selected.params as Record<string, unknown>).linkLastFrame === false,
+  )
   const selectedDuration = selected?.duration_sec ?? 8
   // generatingIds 当前分集排队/生成中的分镜 id
   const generatingIds = useMemo(() => {
@@ -302,7 +306,7 @@ function EpisodeEditInner() {
 
   // 开启尾帧衔接时：仅上一镜从未生成过才禁止；上一镜在生成/排队时本镜可入队等待
   const continuityBlockedReason = useMemo(() => {
-    if (!linkLastFrame || selectedIndex <= 0) return ''
+    if (!linkLastFrame || selectedLinkOff || selectedIndex <= 0) return ''
     const prev = fragments[selectedIndex - 1]
     if (!prev) return tr('episodeEditPage.noPreviousShotContinue')
     if (prev.id && generatingIds.has(prev.id)) {
@@ -316,14 +320,33 @@ function EpisodeEditInner() {
       return tr('episodeEditPage.generatePreviousShotFirstWait')
     }
     return ''
-  }, [linkLastFrame, selectedIndex, fragments, generatingIds, prevLastFrameUrl])
+  }, [linkLastFrame, selectedLinkOff, selectedIndex, fragments, generatingIds, prevLastFrameUrl])
 
   const continuityQueueHint = useMemo(() => {
-    if (!linkLastFrame || selectedIndex <= 0) return ''
+    if (!linkLastFrame || selectedLinkOff || selectedIndex <= 0) return ''
     const prev = fragments[selectedIndex - 1]
     if (!prev?.id || !generatingIds.has(prev.id)) return ''
     return tr('episodeEditPage.previousShotStillGeneratingShot')
-  }, [linkLastFrame, selectedIndex, fragments, generatingIds])
+  }, [linkLastFrame, selectedLinkOff, selectedIndex, fragments, generatingIds])
+
+  // 切换当前镜尾帧衔接：只改本镜 params.linkLastFrame，成功后同步本地分镜
+  async function handleSelectedLinkLastFrame(enabled: boolean) {
+    const id = selected?.id
+    if (readOnly || typeof id !== 'number' || id <= 0) return
+    try {
+      await dramaApi.setFragmentLinkLastFrame(id, enabled)
+      setFragments((prev) => prev.map((f) => {
+        if (f.id !== id) return f
+        const params = { ...((f.params && typeof f.params === 'object') ? f.params : {}) } as Record<string, unknown>
+        if (enabled) delete params.linkLastFrame
+        else params.linkLastFrame = false
+        return { ...f, params }
+      }))
+      setError('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : tr('episodeEditPage.shotLinkSaveFailed'))
+    }
+  }
 
   // selectedGenerateLocked 锁当前镜「生成」：忙/生成中/衔接/缺参考图等硬门禁
   const selectedGenerateLocked =
@@ -1637,7 +1660,16 @@ function EpisodeEditInner() {
             </ul>
           ) : null}
 
-          {linkLastFrame && selectedIndex > 0 ? (
+          {linkLastFrame && selectedIndex > 0 && selectedLinkOff ? (
+            <p className="drama-ep-continuity-hint">
+              {tr('episodeEditPage.shotLinkOffHint')}{' '}
+              {!readOnly ? (
+                <button type="button" className="drama-ep-link-btn" onClick={() => void handleSelectedLinkLastFrame(true)}>
+                  {tr('episodeEditPage.shotLinkOn')}
+                </button>
+              ) : null}
+            </p>
+          ) : linkLastFrame && selectedIndex > 0 ? (
             <p
               className={`drama-ep-continuity-hint${
                 !continuityBlockedReason ? ' is-ready' : ' is-wait'
@@ -1649,7 +1681,12 @@ function EpisodeEditInner() {
                   ? continuityQueueHint
                   : prevLastFrameUrl
                     ? tr('episodeEditPage.previousShotSLastFrame')
-                    : tr('episodeEditPage.previousShotHasVideoIts')}
+                    : tr('episodeEditPage.previousShotHasVideoIts')}{' '}
+              {!readOnly ? (
+                <button type="button" className="drama-ep-link-btn" onClick={() => void handleSelectedLinkLastFrame(false)}>
+                  {tr('episodeEditPage.shotLinkOff')}
+                </button>
+              ) : null}
             </p>
           ) : !linkLastFrame ? (
             <p className="drama-ep-continuity-hint">
