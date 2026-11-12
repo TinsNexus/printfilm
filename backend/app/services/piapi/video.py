@@ -1,6 +1,7 @@
 """PiAPI 视频：把方舟 Seedance 请求体转成统一任务接口 `{model, task_type, input}`。
 
-支持 Kling / Seedance / Veo 三族；模型 id 约定见 `catalog.py`。
+Kling / Seedance / Veo 在本文件；Wan / Hailuo / Hunyuan / Luma / SkyReels / FramePack / MiniMax H3
+见 video_tasks.py。模型 id 约定见 `catalog.py`。
 任务查询响应 `{code, data: {status, output: {video}}}` 由 tokenfree_video 的通用解析处理。
 """
 
@@ -136,11 +137,14 @@ def _build_kling(model: str, src: dict[str, Any], parts: dict[str, Any]) -> dict
 
 
 def _build_seedance(model: str, src: dict[str, Any], parts: dict[str, Any]) -> dict[str, Any]:
-    """Seedance：PiAPI 只接 2.5（task_type=seedance-2.5）；首/尾帧与参考图统一走 image_urls。"""
-    task_type = DEFAULT_SEEDANCE_TASK_TYPE
+    """Seedance 2.5 / 2.0 / 2.0 Fast / 2.0 Mini：首/尾帧与参考图统一走 image_urls。"""
+    from app.services.piapi.video_tasks import SEEDANCE_TASK_TYPES
+
+    task_type = SEEDANCE_TASK_TYPES.get(_canonical_video_model(model), DEFAULT_SEEDANCE_TASK_TYPE)
+    longest = 30 if task_type == "seedance-2.5" else 15
     inp: dict[str, Any] = {
         "prompt": parts["prompt"][:4000],
-        "duration": max(4, min(30, _int_duration(src.get("duration")))),
+        "duration": max(4, min(longest, _int_duration(src.get("duration")))),
     }
     ratio = str(src.get("ratio") or "").strip()
     if ratio in _SEEDANCE_RATIOS:
@@ -150,9 +154,9 @@ def _build_seedance(model: str, src: dict[str, Any], parts: dict[str, Any]) -> d
         inp["resolution"] = resolution
     images = [u for u in (parts["first"], *parts["refs"], parts["last"]) if u]
     if images:
-        inp["image_urls"] = list(dict.fromkeys(images))[:30]
+        inp["image_urls"] = list(dict.fromkeys(images))[: 30 if task_type == "seedance-2.5" else 9]
     if parts["audios"]:
-        inp["audio_urls"] = parts["audios"][:10]
+        inp["audio_urls"] = parts["audios"][: 10 if task_type == "seedance-2.5" else 3]
     return {"model": "seedance", "task_type": task_type, "input": inp}
 
 
@@ -182,12 +186,27 @@ def _build_veo(model: str, src: dict[str, Any], parts: dict[str, Any]) -> dict[s
     return {"model": family, "task_type": task_type, "input": inp}
 
 
+def _canonical_video_model(model: str) -> str:
+    """后台填的模型名 → 策略 id（小写）；不认识的原样小写返回。"""
+    from app.services.media_models import MediaValidationError, get_strategy
+
+    try:
+        return get_strategy(model).model_id.lower()
+    except (MediaValidationError, ValueError):
+        return (model or "").strip().lower()
+
+
 def wrap_seedance_payload_for_piapi(payload: dict[str, Any]) -> dict[str, Any]:
     """把方舟 Seedance body 转成 PiAPI `POST /api/v1/task` 请求体；不支持的模型直接报错。"""
+    from app.services.piapi.video_tasks import build_extra_video_task
+
     src = dict(payload)
     model = str(src.get("model") or "").strip()
     low = model.lower()
     parts = _parse_seedance_content(src)
+    extra = build_extra_video_task(_canonical_video_model(model), src, parts)
+    if extra is not None:
+        return extra
     if "kling" in low:
         return _build_kling(model, src, parts)
     if "seedance" in low:
@@ -196,4 +215,4 @@ def wrap_seedance_payload_for_piapi(payload: dict[str, Any]) -> dict[str, Any]:
         return _build_veo(model, src, parts)
     if "sora" in low:
         raise RuntimeError("PiAPI 已下线 Sora 2 接口，请改用 Kling / Veo / Seedance 视频模型")
-    raise RuntimeError(f"PiAPI 暂不支持视频模型「{model}」，请在后台改用 Kling / Seedance / Veo")
+    raise RuntimeError(f"PiAPI 暂不支持视频模型「{model}」，请在后台改选 PiAPI 视频模型")

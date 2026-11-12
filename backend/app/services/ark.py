@@ -1116,7 +1116,7 @@ class ArkGateway:
             )
 
         if uses_piapi_gateway() and not getattr(self.settings, "local_media_mock", False):
-            # PiAPI：统一任务接口异步出图（Flux），建任务 + 轮询后返回 OpenAI 风格 data[0].url；本地模拟时走下方通用模拟分支
+            # PiAPI：统一任务接口异步出图（Flux / Gemini / Seedream 等，见 piapi/image_tasks.py），建任务 + 轮询后返回 OpenAI 风格 data[0].url；本地模拟时走下方通用模拟分支
             from app.services.piapi.image import generate_image_via_piapi
 
             data = await generate_image_via_piapi(
@@ -1126,6 +1126,7 @@ class ArkGateway:
                 size=str(resolved_size or ""),
                 aspect_ratio=aspect_ratio,
                 ref_urls=[*subject_refs, *style_refs],
+                resolution=normalized["resolution"],
                 timeout_sec=IMAGE_GEN_READ_SEC,
             )
         else:

@@ -162,7 +162,10 @@ export type Project = {
 
 export type MediaModelOption = {
   id: string
+  /** 展示名；目录加载后会接上价格（见 lib/mediaModelPriceLabel） */
   label: string
+  /** 不带价格的原始模型名 */
+  name?: string
   description: string
   provider: string
   recommended?: boolean

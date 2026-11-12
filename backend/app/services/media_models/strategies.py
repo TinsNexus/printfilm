@@ -45,6 +45,14 @@ class MediaModelStrategy:
     default_resolution: str | None = None  # None：沿用第二档（或唯一一档）
     duration_min = 4
     duration_max = 15
+    duration_choices: tuple[int, ...] = ()  # 非空时时长只能取这些档
+
+    def default_duration(self) -> int:
+        """缺省时长 8 秒，钳到模型允许区间并对齐到可选档（固定 5 秒的模型就是 5）。"""
+        value = max(self.duration_min, min(self.duration_max, 8))
+        if self.duration_choices:
+            value = min(self.duration_choices, key=lambda c: (abs(c - value), -c))
+        return value
 
     def with_reference_limits(self, limits: dict[str, int] | None):
         if limits is None:
@@ -85,8 +93,8 @@ class MediaModelStrategy:
         }
         if self.capability == "video":
             result.update(duration_min=self.duration_min, duration_max=self.duration_max,
-                          duration_step=1, modes=["text_to_video", "image_to_video"])
-            result["defaults"]["duration"] = 8
+                          duration_step=1, duration_choices=list(self.duration_choices), modes=["text_to_video", "image_to_video"])
+            result["defaults"]["duration"] = self.default_duration()
             result["supports_audio"] = self.supports_generate_audio
         else:
             result["modes"] = ["text_to_image", "image_to_image"]
@@ -112,6 +120,8 @@ class MediaModelStrategy:
             res = self.image_resolution(res)
         else:
             res = res.lower()
+        if self.capability == "image" and res not in self.resolutions:
+            res = clamp_image_tier(res, self.resolutions)
         if res not in self.resolutions:
             raise MediaValidationError("resolution", f"支持 {', '.join(self.resolutions)}")
         out["resolution"] = res
@@ -139,8 +149,11 @@ class MediaModelStrategy:
         self.validate_reference_counts(images=len(out["reference_images"]) + len(styles),
                                        audios=len(out["reference_audios"]), videos=len(out["reference_videos"]))
         if self.capability == "video":
-            out["duration"] = integer(params.get("duration", params.get("seconds", 8)),
+            out["duration"] = integer(params.get("duration", params.get("seconds", self.default_duration())),
                                       "duration", self.duration_min, self.duration_max)
+            if self.duration_choices:
+                # 上游只有几档时长：取最近一档（平局取长），计费秒数与实际成片一致
+                out["duration"] = min(self.duration_choices, key=lambda c: (abs(c - out["duration"]), -c))
             for flag in ("generate_audio", "watermark", "return_last_frame"):
                 if flag in params and not isinstance(params[flag], bool):
                     raise MediaValidationError(flag, "必须是布尔值")
@@ -230,6 +243,24 @@ class MediaModelStrategy:
                 "duration": p.get("duration"), "count": p["count"],
                 "unit_price_yuan": format(price, ".4f"), "unit_charge_fen": amount,
                 "total_fen": amount * p["count"], "params": p}
+
+
+_IMAGE_TIERS = ("1K", "2K", "3K", "4K")
+
+
+def clamp_image_tier(requested: str, allowed: tuple[str, ...]) -> str:
+    """图片档位不支持时降到不超过请求的最高可用档；都更高则取最低档。
+
+    前台多处默认 2K，切到只支持 1K 的模型（Flux / Qwen 等）时不再整单 422。
+    """
+    if requested not in _IMAGE_TIERS:
+        return requested
+    rank = _IMAGE_TIERS.index(requested)
+    ordered = [t for t in _IMAGE_TIERS if t in allowed]
+    lower = [t for t in ordered if _IMAGE_TIERS.index(t) <= rank]
+    if lower:
+        return lower[-1]
+    return ordered[0] if ordered else requested
 
 
 class ImageModelStrategy(MediaModelStrategy):
@@ -334,7 +365,10 @@ class Veo31FastStrategy(Veo31Strategy):
     model_id = "veo3.1-fast"
 
 
-_STRATEGIES = tuple(cls() for cls in (Seedream50ProStrategy, Seedream50Strategy, Seedream50FlashStrategy,
+# 模块末尾再导入：piapi_strategies 依赖本文件的 ImageModelStrategy
+from .piapi_strategies import PIAPI_IMAGE_STRATEGIES, PIAPI_VIDEO_STRATEGIES  # noqa: E402
+
+_STRATEGIES = tuple(cls() for cls in (*PIAPI_IMAGE_STRATEGIES, *PIAPI_VIDEO_STRATEGIES, Seedream50ProStrategy, Seedream50Strategy, Seedream50FlashStrategy,
                                     GptImage2Strategy, GptImage25Strategy, Seedance25Strategy,
                                     Seedance20Strategy, Seedance20FastStrategy, MiniMaxH3Strategy,
                                     FluxDevStrategy, FluxSchnellStrategy, Kling30Strategy, Kling40Strategy,

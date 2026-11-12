@@ -1,6 +1,6 @@
 # 图视频模型策略与站内定价
 
-模型能力由 `backend/app/services/media_models/` 内的十五个策略定义（TokenFree 九个 + PiAPI 六个，见下文「PiAPI 上游」）。前台目录、参数校验、请求转换、报价和任务受理共用这些策略。图片按模型、分辨率、成功交付张数收费；视频按模型、分辨率、提交的生成秒数收费。每张/条向上取整到分后汇总，单价使用四位小数的 Decimal 元。
+模型能力由 `backend/app/services/media_models/` 内的四十二个策略定义（TokenFree 九个 + PiAPI 三十三个，见下文「PiAPI 上游」；PiAPI 新增策略在 `piapi_strategies.py`）。前台目录、参数校验、请求转换、报价和任务受理共用这些策略。图片按模型、分辨率、成功交付张数收费；视频按模型、分辨率、提交的生成秒数收费。每张/条向上取整到分后汇总，单价使用四位小数的 Decimal 元。
 
 科普项目新增 `image_resolution`、`video_resolution`，可在风格配置页按模型选择。历史项目字段为空时仍使用原图像尺寸及站点视频清晰度规则；显式设置的视频分辨率优先于旧 `preview/hd` 推导。
 
@@ -68,12 +68,35 @@
 | 策略 | 能力 | 分辨率 | 时长 | 参考素材 |
 |---|---|---|---|---|
 | `flux1-dev` / `flux1-schnell` | 图片 | 1K | — | 最多 1 张（img2img） |
+| `nano-banana-pro` / `nano-banana-2` / `nano-banana-2.1` | 图片 | 1K / 2K / 4K | — | 最多 14 张 |
+| `gemini-2.5-flash-image` | 图片 | 1K（上游无分辨率参数） | — | 支持 |
+| `seedream-5.0-pro` | 图片 | 1K / 2K（与 TokenFree 共用策略） | — | 最多 10 张 |
+| `seedream-5.0-lite` | 图片 | 2K / 3K | — | 最多 10 张 |
+| `qwen-image` | 图片 | 1K | — | 有参考图走 image-edit，最多 3 张 |
+| `qwen-image-2.1` / `z-image` / `minimax-image-01` | 图片 | 1K（MiniMax 另有 2K） | — | 不支持，只做文生图 |
 | `kling-3.0` | 视频 | 720p（std，默认）/ 1080p（pro） | 3–15 秒 | 只认首帧 + 尾帧 |
 | `kling-4.0` | 视频 | 同上 | 3–30 秒 | 只认首帧 + 尾帧 |
 | `veo3.1` / `veo3.1-fast` | 视频 | 720p（默认）/ 1080p，仅 16:9、9:16 | 4–8 秒，上游按 4/6/8 秒取档 | 首帧 + 尾帧，或 1–3 张参考图 |
-| `seedance-2.5` | 视频 | 与 TokenFree 共用同一策略 | | |
+| `seedance-2.5` / `seedance-2.0` / `seedance-2.0-fast` / `MiniMax-H3` | 视频 | 与 TokenFree 共用同一策略 | | |
+| `seedance-2-mini` | 视频 | 480p / 720p | 4–15 秒 | 同 Seedance（id 避开 TokenFree 已停用的 `seedance-2.0-mini` 别名） |
+| `kling-4.0-flash` | 视频 | 720p | 3–20 秒 | 只认首帧 |
+| `kling-3.0-turbo` | 视频 | 720p / 1080p | 3–15 秒 | 首帧 + 尾帧 |
+| `kling-2.6` / `kling-2.5` / `kling-2.1` | 视频 | 720p / 1080p（pro） | 5 / 10 秒 | 首帧 + 尾帧 |
+| `veo3` / `veo3-fast` | 视频 | 720p / 1080p，仅 16:9、9:16 | 4–8 秒 | 首帧 |
+| `wan-2.6` | 视频 | 720p / 1080p，可带声音 | 5 / 10 / 15 秒 | 首帧（有则图生视频） |
+| `wan-2.2` / `wan-2.1` | 视频 | 720p / 480p | 固定约 5 秒，按条计费 | 首帧；2.1 有首尾帧走 keyframe |
+| `hailuo-2.3` / `hailuo-2.3-fast` | 视频 | 768p / 1080p（1080p 只能 6 秒） | 6 / 10 秒 | 首帧 |
+| `hunyuan-video` / `hunyuan-video-fast` | 视频 | 720p | 固定约 5 秒 | 首帧（fast 只做文生） |
+| `luma-ray-2` | 视频 | 720p | 5 / 9 秒 | 首帧 + 尾帧 |
+| `skyreels` | 视频 | 720p | 固定约 5 秒 | 必须有首帧 |
+| `framepack` | 视频 | 480p | 10–30 秒 | 必须有首帧，可带尾帧 |
 
+- 图片任务体按模型在 `backend/app/services/piapi/image_tasks.py` 构造：Gemini / Seedream 直接传档位；Qwen / Z-Image / MiniMax / Flux 只收宽高，按画幅和像素上限换算。GPT Image 在 PiAPI 走另一套 `/images/generations` 接口且返回 base64，暂未接入；Flux Kontext、Midjourney 也未接入。
+- 视频任务体：Kling / Seedance / Veo 在 `piapi/video.py`，其余在 `piapi/video_tasks.py`。只有几档时长的模型（`duration_choices`）在参数校验时就对齐到最近一档，计费秒数与成片一致。按条计费的模型参考价已折算成每秒。OmniHuman、Kling Avatar（需音频驱动）与 Kling Omni 未接入。
+- **未实测（2026-11-12 只按官方文档接入，尚未用真 Key 跑通）**：所有新增的 PiAPI 图片 / 视频模型。其中 Wan 2.6、WanX（Wan 2.2 / 2.1）、SkyReels、FramePack、Luma 的文档没写成片地址字段，代码按 `output.video` / `output.video_url` 读取；若上游返回别的字段，任务会扣费后报「未返回视频地址」，上线前应各跑一条确认。MiniMax H3 文档的分辨率枚举（512p / 768p）与说明（480P / 768P / 1080P）矛盾，按枚举发 512p，计价档仍叫 480p。
+- 图片请求的分辨率高于模型上限时自动降到不超过请求的最高档（如 2K → 1K），不再 422；视频分辨率仍严格校验。
+- 前台模型下拉的名称后面会接上价格（已开放分辨率的最低～最高积分/张或/秒，`frontend/src/lib/mediaModelPriceLabel.ts`），未发布价格时不显示。管理端预设名里的美元价是 PiAPI 官网参考价，仅供选型。
 - 预设按上游过滤（`media_model_presets.PRESET_MODELS` 的 `gateways` 字段，管理端 `tokenfreeRecommendedModels.ts` 同步）：PiAPI 下只能选上表模型，TokenFree 专属模型视为停用；切回 TokenFree 后 PiAPI 专属模型同样不可选。渠道 models 始终写入全部预设，切换网关无需重建渠道。
-- 开启固定计费时，PiAPI 模型同样要在「图片与视频价格」确认单价并发布，留空的分辨率不开放生成。初始草稿里 PiAPI 专属模型（Flux / Kling / Veo）留空：TokenFree 价目里没有这些模型，不套用通用兜底估价，须按 PiAPI 官网价目（https://piapi.ai/pricing）填写后发布。
+- 开启固定计费时，PiAPI 模型同样要在「图片与视频价格」确认单价并发布，留空的分辨率不开放生成。初始草稿里有官网参考价的 PiAPI 图片 / 视频模型按 `BILLING_USD_CNY` 换算成草稿价（`PIAPI_IMAGE_REFERENCE_USD`、`PIAPI_VIDEO_REFERENCE_USD`），仍需管理员确认后发布；其余 PiAPI 专属模型（Flux / Veo 3.1）留空：TokenFree 价目里没有这些模型，不套用通用兜底估价，须按 PiAPI 官网价目（https://piapi.ai/pricing）填写后发布。
 - PiAPI 不拉取 TokenFree 官方价目与用量，上游成本记为待核实。
 - PiAPI 没有配音接口：语音无预设，配音回退 edge-tts。Midjourney、Sora 2 已被 PiAPI 下线，选用时报错。

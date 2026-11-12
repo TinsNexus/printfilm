@@ -106,7 +106,14 @@ def initial_draft() -> dict:
     for strategy in strategies():
         rows = {}
         if is_piapi_only_model(strategy.model_id):
-            # TokenFree 价目里没有 PiAPI 专属模型，估价只会是通用兜底数；留空，由管理员按 PiAPI 价目填写
+            # TokenFree 价目里没有 PiAPI 专属模型：有官网参考价的按汇率换算成草稿，其余留空由管理员填写
+            from app.services.piapi.image_tasks import PIAPI_IMAGE_REFERENCE_USD
+            from app.services.piapi.video_tasks import PIAPI_VIDEO_REFERENCE_USD
+            rate = Decimal(str(settings.billing_usd_cny))
+            reference = {**PIAPI_IMAGE_REFERENCE_USD, **PIAPI_VIDEO_REFERENCE_USD}
+            for resolution, usd in reference.get(strategy.model_id, {}).items():
+                if resolution in strategy.resolutions:
+                    rows[resolution] = format((Decimal(usd) * rate).quantize(Decimal("0.0001")), ".4f")
             prices[strategy.model_id] = rows
             continue
         for resolution in strategy.resolutions:

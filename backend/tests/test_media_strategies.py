@@ -19,7 +19,7 @@ def test_model_contract(model, resolutions, maximum):
 
 
 def test_alias_and_registry():
-    assert len(strategies()) == 15  # 9 个 TokenFree 策略 + 6 个 PiAPI 策略（Flux / Kling / Veo）
+    assert len(strategies()) == 42  # 9 个 TokenFree 策略 + 33 个 PiAPI 策略
     assert get_strategy("seedance-2-5").model_id == "seedance-2.5"
     assert get_strategy("doubao-seedance-2-0-260128").model_id == "seedance-2.0"
     with pytest.raises(ValueError, match="model"):
@@ -72,8 +72,10 @@ def test_image_pixel_mapping_and_upstream_request():
     body = strategy.build_provider_request(params, {"upstream_model": "seedream-5-0-pro"})
     assert body["model"] == "seedream-5-0-pro"
     assert body["size"] == "1584x2816"
+    # 图片档位超出上限时降到最高可用档，不再 422
+    assert strategy.normalize_and_validate({"resolution": "4K"})["resolution"] == "2K"
     with pytest.raises(ValueError, match="resolution"):
-        strategy.normalize_and_validate({"resolution": "4K"})
+        strategy.normalize_and_validate({"resolution": "8K"})
 
 
 def test_first_frame_and_reference_images_are_mutually_exclusive():

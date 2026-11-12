@@ -89,11 +89,12 @@ async def test_switch_to_9router_and_back(db_session):
         out, _ = await patch_admin_routing_settings(
             db_session,
             AdminRoutingSettingsPatch(
-                default_models=DefaultModels(text_model="kimi-k2.6", image_model="seedream-5.0-pro", video_model="MiniMax-H3", audio_model="")
+                default_models=DefaultModels(text_model="kimi-k2.6", image_model="seedream-5.0", video_model="MiniMax-H3", audio_model="")
             ),
         )
+        # TokenFree 专属的 seedream-5.0 钳到 PiAPI 第一项；MiniMax-H3 两边都有，保留
         assert (out.default_models.text_model, out.default_models.image_model, out.default_models.video_model) == (
-            "gpt-4o", "flux1-dev", "seedance-2.5",
+            "gpt-4o", "seedream-5.0-pro", "MiniMax-H3",
         )
 
         await patch_admin_model_settings(db_session, AdminModelSettingsPatch(upstream_gateway_type="tokenfree"))

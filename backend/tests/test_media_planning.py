@@ -47,8 +47,10 @@ async def test_catalog_removes_unknown_strategies_and_hides_unpriced_tiers(db_se
 
 def test_draft_is_valid_and_does_not_publish():
     draft = initial_draft()
-    assert len(draft) == 15  # 9 个 TokenFree 策略 + 6 个 PiAPI 策略
-    # PiAPI 专属模型不套用 TokenFree 兜底估价，草稿留空等管理员填写
-    assert draft["kling-3.0"] == {} and draft["flux1-dev"] == {}
+    assert len(draft) == 42  # 9 个 TokenFree 策略 + 33 个 PiAPI 策略
+    # PiAPI 专属模型不套用 TokenFree 兜底估价：无官网参考价的留空，有参考价的按汇率换算
+    assert draft["veo3.1"] == {} and draft["flux1-dev"] == {}
+    assert set(draft["kling-3.0"]) == {"720p", "1080p"}
+    assert set(draft["nano-banana-pro"]) == {"1K", "2K", "4K"}
     assert draft["seedance-2.5"]
     assert validate_prices(draft) == draft

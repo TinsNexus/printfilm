@@ -113,7 +113,7 @@ def test_unsupported_video_models_raise():
     with pytest.raises(RuntimeError, match="Sora"):
         wrap_seedance_payload_for_piapi(_body("sora2"))
     with pytest.raises(RuntimeError, match="暂不支持"):
-        wrap_seedance_payload_for_piapi(_body("wan-2.6"))
+        wrap_seedance_payload_for_piapi(_body("pika-1.0"))
 
 
 def test_flux_task_and_size():
@@ -175,7 +175,8 @@ def test_catalog_filter():
     assert {m["capability"] for m in list_piapi_catalog_models("video")} == {"video"}
     ids = {m["id"] for m in list_piapi_catalog_models("all")}
     assert {"flux1-dev", "kling-3.0", "veo3.1", "seedance-2.5", "gpt-4o"} <= ids
-    assert "seedream-5.0-pro" not in ids
+    assert "seedream-5.0-pro" in ids and "nano-banana-pro" in ids
+    assert "seedream-5.0" not in ids  # TokenFree 专属
 
 
 def test_presets_follow_active_gateway():
@@ -187,11 +188,18 @@ def test_presets_follow_active_gateway():
     assert not gateway_supports_model("flux1-dev") and gateway_supports_model("some-custom-model")
     assert not is_model_enabled("video", "kling-3.0", [])
     with patch(ON, return_value=True):
-        assert preset_ids("image") == ["flux1-dev", "flux1-schnell"]
-        assert preset_ids("video") == ["seedance-2.5", "kling-3.0", "kling-4.0", "veo3.1", "veo3.1-fast"]
-        assert clamp_default_to_preset("image", "seedream-5.0-pro") == "flux1-dev"
+        assert preset_ids("image") == ["seedream-5.0-pro", "flux1-dev", "flux1-schnell", "nano-banana-pro",
+                                       "nano-banana-2", "nano-banana-2.1", "gemini-2.5-flash-image",
+                                       "seedream-5.0-lite", "qwen-image", "qwen-image-2.1", "z-image",
+                                       "minimax-image-01"]
+        assert preset_ids("video") == ["seedance-2.5", "seedance-2.0", "seedance-2.0-fast", "MiniMax-H3", "kling-3.0",
+                                       "kling-4.0", "veo3.1", "veo3.1-fast", "seedance-2-mini", "kling-4.0-flash",
+                                       "kling-3.0-turbo", "kling-2.6", "kling-2.5", "kling-2.1", "veo3", "veo3-fast",
+                                       "wan-2.6", "wan-2.2", "wan-2.1", "hailuo-2.3", "hailuo-2.3-fast",
+                                       "hunyuan-video", "hunyuan-video-fast", "luma-ray-2", "skyreels", "framepack"]
+        assert clamp_default_to_preset("image", "seedream-5.0") == "seedream-5.0-pro"
         assert clamp_default_to_preset("text", "kimi-k2.6") == "gpt-4o"
-        assert not is_model_enabled("image", "seedream-5.0-pro", [])
+        assert not is_model_enabled("image", "seedream-5.0", [])
         assert is_model_enabled("video", "kling-3.0", [])
     assert "kling-3.0" in preset_ids("video", all_gateways=True)
     # 9Router 可自由填写上游模型：即使是 PiAPI 预设的 id 也不拦
@@ -205,8 +213,10 @@ def test_piapi_strategies_registered():
 
     flux = get_strategy("flux1-dev")
     assert flux.capability == "image" and flux.resolutions == ("1K",)
+    # 前台默认 2K：1K 专属模型降档而不是 422
+    assert flux.normalize_and_validate({"resolution": "2K"})["resolution"] == "1K"
     with pytest.raises(MediaValidationError):
-        flux.normalize_and_validate({"resolution": "2K"})
+        flux.normalize_and_validate({"resolution": "8K"})
     kling = get_strategy("kling-3.0")
     assert kling.describe()["defaults"]["resolution"] == "720p"
     assert get_strategy("veo3.1").describe()["defaults"]["resolution"] == "720p"
@@ -267,8 +277,8 @@ def test_switched_gateway_error_is_not_reported_as_disabled():
     from app.services.logical_model_router import resolve_upstream_model
 
     with patch(ON, return_value=True):
-        with pytest.raises(ValueError, match="当前上游网关不支持 seedream-5.0-pro"):
-            resolve_upstream_model("image", "seedream-5.0-pro")
+        with pytest.raises(ValueError, match="当前上游网关不支持 seedream-5.0"):
+            resolve_upstream_model("image", "seedream-5.0")
 
 
 def test_default_model_follows_switched_gateway():
@@ -276,11 +286,11 @@ def test_default_model_follows_switched_gateway():
     from app.schemas_routing import DefaultModels
     from app.services.logical_model_router import _default_model_id
 
-    defaults = DefaultModels(text_model="kimi-k2.6", image_model="seedream-5.0-pro", video_model="seedance-2.5", audio_model="qwen-tts-2025-05-22")
+    defaults = DefaultModels(text_model="kimi-k2.6", image_model="seedream-5.0", video_model="seedance-2.5", audio_model="qwen-tts-2025-05-22")
     assert _default_model_id(defaults, "text") == "kimi-k2.6"
     with patch(ON, return_value=True):
         assert _default_model_id(defaults, "text") == "gpt-4o"
-        assert _default_model_id(defaults, "image") == "flux1-dev"
+        assert _default_model_id(defaults, "image") == "seedream-5.0-pro"
         assert _default_model_id(defaults, "video") == "seedance-2.5"
         # PiAPI 无配音预设：保持原值，由配音链路自行回退
         assert _default_model_id(defaults, "audio") == "qwen-tts-2025-05-22"

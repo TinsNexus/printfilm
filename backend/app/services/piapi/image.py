@@ -1,4 +1,6 @@
-"""PiAPI 出图（Flux）：统一任务接口是异步的，这里在一次调用内完成「建任务 → 轮询 → 取图」。
+"""PiAPI 出图：统一任务接口是异步的，这里在一次调用内完成「建任务 → 轮询 → 取图」。
+
+Flux 的任务体在本文件；Gemini / Seedream / Qwen / Z-Image / MiniMax 见 image_tasks.py。
 
 返回 OpenAI 风格 `{"data": [{"url": ...}]}`，供 ark 层沿用原有的落盘逻辑。
 """
@@ -36,7 +38,7 @@ def resolve_flux_model(model: str) -> str:
     if "midjourney" in low or low.startswith("mj"):
         raise RuntimeError("PiAPI 已停止提供 Midjourney 接口，请改用 Flux 图片模型")
     if "flux" not in low:
-        raise RuntimeError(f"PiAPI 暂不支持图片模型「{model}」，请在后台改用 Flux（如 {DEFAULT_FLUX_MODEL}）")
+        raise RuntimeError(f"PiAPI 暂不支持图片模型「{model}」，请在后台改选 PiAPI 图片模型")
     name = next((m for m in _FLUX_MODELS if m in low), "flux1-dev")
     return f"Qubico/{name}"
 
@@ -87,6 +89,42 @@ def build_flux_task(
     }
 
 
+def canonical_image_model(model: str) -> str:
+    """后台填的模型名 → 策略 id（别名、大小写统一）；不认识的原样返回。"""
+    from app.services.media_models import MediaValidationError, get_strategy
+
+    try:
+        return get_strategy(model).model_id
+    except (MediaValidationError, ValueError):
+        return (model or "").strip()
+
+
+def build_piapi_image_task(
+    *,
+    model: str,
+    prompt: str,
+    resolution: str | None = None,
+    size: str | None = None,
+    aspect_ratio: str | None = None,
+    ref_urls: list[str] | None = None,
+) -> dict[str, Any]:
+    """按模型挑任务体：已接入的原生模型走 image_tasks，其余按 Flux 处理（非 Flux 会报错）。"""
+    from app.services.piapi.image_tasks import build_native_task
+
+    text = (prompt or "").strip() or "A high quality cinematic shot"
+    native = build_native_task(
+        model_id=canonical_image_model(model),
+        prompt=text,
+        resolution=resolution or "1K",
+        size=size,
+        aspect_ratio=aspect_ratio,
+        ref_urls=ref_urls,
+    )
+    if native is not None:
+        return native
+    return build_flux_task(model=model, prompt=text, size=size, aspect_ratio=aspect_ratio, ref_urls=ref_urls)
+
+
 def _task_error(task: dict[str, Any], fallback: str) -> str:
     """从任务 error 对象取可读短句。"""
     err = task.get("error")
@@ -99,7 +137,7 @@ def _task_error(task: dict[str, Any], fallback: str) -> str:
 
 
 def extract_piapi_image_url(task: dict[str, Any]) -> str | None:
-    """从完成任务的 output 取图片地址（单图 image_url / 多图 image_urls[0]）。"""
+    """从完成任务的 output 取图片地址（image_url / image_urls[0] / MiniMax 的 images[0].url）。"""
     output = task.get("output")
     if not isinstance(output, dict):
         return None
@@ -109,6 +147,11 @@ def extract_piapi_image_url(task: dict[str, Any]) -> str | None:
     urls = output.get("image_urls")
     if isinstance(urls, list) and urls and isinstance(urls[0], str) and urls[0].strip():
         return urls[0].strip()
+    images = output.get("images")
+    if isinstance(images, list) and images and isinstance(images[0], dict):
+        url = images[0].get("url")
+        if isinstance(url, str) and url.strip():
+            return url.strip()
     return None
 
 
@@ -120,12 +163,14 @@ async def generate_image_via_piapi(
     size: str | None = None,
     aspect_ratio: str | None = None,
     ref_urls: list[str] | None = None,
+    resolution: str | None = None,
     timeout_sec: float = 600.0,
     poll_interval: float = 2.0,
 ) -> dict[str, Any]:
-    """建 Flux 任务并轮询到完成，返回 `{"data": [{"url": ...}]}`；失败/超时抛 RuntimeError。"""
-    body = build_flux_task(
-        model=model, prompt=prompt, size=size, aspect_ratio=aspect_ratio, ref_urls=ref_urls
+    """建出图任务并轮询到完成，返回 `{"data": [{"url": ...}]}`；失败/超时抛 RuntimeError。"""
+    body = build_piapi_image_task(
+        model=model, prompt=prompt, resolution=resolution, size=size,
+        aspect_ratio=aspect_ratio, ref_urls=ref_urls,
     )
     headers = piapi_headers(api_key)
     deadline = time.monotonic() + timeout_sec

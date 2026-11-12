@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { api, type MediaModelOption, type MediaModelsCatalog } from '../api'
 import { tr } from '../i18n/translate.ts'
+import { withPriceLabels } from '../lib/mediaModelPriceLabel'
 export { resolveCatalogModelSelection } from '../lib/mediaCatalogSelection'
 
 let cached: MediaModelsCatalog | null = null
@@ -12,7 +13,7 @@ const listeners = new Set<(value: MediaModelsCatalog) => void>()
 function loadCatalog(force = false): Promise<MediaModelsCatalog> {
   if (!force && cached && Date.now() - fetchedAt < 60_000) return Promise.resolve(cached)
   if (!inflight) {
-    inflight = api.mediaModels().then((cat) => {
+    inflight = api.mediaModels().then(withPriceLabels).then((cat) => {
       cached = cat
       fetchedAt = Date.now()
       listeners.forEach(listener => listener(cat))
